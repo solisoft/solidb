@@ -591,3 +591,72 @@ fn test_limit_bind_variables() {
     assert_eq!(results[1], json!(3));
     assert_eq!(results[2], json!(4));
 }
+
+/// The shape that got the server OOM-killed: a bulk UPSERT over a large
+/// `@rows`. Bind variables used to be copied into the row context, which is
+/// cloned per row, so memory and time grew with rows × size of every bind
+/// variable — 20k rows of a 3 MB `@rows` was 60 GB. They are now read from the
+/// executor. The row count here keeps a regression slow rather than fatal.
+#[test]
+fn test_bulk_upsert_over_large_bind_array() {
+    let (engine, _tmp) = create_test_engine();
+    engine
+        .create_collection("contacts".to_string(), None)
+        .unwrap();
+    let contacts = engine.get_collection("contacts").unwrap();
+    for i in 0..1000 {
+        contacts
+            .insert(json!({"_key": format!("u{i}"), "name": "old", "phone": "keep"}))
+            .unwrap();
+    }
+
+    let rows: Vec<_> = (500..5500)
+        .map(|i| json!({"email": format!("U{i}"), "name": format!("Nom {i}"), "street": "x".repeat(64)}))
+        .collect();
+    let mut binds = HashMap::new();
+    binds.insert("rows".to_string(), json!(rows));
+    binds.insert("suffix".to_string(), json!("!"));
+
+    let results = execute_with_binds(
+        &engine,
+        "FOR row IN @rows
+           LET k = LOWER(row.email)
+           UPSERT { _key: k }
+           INSERT { _key: k, name: CONCAT(row.name, @suffix) }
+           UPDATE { name: CONCAT(row.name, @suffix) }
+           IN contacts
+           RETURN OLD ? 1 : 0",
+        binds,
+    );
+    assert_eq!(results.len(), 5000);
+    let updated: i64 = results.iter().map(|v| v.as_i64().unwrap()).sum();
+    assert_eq!(updated, 500);
+
+    assert_eq!(contacts.count(), 5500);
+    let doc = contacts.get("u700").unwrap().to_value();
+    assert_eq!(doc["name"], "Nom 700!");
+    assert_eq!(doc["phone"], "keep");
+}
+
+/// Bind variables still reach every place that evaluates in a derived context:
+/// correlated subqueries, lambdas, and LETs before the first FOR.
+#[test]
+fn test_bind_vars_in_subquery_lambda_and_prelude() {
+    let (engine, _tmp) = create_test_engine();
+    let mut binds = HashMap::new();
+    binds.insert("xs".to_string(), json!([1, 2, 3]));
+    binds.insert("k".to_string(), json!(10));
+
+    let results = execute_with_binds(
+        &engine,
+        "LET base = @k
+         FOR x IN @xs
+           LET sub = (FOR y IN @xs FILTER y <= x RETURN y * @k)
+           RETURN { x, base, sub, mapped: MAP(@xs, v -> v + @k) }",
+        binds,
+    );
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[2]["base"], 10);
+    assert_eq!(results[2]["sub"], json!([10, 20, 30]));
+    assert_eq!(results[0]["mapped"], json!([11, 12, 13]));
+}

@@ -4,8 +4,6 @@
 //! - execute: Main query execution
 //! - execute_with_stats: Query execution with mutation statistics
 
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
@@ -37,14 +35,12 @@ impl<'a> QueryExecutor<'a> {
             return self.execute_refresh_materialized_view(clause);
         }
 
-        // Bind variables are the only bindings a top-level query starts with;
-        // everything else (CTEs, pre-FOR LETs) is part of the query prelude.
-        let mut bindings: Context = HashMap::new();
-        for (key, value) in &self.bind_vars {
-            bindings.insert(format!("@{}", key), value.clone());
-        }
-
-        self.execute_query_with_bindings(query, bindings)
+        // A top-level query starts with no bindings; CTEs and pre-FOR LETs are
+        // part of its prelude. Bind variables are read from `self.bind_vars` by
+        // the evaluator and never copied into the context, which is cloned per
+        // row: a 3 MB `@rows` iterated 20k times was 60 GB, and the server was
+        // OOM-killed.
+        self.execute_query_with_bindings(query, Context::new())
     }
 
     /// Execute a query block against a set of outer bindings.

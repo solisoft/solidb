@@ -48,11 +48,8 @@ impl<'a> QueryExecutor<'a> {
 
         // First, evaluate all LET clauses
         let let_start = Instant::now();
+        // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
         let mut initial_bindings: Context = HashMap::new();
-
-        for (key, value) in &self.bind_vars {
-            initial_bindings.insert(format!("@{}", key), value.clone());
-        }
 
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();

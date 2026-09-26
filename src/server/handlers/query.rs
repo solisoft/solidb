@@ -407,12 +407,10 @@ pub async fn execute_query(
         .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
         // Execute body clauses manually to intercept mutations
+        // Bind variables are read from the executor, never copied into this
+        // context: it is cloned once per row below, and a 3 MB `@rows` over
+        // 20k rows was 60 GB — the server was OOM-killed.
         let mut initial_bindings = std::collections::HashMap::new();
-
-        // Merge bind variables
-        for (key, value) in &req.bind_vars {
-            initial_bindings.insert(format!("@{}", key), value.clone());
-        }
 
         // Process LET clauses
         for let_clause in &query.let_clauses {

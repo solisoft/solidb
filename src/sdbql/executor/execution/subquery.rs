@@ -22,13 +22,9 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         parent_ctx: &Context,
     ) -> DbResult<Vec<Value>> {
-        // Start with parent context (enables correlation with outer query)
-        let mut initial_bindings = parent_ctx.clone();
-
-        // Add bind variables
-        for (key, value) in &self.bind_vars {
-            initial_bindings.insert(format!("@{}", key), value.clone());
-        }
+        // Start with parent context (enables correlation with outer query).
+        // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
+        let initial_bindings = parent_ctx.clone();
 
         Ok(self
             .execute_query_with_bindings(query, initial_bindings)?

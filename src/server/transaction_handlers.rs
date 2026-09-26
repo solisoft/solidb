@@ -374,12 +374,9 @@ pub async fn execute_transactional_sdbql(
     .with_timeout(std::time::Duration::from_secs(30));
 
     // Execute body clauses manually to intercept mutations
+    // Bind variables are read from the executor, never copied into this
+    // context, which is cloned once per row (see handlers/query.rs).
     let mut initial_bindings = std::collections::HashMap::new();
-
-    // Merge bind variables
-    for (key, value) in &req.bind_vars {
-        initial_bindings.insert(format!("@{}", key), value.clone());
-    }
 
     // Process LET clauses
     for let_clause in &query.let_clauses {

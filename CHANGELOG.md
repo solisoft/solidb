@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **A large bind variable no longer multiplies memory by the row count.** Bind
+  variables were copied into the row context, which is cloned per row, so a
+  `FOR row IN @rows UPSERT …` cost rows × size of every bind variable: a 3 MB
+  `@rows` of 20,200 rows reached ~61 GB (17.9 GB resident, 43 GB swapped) and
+  the kernel OOM-killed the server. The query timeout does not bound this: the
+  copies happen faster than it fires. Bind variables are now read from the
+  executor only. Measured on a 4,000-row, 500 KB `@rows` upsert: 15.9 GB peak
+  and a 30 s timeout before, 178 MB and 70 ms after. Test:
+  `test_bulk_upsert_over_large_bind_array`.
+
 ## [1.2.2](https://github.com/solisoft/solidb/compare/v1.2.1...v1.2.2) (2026-09-25)
 
 ### Added
