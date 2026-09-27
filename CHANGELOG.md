@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0](https://github.com/solisoft/solidb/compare/v1.2.3...v1.3.0) (2026-09-27)
+
 ### Added
 
 * **SDBQL: 26 functions for reports, lookups, French/payments data and
