@@ -405,9 +405,9 @@ RETURN VALUE(doc, ["meta", "v1.2"])</code></pre>
               <div id="fn-DIFF" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-DIFF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
                 <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">DIFF(old, new)</code>
-                <p class="text-sm text-gray-400 mb-3">Every field that changed, keyed by its dotted path, as <code>{old, new}</code>. Nested objects are compared field by field, arrays as a whole; a missing field reads as null, and a null argument as <code>{}</code>, so an insert lists every field. <code>_rev</code> changes on every update, so <code>UNSET</code> it for an audit log.</p>
+                <p class="text-sm text-gray-400 mb-3">Every field that changed, keyed by its dotted path, as <code>{old, new}</code>. Nested objects are compared field by field, arrays as a whole; a missing field reads as null, and a null argument as <code>{}</code>, so an insert lists every field. <code>_rev</code> and <code>_updated_at</code> change on every update, so <code>UNSET</code> both for an audit log.</p>
                 <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">UPDATE @key WITH @patch IN customers
-  RETURN DIFF(UNSET(OLD, "_rev"), UNSET(NEW, "_rev"))
+  RETURN DIFF(UNSET(OLD, "_rev", "_updated_at"), UNSET(NEW, "_rev", "_updated_at"))
 --{"address.city": {old: "Paris", new: "Lyon"}}</code></pre>
               </div>
               <div id="fn-MAP_VALUES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
