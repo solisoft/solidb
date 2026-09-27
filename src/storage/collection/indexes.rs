@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::index::{extract_field_value, tokenize};
+use crate::storage::index::extract_field_value;
 use crate::storage::serializer::deserialize_doc;
 use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
 use serde_json::Value;
@@ -48,8 +48,14 @@ impl Collection {
                 name,
                 fields,
                 min_length,
+                fold_accents,
             } => self
-                .create_fulltext_index(name.clone(), fields.clone(), *min_length)
+                .create_fulltext_index_with(
+                    name.clone(),
+                    fields.clone(),
+                    *min_length,
+                    *fold_accents,
+                )
                 .map(|_| ()),
             IndexSpec::Geo { name, field } => self
                 .create_geo_index(name.clone(), field.clone())
@@ -92,7 +98,17 @@ impl Collection {
         use crate::storage::index::IndexKind;
 
         match kind {
-            IndexKind::Regular => self.drop_index(name),
+            // Fulltext indexes travel as `Regular` (`IndexSpec::kind`), but
+            // live under their own `ft_meta:` key, not in `idx_meta`. Without
+            // this fallback a replicated or shard-fanned fulltext drop found
+            // nothing, was treated as already done, and left the index on
+            // every peer.
+            IndexKind::Regular => match self.drop_index(name) {
+                Err(e) if is_not_found(&e) && self.get_fulltext_index(name).is_some() => {
+                    self.drop_fulltext_index(name)
+                }
+                other => other,
+            },
             IndexKind::Geo => self.drop_geo_index(name),
             IndexKind::Ttl => self.drop_ttl_index(name),
             IndexKind::Vector => self.drop_vector_index(name),
@@ -201,6 +217,8 @@ impl Collection {
             unique,
             unique_values: indexed_count, // Approximation
             indexed_documents: indexed_count,
+            min_length: None,
+            fold_accents: None,
         })
     }
 
@@ -358,6 +376,8 @@ impl Collection {
                 unique: false,
                 unique_values: 0,     // Not calculated for fulltext
                 indexed_documents: 0, // Not calculated for fulltext
+                min_length: Some(idx.min_length),
+                fold_accents: Some(idx.fold_accents),
             });
         }
 
@@ -553,14 +573,11 @@ impl Collection {
                         for field in &ft_index.fields {
                             let field_value = extract_field_value(&doc_value, field);
                             if let Some(text) = field_value.as_str() {
-                                let terms = tokenize(text);
-                                for term in &terms {
-                                    if term.len() >= ft_index.min_length {
-                                        let term_key =
-                                            Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                        batch.put_cf(&cf, term_key, doc.key.as_bytes());
-                                        ft_count += 1;
-                                    }
+                                for term in &Self::ft_terms(ft_index, text) {
+                                    let term_key =
+                                        Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                    batch.put_cf(&cf, term_key, doc.key.as_bytes());
+                                    ft_count += 1;
                                 }
 
                                 // Flush batch periodically (check after each field)
@@ -728,13 +745,9 @@ impl Collection {
                     for field in &ft_index.fields {
                         let field_value = extract_field_value(&doc_value, field);
                         if let Some(text) = field_value.as_str() {
-                            let terms = tokenize(text);
-                            for term in &terms {
-                                if term.len() >= ft_index.min_length {
-                                    let term_key =
-                                        Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                    batch.put_cf(&cf, term_key, doc.key.as_bytes());
-                                }
+                            for term in &Self::ft_terms(ft_index, text) {
+                                let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
+                                batch.put_cf(&cf, term_key, doc.key.as_bytes());
                             }
                         }
                     }
@@ -773,6 +786,8 @@ impl Collection {
             unique: index.unique,
             unique_values: count,
             indexed_documents: count,
+            min_length: None,
+            fold_accents: None,
         })
     }
 

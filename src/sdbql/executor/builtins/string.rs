@@ -1335,7 +1335,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             match &args[0] {
                 Value::Null => Ok(Some(Value::Null)),
-                Value::String(s) => Ok(Some(Value::String(unaccent(s)))),
+                Value::String(s) => Ok(Some(Value::String(crate::storage::fold_accents(s)))),
                 _ => Err(DbError::ExecutionError(
                     "UNACCENT: argument must be a string".to_string(),
                 )),
@@ -1345,37 +1345,6 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "HUMAN_BYTES" => human_bytes(args).map(Some),
         _ => Ok(None),
     }
-}
-
-/// `UNACCENT(text)`: Latin letters folded to their unaccented form — `é` → `e`,
-/// `Ç` → `C`, `ß` → `ss`, `Œ` → `OE` — keeping case, and combining accents
-/// dropped. Other scripts are left alone (unlike `SLUGIFY`, which
-/// transliterates everything and lowercases).
-fn unaccent(s: &str) -> String {
-    if s.is_ascii() {
-        return s.to_string();
-    }
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        let cp = c as u32;
-        let combining = matches!(
-            cp,
-            0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
-        );
-        if combining {
-            continue;
-        }
-        let latin = matches!(
-            cp,
-            0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F | 0x1E00..=0x1EFF
-                | 0x2C60..=0x2C7F | 0xA720..=0xA7FF
-        );
-        match latin.then(|| deunicode::deunicode_char(c)).flatten() {
-            Some(folded) if !folded.is_empty() => out.push_str(folded),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 /// `SPLIT_PART(text, separator, n)`: the n-th field (1-based; negative counts

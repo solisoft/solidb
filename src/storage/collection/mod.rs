@@ -106,6 +106,11 @@ pub struct FulltextIndex {
     pub fields: Vec<String>,
     #[serde(default = "default_min_length")]
     pub min_length: usize,
+    /// Store and search terms with accents folded (`é` → `e`, `ß` → `ss`), so
+    /// "helene" finds "Hélène". Opt-in: indexes stored before the option
+    /// existed load as false and keep their unfolded terms.
+    #[serde(default)]
+    pub fold_accents: bool,
 }
 
 fn default_min_length() -> usize {

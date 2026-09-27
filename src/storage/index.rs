@@ -48,6 +48,9 @@ pub enum IndexSpec {
         fields: Vec<String>,
         #[serde(default)]
         min_length: Option<usize>,
+        /// Absent from specs written before the option existed: false.
+        #[serde(default)]
+        fold_accents: bool,
     },
     Geo {
         name: String,
@@ -287,6 +290,50 @@ pub fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// [`tokenize`], with accents folded first when `fold` is set — the terms a
+/// fulltext index created with `fold_accents` stores and searches for. The
+/// fold runs before `normalize_text`, so anything it maps to punctuation is
+/// stripped with the rest and no term can contain the `:` key separator.
+pub fn tokenize_folded(text: &str, fold: bool) -> Vec<String> {
+    if fold {
+        tokenize(&fold_accents(text))
+    } else {
+        tokenize(text)
+    }
+}
+
+/// Latin letters folded to their unaccented form — `é` → `e`,
+/// `Ç` → `C`, `ß` → `ss`, `Œ` → `OE` — keeping case, and combining accents
+/// dropped. Other scripts are left alone (unlike `SLUGIFY`, which
+/// transliterates everything and lowercases). Backs SDBQL `UNACCENT` and
+/// fulltext indexes created with `fold_accents`.
+pub fn fold_accents(s: &str) -> String {
+    if s.is_ascii() {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        let cp = c as u32;
+        let combining = matches!(
+            cp,
+            0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
+        );
+        if combining {
+            continue;
+        }
+        let latin = matches!(
+            cp,
+            0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F | 0x1E00..=0x1EFF
+                | 0x2C60..=0x2C7F | 0xA720..=0xA7FF
+        );
+        match latin.then(|| deunicode::deunicode_char(c)).flatten() {
+            Some(folded) if !folded.is_empty() => out.push_str(folded),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Longest input, in characters, that Levenshtein distance is computed for
 /// (audit A3). The DP is O(a*b) in time; the old full matrix was also
 /// O(a*b) in memory, so `LEVENSHTEIN` of two 60k-char strings asked for ~29 GB.
@@ -497,6 +544,12 @@ pub struct IndexStats {
     pub unique: bool,
     pub unique_values: usize,
     pub indexed_documents: usize,
+    /// Fulltext only: shortest term indexed, in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_length: Option<usize>,
+    /// Fulltext only: whether terms are stored and searched accent-folded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fold_accents: Option<bool>,
 }
 
 /// TTL index metadata stored in RocksDB
@@ -664,6 +717,29 @@ mod tests {
     }
 
     #[test]
+    fn fold_accents_latin_only() {
+        assert_eq!(fold_accents("Élodie Hélène Çà"), "Elodie Helene Ca");
+        assert_eq!(fold_accents("Straße Œuvre Øre ł"), "Strasse OEuvre Ore l");
+        assert_eq!(fold_accents("e\u{0301}te\u{0301}"), "ete");
+        assert_eq!(fold_accents("Москва 東京"), "Москва 東京");
+        assert_eq!(fold_accents("plain ascii"), "plain ascii");
+    }
+
+    #[test]
+    fn tokenize_folded_folds_only_when_asked() {
+        let text = "Crème brûlée, Hélène!";
+        assert_eq!(tokenize_folded(text, false), tokenize(text));
+        assert_eq!(
+            tokenize_folded(text, true),
+            vec!["creme", "brulee", "helene"]
+        );
+        // Nothing a fold produces survives as a key separator.
+        assert!(tokenize_folded("a:b ǀ c", true)
+            .iter()
+            .all(|t| !t.contains(':')));
+    }
+
+    #[test]
     fn test_extract_field_value_simple() {
         let doc = json!({"name": "Alice", "age": 30});
 
@@ -725,6 +801,8 @@ mod tests {
             unique: true,
             unique_values: 500,
             indexed_documents: 1000,
+            min_length: None,
+            fold_accents: None,
         };
 
         assert_eq!(stats.indexed_documents, 1000);

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+
+* **Fulltext indexes can fold accents.** Create the index with
+  `"fold_accents": true` and it stores and searches words with accents removed
+  from Latin letters (the same folding as `UNACCENT`), so
+  `FULLTEXT(clients, "name", "helene")` finds "Hélène Dupré". Queries are
+  folded to match, in `FULLTEXT`, `SEARCH_INDEX`, `HYBRID_SEARCH` and
+  `COMMUNITY_SEARCH`. Opt-in: existing indexes keep their unfolded words; drop
+  and recreate one to turn folding on. The option replicates, appears in the
+  index listing, and survives `solidb-dump` / `solidb-restore`.
+
+### Fixed
+
+* **`min_length` on a fulltext index is honoured over HTTP.** The create
+  endpoint accepted it and built the index with the default of 3 anyway.
+* **Dropping a fulltext index reaches the other nodes.** Fulltext drops
+  travel as regular-index drops, which look in the regular index metadata,
+  found nothing, and counted as already done — the index stayed on every
+  peer and on remote shards. Test: `fulltext_drop_replicates`.
+
 ## [1.3.0](https://github.com/solisoft/solidb/compare/v1.2.3...v1.3.0) (2026-09-27)
 
 ### Added

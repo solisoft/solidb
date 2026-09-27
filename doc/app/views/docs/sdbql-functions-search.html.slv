@@ -83,9 +83,9 @@ FOR m IN matches
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                   </svg>
                   <div>
-                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">N-Gram Indexing</h4>
+                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">Words, typos and accents</h4>
                     <p class="text-sm text-yellow-200/70">
-                      FULLTEXT uses n-gram (trigram) indexing to enable fuzzy matching. This allows finding documents even when there are typos or slight variations in the search query.
+                      The index stores whole words, lowercased. A document is found when it contains a word of the query; <code>distance</code> then lets near-misses in that document add to its score. Accents count unless the index was created with <code>"fold_accents": true</code> — then <code>FULLTEXT("clients", "name", "helene")</code> finds “Hélène”. See <a href="/docs/indexes#fulltext" class="underline">fulltext indexes</a>.
                     </p>
                   </div>
                 </div>

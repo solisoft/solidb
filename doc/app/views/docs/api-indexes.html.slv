@@ -66,6 +66,18 @@
                          <td class="p-3">If true, enforces uniqueness on the indexed field, on insert, update and within a batch; a violation returns <code class="bg-gray-800 px-1 rounded">400</code>. Default: <code class="bg-gray-800 px-1 rounded">false</code>.</td>
                          <td class="p-3">No</td>
                        </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">min_length</td>
+                         <td class="p-3 font-mono">integer</td>
+                         <td class="p-3">Fulltext only: shortest word indexed, in bytes. Default: <code class="bg-gray-800 px-1 rounded">3</code>.</td>
+                         <td class="p-3">No</td>
+                       </tr>
+                        <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">fold_accents</td>
+                         <td class="p-3 font-mono">boolean</td>
+                         <td class="p-3">Fulltext only: store and search words with accents removed from Latin letters, so <code class="bg-gray-800 px-1 rounded">helene</code> finds “Hélène”. Fixed at creation — drop and recreate the index to change it. Default: <code class="bg-gray-800 px-1 rounded">false</code>.</td>
+                         <td class="p-3">No</td>
+                       </tr>
                      </tbody>
                    </table>
                  </div>
@@ -73,6 +85,9 @@
 
                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                  {"type": "persistent", "field": "email", "unique": true}
+               </div>
+                <div class="mt-2 bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                 {"type": "fulltext", "name": "name_ft", "fields": ["name"], "fold_accents": true}
                </div>
 
                <div class="mt-4 mb-4">

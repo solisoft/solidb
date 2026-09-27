@@ -431,16 +431,16 @@
           </div>
           <div class="p-8">
             <p class="text-gray-300 mb-6 leading-relaxed">
-              A <strong>Fulltext Index</strong> allows for fuzzy search and relevance scoring on text fields. It uses <strong>BM25</strong> scoring and n-gram tokenization to find relevant documents even with typos or partial matches.
+              A <strong>Fulltext Index</strong> stores every word of the indexed fields — lowercased, punctuation removed, at least <code>min_length</code> bytes long — and finds documents that contain the words of a query. <code>FULLTEXT()</code>, <code>SEARCH_INDEX()</code> and <code>HYBRID_SEARCH()</code> read it; a distance argument lets near-misses in the matched documents score too.
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div class="bg-gray-800/30 rounded-lg p-6 border border-white/5">
                     <h4 class="text-white font-bold mb-3">Capabilities</h4>
                     <ul class="space-y-2 text-sm text-gray-400">
-                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Fuzzy matching (Levenshtein distance)</li>
-                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Relevance scoring (BM25)</li>
-                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Prefix/Suffix matching</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Whole-word matching, case-insensitive</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Typo-tolerant scoring (Levenshtein distance)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Optional accent folding: <code>helene</code> finds “Hélène”</li>
                     </ul>
                 </div>
 
@@ -448,10 +448,19 @@
                      <h4 class="text-yellow-400 font-bold mb-3">Configuration</h4>
                      <pre><code class="language-json text-sm text-gray-300">{
    "type": "fulltext",
-   "fields": ["title", "description"],
-   "ngram_size": 3
+   "name": "clients_name_ft",
+   "fields": ["name", "city"],
+   "min_length": 3,
+   "fold_accents": true
 }</code></pre>
                 </div>
+            </div>
+            <div class="mt-6 bg-gray-800/30 rounded-lg p-6 border border-white/5">
+              <h4 class="text-white font-bold mb-3">Options</h4>
+              <ul class="space-y-2 text-sm text-gray-400">
+                <li><code>min_length</code> (default 3) — shortest word indexed, in bytes after folding.</li>
+                <li><code>fold_accents</code> (default false) — store and search words with accents removed from Latin letters (<code>é</code> → <code>e</code>, <code>ß</code> → <code>ss</code>, <code>Œ</code> → <code>OE</code>), the same folding as <code>UNACCENT()</code>. Queries are folded to match, so <code>FULLTEXT(clients, "name", "helene")</code> finds “Hélène Dupré”. Other scripts are left as they are. An existing index keeps the setting it was created with: to turn folding on, drop the index and create it again.</li>
+              </ul>
             </div>
           </div>
         </div>

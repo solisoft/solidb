@@ -541,7 +541,7 @@ Then simply `INSERT {title: "...", content: "hello world"} INTO docs` and `embed
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
-| `FULLTEXT(coll, field, q, dist)` | N-gram fuzzy search | `FULLTEXT("items", "name", "phne", 1)` |
+| `FULLTEXT(coll, field, q, dist)` | Word search over a fulltext index; `dist` lets near-misses in matched documents score. Accent-insensitive when the index has `fold_accents: true` | `FULLTEXT("clients", "name", "helene")` |
 | `BM25(field, query)` | Relevance score | `BM25(doc.content, "search term")` |
 | `HYBRID_SEARCH(...)` | Vector + Text search | `HYBRID_SEARCH("docs", "vec_idx", "text", ...)` |
 | `HIGHLIGHT(text, terms)` | Wrap matches in `<b>` | `HIGHLIGHT(doc.body, @terms)` |

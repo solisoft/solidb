@@ -1059,6 +1059,31 @@ fn search_index_uses_fulltext() {
     assert_eq!(arr[0]["doc"]["_key"], json!("a"));
 }
 
+/// An index created with `fold_accents` matches "helene" to "Hélène", and
+/// FULLTEXT's re-scoring must agree — an unfolded re-score gave the hit 0 and
+/// dropped it at the default distance of 0.
+#[test]
+fn fulltext_and_search_index_fold_accents() {
+    let (e, _t) = engine();
+    e.create_collection("clients".into(), None).unwrap();
+    let c = e.get_collection("clients").unwrap();
+    c.create_fulltext_index_with("ft_name".into(), vec!["name".into()], None, true)
+        .unwrap();
+    c.insert(json!({"_key": "h", "name": "Hélène Dupré"}))
+        .unwrap();
+    c.insert(json!({"_key": "p", "name": "Helen Park"}))
+        .unwrap();
+
+    let hits = exec(&e, r#"RETURN FULLTEXT("clients", "name", "helene")"#);
+    let arr = hits.as_array().expect("array");
+    assert_eq!(arr.len(), 1, "{hits}");
+    assert_eq!(arr[0]["doc"]["_key"], json!("h"));
+    assert_eq!(arr[0]["score"], json!(10.0));
+
+    let hits = exec(&e, r#"RETURN SEARCH_INDEX("clients", "name", "dupre", 10)"#);
+    assert_eq!(hits[0]["doc"]["_key"], json!("h"), "{hits}");
+}
+
 #[test]
 fn can_honors_document_acl() {
     let (e, _t) = engine();

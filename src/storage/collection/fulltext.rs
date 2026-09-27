@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{
-    extract_field_value, generate_ngrams, levenshtein_distance, tokenize, FulltextMatch,
+    extract_field_value, generate_ngrams, levenshtein_distance, tokenize_folded, FulltextMatch,
 };
 use rust_rocksdb::WriteBatch;
 use serde_json::Value;
@@ -37,6 +37,13 @@ impl Collection {
             .cloned()
     }
 
+    /// Whether the fulltext index covering `field` folds accents — what
+    /// SDBQL `FULLTEXT()` needs to re-score its hits the way the index matched.
+    pub fn fulltext_folds_accents(&self, field: &str) -> bool {
+        self.get_fulltext_index_for_field(field)
+            .is_some_and(|index| index.fold_accents)
+    }
+
     /// Get a fulltext index that covers a specific field
     pub fn get_fulltext_index_for_field(&self, field: &str) -> Option<FulltextIndex> {
         let indexes = self.get_all_fulltext_indexes();
@@ -45,12 +52,24 @@ impl Collection {
             .find(|idx| idx.fields.contains(&field.to_string()))
     }
 
-    /// Create a fulltext index
+    /// Create a fulltext index (terms not accent-folded).
     pub fn create_fulltext_index(
         &self,
         name: String,
         fields: Vec<String>,
         min_length: Option<usize>,
+    ) -> DbResult<()> {
+        self.create_fulltext_index_with(name, fields, min_length, false)
+    }
+
+    /// Create a fulltext index; with `fold_accents`, terms are stored and
+    /// searched accent-folded.
+    pub fn create_fulltext_index_with(
+        &self,
+        name: String,
+        fields: Vec<String>,
+        min_length: Option<usize>,
+        fold_accents: bool,
     ) -> DbResult<()> {
         let min_length = min_length.unwrap_or_else(default_min_length);
 
@@ -65,6 +84,7 @@ impl Collection {
             name: name.clone(),
             fields: fields.clone(),
             min_length,
+            fold_accents,
         };
         let index_bytes = serde_json::to_vec(&index)?;
 
@@ -96,13 +116,9 @@ impl Collection {
             for field in &fields {
                 let field_value = extract_field_value(&doc_value, field);
                 if let Some(text) = field_value.as_str() {
-                    // Index terms
-                    let terms = tokenize(text);
-                    for term in &terms {
-                        if term.len() >= min_length {
-                            let term_key = Self::ft_term_key(&name, term, &doc.key);
-                            batch.put_cf(&cf, term_key, doc.key.as_bytes());
-                        }
+                    for term in &Self::ft_terms(&index, text) {
+                        let term_key = Self::ft_term_key(&name, term, &doc.key);
+                        batch.put_cf(&cf, term_key, doc.key.as_bytes());
                     }
                     // No `ft:` n-gram entries: nothing reads them (audit P5).
                     count += 1;
@@ -222,12 +238,9 @@ impl Collection {
             for field in &index.fields {
                 let field_value = extract_field_value(doc_value, field);
                 if let Some(text) = field_value.as_str() {
-                    let terms = tokenize(text);
-                    for term in &terms {
-                        if term.len() >= index.min_length {
-                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            batch.put_cf(&cf, term_key, doc_key.as_bytes());
-                        }
+                    for term in &Self::ft_terms(&index, text) {
+                        let term_key = Self::ft_term_key(&index.name, term, doc_key);
+                        batch.put_cf(&cf, term_key, doc_key.as_bytes());
                     }
                 }
             }
@@ -259,12 +272,9 @@ impl Collection {
             for field in &index.fields {
                 let field_value = extract_field_value(doc_value, field);
                 if let Some(text) = field_value.as_str() {
-                    let terms = tokenize(text);
-                    for term in &terms {
-                        if term.len() >= index.min_length {
-                            let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                            batch.delete_cf(&cf, term_key);
-                        }
+                    for term in &Self::ft_terms(&index, text) {
+                        let term_key = Self::ft_term_key(&index.name, term, doc_key);
+                        batch.delete_cf(&cf, term_key);
                     }
 
                     let ngrams = generate_ngrams(text, NGRAM_SIZE);
@@ -307,9 +317,14 @@ impl Collection {
             return Ok(Vec::new());
         }
 
-        // 2. Tokenize query
-        let query_terms = tokenize(query);
-        if query_terms.is_empty() {
+        // 2. Tokenize the query once per index: an index created with
+        // `fold_accents` stores folded terms, so its query terms must be
+        // folded too, and a plain index must keep seeing the raw ones.
+        let query_terms: Vec<Vec<String>> = indexes
+            .iter()
+            .map(|index| tokenize_folded(query, index.fold_accents))
+            .collect();
+        if query_terms.iter().all(|terms| terms.is_empty()) {
             return Ok(Vec::new());
         }
 
@@ -320,8 +335,8 @@ impl Collection {
             return Ok(Vec::new()); // column family dropped mid-operation
         };
 
-        for index in &indexes {
-            for term in &query_terms {
+        for (index, index_terms) in indexes.iter().zip(&query_terms) {
+            for term in index_terms {
                 if term.len() >= index.min_length {
                     // Exact term lookup
                     let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
@@ -374,7 +389,7 @@ impl Collection {
                 let mut best_score = 0;
                 let mut valid = false;
 
-                for index in &indexes {
+                for (index, index_terms) in indexes.iter().zip(&query_terms) {
                     for field in &index.fields {
                         if let Some(fields_filter) = &fields {
                             if !fields_filter.contains(field) {
@@ -388,10 +403,10 @@ impl Collection {
                             // Minus Levenshtein penalty
                             // This is a simplified version of likely original logic
 
-                            let doc_terms = tokenize(text);
+                            let doc_terms = tokenize_folded(text, index.fold_accents);
                             let mut field_score = 0;
 
-                            for q_term in &query_terms {
+                            for q_term in index_terms {
                                 for d_term in &doc_terms {
                                     let dist = levenshtein_distance(q_term, d_term);
                                     if dist == 0 {
@@ -433,9 +448,14 @@ impl Collection {
 
     // ==================== Fulltext Index Entry Computation Helpers ====================
 
-    /// Indexed terms of one field value, deduplicated.
-    fn ft_terms(index: &FulltextIndex, text: &str) -> std::collections::BTreeSet<String> {
-        tokenize(text)
+    /// Indexed terms of one field value, deduplicated. Every path that writes
+    /// or deletes `ft_term:` keys goes through this, so an index's accent
+    /// folding and `min_length` apply identically to all of them.
+    pub(crate) fn ft_terms(
+        index: &FulltextIndex,
+        text: &str,
+    ) -> std::collections::BTreeSet<String> {
+        tokenize_folded(text, index.fold_accents)
             .into_iter()
             .filter(|t| t.len() >= index.min_length)
             .collect()

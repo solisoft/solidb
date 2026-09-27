@@ -431,7 +431,11 @@ impl<'a> QueryExecutor<'a> {
                 } else {
                     limit
                 };
-                let query_terms = crate::storage::tokenize(query);
+                // Score the way the index matched: an index created with
+                // `fold_accents` found "Hélène" for "helene", and an unfolded
+                // re-score would give that hit 0 and drop it.
+                let fold = collection.fulltext_folds_accents(field);
+                let query_terms = crate::storage::tokenize_folded(query, fold);
                 let matches = collection
                     .fulltext_search(query, Some(vec![field.to_string()]), fetch)
                     .map_err(|e| {
@@ -451,7 +455,7 @@ impl<'a> QueryExecutor<'a> {
                         continue;
                     }
                     let score = match get_field_ref(&doc, field).and_then(Value::as_str) {
-                        Some(text) => fulltext_score(&query_terms, text, max_distance),
+                        Some(text) => fulltext_score(&query_terms, text, max_distance, fold),
                         None => m.score,
                     };
                     if score <= 0.0 {
@@ -1606,8 +1610,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// `FULLTEXT` score of one field: +10 per exact term match, +5 per term
 /// within `max_distance` edits (the index's own scoring, with the distance
 /// the caller asked for instead of a fixed 2).
-fn fulltext_score(query_terms: &[String], text: &str, max_distance: usize) -> f64 {
-    let doc_terms = crate::storage::tokenize(text);
+fn fulltext_score(query_terms: &[String], text: &str, max_distance: usize, fold: bool) -> f64 {
+    let doc_terms = crate::storage::tokenize_folded(text, fold);
     let mut score = 0u64;
     for q in query_terms {
         let q_len = q.chars().count();

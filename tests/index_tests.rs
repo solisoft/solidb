@@ -603,3 +603,88 @@ fn test_index_metadata_cache_collection_recreate() {
     let fresh = db.get_collection("users").unwrap();
     assert!(fresh.get_all_indexes().is_empty());
 }
+
+// ==================== Accent folding (fold_accents) ====================
+
+fn clients_with_names(engine: &StorageEngine, fold: bool) -> solidb::storage::Collection {
+    engine
+        .create_collection("clients".to_string(), None)
+        .unwrap();
+    let clients = engine.get_collection("clients").unwrap();
+    for (key, name) in [
+        ("h", "Hélène Dupré"),
+        ("p", "Helen Park"),
+        ("c", "Crème brûlée"),
+    ] {
+        clients.insert(json!({"_key": key, "name": name})).unwrap();
+    }
+    clients
+        .create_fulltext_index_with("name_ft".to_string(), vec!["name".to_string()], None, fold)
+        .unwrap();
+    clients
+}
+
+fn hits(clients: &solidb::storage::Collection, query: &str) -> Vec<String> {
+    let mut keys: Vec<String> = clients
+        .fulltext_search(query, Some(vec!["name".to_string()]), 10)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.doc_key)
+        .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn fold_accents_index_matches_with_or_without_accents() {
+    let (engine, _tmp) = create_test_engine();
+    let clients = clients_with_names(&engine, true);
+
+    for query in ["helene", "Hélène", "HELENE", "hélene"] {
+        assert!(hits(&clients, query).contains(&"h".to_string()), "{query}");
+    }
+    assert_eq!(hits(&clients, "creme"), vec!["c"]);
+    assert_eq!(hits(&clients, "brulee"), vec!["c"]);
+    assert_eq!(hits(&clients, "dupre"), vec!["h"]);
+}
+
+#[test]
+fn plain_index_still_distinguishes_accents() {
+    let (engine, _tmp) = create_test_engine();
+    let clients = clients_with_names(&engine, false);
+
+    assert!(!hits(&clients, "helene").contains(&"h".to_string()));
+    assert_eq!(hits(&clients, "hélène"), vec!["h"]);
+    assert!(hits(&clients, "creme").is_empty());
+}
+
+#[test]
+fn fold_accents_index_follows_updates_and_deletes() {
+    let (engine, _tmp) = create_test_engine();
+    let clients = clients_with_names(&engine, true);
+
+    clients
+        .update("h", json!({"name": "Anaïs Lefèvre"}))
+        .unwrap();
+    assert!(!hits(&clients, "helene").contains(&"h".to_string()));
+    assert_eq!(hits(&clients, "lefevre"), vec!["h"]);
+
+    clients.delete("c").unwrap();
+    assert!(hits(&clients, "creme").is_empty());
+}
+
+#[test]
+fn rebuild_keeps_folded_terms() {
+    let (engine, _tmp) = create_test_engine();
+    let clients = clients_with_names(&engine, true);
+
+    clients.rebuild_all_indexes().unwrap();
+    assert_eq!(hits(&clients, "creme"), vec!["c"]);
+    let listed = clients
+        .list_indexes()
+        .into_iter()
+        .find(|i| i.name == "name_ft")
+        .unwrap();
+    assert_eq!(listed.fold_accents, Some(true));
+    assert_eq!(listed.min_length, Some(3));
+}

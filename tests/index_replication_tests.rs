@@ -82,12 +82,76 @@ fn fulltext_index_replicates() {
         name: "ft_body".to_string(),
         fields: vec!["body".to_string()],
         min_length: Some(3),
+        fold_accents: false,
     };
 
     items(&a).create_index_from_spec(&spec).unwrap();
     replicate(&spec, &items(&b));
 
     assert!(items(&b).list_indexes().iter().any(|i| i.name == "ft_body"));
+}
+
+#[test]
+fn fulltext_fold_accents_replicates() {
+    let (a, b, _da, _db) = two_nodes();
+    let spec = IndexSpec::Fulltext {
+        name: "ft_name".to_string(),
+        fields: vec!["name".to_string()],
+        min_length: None,
+        fold_accents: true,
+    };
+    items(&a).create_index_from_spec(&spec).unwrap();
+    replicate(&spec, &items(&b));
+
+    let peer = items(&b);
+    peer.insert(serde_json::json!({"_key": "h", "name": "Hélène Dupré"}))
+        .unwrap();
+    let found = peer
+        .list_indexes()
+        .into_iter()
+        .find(|i| i.name == "ft_name")
+        .expect("index on peer");
+    assert_eq!(found.fold_accents, Some(true));
+    assert_eq!(peer.fulltext_search("helene", None, 10).unwrap().len(), 1);
+}
+
+/// A spec written before `fold_accents` existed must still apply, unfolded.
+#[test]
+fn fulltext_spec_without_fold_accents_deserialises() {
+    let old = r#"{"kind":"fulltext","name":"ft","fields":["body"],"min_length":3}"#;
+    let spec: IndexSpec = serde_json::from_str(old).unwrap();
+    match spec {
+        IndexSpec::Fulltext { fold_accents, .. } => assert!(!fold_accents),
+        other => panic!("unexpected spec {:?}", other),
+    }
+}
+
+/// Fulltext drops travel as `IndexKind::Regular`. They used to find nothing in
+/// the regular index metadata, count as already done, and leave the index on
+/// the peer.
+#[test]
+fn fulltext_drop_replicates() {
+    let (_a, b, _da, _db) = two_nodes();
+    let spec = IndexSpec::Fulltext {
+        name: "ft_body".to_string(),
+        fields: vec!["body".to_string()],
+        min_length: None,
+        fold_accents: false,
+    };
+    replicate(&spec, &items(&b));
+    assert!(items(&b)
+        .list_fulltext_indexes()
+        .iter()
+        .any(|i| i.name == "ft_body"));
+
+    items(&b)
+        .apply_index_drop(spec.kind(), spec.name())
+        .unwrap();
+    assert!(items(&b).list_fulltext_indexes().is_empty());
+    // Replayed: the index is gone, the drop is still a success.
+    items(&b)
+        .apply_index_drop(spec.kind(), spec.name())
+        .unwrap();
 }
 
 #[test]
@@ -265,6 +329,7 @@ fn every_index_family_maps_to_a_kind() {
                 name: "f".into(),
                 fields: vec!["f".into()],
                 min_length: None,
+                fold_accents: false,
             },
             IndexKind::Regular,
         ),

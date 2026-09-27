@@ -169,6 +169,12 @@ pub struct CreateIndexRequest {
     pub index_type: String,
     #[serde(default)]
     pub unique: bool,
+    /// Fulltext only: shortest term indexed (default 3).
+    #[serde(default)]
+    pub min_length: Option<usize>,
+    /// Fulltext only: store and search terms accent-folded.
+    #[serde(default)]
+    pub fold_accents: bool,
 }
 
 fn default_index_type() -> String {
@@ -242,7 +248,8 @@ pub async fn create_index(
         IndexType::Fulltext => IndexSpec::Fulltext {
             name: req.name.clone(),
             fields: fields.clone(),
-            min_length: None, // Use default
+            min_length: req.min_length,
+            fold_accents: req.fold_accents,
         },
         _ => IndexSpec::Regular {
             name: req.name.clone(),

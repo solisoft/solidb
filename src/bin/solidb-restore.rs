@@ -1173,6 +1173,13 @@ async fn process_index_record(
             if let Some(field) = record.get("field") {
                 payload["field"] = field.clone();
             }
+            // Fulltext options; a dump made before they existed has neither,
+            // and the index is recreated with the defaults as before.
+            for key in ["min_length", "fold_accents"] {
+                if let Some(v) = record.get(key).filter(|v| !v.is_null()) {
+                    payload[key] = v.clone();
+                }
+            }
             (url, payload)
         }
     };

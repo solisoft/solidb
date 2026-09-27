@@ -1084,6 +1084,12 @@ async fn dump_collection_indexes(
                 if let Some(field) = idx.get("field") {
                     record["field"] = field.clone();
                 }
+                // Fulltext options; absent for other kinds and from older servers.
+                for key in ["min_length", "fold_accents"] {
+                    if let Some(v) = idx.get(key).filter(|v| !v.is_null()) {
+                        record[key] = v.clone();
+                    }
+                }
                 writeln!(output, "{}", serde_json::to_string(&record)?)?;
             }
         }

@@ -954,3 +954,45 @@ async fn test_community_build_api() {
         search_json
     );
 }
+
+/// `min_length` and `fold_accents` reach the index over HTTP and come back in
+/// the listing (which is what solidb-dump reads). `min_length` used to be
+/// accepted and ignored.
+#[tokio::test]
+async fn test_fulltext_index_options_api() {
+    let (app, _tmp, token) = create_test_app();
+    post_json(&app, &token, "/_api/database", json!({ "name": "ftdb" })).await;
+    post_json(
+        &app,
+        &token,
+        "/_api/database/ftdb/collection",
+        json!({ "name": "clients" }),
+    )
+    .await;
+    let resp = post_json(
+        &app,
+        &token,
+        "/_api/database/ftdb/index/clients",
+        json!({
+            "type": "fulltext",
+            "name": "name_ft",
+            "fields": ["name"],
+            "min_length": 4,
+            "fold_accents": true
+        }),
+    )
+    .await;
+    assert!(resp.status().is_success(), "create: {}", resp.status());
+
+    let listing =
+        response_json(get_json(&app, &token, "/_api/database/ftdb/index/clients").await).await;
+    let idx = listing["indexes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["name"] == "name_ft")
+        .cloned()
+        .expect("index listed");
+    assert_eq!(idx["fold_accents"], json!(true), "{listing}");
+    assert_eq!(idx["min_length"], json!(4), "{listing}");
+}
