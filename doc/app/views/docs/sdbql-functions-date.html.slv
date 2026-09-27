@@ -165,6 +165,43 @@ DATE_TRUNC("2025-06-15T20:30:00Z", "day", "America/New_York")
                 </div>
               </div>
             </div>
+            <div id="fn-DATE_END_OF" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_END_OF" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_END_OF</span>
+                  End of Period
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">The last millisecond of the <code>year</code>, <code>quarter</code>, <code>month</code>, <code>week</code> (Monday-based), <code>day</code>, <code>hour</code>, <code>minute</code> or <code>second</code> holding <code>date</code> &mdash; the other end of <code>DATE_TRUNC</code>. With a timezone, the period is the local one.</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_END_OF(date, unit, timezone?)</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">DATE_END_OF("2024-02-10", "month")
+--"2024-02-29T23:59:59.999Z"
+
+FILTER o.at &gt;= DATE_TRUNC(@d, "month") AND o.at &lt;= DATE_END_OF(@d, "month")</code></pre>
+              </div>
+            </div>
+            <div id="fn-DATE_SERIES" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
+              <a href="#fn-DATE_SERIES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-cyan-400 transition-opacity z-10"><i class="fas fa-link text-xs"></i></a>
+              <div class="p-5 border-b border-white/5 bg-white/5">
+                <h3 class="text-lg font-bold text-pink-300 flex items-center">
+                  <span class="bg-pink-500/20 text-pink-400 text-xs font-mono px-2 py-1 rounded mr-3">DATE_SERIES</span>
+                  Date Series
+                </h3>
+              </div>
+              <div class="p-5 space-y-4">
+                <p class="text-sm text-gray-400">Every date from <code>start</code> to <code>end</code> inclusive, <code>step</code> units apart (<code>quarter</code> is accepted). Each date is <code>start</code> plus k&middot;step, so a monthly series from the 31st gives the last day of shorter months and comes back to the 31st. Empty when <code>start</code> is after <code>end</code>; at most 100,000 dates. The rows a report needs for the days that have no data:</p>
+                <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+                  <code class="text-sm text-gray-300">DATE_SERIES(start, end, unit, step?, timezone?)</code>
+                </div>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">LET per_day = COUNT_BY((FOR o IN orders RETURN o), o -&gt; DATE_TRUNC(o.at, "day"))
+FOR d IN DATE_SERIES(@from, @to, "day")
+  RETURN {day: LEFT(d, 10), orders: per_day[d] || 0}</code></pre>
+              </div>
+            </div>
 
             <!-- DATE_FORMAT -->
             <div id="fn-DATE_FORMAT" class="group relative bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">

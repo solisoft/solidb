@@ -44,6 +44,29 @@
             <p class="text-sm text-gray-400 mb-3">Pad string from left. Alias: LPAD.</p>
             <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN PAD_LEFT("42", 5, "0") --"00042"</code></pre>
           </div>
+          <div id="fn-UNACCENT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-UNACCENT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">UNACCENT(text)</code>
+            <p class="text-sm text-gray-400 mb-3">Removes accents from Latin letters, keeping case: <code>é</code> &rarr; <code>e</code>, <code>Ç</code> &rarr; <code>C</code>, <code>ß</code> &rarr; <code>ss</code>, <code>Œ</code> &rarr; <code>OE</code>. Other scripts are left alone. Use it on both sides of a comparison for accent-insensitive search; unlike <code>SLUGIFY</code> it keeps spaces and case.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FOR c IN clients
+  FILTER UNACCENT(LOWER(c.name)) LIKE CONCAT(UNACCENT(LOWER(@q)), "%")
+  RETURN c
+-- @q = "helene" finds "Hélène"</code></pre>
+          </div>
+          <div id="fn-SPLIT_PART" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-SPLIT_PART" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">SPLIT_PART(text, separator, n)</code>
+            <p class="text-sm text-gray-400 mb-3">The n-th field of <code>text</code> split on <code>separator</code>, counting from 1; a negative <code>n</code> counts from the end. An empty string when there is no such field.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SPLIT_PART("2024-03-15", "-", 2) --"03"
+RETURN SPLIT_PART(email, "@", -1)       --the domain</code></pre>
+          </div>
+          <div id="fn-HUMAN_BYTES" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+            <a href="#fn-HUMAN_BYTES" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+            <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">HUMAN_BYTES(bytes, binary?, decimals?)</code>
+            <p class="text-sm text-gray-400 mb-3">A byte count for display: powers of 1000 with <code>kB</code>, <code>MB</code>… by default, or powers of 1024 with <code>KiB</code>, <code>MiB</code>… when <code>binary</code> is true. One decimal by default; trailing zeros are dropped.</p>
+            <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN HUMAN_BYTES(1536000)       --"1.5 MB"
+RETURN HUMAN_BYTES(1572864, true) --"1.5 MiB"</code></pre>
+          </div>
           <div id="fn-PAD_RIGHT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
             <a href="#fn-PAD_RIGHT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-purple-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
             <code class="block text-sm font-bold text-white bg-purple-500/20 px-2 py-1 rounded border border-purple-500/30 w-fit mb-3">PAD_RIGHT(str, len, char?)</code>

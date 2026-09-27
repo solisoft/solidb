@@ -4432,6 +4432,7 @@ dependencies = [
  "csv",
  "cuckoofilter",
  "dashmap",
+ "deunicode",
  "dotenvy",
  "fastbloom",
  "flate2",

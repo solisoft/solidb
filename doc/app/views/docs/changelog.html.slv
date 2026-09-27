@@ -9,6 +9,17 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">SDBQL: 26 new functions</strong> &mdash; <code>DATE_SERIES</code> returns every date in a range, so a report can show the days that have no rows (<code>FOR d IN DATE_SERIES(@from, @to, "day")</code>), and <code>DATE_END_OF</code> is <code>DATE_TRUNC</code>&rsquo;s other end. <code>KEY_BY</code> turns an array into a lookup object, so a join is one read instead of a subquery per row; <code>COUNT_BY</code>, <code>MODE</code>, <code>PAIRWISE</code>, <code>TRANSPOSE</code>, <code>SHUFFLE</code> complete the array set. <code>DIFF(OLD, NEW)</code> lists the changed fields for an audit log; <code>MAP_VALUES</code>, <code>MAP_KEYS</code> and <code>FILTER_KEYS</code> take lambdas over an object&rsquo;s entries; <code>PARSE_URL</code> and <code>QUERY_STRING</code> handle URLs. <code>UNACCENT</code> makes search accent-insensitive (&laquo;&nbsp;helene&nbsp;&raquo; finds &laquo;&nbsp;Hélène&nbsp;&raquo;); <code>SPLIT_PART</code> and <code>HUMAN_BYTES</code> format text. <code>IS_IBAN</code>, <code>LUHN</code>, <code>IS_SIREN</code> and <code>IS_SIRET</code> validate payment and company identifiers. <code>ROUND</code> takes a rounding mode, including banker&rsquo;s rounding (<code>"half_even"</code>), applied to the decimal digits; and <code>GCD</code>, <code>LCM</code>, <code>HYPOT</code>, <code>CBRT</code>.</li>
+        <li><strong class="text-white">SDBQL: <code>FOR x IN</code> accepts any expression that starts with a name</strong> &mdash; a name after <code>IN</code> was always read as a collection or variable, so <code>FOR t IN doc.tags</code>, <code>FOR d IN DATE_SERIES(&hellip;)</code>, <code>FOR x IN rows[0]</code>, <code>FOR i IN n..10</code>, <code>FOR x IN list |&gt; SORTED()</code> and <code>FOR x IN m ?? []</code> failed to parse.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 1.2.3 -->
   <section id="v1-2-3" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

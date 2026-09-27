@@ -513,11 +513,49 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             let h = seahash::hash(&buf) & ((1u64 << 52) - 1);
             Ok(Some(Value::from(h)))
         }
+        "DIFF" => {
+            check_args(name, args, 2)?;
+            let side = |v: &Value, which: &str| -> DbResult<Map<String, Value>> {
+                match v {
+                    Value::Null => Ok(Map::new()),
+                    Value::Object(o) => Ok(o.clone()),
+                    _ => Err(DbError::ExecutionError(format!(
+                        "DIFF: the {which} argument must be an object or null"
+                    ))),
+                }
+            };
+            let old = side(&args[0], "first")?;
+            let new = side(&args[1], "second")?;
+            let mut out = Map::new();
+            diff_objects("", &old, &new, &mut out);
+            Ok(Some(Value::Object(out)))
+        }
+        "PARSE_URL" => {
+            check_args(name, args, 1)?;
+            Ok(Some(match &args[0] {
+                Value::String(s) => parse_url(s),
+                _ => Value::Null,
+            }))
+        }
+        "QUERY_STRING" => {
+            check_args(name, args, 1)?;
+            match &args[0] {
+                Value::Null => Ok(Some(Value::Null)),
+                Value::String(s) => Ok(Some(Value::Object(parse_query(
+                    s.strip_prefix('?').unwrap_or(s),
+                )))),
+                Value::Object(o) => Ok(Some(Value::String(build_query(o)))),
+                _ => Err(DbError::ExecutionError(
+                    "QUERY_STRING: argument must be an object (to encode) or a string (to parse)"
+                        .to_string(),
+                )),
+            }
+        }
         _ => Ok(None),
     }
 }
 
-fn type_name(v: &Value) -> &'static str {
+pub(crate) fn type_name(v: &Value) -> &'static str {
     match v {
         Value::Null => "null",
         Value::Bool(_) => "bool",
@@ -893,6 +931,108 @@ fn redact_value(v: &Value, keys: &[String]) -> Value {
 /// `GET`'s path walk: `"a.b.0"` descends through objects by key and through
 /// arrays by index. Empty segments are skipped; a path with no dot is one key,
 /// so `GET(doc, "")` reads the attribute named `""`.
+/// `DIFF(old, new)`: every leaf that differs, keyed by its dotted path, as
+/// `{old, new}`. Objects on both sides are compared field by field; anything
+/// else (arrays included) is compared whole. A missing field reads as null.
+fn diff_objects(
+    prefix: &str,
+    old: &Map<String, Value>,
+    new: &Map<String, Value>,
+    out: &mut Map<String, Value>,
+) {
+    let keys = old
+        .keys()
+        .chain(new.keys().filter(|k| !old.contains_key(*k)));
+    for key in keys {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        let a = old.get(key).unwrap_or(&Value::Null);
+        let b = new.get(key).unwrap_or(&Value::Null);
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => diff_objects(&path, x, y, out),
+            _ if values_equal(a, b) => {}
+            _ => {
+                let mut change = Map::new();
+                change.insert("old".into(), a.clone());
+                change.insert("new".into(), b.clone());
+                out.insert(path, Value::Object(change));
+            }
+        }
+    }
+}
+
+/// `PARSE_URL(url)`: the parts of an absolute URL, or null when it is not one.
+fn parse_url(s: &str) -> Value {
+    let Ok(u) = url::Url::parse(s) else {
+        return Value::Null;
+    };
+    let opt = |v: Option<&str>| v.map_or(Value::Null, |s| Value::String(s.to_string()));
+    let mut m = Map::new();
+    m.insert("scheme".into(), Value::String(u.scheme().to_string()));
+    m.insert(
+        "username".into(),
+        opt(Some(u.username()).filter(|s| !s.is_empty())),
+    );
+    m.insert("password".into(), opt(u.password()));
+    m.insert("host".into(), opt(u.host_str()));
+    m.insert(
+        "port".into(),
+        u.port_or_known_default().map_or(Value::Null, Value::from),
+    );
+    m.insert("path".into(), Value::String(u.path().to_string()));
+    m.insert("query".into(), opt(u.query()));
+    m.insert(
+        "params".into(),
+        Value::Object(u.query().map(parse_query).unwrap_or_default()),
+    );
+    m.insert("fragment".into(), opt(u.fragment()));
+    Value::Object(m)
+}
+
+/// A query string as an object; a key given more than once becomes an array.
+fn parse_query(q: &str) -> Map<String, Value> {
+    let mut m = Map::new();
+    for (k, v) in url::form_urlencoded::parse(q.as_bytes()) {
+        let v = Value::String(v.into_owned());
+        match m.get_mut(k.as_ref()) {
+            None => {
+                m.insert(k.into_owned(), v);
+            }
+            Some(Value::Array(a)) => a.push(v),
+            Some(prev) => {
+                let first = std::mem::take(prev);
+                *prev = Value::Array(vec![first, v]);
+            }
+        }
+    }
+    m
+}
+
+/// An object as a query string: arrays repeat the key, null is left out,
+/// nested objects are sent as JSON.
+fn build_query(o: &Map<String, Value>) -> String {
+    let mut ser = url::form_urlencoded::Serializer::new(String::new());
+    let mut put = |k: &str, v: &Value| match v {
+        Value::Null => {}
+        Value::String(s) => {
+            ser.append_pair(k, s);
+        }
+        other => {
+            ser.append_pair(k, &super::string::stringify(other));
+        }
+    };
+    for (k, v) in o {
+        match v {
+            Value::Array(items) => items.iter().for_each(|item| put(k, item)),
+            _ => put(k, v),
+        }
+    }
+    ser.finish()
+}
+
 pub(crate) fn lookup_path<'v>(root: &'v Value, path: &str) -> Option<&'v Value> {
     if !path.contains('.') {
         return match root {
@@ -1327,5 +1467,60 @@ mod tests {
         );
         assert_eq!(call("PARSE_IDENTIFIER", &[Value::Null]), Value::Null);
         assert_eq!(call("NULLIF", &[json!(1), json!(1.0)]), Value::Null);
+    }
+
+    #[test]
+    fn diff_reports_changed_leaves() {
+        let old = json!({"_key": "k", "name": "Ann", "addr": {"city": "Paris", "zip": "75001"}, "tags": [1, 2], "gone": 1});
+        let new = json!({"_key": "k", "name": "Anne", "addr": {"city": "Lyon", "zip": "75001"}, "tags": [1, 2], "added": true});
+        assert_eq!(
+            call("DIFF", &[old.clone(), new]),
+            json!({
+                "name": {"old": "Ann", "new": "Anne"},
+                "addr.city": {"old": "Paris", "new": "Lyon"},
+                "gone": {"old": 1, "new": null},
+                "added": {"old": null, "new": true}
+            })
+        );
+        // An insert (OLD is null) lists every field.
+        assert_eq!(
+            call("DIFF", &[Value::Null, json!({"a": 1})]),
+            json!({"a": {"old": null, "new": 1}})
+        );
+        assert_eq!(call("DIFF", &[old.clone(), old]), json!({}));
+        assert!(evaluate("DIFF", &[json!([1]), json!({})]).is_err());
+    }
+
+    #[test]
+    fn parse_url_and_query_string() {
+        let u = call(
+            "PARSE_URL",
+            &[json!(
+                "https://bob:pw@example.com:8443/a/b?x=1&y=two%20words&x=2#top"
+            )],
+        );
+        assert_eq!(u["scheme"], json!("https"));
+        assert_eq!(u["username"], json!("bob"));
+        assert_eq!(u["host"], json!("example.com"));
+        assert_eq!(u["port"], json!(8443));
+        assert_eq!(u["path"], json!("/a/b"));
+        assert_eq!(u["params"], json!({"x": ["1", "2"], "y": "two words"}));
+        assert_eq!(u["fragment"], json!("top"));
+        assert_eq!(call("PARSE_URL", &[json!("http://h/")])["port"], json!(80));
+        assert_eq!(call("PARSE_URL", &[json!("not a url")]), Value::Null);
+        assert_eq!(call("PARSE_URL", &[json!("/relative")]), Value::Null);
+
+        assert_eq!(
+            call(
+                "QUERY_STRING",
+                &[json!({"q": "a b&c", "n": 2, "tag": ["x", "y"], "skip": null})]
+            ),
+            json!("n=2&q=a+b%26c&tag=x&tag=y")
+        );
+        assert_eq!(
+            call("QUERY_STRING", &[json!("?q=a+b%26c&tag=x&tag=y")]),
+            json!({"q": "a b&c", "tag": ["x", "y"]})
+        );
+        assert!(evaluate("QUERY_STRING", &[json!(1)]).is_err());
     }
 }

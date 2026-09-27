@@ -733,6 +733,9 @@ impl<'a> QueryExecutor<'a> {
         original_args: &[Expression],
         ctx: &Context,
     ) -> DbResult<Value> {
+        if matches!(name, "MAP_VALUES" | "MAP_KEYS" | "FILTER_KEYS") {
+            return self.evaluate_object_hof(name, evaluated_args, original_args, ctx);
+        }
         let mut values = evaluated_args.into_iter();
         let arr = match values.next() {
             Some(Value::Array(a)) => a,
@@ -827,6 +830,19 @@ impl<'a> QueryExecutor<'a> {
                 }
                 keyed.sort_by(|a, b| compare_values(&a.0, &b.0));
                 Ok(Value::Array(keyed.into_iter().map(|(_, v)| v).collect()))
+            }
+            "KEY_BY" | "COUNT_BY" => {
+                let mut scope = LambdaScope::new(params, body, ctx);
+                let mut out = serde_json::Map::new();
+                for item in arr {
+                    let (key, item) = scope.eval_keep(self, body, item)?;
+                    if name == "KEY_BY" {
+                        super::builtins::array::key_by_insert(&mut out, &key, item);
+                    } else {
+                        super::builtins::array::count_by_insert(&mut out, &key);
+                    }
+                }
+                Ok(Value::Object(out))
             }
             "MIN_BY" | "MAX_BY" => {
                 let want = if name == "MIN_BY" {
@@ -946,6 +962,76 @@ impl<'a> QueryExecutor<'a> {
                 name
             ))),
         }
+    }
+}
+
+impl<'a> QueryExecutor<'a> {
+    /// `MAP_VALUES(obj, (v, k) -> …)`, `MAP_KEYS(obj, (k, v) -> …)` and
+    /// `FILTER_KEYS(obj, (k, v) -> …)`: the lambda's first parameter is what
+    /// the function is named after, the optional second one the other half
+    /// of the entry. A key that `MAP_KEYS` maps to null is dropped; two keys
+    /// mapped to the same name keep the later value.
+    fn evaluate_object_hof(
+        &self,
+        name: &str,
+        evaluated_args: Vec<Value>,
+        original_args: &[Expression],
+        ctx: &Context,
+    ) -> DbResult<Value> {
+        let obj = match evaluated_args.into_iter().next() {
+            Some(Value::Object(o)) => o,
+            Some(Value::Null) => return Ok(Value::Null),
+            Some(other) => {
+                return Err(DbError::ExecutionError(format!(
+                    "{} expects an object as first argument, got {}",
+                    name,
+                    super::builtins::misc::type_name(&other)
+                )))
+            }
+            None => {
+                return Err(DbError::ExecutionError(format!(
+                    "{} requires an object and a lambda",
+                    name
+                )))
+            }
+        };
+        let Some((params, body)) = original_args.iter().find_map(|arg| match arg {
+            Expression::Lambda { params, body } => Some((params.as_slice(), body.as_ref())),
+            _ => None,
+        }) else {
+            return Err(DbError::ExecutionError(format!(
+                "{} requires a lambda argument",
+                name
+            )));
+        };
+        let mut scope = LambdaScope::new(params, body, ctx);
+        let mut out = serde_json::Map::new();
+        for (key, value) in obj {
+            let key_value = Value::String(key.clone());
+            match name {
+                "MAP_VALUES" => {
+                    scope.bind(0, value);
+                    scope.bind(1, key_value);
+                    out.insert(key, self.evaluate_expr_with_context(body, &scope.ctx)?);
+                }
+                "MAP_KEYS" => {
+                    scope.bind(0, key_value);
+                    scope.bind(1, value.clone());
+                    let new_key = self.evaluate_expr_with_context(body, &scope.ctx)?;
+                    if !new_key.is_null() {
+                        out.insert(super::builtins::string::stringify(&new_key), value);
+                    }
+                }
+                _ => {
+                    scope.bind(0, key_value);
+                    scope.bind(1, value.clone());
+                    if to_bool(&self.evaluate_expr_with_context(body, &scope.ctx)?) {
+                        out.insert(key, value);
+                    }
+                }
+            }
+        }
+        Ok(Value::Object(out))
     }
 }
 

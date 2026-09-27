@@ -63,10 +63,12 @@
                 </div>
                 <div id="fn-ROUND" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-ROUND" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ROUND(num, prec?)</code>
-                  <p class="text-sm text-gray-400 mb-3">Rounds to <code>prec</code> decimals (default 0; negative rounds to tens, hundreds…). <code>prec</code> must be an integer, and may be computed (<code>d + 1</code>); it is clamped to ±308.</p>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">ROUND(num, prec?, mode?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Rounds to <code>prec</code> decimals (default 0; negative rounds to tens, hundreds…). <code>prec</code> must be an integer, and may be computed (<code>d + 1</code>); it is clamped to ±308. With a <code>mode</code> &mdash; <code>"half_up"</code>, <code>"half_down"</code>, <code>"half_even"</code> (banker&rsquo;s rounding, which keeps sums of many amounts from drifting), <code>"up"</code>/<code>"down"</code> (away from / towards zero), <code>"ceil"</code>, <code>"floor"</code> &mdash; it rounds the decimal digits you see, so <code>ROUND(1.005, 2, "half_up")</code> is 1.01 where <code>ROUND(1.005, 2)</code>, working on the binary value (1.00499&hellip;), gives 1.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN ROUND(3.14159, 2) --3.14
-RETURN ROUND(1234.5, -2) --1200</code></pre>
+RETURN ROUND(1234.5, -2) --1200
+RETURN ROUND(0.125, 2, "half_even") --0.12
+RETURN ROUND(1.005, 2, "half_up") --1.01 (ROUND(1.005, 2) is 1)</code></pre>
                 </div>
                 <div id="fn-NUMBER_FORMAT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-NUMBER_FORMAT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
@@ -127,6 +129,30 @@ RETURN NUMBER_FORMAT(1234.5, 2, {decimal: ",", thousands: " "}) --"1 234,50"</co
                   <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">SQRT(number)</code>
                   <p class="text-sm text-gray-400 mb-3">Returns the square root.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SQRT(16) --4</code></pre>
+                </div>
+                <div id="fn-CBRT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-CBRT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">CBRT(num)</code>
+                  <p class="text-sm text-gray-400 mb-3">Cube root; defined for negative numbers too.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN CBRT(-27) --−3</code></pre>
+                </div>
+                <div id="fn-HYPOT" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-HYPOT" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">HYPOT(a, b, …)</code>
+                  <p class="text-sm text-gray-400 mb-3">The Euclidean length <code>√(a² + b² + …)</code>, without overflow on large values.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN HYPOT(3, 4) --5</code></pre>
+                </div>
+                <div id="fn-GCD" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-GCD" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">GCD(a, b, …)</code>
+                  <p class="text-sm text-gray-400 mb-3">Greatest common divisor of integers (signs ignored). Null if any argument is null.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN GCD(12, 18, 30) --6</code></pre>
+                </div>
+                <div id="fn-LCM" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
+                  <a href="#fn-LCM" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-indigo-500/20 px-2 py-1 rounded border border-indigo-500/30 w-fit mb-3">LCM(a, b, …)</code>
+                  <p class="text-sm text-gray-400 mb-3">Least common multiple of integers; 0 if any is 0, an error if the result does not fit in 64 bits.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN LCM(4, 6) --12</code></pre>
                 </div>
                 <div id="fn-POW" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                   <a href="#fn-POW" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-indigo-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>

@@ -761,6 +761,131 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }
             Ok(Some(Value::Array(out)))
         }
+        // Path forms; `KEY_BY(arr, x -> …)` / `COUNT_BY(arr, x -> …)` are
+        // evaluated by the executor's lambda dispatch with the same helpers.
+        "KEY_BY" | "COUNT_BY" => {
+            let path = match (name, args.len()) {
+                ("COUNT_BY", 1) => None,
+                (_, 2) => Some(args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError(format!(
+                        "{name}: second argument must be an attribute path or a lambda"
+                    ))
+                })?),
+                _ => {
+                    return Err(DbError::ExecutionError(format!(
+                        "{name} requires {} arguments",
+                        if name == "COUNT_BY" { "1-2" } else { "2" }
+                    )))
+                }
+            };
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = array_arg(name, &args[0], "the first")?;
+            let key_of = |item: &Value| -> Value {
+                match path {
+                    None => item.clone(),
+                    Some(p) => super::misc::lookup_path(item, p)
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                }
+            };
+            let mut out = serde_json::Map::new();
+            for item in arr {
+                let key = key_of(item);
+                if name == "KEY_BY" {
+                    key_by_insert(&mut out, &key, item.clone());
+                } else {
+                    count_by_insert(&mut out, &key);
+                }
+            }
+            Ok(Some(Value::Object(out)))
+        }
+        "MODE" => {
+            check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = array_arg(name, &args[0], "the")?;
+            // Hashed once per value; on a tie the value seen first wins.
+            let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
+            let mut counts: Vec<(&Value, usize)> = Vec::new();
+            for item in arr.iter().filter(|v| !v.is_null()) {
+                let bucket = index.entry(hash_value(item)).or_default();
+                match bucket.iter().find(|&&i| values_equal(counts[i].0, item)) {
+                    Some(&i) => counts[i].1 += 1,
+                    None => {
+                        bucket.push(counts.len());
+                        counts.push((item, 1));
+                    }
+                }
+            }
+            let mut best: Option<(&Value, usize)> = None;
+            for (v, c) in counts {
+                if best.is_none_or(|(_, b)| c > b) {
+                    best = Some((v, c));
+                }
+            }
+            Ok(Some(best.map_or(Value::Null, |(v, _)| v.clone())))
+        }
+        "PAIRWISE" => {
+            check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let arr = array_arg(name, &args[0], "the")?;
+            Ok(Some(Value::Array(
+                arr.windows(2).map(|w| Value::Array(w.to_vec())).collect(),
+            )))
+        }
+        "TRANSPOSE" => {
+            check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            let rows = array_arg(name, &args[0], "the")?;
+            let mut width = 0;
+            for row in rows {
+                match row {
+                    Value::Array(r) => width = width.max(r.len()),
+                    _ => {
+                        return Err(DbError::ExecutionError(
+                            "TRANSPOSE: argument must be an array of arrays".to_string(),
+                        ))
+                    }
+                }
+            }
+            // Ragged rows are padded with null, so the output is rows × width
+            // cells whatever the input held.
+            if rows.len().saturating_mul(width) > MAX_TRANSPOSE_CELLS {
+                return Err(DbError::ExecutionError(format!(
+                    "TRANSPOSE: result would exceed {MAX_TRANSPOSE_CELLS} cells"
+                )));
+            }
+            let out = (0..width)
+                .map(|c| {
+                    Value::Array(
+                        rows.iter()
+                            .map(|r| match r {
+                                Value::Array(r) => r.get(c).cloned().unwrap_or(Value::Null),
+                                _ => Value::Null,
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            Ok(Some(Value::Array(out)))
+        }
+        "SHUFFLE" => {
+            check_args(name, args, 1)?;
+            if args[0].is_null() {
+                return Ok(Some(Value::Null));
+            }
+            use rand::seq::SliceRandom;
+            let mut arr = array_arg(name, &args[0], "the")?.clone();
+            arr.shuffle(&mut rand::thread_rng());
+            Ok(Some(Value::Array(arr)))
+        }
         // The lambda form, `MIN_BY(arr, x -> x.price)`, is evaluated by the
         // executor's higher-order function dispatch; this is the field-path
         // form, `MIN_BY(arr, "price")`.
@@ -811,6 +936,30 @@ pub(crate) fn keep_extreme<T>(
     };
     if better {
         *best = Some((key, item));
+    }
+}
+
+/// Most cells `TRANSPOSE` will build.
+const MAX_TRANSPOSE_CELLS: usize = 10_000_000;
+
+/// The object key for a `KEY_BY` / `COUNT_BY` key: its string form (`2.0`
+/// is `"2"`), or `None` for null, which is skipped.
+fn object_key(key: &Value) -> Option<String> {
+    (!key.is_null()).then(|| super::string::stringify(key))
+}
+
+/// One step of `KEY_BY`: the last item with a given key wins.
+pub(crate) fn key_by_insert(out: &mut serde_json::Map<String, Value>, key: &Value, item: Value) {
+    if let Some(k) = object_key(key) {
+        out.insert(k, item);
+    }
+}
+
+/// One step of `COUNT_BY`.
+pub(crate) fn count_by_insert(out: &mut serde_json::Map<String, Value>, key: &Value) {
+    if let Some(k) = object_key(key) {
+        let n = out.get(&k).and_then(Value::as_u64).unwrap_or(0);
+        out.insert(k, Value::from(n + 1));
     }
 }
 
@@ -1113,5 +1262,64 @@ mod tests {
             call("INTERLEAVE", &[json!([1, 1, 1]), json!([2, 2]), json!([3])]),
             json!([1, 2, 3, 1, 2, 1])
         );
+    }
+
+    #[test]
+    fn key_by_and_count_by_with_paths() {
+        let users = json!([
+            {"_key": "a", "team": "red"},
+            {"_key": "b", "team": "blue"},
+            {"_key": "c", "team": "red"},
+            {"_key": "d"}
+        ]);
+        let by_key = call("KEY_BY", &[users.clone(), json!("_key")]);
+        assert_eq!(by_key["c"]["team"], json!("red"));
+        assert_eq!(by_key.as_object().unwrap().len(), 4);
+        // Last one wins; a missing key is skipped.
+        let by_team = call("KEY_BY", &[users.clone(), json!("team")]);
+        assert_eq!(by_team["red"]["_key"], json!("c"));
+        assert_eq!(by_team.as_object().unwrap().len(), 2);
+        assert_eq!(
+            call("COUNT_BY", &[users, json!("team")]),
+            json!({"red": 2, "blue": 1})
+        );
+        assert_eq!(
+            call("COUNT_BY", &[json!(["x", "y", "x", null, 1, 1.0])]),
+            json!({"x": 2, "y": 1, "1": 2})
+        );
+        assert_eq!(call("KEY_BY", &[Value::Null, json!("a")]), Value::Null);
+        assert!(evaluate("KEY_BY", &[json!([1])]).is_err());
+    }
+
+    #[test]
+    fn mode_pairwise_transpose_shuffle() {
+        assert_eq!(call("MODE", &[json!([3, 1, 3, 2, 1, 3])]), json!(3));
+        assert_eq!(
+            call("MODE", &[json!(["a", "b", "b", "a"])]),
+            json!("a"),
+            "tie: first seen"
+        );
+        assert_eq!(call("MODE", &[json!([null, null, 2])]), json!(2));
+        assert_eq!(call("MODE", &[json!([])]), Value::Null);
+        assert_eq!(
+            call("PAIRWISE", &[json!([1, 2, 3])]),
+            json!([[1, 2], [2, 3]])
+        );
+        assert_eq!(call("PAIRWISE", &[json!([1])]), json!([]));
+        assert_eq!(
+            call("TRANSPOSE", &[json!([[1, 2, 3], [4, 5]])]),
+            json!([[1, 4], [2, 5], [3, null]])
+        );
+        assert_eq!(call("TRANSPOSE", &[json!([])]), json!([]));
+        assert!(evaluate("TRANSPOSE", &[json!([1, 2])]).is_err());
+        let shuffled = call("SHUFFLE", &[json!([1, 2, 3, 4, 5])]);
+        let mut sorted: Vec<i64> = shuffled
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        sorted.sort();
+        assert_eq!(sorted, vec![1, 2, 3, 4, 5]);
     }
 }

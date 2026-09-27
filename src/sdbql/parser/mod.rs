@@ -708,8 +708,29 @@ impl Parser {
             ));
         }
 
-        // Check if the source is an identifier (collection/variable) or an expression
-        if let Token::Identifier(name) = self.current_token() {
+        // A bare identifier is a collection or variable — unless the next
+        // token continues an expression: `FOR d IN DATE_SERIES(...)`,
+        // `FOR t IN doc.tags`, `FOR x IN rows[0]`, `FOR i IN n..10`,
+        // `FOR x IN list |> SORTED()`, `FOR x IN maybe ?? []`. Those used to
+        // stop after the identifier and fail on the next token.
+        let continues_expression = matches!(
+            self.peek_token(1),
+            Token::LeftParen
+                | Token::Dot
+                | Token::QuestionDot
+                | Token::LeftBracket
+                | Token::DotDot
+                | Token::PipeRight
+                | Token::NullCoalesce
+                | Token::DoublePipe
+                | Token::Plus
+                | Token::Minus
+                | Token::Star
+                | Token::Slash
+                | Token::Percent
+                | Token::Question
+        );
+        if let (Token::Identifier(name), false) = (self.current_token(), continues_expression) {
             let n = name.clone();
             self.advance();
 

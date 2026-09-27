@@ -1329,8 +1329,145 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         // dispatcher in builtins/mod.rs lists them.
         "SHA1" | "CRC32" | "FNV64" => super::crypto::evaluate(name, args),
         "NUMBER_FORMAT" => number_format(args).map(Some),
+        "UNACCENT" => {
+            if args.len() != 1 {
+                return Err(err_arity(name, "1"));
+            }
+            match &args[0] {
+                Value::Null => Ok(Some(Value::Null)),
+                Value::String(s) => Ok(Some(Value::String(unaccent(s)))),
+                _ => Err(DbError::ExecutionError(
+                    "UNACCENT: argument must be a string".to_string(),
+                )),
+            }
+        }
+        "SPLIT_PART" => split_part(args).map(Some),
+        "HUMAN_BYTES" => human_bytes(args).map(Some),
         _ => Ok(None),
     }
+}
+
+/// `UNACCENT(text)`: Latin letters folded to their unaccented form — `é` → `e`,
+/// `Ç` → `C`, `ß` → `ss`, `Œ` → `OE` — keeping case, and combining accents
+/// dropped. Other scripts are left alone (unlike `SLUGIFY`, which
+/// transliterates everything and lowercases).
+fn unaccent(s: &str) -> String {
+    if s.is_ascii() {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        let cp = c as u32;
+        let combining = matches!(
+            cp,
+            0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
+        );
+        if combining {
+            continue;
+        }
+        let latin = matches!(
+            cp,
+            0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F | 0x1E00..=0x1EFF
+                | 0x2C60..=0x2C7F | 0xA720..=0xA7FF
+        );
+        match latin.then(|| deunicode::deunicode_char(c)).flatten() {
+            Some(folded) if !folded.is_empty() => out.push_str(folded),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// `SPLIT_PART(text, separator, n)`: the n-th field (1-based; negative counts
+/// from the end), or `""` when there is no such field — Postgres's
+/// `split_part`.
+fn split_part(args: &[Value]) -> DbResult<Value> {
+    const NAME: &str = "SPLIT_PART";
+    if args.len() != 3 {
+        return Err(err_arity(NAME, "3: text, separator, n"));
+    }
+    if null_if_any_null(args) {
+        return Ok(Value::Null);
+    }
+    let text = text_of(&args[0]);
+    let sep = text_of(&args[1]);
+    let n = super::array::as_int(&args[2])
+        .filter(|&n| n != 0)
+        .ok_or_else(|| DbError::ExecutionError(format!("{NAME}: n must be a non-zero integer")))?;
+    if sep.is_empty() {
+        return Ok(Value::String(if n == 1 || n == -1 {
+            text.into_owned()
+        } else {
+            String::new()
+        }));
+    }
+    let part = if n > 0 {
+        text.split(sep.as_ref()).nth((n - 1) as usize)
+    } else {
+        text.rsplit(sep.as_ref()).nth((-n - 1) as usize)
+    };
+    Ok(Value::String(part.unwrap_or("").to_string()))
+}
+
+/// `HUMAN_BYTES(bytes, [binary], [decimals])`: `1536000` → `"1.5 MB"`;
+/// with `binary` true, powers of 1024 and IEC units (`"1.5 MiB"` for
+/// 1572864). One decimal by default, trailing zeros dropped.
+fn human_bytes(args: &[Value]) -> DbResult<Value> {
+    const NAME: &str = "HUMAN_BYTES";
+    if args.is_empty() || args.len() > 3 {
+        return Err(err_arity(NAME, "1-3: bytes, [binary], [decimals]"));
+    }
+    let n = match &args[0] {
+        Value::Null => return Ok(Value::Null),
+        v => v
+            .as_f64()
+            .filter(|f| f.is_finite())
+            .ok_or_else(|| DbError::ExecutionError(format!("{NAME}: bytes must be a number")))?,
+    };
+    let binary = match args.get(1) {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(_) => {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: binary must be a boolean"
+            )))
+        }
+    };
+    let decimals = match args.get(2) {
+        None | Some(Value::Null) => 1,
+        Some(v) => super::array::as_int(v)
+            .filter(|d| (0..=6).contains(d))
+            .ok_or_else(|| {
+                DbError::ExecutionError(format!("{NAME}: decimals must be an integer from 0 to 6"))
+            })? as usize,
+    };
+    let (base, units): (f64, [&str; 7]) = if binary {
+        (1024.0, ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"])
+    } else {
+        (1000.0, ["B", "kB", "MB", "GB", "TB", "PB", "EB"])
+    };
+    let mut v = n.abs();
+    let mut i = 0;
+    while v >= base && i < units.len() - 1 {
+        v /= base;
+        i += 1;
+    }
+    // Rounding can carry into the next unit: 999.96 kB is "1 MB", not "1000 kB".
+    let factor = 10f64.powi(decimals as i32);
+    if (v * factor).round() / factor >= base && i < units.len() - 1 {
+        v /= base;
+        i += 1;
+    }
+    let mut text = if i == 0 {
+        format!("{}", v.round())
+    } else {
+        format!("{:.*}", decimals, v)
+    };
+    if text.contains('.') {
+        text = text.trim_end_matches('0').trim_end_matches('.').to_string();
+    }
+    let sign = if n < 0.0 && text != "0" { "-" } else { "" };
+    Ok(Value::String(format!("{sign}{text} {}", units[i])))
 }
 
 /// Most decimals `NUMBER_FORMAT` will print; an f64 has no more to give.
@@ -2130,5 +2267,65 @@ mod tests {
     fn null_propagates() {
         assert_eq!(call("UPPER", &[Value::Null]), Value::Null);
         assert_eq!(call("CONTAINS", &[Value::Null, json!("a")]), Value::Null);
+    }
+
+    #[test]
+    fn unaccent_folds_latin_only() {
+        assert_eq!(
+            call("UNACCENT", &[json!("Élodie Hélène Çà")]),
+            json!("Elodie Helene Ca")
+        );
+        assert_eq!(
+            call("UNACCENT", &[json!("Straße Œuvre Øre ł")]),
+            json!("Strasse OEuvre Ore l")
+        );
+        assert_eq!(
+            call("UNACCENT", &[json!("Tiếng Việt")]),
+            json!("Tieng Viet")
+        );
+        // Already-decomposed input: the combining acute is dropped.
+        assert_eq!(
+            call("UNACCENT", &[json!("e\u{0301}te\u{0301}")]),
+            json!("ete")
+        );
+        assert_eq!(
+            call("UNACCENT", &[json!("Москва 東京 2×3")]),
+            json!("Москва 東京 2×3")
+        );
+        assert_eq!(call("UNACCENT", &[Value::Null]), Value::Null);
+        assert!(evaluate("UNACCENT", &[json!(1)]).is_err());
+    }
+
+    #[test]
+    fn split_part_fields() {
+        let sp = |t: &str, s: &str, n: i64| call("SPLIT_PART", &[json!(t), json!(s), json!(n)]);
+        assert_eq!(sp("a,b,c", ",", 2), json!("b"));
+        assert_eq!(sp("a,b,c", ",", -1), json!("c"));
+        assert_eq!(sp("a,b,c", ",", 4), json!(""));
+        assert_eq!(sp("a::b", "::", 2), json!("b"));
+        assert_eq!(sp("abc", "", 1), json!("abc"));
+        assert!(evaluate("SPLIT_PART", &[json!("a"), json!(","), json!(0)]).is_err());
+        assert_eq!(
+            call("SPLIT_PART", &[Value::Null, json!(","), json!(1)]),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn human_bytes_units() {
+        let hb = |args: &[Value]| call("HUMAN_BYTES", args);
+        assert_eq!(hb(&[json!(512)]), json!("512 B"));
+        assert_eq!(hb(&[json!(1536000)]), json!("1.5 MB"));
+        assert_eq!(hb(&[json!(1000)]), json!("1 kB"));
+        assert_eq!(hb(&[json!(999_960)]), json!("1 MB"));
+        assert_eq!(hb(&[json!(1572864), json!(true)]), json!("1.5 MiB"));
+        assert_eq!(
+            hb(&[json!(1234567), Value::Null, json!(2)]),
+            json!("1.23 MB")
+        );
+        assert_eq!(hb(&[json!(-2048), json!(true)]), json!("-2 KiB"));
+        assert_eq!(hb(&[json!(0)]), json!("0 B"));
+        assert_eq!(hb(&[Value::Null]), Value::Null);
+        assert!(evaluate("HUMAN_BYTES", &[json!("1")]).is_err());
     }
 }

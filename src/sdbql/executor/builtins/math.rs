@@ -23,9 +23,9 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         "CEIL" | "CEILING" => unary(name, args, f64::ceil),
         "TRUNC" | "TRUNCATE" => unary(name, args, f64::trunc),
         "ROUND" => {
-            if args.is_empty() || args.len() > 2 {
+            if args.is_empty() || args.len() > 3 {
                 return Err(DbError::ExecutionError(
-                    "ROUND requires 1-2 arguments".to_string(),
+                    "ROUND requires 1-3 arguments: number, [decimals], [mode]".to_string(),
                 ));
             }
             let x = get_number(&args[0], name)?;
@@ -36,7 +36,70 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
                 })?,
             }
             .clamp(-MAX_ROUND_DECIMALS, MAX_ROUND_DECIMALS);
-            Ok(Some(num(round_to(x, decimals))))
+            match args.get(2) {
+                None | Some(Value::Null) => Ok(Some(num(round_to(x, decimals)))),
+                Some(Value::String(m)) => {
+                    let mode = RoundMode::parse(m).ok_or_else(|| {
+                        DbError::ExecutionError(format!(
+                            "ROUND: unknown mode '{m}' (half_up, half_down, half_even, up, \
+                             down, ceil, floor)"
+                        ))
+                    })?;
+                    Ok(Some(num(round_decimal(x, decimals, mode))))
+                }
+                Some(_) => Err(DbError::ExecutionError(
+                    "ROUND: mode must be a string".to_string(),
+                )),
+            }
+        }
+        "CBRT" => unary(name, args, f64::cbrt),
+        "HYPOT" => {
+            if args.is_empty() {
+                return Err(DbError::ExecutionError(
+                    "HYPOT requires at least 1 argument".to_string(),
+                ));
+            }
+            let mut acc = 0f64;
+            for v in args {
+                acc = acc.hypot(get_number(v, name)?);
+            }
+            Ok(Some(num(acc)))
+        }
+        "GCD" | "LCM" => {
+            if args.len() < 2 {
+                return Err(DbError::ExecutionError(format!(
+                    "{name} requires at least 2 arguments"
+                )));
+            }
+            let mut acc: Option<u64> = None;
+            for v in args {
+                if v.is_null() {
+                    return Ok(Some(Value::Null));
+                }
+                let n = as_int(v)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(format!("{name}: arguments must be integers"))
+                    })?
+                    .unsigned_abs();
+                acc = Some(match acc {
+                    None => n,
+                    Some(a) if name == "GCD" => gcd(a, n),
+                    Some(a) => {
+                        if a == 0 || n == 0 {
+                            0
+                        } else {
+                            (a / gcd(a, n)).checked_mul(n).ok_or_else(|| {
+                                DbError::ExecutionError("LCM: result overflows".to_string())
+                            })?
+                        }
+                    }
+                });
+            }
+            let r = acc.unwrap_or(0);
+            Ok(Some(match i64::try_from(r) {
+                Ok(i) => Value::from(i),
+                Err(_) => Value::from(r),
+            }))
         }
         "ABS" => unary(name, args, f64::abs),
         "SIGN" => {
@@ -512,6 +575,120 @@ fn round_to(x: f64, decimals: i64) -> f64 {
     }
 }
 
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RoundMode {
+    HalfUp,
+    HalfDown,
+    HalfEven,
+    Up,
+    Down,
+    Ceil,
+    Floor,
+}
+
+impl RoundMode {
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s.to_ascii_lowercase().replace('-', "_").as_str() {
+            "half_up" => Self::HalfUp,
+            "half_down" => Self::HalfDown,
+            "half_even" | "bankers" => Self::HalfEven,
+            "up" => Self::Up,
+            "down" | "trunc" => Self::Down,
+            "ceil" | "ceiling" => Self::Ceil,
+            "floor" => Self::Floor,
+            _ => return None,
+        })
+    }
+}
+
+/// `ROUND(x, decimals, mode)`: rounds the number's shortest decimal form, the
+/// digits a person reads, so `ROUND(1.005, 2, "half_up")` is 1.01 where the
+/// modeless `ROUND(1.005, 2)` gives 1, from the binary value 1.00499….
+/// `Up` and `Down` are away from and towards zero.
+fn round_decimal(x: f64, decimals: i64, mode: RoundMode) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    // Display never uses an exponent and prints the round-trip digits.
+    let text = x.abs().to_string();
+    let negative = x.is_sign_negative() && x != 0.0;
+    let (int_part, frac_part) = text.split_once('.').unwrap_or((&text, ""));
+    let mut digits: Vec<u8> = int_part
+        .bytes()
+        .chain(frac_part.bytes())
+        .map(|b| b - b'0')
+        .collect();
+    let mut point = int_part.len() as i64;
+    // Number of leading digits kept; pad with zeros so it is at least 1.
+    let mut keep = point + decimals;
+    if keep < 1 {
+        let pad = (1 - keep) as usize;
+        digits.splice(0..0, std::iter::repeat_n(0, pad));
+        point += pad as i64;
+        keep = 1;
+    }
+    let keep = keep as usize;
+    if keep >= digits.len() {
+        return x;
+    }
+    let (kept, rest) = digits.split_at(keep);
+    let first = rest[0];
+    let tail_nonzero = rest[1..].iter().any(|&d| d != 0);
+    let any_nonzero = first != 0 || tail_nonzero;
+    let last_odd = kept.last().is_some_and(|d| d % 2 == 1);
+    let bump = match mode {
+        RoundMode::HalfUp => first >= 5,
+        RoundMode::HalfDown => first > 5 || (first == 5 && tail_nonzero),
+        RoundMode::HalfEven => first > 5 || (first == 5 && (tail_nonzero || last_odd)),
+        RoundMode::Up => any_nonzero,
+        RoundMode::Down => false,
+        RoundMode::Ceil => !negative && any_nonzero,
+        RoundMode::Floor => negative && any_nonzero,
+    };
+    let mut kept = kept.to_vec();
+    if bump {
+        let mut i = kept.len();
+        loop {
+            if i == 0 {
+                kept.insert(0, 1);
+                point += 1;
+                break;
+            }
+            i -= 1;
+            if kept[i] == 9 {
+                kept[i] = 0;
+            } else {
+                kept[i] += 1;
+                break;
+            }
+        }
+    }
+    // Rebuild: `kept` holds the digits down to 10^-decimals (or more when
+    // decimals < 0, where the dropped places are zeros).
+    let mut out = String::with_capacity(kept.len() + 32);
+    if negative {
+        out.push('-');
+    }
+    let point = point.max(0) as usize;
+    for (i, d) in kept.iter().enumerate() {
+        if i == point {
+            out.push('.');
+        }
+        out.push((b'0' + d) as char);
+    }
+    for _ in kept.len()..point {
+        out.push('0');
+    }
+    out.parse::<f64>().unwrap_or(x)
+}
+
 fn bit_binop(
     args: &[Value],
     name: &str,
@@ -558,6 +735,49 @@ fn check_args(name: &str, args: &[Value], expected: usize) -> DbResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_modes_work_on_decimal_digits() {
+        let r = |x: f64, d: i64, m: &str| call("ROUND", &[json!(x), json!(d), json!(m)]);
+        assert_eq!(r(2.675, 2, "half_up"), json!(2.68));
+        assert_eq!(r(1.005, 2, "half_up"), json!(1.01));
+        assert_eq!(call("ROUND", &[json!(1.005), json!(2)]), json!(1.0));
+        assert_eq!(r(0.125, 2, "half_even"), json!(0.12));
+        assert_eq!(r(0.135, 2, "half_even"), json!(0.14));
+        assert_eq!(r(2.5, 0, "half_even"), json!(2.0));
+        assert_eq!(r(3.5, 0, "half_even"), json!(4.0));
+        assert_eq!(r(-2.5, 0, "half_even"), json!(-2.0));
+        assert_eq!(r(2.5, 0, "half_down"), json!(2.0));
+        assert_eq!(r(2.51, 0, "half_down"), json!(3.0));
+        assert_eq!(r(-2.5, 0, "half_up"), json!(-3.0));
+        assert_eq!(r(1.001, 2, "up"), json!(1.01));
+        assert_eq!(r(-1.001, 2, "up"), json!(-1.01));
+        assert_eq!(r(1.999, 2, "down"), json!(1.99));
+        assert_eq!(r(-1.001, 2, "ceil"), json!(-1.0));
+        assert_eq!(r(-1.001, 2, "floor"), json!(-1.01));
+        assert_eq!(r(1250.0, -2, "half_even"), json!(1200.0));
+        assert_eq!(r(1350.0, -2, "half_even"), json!(1400.0));
+        assert_eq!(r(49.0, -2, "half_up"), json!(0.0));
+        assert_eq!(r(51.0, -2, "half_up"), json!(100.0));
+        assert_eq!(r(9.995, 2, "half_up"), json!(10.0));
+        assert_eq!(r(1.5, 5, "half_up"), json!(1.5));
+        assert!(evaluate("ROUND", &[json!(1.0), json!(0), json!("sideways")]).is_err());
+        // Without a mode, ROUND is unchanged.
+        assert_eq!(call("ROUND", &[json!(1.5)]), json!(2.0));
+    }
+
+    #[test]
+    fn gcd_lcm_hypot_cbrt() {
+        assert_eq!(call("GCD", &[json!(12), json!(18), json!(-30)]), json!(6));
+        assert_eq!(call("LCM", &[json!(4), json!(6)]), json!(12));
+        assert_eq!(call("LCM", &[json!(0), json!(6)]), json!(0));
+        assert_eq!(call("GCD", &[json!(12), Value::Null]), Value::Null);
+        assert!(evaluate("GCD", &[json!(1.5), json!(3)]).is_err());
+        assert!(evaluate("LCM", &[json!(i64::MAX), json!(i64::MAX - 1)]).is_err());
+        assert_eq!(call("HYPOT", &[json!(3), json!(4)]), json!(5.0));
+        assert_eq!(call("HYPOT", &[json!(1), json!(2), json!(2)]), json!(3.0));
+        assert_eq!(call("CBRT", &[json!(-27)]), json!(-3.0));
+    }
     use serde_json::json;
 
     fn call(name: &str, args: &[Value]) -> Value {

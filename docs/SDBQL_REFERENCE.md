@@ -307,6 +307,9 @@ Special operators for checking conditions across array elements. Desugars to `AN
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
+| `UNACCENT(s)` | Strip accents from Latin letters, keeping case | `UNACCENT("Hélène")` → `"Helene"` |
+| `SPLIT_PART(s, sep, n)` | n-th field, 1-based (negative from the end) | `SPLIT_PART("a-b-c", "-", 2)` → `"b"` |
+| `HUMAN_BYTES(n, binary?, dec?)` | Byte count for display | `HUMAN_BYTES(1536000)` → `"1.5 MB"` |
 | `CONCAT(str1, ...)` | Concatenates strings | `CONCAT("A", "B")` → `"AB"` |
 | `CONCAT_SEPARATOR(sep, arr)` | Joins array with separator | `CONCAT_SEPARATOR(",", ["A","B"])` → `"A,B"` |
 | `LOWER(str)` | Converts to lowercase | `LOWER("Hi")` → `"hi"` |
@@ -356,7 +359,10 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `ABS(n)` | Absolute value | `ABS(-5)` → `5` |
 | `CEIL(n)` | Rounds up | `CEIL(4.2)` → `5` |
 | `FLOOR(n)` | Rounds down | `FLOOR(4.8)` → `4` |
-| `ROUND(n, prec?)` | Rounds to precision | `ROUND(3.14159, 2)` → `3.14` |
+| `ROUND(n, prec?, mode?)` | Rounds to precision; `mode` (`half_up`, `half_down`, `half_even`, `up`, `down`, `ceil`, `floor`) rounds the decimal digits | `ROUND(0.125, 2, "half_even")` → `0.12` |
+| `GCD(a, b, …)` / `LCM(a, b, …)` | Greatest common divisor / least common multiple of integers | `GCD(12, 18)` → `6` |
+| `HYPOT(a, b, …)` | √(a² + b² + …) | `HYPOT(3, 4)` → `5` |
+| `CBRT(n)` | Cube root | `CBRT(-27)` → `-3` |
 | `NUMBER_FORMAT(n, dec?, locale?)` | Display text with grouping; `locale` is `en`/`fr`/`de`/… or `{decimal, thousands}` | `NUMBER_FORMAT(1234.5, 2, "de")` → `"1.234,50"` |
 | `RANDOM()` | Random decimal 0-1 | `RANDOM()` |
 | `RANDOM_INT(min, max)` | Random integer | `RANDOM_INT(1, 10)` |
@@ -406,6 +412,8 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `DATE_SUBTRACT(d, n, unit)` | Subtract time | `DATE_SUBTRACT(DATE_NOW(), 1, "day")` |
 | `DATE_DIFF(d1, d2, unit?)` | Units from `d1` to `d2` | `DATE_DIFF(start, end, "days")` |
 | `DATE_TRUNC(d, unit)` | Truncate (includes `week`) | `DATE_TRUNC(now, "day")` |
+| `DATE_END_OF(d, unit, tz?)` | Last millisecond of the year/quarter/month/week/day… holding `d` | `DATE_END_OF("2024-02-10", "month")` → `"2024-02-29T23:59:59.999Z"` |
+| `DATE_SERIES(start, end, unit, step?, tz?)` | Every date from `start` to `end` inclusive; `FOR d IN DATE_SERIES(...)` fills days with no rows | `DATE_SERIES(@from, @to, "day")` |
 | `DATE_FORMAT(d, fmt)` | Format date string | `DATE_FORMAT(now, "%Y-%m-%d")` |
 | `DATE_PARSE(s, fmt, tz?)` | Inverse of `DATE_FORMAT`; `fmt` may be an array tried in order | `DATE_PARSE("24/09/2026", "%d/%m/%Y")` |
 | `TIME_BUCKET(time, interval)` | Bucket for time series | `TIME_BUCKET(ts, "5m")` |
@@ -443,6 +451,12 @@ Special operators for checking conditions across array elements. Desugars to `AN
 | `GROUP_BY(arr, x -> key)` | Group into `{key, items}` | `GROUP_BY(docs, x -> x.city)` |
 | `SORT_BY(arr, x -> key)` | Sort by computed key | `SORT_BY(docs, x -> x.score)` |
 | `MIN_BY(arr, x -> key \| "path")` / `MAX_BY` | Whole element with the smallest / largest key; null keys skipped | `MIN_BY(offers, "price")` |
+| `KEY_BY(arr, x -> key \| "path")` | Object keyed for lookup; later items win, null keys skipped | `KEY_BY(users, "_key")[o.user_id]` |
+| `COUNT_BY(arr, x -> key \| "path"?)` | `{key: count}`; without a key, counts the values | `COUNT_BY(doc.tags)` |
+| `MODE(arr)` | Most frequent value; first seen wins a tie | `MODE([3, 1, 3])` → `3` |
+| `PAIRWISE(arr)` | Consecutive pairs | `PAIRWISE([1, 2, 3])` → `[[1,2],[2,3]]` |
+| `TRANSPOSE(rows)` | Swap rows and columns; short rows padded with null | `TRANSPOSE([[1,2],[3,4]])` → `[[1,3],[2,4]]` |
+| `SHUFFLE(arr)` | Random order | `SHUFFLE([1, 2, 3])` |
 | `WINDOW_BY(arr, part?, order)` | Partition + `row_number` | `WINDOW_BY(rows, x -> x.k, x -> x.ts)` |
 | `TAKE(arr, n)` | Take first n | `TAKE([1,2,3], 2)` → `[1,2]` |
 | `DROP(arr, n)` | Drop first n | `DROP([1,2,3], 1)` → `[2,3]` |
@@ -458,6 +472,12 @@ RETURN users[*].name -- Returns array of names
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
+| `DIFF(old, new)` | Changed fields by dotted path as `{old, new}` | `DIFF(OLD, NEW)` |
+| `MAP_VALUES(obj, (v, k) -> expr)` | Map each value | `MAP_VALUES({a: 1}, v -> v * 2)` |
+| `MAP_KEYS(obj, (k, v) -> expr)` | Rename each key (null drops it) | `MAP_KEYS(row, k -> LOWER(k))` |
+| `FILTER_KEYS(obj, (k, v) -> cond)` | Keep the entries where the lambda is true | `FILTER_KEYS(doc, k -> !STARTS_WITH(k, "_"))` |
+| `PARSE_URL(url)` | `{scheme, username, password, host, port, path, query, params, fragment}`, or null | `PARSE_URL(u).params.id` |
+| `QUERY_STRING(obj \| text)` | Encode an object as a query string, or parse one | `QUERY_STRING({q: "a b"})` → `"q=a+b"` |
 | `MERGE(o1, o2)` | Shallow merge | `MERGE({a:1}, {b:2})` |
 | `DEEP_MERGE(o1, o2)` | Recursive merge | |
 | `GET(obj, path, default)` | Get by path | `GET(doc, "a.b", 0)` |
@@ -607,6 +627,9 @@ Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each p
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
+| `IS_IBAN(v)` | Valid IBAN (country length + mod-97) | `IS_IBAN("DE89370400440532013000")` → `true` |
+| `LUHN(v)` | Digit string passes Luhn | `LUHN("79927398713")` → `true` |
+| `IS_SIREN(v)` / `IS_SIRET(v)` | Valid French SIREN (9 digits) / SIRET (14, La Poste rule) | `IS_SIREN("732 829 320")` → `true` |
 | `IS_NULL(v)`, `IS_STRING(v)`, `IS_NUMBER(v)`, `IS_BOOLEAN(v)`, `IS_ARRAY(v)`, `IS_OBJECT(v)` | Type checks | `IS_STRING("a")` → `true` |
 | `IS_EMPTY(v)` | Check empty/null | `IS_EMPTY([])` → `true` |
 | `IS_EMAIL(v)`, `IS_URL(v)`, `IS_UUID(v)` | Format checks | |

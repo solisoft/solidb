@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added
+
+* **SDBQL: 26 functions for reports, lookups, French/payments data and
+  everyday glue.**
+  - Dates: `DATE_SERIES(start, end, unit, step?, tz?)` gives every date in a
+    range, the rows a report needs for days without data;
+    `DATE_END_OF(date, unit, tz?)` is `DATE_TRUNC`'s other end (quarter
+    included).
+  - Arrays: `KEY_BY` (array → lookup object, so a join is one read instead of a
+    subquery per row), `COUNT_BY`, `MODE`, `PAIRWISE`, `TRANSPOSE`, `SHUFFLE`.
+    `KEY_BY`/`COUNT_BY` take a lambda or an attribute path.
+  - Objects: `DIFF(old, new)` (changed fields by dotted path — `DIFF(OLD, NEW)`
+    for audit logs), `MAP_VALUES`, `MAP_KEYS`, `FILTER_KEYS` (lambdas over
+    entries), `PARSE_URL`, `QUERY_STRING`.
+  - Text: `UNACCENT` (accent-insensitive search, keeps case and non-Latin
+    scripts), `SPLIT_PART`, `HUMAN_BYTES`.
+  - Validation: `IS_IBAN`, `LUHN`, `IS_SIREN`, `IS_SIRET`.
+  - Numbers: `ROUND(n, prec, mode)` with `half_even` (banker's), `half_up`,
+    `half_down`, `up`, `down`, `ceil`, `floor`, rounding the decimal digits
+    (`ROUND(1.005, 2, "half_up")` is 1.01, where the unchanged modeless
+    `ROUND(1.005, 2)` gives 1); `GCD`, `LCM`, `HYPOT`, `CBRT`.
+
+### Fixed
+
+* **`FOR x IN <expression>` parses when the expression starts with a name.**
+  After `IN`, an identifier was always taken as a collection or variable, so
+  `FOR t IN doc.tags`, `FOR d IN DATE_SERIES(...)`, `FOR x IN rows[0]`,
+  `FOR i IN n..10`, `FOR x IN list |> SORTED()` and `FOR x IN m ?? []` all
+  failed with *Unexpected token*. A bare name is still a collection or
+  variable. Test: `for_accepts_expression_sources_that_start_with_an_identifier`.
+
 ## [1.2.3](https://github.com/solisoft/solidb/compare/v1.2.2...v1.2.3) (2026-09-26)
 
 ### Fixed

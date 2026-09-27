@@ -303,6 +303,27 @@ RETURN REPLACE_NTH(["a"], 3, "z", "-") --["a", "-", "-", "z"]</code></pre>
                   <p class="text-sm text-gray-400 mb-3">Takes one element from each array in turn until all are exhausted.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN INTERLEAVE([1, 1, 1], [2, 2], [3]) --[1, 2, 3, 1, 2, 1]</code></pre>
                 </div>
+                <div id="fn-MODE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MODE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">The most frequent value (nulls ignored). On a tie, the value seen first wins; an empty array gives <code>null</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MODE([3, 1, 3, 2]) --3</code></pre>
+                </div>
+                <div id="fn-PAIRWISE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">PAIRWISE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">Each element with the next one: <code>[[a, b], [b, c], …]</code>. Handy for gaps and deltas between consecutive values.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FOR p IN PAIRWISE(SORTED(dates))
+  RETURN DATE_DIFF(p[0], p[1], "day")</code></pre>
+                </div>
+                <div id="fn-TRANSPOSE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">TRANSPOSE(rows)</code>
+                  <p class="text-sm text-gray-400 mb-3">Swaps rows and columns of an array of arrays. Shorter rows are padded with <code>null</code>.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN TRANSPOSE([[1, 2, 3], [4, 5]]) --[[1,4],[2,5],[3,null]]</code></pre>
+                </div>
+                <div id="fn-SHUFFLE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SHUFFLE(arr)</code>
+                  <p class="text-sm text-gray-400 mb-3">The elements in random order. Use <code>SAMPLE</code> to pick a few rows from a collection.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN FIRST(SHUFFLE(@candidates))</code></pre>
+                </div>
               </div>
             </div>
 
@@ -375,6 +396,20 @@ RETURN CONTAINS_ARRAY([1, 2], 1) --true</code></pre>
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">SORT_BY(arr, x -&gt; key)</code>
                   <p class="text-sm text-gray-400 mb-3">Sort an array by a computed key.</p>
                   <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN SORT_BY(docs, x -&gt; x.score)</code></pre>
+                </div>
+                <div id="fn-KEY_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">KEY_BY(arr, x -&gt; key | "path")</code>
+                  <p class="text-sm text-gray-400 mb-3">Turns an array into an object keyed for lookup, so a join becomes one read and then <code>map[id]</code> per row instead of a subquery per row. Keys are converted to strings (<code>2</code> &rarr; <code>"2"</code>); a null key is skipped; when two items share a key, the later one wins.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">LET users = KEY_BY((FOR u IN users RETURN u), "_key")
+FOR o IN orders
+  RETURN {total: o.total, customer: users[o.user_id].name}</code></pre>
+                </div>
+                <div id="fn-COUNT_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
+                  <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">COUNT_BY(arr, x -&gt; key | "path"?)</code>
+                  <p class="text-sm text-gray-400 mb-3">Counts the items per key: <code>{key: count}</code>. Without a key, counts the values themselves. Null keys are skipped. For grouping the rows of a query, <code>COLLECT … WITH COUNT INTO</code> is still the tool; this is for an array you already have.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN COUNT_BY(doc.tags)            --{"sale": 2, "new": 1}
+RETURN COUNT_BY(orders, "status")    --{"paid": 12, "open": 3}
+RETURN COUNT_BY(words, w -&gt; LEFT(w, 1))</code></pre>
                 </div>
                 <div id="fn-MIN_BY" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5">
                   <code class="block text-sm font-bold text-white bg-orange-500/20 px-2 py-1 rounded border border-orange-500/30 w-fit mb-3">MIN_BY(arr, x -&gt; key | "path")</code>

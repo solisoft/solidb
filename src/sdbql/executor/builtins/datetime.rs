@@ -433,6 +433,8 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "DATE_PARSE" => date_parse(args),
         "DATE_TRUNC" => date_trunc(name, args),
+        "DATE_END_OF" => date_end_of(args),
+        "DATE_SERIES" => date_series(args),
         "DATE_ROUND" => date_round(args),
         "DATE_ADD" => date_add_args("DATE_ADD", args, 1),
         "DATE_SUBTRACT" | "DATE_SUB" => date_add_args("DATE_SUBTRACT", args, -1),
@@ -626,6 +628,101 @@ fn truncate_to(dt: DateTime<Utc>, unit: Unit, tz: Tz) -> DbResult<DateTime<Utc>>
         }
     };
     Ok(resolve_local(tz, naive, Some(local.offset().fix()))?.with_timezone(&Utc))
+}
+
+/// A unit for `DATE_END_OF` / `DATE_SERIES`: the calendar units plus
+/// `quarter` (three months, starting in January, April, July, October).
+fn span_unit(fname: &str, v: &Value) -> DbResult<(Unit, i64)> {
+    if let Some(s) = v.as_str() {
+        if matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "q" | "quarter" | "quarters"
+        ) {
+            return Ok((Unit::Month, 3));
+        }
+    }
+    Ok((unit_arg(fname, v)?, 1))
+}
+
+/// `DATE_END_OF(date, unit, [timezone])`: the last millisecond of the
+/// year, quarter, month, week (Monday-based), day, hour, minute or second
+/// holding `date` — `DATE_TRUNC`'s other end.
+fn date_end_of(args: &[Value]) -> DbResult<Option<Value>> {
+    const NAME: &str = "DATE_END_OF";
+    if args.len() < 2 || args.len() > 3 {
+        return Err(arity(NAME, "2-3: date, unit, [timezone]"));
+    }
+    if args[0].is_null() {
+        return Ok(Some(Value::Null));
+    }
+    let dt = parse_datetime(&args[0])?;
+    let (unit, months) = span_unit(NAME, &args[1])?;
+    let tz = opt_tz(NAME, args, 2)?;
+    if unit == Unit::Millisecond {
+        return Ok(Some(rfc3339_ms(truncate_to(dt, unit, tz)?)));
+    }
+    let start = if months == 3 {
+        let month_start = truncate_to(dt, Unit::Month, tz)?;
+        let back = i64::from((month_start.with_timezone(&tz).month() - 1) % 3);
+        add_calendar(month_start, -back, Unit::Month, tz)?
+    } else {
+        truncate_to(dt, unit, tz)?
+    };
+    let next = add_calendar(start, months, unit, tz)?;
+    let end = next
+        .checked_sub_signed(Duration::milliseconds(1))
+        .ok_or_else(out_of_range)?;
+    Ok(Some(rfc3339_ms(end)))
+}
+
+/// Most dates `DATE_SERIES` returns: enough for 270 years of days.
+const MAX_SERIES_LEN: usize = 100_000;
+
+/// `DATE_SERIES(start, end, unit, [step], [timezone])`: every date from
+/// `start` to `end` inclusive, `step` units apart — the rows a report needs
+/// for the days that have no data. Each date is `start` plus k·step units,
+/// computed from `start` rather than from the previous date, so monthly
+/// series from the 31st give the last day of shorter months and return to
+/// the 31st. Empty when `start` is after `end`.
+fn date_series(args: &[Value]) -> DbResult<Option<Value>> {
+    const NAME: &str = "DATE_SERIES";
+    if args.len() < 3 || args.len() > 5 {
+        return Err(arity(NAME, "3-5: start, end, unit, [step], [timezone]"));
+    }
+    if args[0].is_null() || args[1].is_null() {
+        return Ok(Some(Value::Null));
+    }
+    let start = parse_datetime(&args[0])?;
+    let end = parse_datetime(&args[1])?;
+    let (unit, months) = span_unit(NAME, &args[2])?;
+    let step = match args.get(3) {
+        None | Some(Value::Null) => 1,
+        Some(v) => int_component(NAME, "step", Some(v), 1)?,
+    };
+    if step < 1 {
+        return Err(DbError::ExecutionError(format!(
+            "{NAME}: step must be a positive integer"
+        )));
+    }
+    let step = step.checked_mul(months).ok_or_else(out_of_range)?;
+    let tz = opt_tz(NAME, args, 4)?;
+    let mut out = Vec::new();
+    let mut k: i64 = 0;
+    loop {
+        let offset = k.checked_mul(step).ok_or_else(out_of_range)?;
+        let t = add_calendar(start, offset, unit, tz)?;
+        if t > end {
+            break;
+        }
+        if out.len() == MAX_SERIES_LEN {
+            return Err(DbError::ExecutionError(format!(
+                "{NAME}: more than {MAX_SERIES_LEN} dates; use a larger unit or step"
+            )));
+        }
+        out.push(rfc3339_ms(t));
+        k += 1;
+    }
+    Ok(Some(Value::Array(out)))
 }
 
 fn date_trunc(fname: &str, args: &[Value]) -> DbResult<Option<Value>> {
@@ -1714,6 +1811,125 @@ mod tests {
         assert_eq!(
             call("DATE_ADD", &[Value::Null, json!(1), json!("day")]),
             Value::Null
+        );
+    }
+
+    #[test]
+    fn date_end_of_units() {
+        let e = |d: &str, u: &str| call("DATE_END_OF", &[json!(d), json!(u)]);
+        assert_eq!(
+            e("2024-02-10T12:00:00Z", "month"),
+            json!("2024-02-29T23:59:59.999Z")
+        );
+        assert_eq!(
+            e("2024-05-10T12:00:00Z", "quarter"),
+            json!("2024-06-30T23:59:59.999Z")
+        );
+        assert_eq!(
+            e("2024-11-10T12:00:00Z", "q"),
+            json!("2024-12-31T23:59:59.999Z")
+        );
+        assert_eq!(
+            e("2024-05-10T12:00:00Z", "year"),
+            json!("2024-12-31T23:59:59.999Z")
+        );
+        // 2024-05-10 is a Friday; weeks start on Monday.
+        assert_eq!(
+            e("2024-05-10T12:00:00Z", "week"),
+            json!("2024-05-12T23:59:59.999Z")
+        );
+        assert_eq!(
+            e("2024-05-10T12:34:56Z", "hour"),
+            json!("2024-05-10T12:59:59.999Z")
+        );
+        // In Paris, the day ends at 21:59:59.999 UTC in summer.
+        assert_eq!(
+            call(
+                "DATE_END_OF",
+                &[
+                    json!("2024-07-01T12:00:00Z"),
+                    json!("day"),
+                    json!("Europe/Paris")
+                ]
+            ),
+            json!("2024-07-01T21:59:59.999Z")
+        );
+        assert_eq!(
+            call("DATE_END_OF", &[Value::Null, json!("day")]),
+            Value::Null
+        );
+        assert!(evaluate("DATE_END_OF", &[json!("2024-01-01"), json!("fortnight")]).is_err());
+    }
+
+    #[test]
+    fn date_series_steps_from_start() {
+        let s = |args: &[Value]| call("DATE_SERIES", args);
+        assert_eq!(
+            s(&[json!("2024-01-30"), json!("2024-02-02"), json!("day")]),
+            json!([
+                "2024-01-30T00:00:00.000Z",
+                "2024-01-31T00:00:00.000Z",
+                "2024-02-01T00:00:00.000Z",
+                "2024-02-02T00:00:00.000Z"
+            ])
+        );
+        // From the 31st: shorter months clamp, and the series comes back.
+        assert_eq!(
+            s(&[json!("2024-01-31"), json!("2024-03-31"), json!("month")]),
+            json!([
+                "2024-01-31T00:00:00.000Z",
+                "2024-02-29T00:00:00.000Z",
+                "2024-03-31T00:00:00.000Z"
+            ])
+        );
+        assert_eq!(
+            s(&[json!("2024-01-01"), json!("2024-12-31"), json!("quarter")])
+                .as_array()
+                .unwrap()
+                .len(),
+            4
+        );
+        assert_eq!(
+            s(&[
+                json!("2024-01-01"),
+                json!("2024-01-31"),
+                json!("week"),
+                json!(2)
+            ])
+            .as_array()
+            .unwrap()
+            .len(),
+            3
+        );
+        assert_eq!(
+            s(&[json!("2024-02-01"), json!("2024-01-01"), json!("day")]),
+            json!([])
+        );
+        assert!(evaluate(
+            "DATE_SERIES",
+            &[
+                json!("2024-01-01"),
+                json!("2024-01-02"),
+                json!("day"),
+                json!(0)
+            ]
+        )
+        .is_err());
+        assert!(evaluate(
+            "DATE_SERIES",
+            &[json!("1000-01-01"), json!("3000-01-01"), json!("hour")]
+        )
+        .is_err());
+        // Local midnights across the October DST change in Paris.
+        assert_eq!(
+            s(&[
+                json!("2024-10-26T22:00:00Z"),
+                json!("2024-10-28T00:00:00Z"),
+                json!("day"),
+                Value::Null,
+                json!("Europe/Paris")
+            ]),
+            json!(["2024-10-26T22:00:00.000Z", "2024-10-27T23:00:00.000Z"])
         );
     }
 }
