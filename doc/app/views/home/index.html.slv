@@ -22,6 +22,7 @@
       <a href="#query">Query language</a>
       <a href="#clients">Clients</a>
       <a href="/docs">Docs</a>
+      <a href="/blog">Blog</a>
     </nav>
 
     <div class="nav-right">
@@ -423,6 +424,7 @@
         <div class="foot-col">
           <h5>Product</h5>
           <a href="/docs">Documentation</a>
+          <a href="/blog">Blog</a>
           <a href="#query">SDBQL</a>
           <a href="#clients">Clients</a>
           <a href="#start">Quick start</a>

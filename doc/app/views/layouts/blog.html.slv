@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+<% share_image = site_url(public_path("images/og-cover.png")) %>
+<% page_url = site_url(current_path() ?? "/blog") %>
+    <meta name="description" content="<%= description %>">
+    <meta name="theme-color" content="#090c0b">
+    <link rel="canonical" href="<%= page_url %>">
+    <link rel="alternate" type="application/atom+xml" title="SoliDB Blog" href="/blog/feed.xml">
+
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="SoliDB">
+    <meta property="og:url" content="<%= page_url %>">
+    <meta property="og:title" content="<%= title %>">
+    <meta property="og:description" content="<%= description %>">
+    <meta property="og:image" content="<%= share_image %>">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<%= title %>">
+    <meta name="twitter:description" content="<%= description %>">
+    <meta name="twitter:image" content="<%= share_image %>">
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23f5a623'/><text x='16' y='23' font-family='Space Grotesk,Inter,sans-serif' font-size='20' font-weight='700' fill='%231a1205' text-anchor='middle'>S</text></svg>">
+
+    <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="soli-body">
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="SoliDB home">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse>
+          <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"></path>
+          <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"></path>
+        </svg>
+      </span>
+      SoliDB
+    </a>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/">Home</a>
+      <a href="/docs">Docs</a>
+      <a href="/blog" aria-current="page">Blog</a>
+    </nav>
+
+    <div class="nav-right">
+      <a class="btn btn-ghost btn-sm" href="/blog/feed.xml">Feed</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <%= yield %>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-bottom">
+      <span>© SoliSoft · O'Saasy License</span>
+      <span><a href="/docs">Documentation</a> · <a href="/blog/feed.xml">Atom feed</a> · <a href="https://github.com/solisoft/solidb/releases">Releases</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

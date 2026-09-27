@@ -32,3 +32,4 @@ Thumbs.db
 # Coverage
 coverage/
 .coverage
+.env.test

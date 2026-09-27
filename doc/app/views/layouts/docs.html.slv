@@ -68,8 +68,9 @@
       </button>
 
       <div class="docs-nav-right">
-        <span class="ver-pill">v0.31.0</span>
+        <span class="ver-pill">v1.3.0</span>
         <a class="docs-nav-link" href="/">Home</a>
+        <a class="docs-nav-link" href="/blog">Blog</a>
         <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">
           <i class="fab fa-github"></i> GitHub
         </a>

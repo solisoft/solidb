@@ -11,4 +11,9 @@ get("/health", "home#health")
 get("/docs", "docs#index")
 get("/docs/:page", "docs#show")
 
+get("/blog", "blog#index")
+# Before /blog/:slug, which would otherwise take "feed.xml" as a slug.
+get("/blog/feed.xml", "blog#feed")
+get("/blog/:slug", "blog#show")
+
 print("Routes loaded!")
