@@ -1,0 +1,170 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 0.33.0 · SDBQL</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">Until 0.33.0, a columnar collection answered exactly one kind of SDBQL query: <code>FOR x IN c COLLECT AGGREGATE … RETURN …</code>. Add a <code>FILTER</code> and the same collection reported <em>CollectionNotFound</em>. And even that one shape could return the wrong numbers. 0.33.0 fixes both: <code>FOR</code> reads columnar collections like any other source, and four aggregate bugs that produced wrong results, not errors, are gone.</p>
+  <p class="post-note">Every result on this page was produced by running the query on a throwaway SoliDB server.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#what">What a columnar collection is</a></li>
+    <li><a href="#setup">Creating one</a></li>
+    <li><a href="#first-class">One query shape, then all of them</a></li>
+    <li><a href="#aggregates">How aggregates run</a></li>
+    <li><a href="#fixes">Four aggregates that were quietly wrong</a></li>
+    <li><a href="#which-path">SDBQL or the REST endpoint</a></li>
+  </ol>
+</nav>
+
+<section id="what"><h2>What a columnar collection is</h2>
+<p>A document collection stores each document whole, under a <code>doc:</code> key. To average one field over a million documents, the server reads a million documents.</p>
+<p>A columnar collection has a fixed schema — <code>INT64</code>, <code>FLOAT64</code>, <code>STRING</code>, <code>BOOL</code>, <code>TIMESTAMP</code>, <code>JSON</code> — declared at creation, and lives in its own column family. Each value is stored under a key made of the column name and a time-ordered row id, <code>col:{column}:{row_id}</code>. RocksDB keeps keys sorted, so all the values of one column sit next to each other, and an aggregate over <code>cpu</code> reads the <code>cpu</code> range and nothing else. Each row is also written once more, whole, under <code>col_row:{row_id}</code>; that copy is what lists the rows.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 330" role="img" aria-labelledby="colpost-t1">
+<title id="colpost-t1">The same row stored in a document collection and in a columnar collection</title>
+<defs><marker id="colpost-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#f5a623"/></marker></defs>
+<rect x="10" y="10" width="250" height="310" rx="8" fill="#101716" stroke="#29322f"/>
+<text x="26" y="36" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Document collection</text>
+<text x="26" y="56" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c">one key per document</text>
+<rect x="26" y="72" width="218" height="52" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="36" y="93" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">doc:r1</text>
+<text x="36" y="112" font-family="JetBrains Mono, monospace" font-size="11" fill="#ece6d6">{ts, host, cpu, requests}</text>
+<rect x="26" y="132" width="218" height="52" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="36" y="153" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">doc:r2</text>
+<text x="36" y="172" font-family="JetBrains Mono, monospace" font-size="11" fill="#ece6d6">{ts, host, cpu, requests}</text>
+<text x="36" y="206" font-family="JetBrains Mono, monospace" font-size="12" fill="#6b746c">…</text>
+<text x="26" y="250" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">AVG(cpu) reads every</text>
+<text x="26" y="268" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">document in full.</text>
+<rect x="280" y="10" width="390" height="310" rx="8" fill="#101716" stroke="#29322f"/>
+<text x="296" y="36" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Columnar collection (sorted keys)</text>
+<text x="296" y="56" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c">one key per value, grouped by column</text>
+<rect x="296" y="70" width="220" height="44" rx="4" fill="#141d1b" stroke="#f5a623"/>
+<text x="306" y="88" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">col:cpu:r1  41.5</text>
+<text x="306" y="106" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">col:cpu:r2  58.0 …</text>
+<rect x="296" y="122" width="220" height="26" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="306" y="140" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">col:host:r1  "web-1" …</text>
+<rect x="296" y="156" width="220" height="26" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="306" y="174" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">col:requests:r1  1200 …</text>
+<rect x="296" y="190" width="220" height="26" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="306" y="208" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">col:ts:r1  "2026-…" …</text>
+<rect x="296" y="224" width="220" height="26" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="306" y="242" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">col_meta:metrics</text>
+<rect x="296" y="258" width="220" height="26" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="306" y="276" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">col_row:r1  {whole row} …</text>
+<line x1="600" y1="92" x2="524" y2="92" stroke="#f5a623" stroke-width="1.5" marker-end="url(#colpost-arrow)"/>
+<text x="560" y="80" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623" text-anchor="middle">AVG(m.cpu)</text>
+<text x="560" y="116" font-family="Inter, sans-serif" font-size="11" fill="#9ba39c" text-anchor="middle">prefix scan</text>
+<text x="560" y="131" font-family="Inter, sans-serif" font-size="11" fill="#9ba39c" text-anchor="middle">of col:cpu:</text>
+<text x="296" y="308" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">Each value is LZ4-compressed on its own.</text>
+</svg><figcaption>An ungrouped aggregate walks one key range; the other columns and the whole-row copies are never read.</figcaption></figure>
+<p>That is the case it is built for: many rows, few columns per question — metrics, events, trades, anything you sum and average by host or by hour. For fetching whole records by key, a document collection is still the right tool.</p>
+<p>One thing the layout implies: compression is per value, not per block. On the six rows used below, the collection's stats report 644 bytes of column values stored as 1279 bytes — a small number or a short string does not shrink, and the size prefix is added to each.</p>
+</section>
+
+<section id="setup"><h2>Creating one</h2>
+<p>Columnar collections are created through their own endpoint, with the schema up front, and loaded in batches:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># create the collection</span>
+curl -u admin:admin -X POST localhost:6745/_api/database/blog/columnar \
+  -H 'content-type: application/json' -d '{
+  "name": "metrics", "compression": "lz4",
+  "columns": [
+    {"name": "ts",       "type": "TIMESTAMP"},
+    {"name": "host",     "type": "STRING"},
+    {"name": "cpu",      "type": "FLOAT64"},
+    {"name": "requests", "type": "INT64"}
+  ]}'
+<span class="tok-com"># {"status":"created","name":"metrics","columns":4}</span>
+
+<span class="tok-com"># insert rows in one batch</span>
+curl -u admin:admin -X POST localhost:6745/_api/database/blog/columnar/metrics/insert \
+  -H 'content-type: application/json' -d '{"rows": [
+  {"ts": "2026-07-27T10:00:00Z", "host": "web-1", "cpu": 41.5, "requests": 1200},
+  {"ts": "2026-07-27T10:20:00Z", "host": "web-1", "cpu": 58.0, "requests": 1530},
+  {"ts": "2026-07-27T11:05:00Z", "host": "web-1", "cpu": 72.5, "requests": 2010},
+  {"ts": "2026-07-27T10:10:00Z", "host": "web-2", "cpu": 22.0, "requests": 640},
+  {"ts": "2026-07-27T10:40:00Z", "host": "web-2", "cpu": 35.5, "requests": 820},
+  {"ts": "2026-07-27T11:30:00Z", "host": "web-2", "cpu": 90.0, "requests": 2400}
+]}'
+<span class="tok-com"># {"status":"ok","inserted":6,"ids":[…]}</span></pre></div>
+<p>The ids returned are UUID v7, so they sort by insertion time.</p>
+</section>
+
+<section id="first-class"><h2>One query shape, then all of them</h2>
+<p>Before 0.33.0, SDBQL reached a columnar collection through a single hard-coded pattern: a <code>FOR</code>, a <code>COLLECT</code> with <code>AGGREGATE</code>, a <code>RETURN</code>, and nothing else. The generic scanner walks the <code>doc:</code> prefix, and columnar rows are not there, so any other query — a <code>FILTER</code>, a <code>SORT</code>, a join, even <code>FOR x IN c RETURN x</code> — failed with <em>CollectionNotFound</em> on a collection that plainly existed.</p>
+<p>From 0.33.0, <code>FOR</code> checks whether its source is a columnar collection and, if so, reads the rows from the columns. Everything downstream is the ordinary executor, so every clause works:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> hot-samples.sdbql</div><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics
+  <span class="tok-kw">FILTER</span> m.cpu <span class="tok-punc">&gt;</span> <span class="tok-num">50</span>
+  <span class="tok-kw">SORT</span> m.cpu <span class="tok-kw">DESC</span>
+  <span class="tok-kw">LIMIT</span> <span class="tok-num">2</span>
+  <span class="tok-kw">RETURN</span> {host: m.host, ts: m.ts, cpu: m.cpu}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[
+  {"cpu": 90.0, "host": "web-2", "ts": "2026-07-27T11:30:00Z"},
+  {"cpu": 72.5, "host": "web-1", "ts": "2026-07-27T11:05:00Z"}
+]</pre></div></div>
+<p>Columnar rows can be joined with documents. Here <code>hosts</code> is an ordinary document collection holding each host's region:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> join.sdbql</div><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics
+  <span class="tok-kw">FILTER</span> m.cpu <span class="tok-punc">&gt;</span> <span class="tok-num">50</span>
+  <span class="tok-kw">FOR</span> h <span class="tok-kw">IN</span> hosts
+    <span class="tok-kw">FILTER</span> h._key <span class="tok-punc">==</span> m.host
+    <span class="tok-kw">RETURN</span> {region: h.region, cpu: m.cpu}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[
+  {"cpu": 58.0, "region": "eu-west"},
+  {"cpu": 72.5, "region": "eu-west"},
+  {"cpu": 90.0, "region": "us-east"}
+]</pre></div></div>
+<p>And they work inside subqueries, the other way round:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> subquery.sdbql</div><pre><span class="tok-kw">FOR</span> h <span class="tok-kw">IN</span> hosts
+  <span class="tok-kw">RETURN</span> {host: h._key, busiest: <span class="tok-fn">MAX</span>(<span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics <span class="tok-kw">FILTER</span> m.host <span class="tok-punc">==</span> h._key <span class="tok-kw">RETURN</span> m.cpu)}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[{"busiest": 72.5, "host": "web-1"}, {"busiest": 90.0, "host": "web-2"}]</pre></div></div>
+<p>A filter before a <code>COLLECT</code> is now just another query, too:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> filtered-aggregate.sdbql</div><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics
+  <span class="tok-kw">FILTER</span> m.ts <span class="tok-punc">&gt;=</span> <span class="tok-str">"2026-07-27T11:00:00Z"</span>
+  <span class="tok-kw">COLLECT</span> h = m.host <span class="tok-kw">AGGREGATE</span> req = <span class="tok-fn">SUM</span>(m.requests)
+  <span class="tok-kw">RETURN</span> {host: h, req}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[{"host": "web-1", "req": 2010.0}, {"host": "web-2", "req": 2400.0}]</pre></div></div>
+<p>The catch, stated in the changelog: there is no filter or projection pushdown yet. The <code>FOR</code> source reads every column of every row and hands the rows to the executor, which then filters. A <code>LIMIT</code> shortens the list after it has been read, not before. On a large collection, a selective <code>FILTER</code> in SDBQL reads the whole collection.</p>
+</section>
+
+<section id="aggregates"><h2>How aggregates run</h2>
+<p>The original shape still has its own path, and it is the one that uses the layout. When a query is exactly <code>FOR</code> over a columnar collection, then <code>COLLECT … AGGREGATE</code>, then <code>RETURN</code>, and every group expression is a plain column or <code>TIME_BUCKET(column, "interval")</code>, the executor hands each aggregate to the storage layer. <code>SUM</code>, <code>AVG</code>, <code>COUNT</code>, <code>MIN</code>, <code>MAX</code> and <code>COUNT_DISTINCT</code> are recognised; any other function sends the query down the generic path.</p>
+<ul>
+<li><strong>Without grouping</strong>, each aggregate is one prefix scan of <code>col:{column}:</code>, folded as it goes — nothing is collected into memory except, for <code>COUNT_DISTINCT</code>, the set of distinct values.</li>
+<li><strong>With grouping</strong>, storage lists the rows, reads each row's group columns by point lookup, then reads the aggregated column for each group. Each aggregate is a separate pass, and the executor merges the passes on the group key.</li>
+</ul>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> summary.sdbql</div><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics
+  <span class="tok-kw">COLLECT</span> <span class="tok-kw">AGGREGATE</span> avg_cpu = <span class="tok-fn">AVG</span>(m.cpu), peak = <span class="tok-fn">MAX</span>(m.cpu), n = <span class="tok-fn">COUNT</span>(m.host)
+  <span class="tok-kw">RETURN</span> {avg_cpu, peak, n}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[{"avg_cpu": 53.25, "n": 6, "peak": 90.0}]</pre></div></div>
+<p>Three scans — <code>col:cpu:</code> twice and <code>col:host:</code> once. <code>ts</code> and <code>requests</code> are never touched.</p>
+</section>
+
+<section id="fixes"><h2>Four aggregates that were quietly wrong</h2>
+<p>The aggregate path existed before 0.33.0, but four bugs made it return wrong results rather than errors — the kind that reach a dashboard before anyone notices.</p>
+<div class="post-table"><table><thead><tr><th>Bug</th><th>What you got</th></tr></thead><tbody>
+<tr><td>The <code>RETURN</code> clause was ignored</td><td><code>RETURN {sum: total}</code> came back as <code>{"total": …}</code>; a scalar <code>RETURN total</code> came back as an object.</td></tr>
+<tr><td>Grouped queries kept only the first aggregate</td><td><code>AGGREGATE lo = MIN(…), hi = MAX(…)</code> lost <code>hi</code>.</td></tr>
+<tr><td>Wrong names on grouped rows</td><td>Group and aggregate columns came back under internal storage names instead of the <code>COLLECT</code> variables.</td></tr>
+<tr><td>String group keys double-encoded</td><td><code>a</code> came back as <code>"\"a\""</code>.</td></tr>
+</tbody></table></div>
+<p>The same queries on 0.33.0:</p>
+<div class="post-table"><table><thead><tr><th>Query</th><th>Result</th></tr></thead><tbody><tr><td><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics <span class="tok-kw">COLLECT</span> <span class="tok-kw">AGGREGATE</span> total = <span class="tok-fn">SUM</span>(m.cpu) <span class="tok-kw">RETURN</span> {sum: total}</pre></td><td><pre>[{"sum": 319.5}]</pre></td></tr><tr><td><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics <span class="tok-kw">COLLECT</span> <span class="tok-kw">AGGREGATE</span> total = <span class="tok-fn">SUM</span>(m.cpu) <span class="tok-kw">RETURN</span> total</pre></td><td><pre>[319.5]</pre></td></tr><tr><td><pre><span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics <span class="tok-kw">COLLECT</span> h = m.host <span class="tok-kw">AGGREGATE</span> lo = <span class="tok-fn">MIN</span>(m.cpu), hi = <span class="tok-fn">MAX</span>(m.cpu) <span class="tok-kw">RETURN</span> {host: h, lo, hi}</pre></td><td><pre>[{"hi": 72.5, "host": "web-1", "lo": 41.5},
+ {"hi": 90.0, "host": "web-2", "lo": 22.0}]</pre></td></tr></tbody></table></div>
+<p>The last query exercises three of the four fixes at once: both aggregates are there, <code>h</code> is bound from the <code>COLLECT</code> variable rather than the column name, and <code>"web-1"</code> has no extra quotes. The double-encoding was fixed in the storage layer, so the <code>/columnar/…/aggregate</code> REST endpoint returns clean keys too.</p>
+</section>
+
+<section id="which-path"><h2>SDBQL or the REST endpoint</h2>
+<p>The REST endpoints did not go away, and for one case they are still the better choice. <code>POST /_api/database/:db/columnar/:collection/query</code> takes a single-column filter (<code>EQ</code>, <code>NE</code>, <code>GT</code>, <code>GTE</code>, <code>LT</code>, <code>LTE</code>, <code>IN</code>) and a column list. It evaluates the filter in storage — with a bitmap, hash, sorted, bloom or min/max index if the column has one — and reads only the listed columns of the rows that match:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -u admin:admin -X POST localhost:6745/_api/database/blog/columnar/metrics/query \
+  -H 'content-type: application/json' \
+  -d '{"columns": ["ts", "cpu"], "filter": {"column": "host", "op": "EQ", "value": "web-2"}, "limit": 10}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>{"result": [{"cpu": 22.0, "ts": "2026-07-27T10:10:00Z"},
+            {"cpu": 35.5, "ts": "2026-07-27T10:40:00Z"},
+            {"cpu": 90.0, "ts": "2026-07-27T11:30:00Z"}], "count": 3}</pre></div></div>
+<div class="post-table"><table><thead><tr><th>You need</th><th>Use</th><th>What is read</th></tr></thead><tbody>
+<tr><td>A total or average, optionally grouped by column or time bucket</td><td><code>FOR … COLLECT … AGGREGATE … RETURN</code></td><td>Only the columns named</td></tr>
+<tr><td>A selective filter on one column, a few columns back</td><td><code>/columnar/…/query</code></td><td>The filter column (or its index), then the listed columns of matching rows</td></tr>
+<tr><td>Anything else — joins, sorts, subqueries, several filters, a filter before <code>COLLECT</code></td><td>SDBQL <code>FOR</code></td><td>Every column of every row</td></tr>
+</tbody></table></div>
+<p>Pushdown is planned, and the source code says what it is waiting on: the projection and the filter live in clauses the <code>FOR</code> source cannot see yet. Until then, the rule is short: aggregates and single-column lookups are where the columnar layout pays; everything else is correct, and costs a full read.</p>
+<p>The endpoints, index types and more examples are on the <a href="/docs/columnar">columnar storage</a> page; the aggregate syntax is in <a href="/docs/sdbql-aggregations">SDBQL aggregations</a>, and every change in the release is in the <a href="/docs/changelog">changelog</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

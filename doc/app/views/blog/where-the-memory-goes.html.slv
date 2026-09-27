@@ -1,0 +1,156 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 1.1.0 · Internals</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">A 613-collection SoliDB instance was OOM-killed at 21.7 GB RSS while holding 6.3 GB of data, and nothing it exposed could say which part of it had grown. SoliDB 1.1.0 changes two things: jemalloc now serves RocksDB's C++ allocations as well as Rust's, and <code>/metrics</code> reports memory per component.</p>
+  <p class="post-note">The measurements quoted here are the ones recorded in the 1.1.0 changelog and source. The <code>/metrics</code> excerpt comes from a throwaway server built from a later release; the gauges it shows are the ones 1.1.0 added, unchanged.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#arithmetic">The arithmetic that looks right</a></li>
+    <li><a href="#allocators">Two allocators in one process</a></li>
+    <li><a href="#unprefixed">What 1.1.0 changed</a></li>
+    <li><a href="#metrics">Reading <code>/metrics</code></a></li>
+    <li><a href="#knobs">The knobs that bound memory</a></li>
+    <li><a href="#open">What is not established</a></li>
+  </ol>
+</nav>
+
+<section id="arithmetic"><h2>The arithmetic that looks right</h2>
+<p>The kernel killed a bare <code>solidb</code> — prod profile, no flags — at 21.7 GB resident and 113 GB virtual, on a 31 GB machine. It held 6.3 GB on disk across 2969 SST files. Idle, the same dataset sits at about 1.5 GB, so the growth came from load: an import writing to many collections at once.</p>
+<p>There is an explanation that fits almost too well. One collection is one RocksDB column family, and the prod profile gives each one a 64 MB write buffer. 613 collections times 64 MB is 38.3 GB, which is close enough to 21.7 GB to be believed.</p>
+<p>It is wrong. Memtables measured 2.2 MB at idle and plateaued around 202 MB during a 400 000-document import while RSS kept climbing. The growth tracked bytes written, not collections open. Nothing the server exposed at the time could show that, and the reason the numbers did not add up was one level lower than RocksDB: which allocator was holding the memory.</p>
+</section>
+
+<section id="allocators"><h2>Two allocators in one process</h2>
+<p>SoliDB has used jemalloc as its global allocator for a while, because glibc's per-thread arenas keep RSS at the allocation high-water mark long after the memory is freed. But <code>tikv-jemallocator</code> was linked with its <code>_rjem_</code> prefix: 556 <code>_rjem_*</code> symbols in the binary and no unprefixed <code>malloc</code>. A prefixed jemalloc backs Rust's <code>GlobalAlloc</code> and nothing else.</p>
+<p>RocksDB is C++. Its <code>new</code> and <code>malloc</code> calls — block cache, table readers, memtables, iterators, compaction buffers — went straight to glibc. On a large instance that is the bulk of the memory, and it was on the allocator the dependency had been added to avoid.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 330" role="img" aria-labelledby="wmg-alloc-t">
+<title id="wmg-alloc-t">Before 1.1.0, Rust allocations go to jemalloc and RocksDB C++ allocations go to glibc arenas; from 1.1.0, both go to jemalloc.</title>
+<defs><marker id="wmg-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ba39c"/></marker></defs>
+<text x="20" y="26" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Before 1.1.0</text>
+<text x="360" y="26" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">1.1.0</text>
+<rect x="20" y="40" width="300" height="270" rx="8" fill="#101716" stroke="#29322f"/>
+<rect x="360" y="40" width="300" height="270" rx="8" fill="#101716" stroke="#29322f"/>
+<rect x="36" y="56" width="124" height="96" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="46" y="78" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">Rust code</text>
+<text x="46" y="100" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">queries, HTTP,</text>
+<text x="46" y="116" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">documents,</text>
+<text x="46" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">caches</text>
+<rect x="180" y="56" width="124" height="96" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="190" y="78" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">RocksDB C++</text>
+<text x="190" y="100" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">block cache</text>
+<text x="190" y="116" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">table readers</text>
+<text x="190" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">memtables</text>
+<line x1="98" y1="152" x2="98" y2="200" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#wmg-arr)"/>
+<line x1="242" y1="152" x2="242" y2="200" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#wmg-arr)"/>
+<rect x="36" y="204" width="124" height="90" rx="6" fill="none" stroke="#4fd1c5"/>
+<text x="46" y="226" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">jemalloc</text>
+<text x="46" y="246" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">_rjem_ prefix</text>
+<text x="46" y="264" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">tuned, purges</text>
+<rect x="180" y="204" width="124" height="90" rx="6" fill="none" stroke="#ff6b6b"/>
+<text x="190" y="226" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">glibc malloc</text>
+<text x="190" y="246" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">[heap] + 64 MB</text>
+<text x="190" y="262" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">arenas; freed</text>
+<text x="190" y="278" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">memory kept</text>
+<rect x="376" y="56" width="124" height="96" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="386" y="78" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">Rust code</text>
+<text x="386" y="100" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">queries, HTTP,</text>
+<text x="386" y="116" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">documents,</text>
+<text x="386" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">caches</text>
+<rect x="520" y="56" width="124" height="96" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="530" y="78" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">RocksDB C++</text>
+<text x="530" y="100" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">block cache</text>
+<text x="530" y="116" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">table readers</text>
+<text x="530" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">memtables</text>
+<line x1="438" y1="152" x2="480" y2="200" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#wmg-arr)"/>
+<line x1="582" y1="152" x2="540" y2="200" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#wmg-arr)"/>
+<rect x="376" y="204" width="268" height="90" rx="6" fill="none" stroke="#f5a623"/>
+<text x="392" y="228" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">jemalloc, unprefixed</text>
+<text x="392" y="250" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">background_thread:true</text>
+<text x="392" y="268" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">dirty/muzzy decay 2000 ms</text>
+<text x="392" y="284" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">counted by solidb_jemalloc_*</text>
+</svg><figcaption>Before 1.1.0 the allocator tuning reached only the left box; RocksDB's memory lived in glibc arenas that nothing purged.</figcaption></figure>
+<p>That changes what a fix can reach. The <code>background_thread</code> and 2-second decay tuning set in <code>main.rs</code> had fixed real Rust-side retention: on a dev box with 89 databases, a 3200-query burst at 32× concurrency took RSS from 662 MB to 1296 MB and was still at 954 MB five minutes later; with the tuning, the same burst came back to 625 MB. But it could not touch RocksDB. Here is the idle baseline of the 613-collection dataset, prod profile, measured on a checkpoint:</p>
+<div class="post-table"><table><thead><tr><th>Where</th><th>Size</th></tr></thead><tbody>
+<tr><td>RSS (cgroup)</td><td>1540 MB</td></tr>
+<tr><td>glibc main arena, <code>[heap]</code></td><td>1094 MB</td></tr>
+<tr><td>4 glibc arenas of ~64 MB</td><td>256 MB</td></tr>
+<tr><td>1 arena of ~59 MB</td><td>59 MB</td></tr>
+<tr><td>binary and the rest</td><td>~90 MB</td></tr>
+<tr><td>RocksDB, self-reported</td><td>584 MB (block cache 498, table readers 84, memtables 2)</td></tr>
+<tr><td>jemalloc <code>stats.resident</code></td><td>35 MB</td></tr>
+</tbody></table></div>
+<p>About 1.4 GB was in glibc; RocksDB accounted for 584 MB of it. The rest was arena retention from startup, which counts documents by reading essentially the whole dataset. Jemalloc — the allocator everyone assumed was in charge — held 35 MB.</p>
+</section>
+
+<section id="unprefixed"><h2>What 1.1.0 changed</h2>
+<p>1.1.0 enables <code>tikv-jemallocator</code>'s <code>unprefixed_malloc_on_supported_platforms</code> feature. C and C++ <code>malloc</code> now go through jemalloc as well, and the existing tuning finally applies to RocksDB. Same 613-collection checkpoint, 400 000 documents imported across 200 collections, prod profile, one run per variant:</p>
+<div class="post-table"><table><thead><tr><th></th><th>glibc</th><th>jemalloc</th></tr></thead><tbody>
+<tr><td>peak RSS (<code>VmHWM</code>)</td><td>1881 MB</td><td>1356 MB</td></tr>
+<tr><td>glibc arenas (~64 MB each)</td><td>4 → 20</td><td>4 → 2</td></tr>
+<tr><td><code>[heap]</code> (brk)</td><td>1094 MB</td><td>absent</td></tr>
+<tr><td>still held afterwards</td><td>1726 MB, swapped out and never returned</td><td>—</td></tr>
+</tbody></table></div>
+<p>One trap comes with it. The tuning is a link-time symbol read by jemalloc before <code>main</code> runs, and its name follows the prefix: plain <code>malloc_conf</code> with the feature, <code>_rjem_malloc_conf</code> without. Change one and not the other and the tuning is silently lost. So the server reads the effective options back at startup and logs them. This is the line to look for:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> server.log</div><pre>INFO solidb: jemalloc: background_thread=true, dirty_decay_ms=2000, muzzy_decay_ms=2000</pre></div>
+<p>If the symbol does not reach the allocator, the same function logs a warning that <code>background_thread</code> is off instead. There is no jemalloc on MSVC builds, so none of this applies on Windows.</p>
+</section>
+
+<section id="metrics"><h2>Reading <code>/metrics</code></h2>
+<p>The second change is attribution. <code>/metrics</code> gains gauges for each RocksDB consumer and six from jemalloc's own accounting. The endpoint answers 401 unless the scraper sends <code>SOLIDB_METRICS_TOKEN</code>, carries an admin JWT, or <code>SOLIDB_METRICS_PUBLIC=1</code> is set (see <a href="/docs/api-monitoring">Monitoring</a>). With an admin login:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># three collections, 20 000 small documents each, prod profile</span>
+TOKEN=$(curl -s -X POST localhost:6745/auth/login -H 'content-type: application/json' \
+  -d '{"username":"admin","password":"admin"}' | jq -r .token)
+curl -s -H "Authorization: Bearer $TOKEN" localhost:6745/metrics \
+  | grep -E '^solidb_(memtable|table_readers|block_cache|sst|column|cached|jemalloc)'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>solidb_memtable_bytes 19556352
+solidb_memtable_total_bytes 19556352
+solidb_table_readers_bytes 19719
+solidb_block_cache_bytes 4558
+solidb_block_cache_pinned_bytes 87
+solidb_sst_files 8
+solidb_column_families 13
+solidb_cached_collection_handles 12
+solidb_jemalloc_allocated_bytes 109900968
+solidb_jemalloc_active_bytes 114028544
+solidb_jemalloc_resident_bytes 122896384
+solidb_jemalloc_mapped_bytes 176951296
+solidb_jemalloc_retained_bytes 260304896
+solidb_jemalloc_metadata_bytes 9571232</pre></div></div>
+<p>The process's <code>VmRSS</code> at that moment was 153 580 kB, so jemalloc's resident figure covers most of it. Before 1.1.0 the RocksDB half of that would have been invisible to it. Reading the gauges:</p>
+<p><code>solidb_memtable_bytes</code> is live memtable memory across every column family; <code>solidb_memtable_total_bytes</code> adds immutable memtables waiting to flush. The gap between them is flush backlog. Here the 60 000 fresh documents are still in memtables and nothing is waiting.</p>
+<p><code>solidb_table_readers_bytes</code> is index and filter blocks pinned per open SST, <em>outside</em> the block cache and never evicted, whenever <code>--bounded-index-cache</code> is off and <code>--max-open-files</code> is -1 — the prod defaults. This is the one that grows with the dataset.</p>
+<p><code>solidb_block_cache_bytes</code> and <code>_pinned_bytes</code> are read from the single shared LRU. The cache is one for every column family, so summing it per column family would multiply it by the collection count.</p>
+<p><code>solidb_sst_files</code>, <code>solidb_column_families</code> (including <code>default</code> and <code>_meta</code>) and <code>solidb_cached_collection_handles</code> are counts. The last one matters on large instances: each handle carries a <code>tokio::sync::broadcast</code> ring, so at 613 collections it is a memory figure.</p>
+<p>The <code>solidb_jemalloc_*_bytes</code> gauges are jemalloc's <code>stats.*</code>. <code>allocated</code> is live data; the distance up to <code>resident</code> is fragmentation and pages not yet purged. <code>retained</code> is address space kept mapped, which is what separates a 113 GB virtual size from a leak.</p>
+<p>All of it is computed when the endpoint is scraped, never on a timer: it is one RocksDB property read per column family, and the repository has already had to fix a stats collector that did ten such reads per collection every five seconds. The jemalloc figures need the <code>stats</code> feature of <code>tikv-jemalloc-ctl</code>, which builds the C library with its counters enabled.</p>
+</section>
+
+<section id="knobs"><h2>The knobs that bound memory</h2>
+<p>RocksDB memory in SoliDB is dominated by per-column-family structures, and one collection is one column family, so RAM scales with the collection count unless something caps it. Two presets, and every knob they set is also a flag of its own:</p>
+<div class="post-table"><table><thead><tr><th>Flag</th><th>prod (default)</th><th><code>--dev</code></th></tr></thead><tbody>
+<tr><td><code>--block-cache</code></td><td>512 MB</td><td>128 MB</td></tr>
+<tr><td><code>--write-buffer-size</code> (per collection)</td><td>64 MB, up to 3 memtables</td><td>8 MB, up to 2</td></tr>
+<tr><td><code>--memtable-budget</code> (all collections)</td><td>unlimited</td><td>128 MB</td></tr>
+<tr><td><code>--max-open-files</code></td><td>-1 (unlimited)</td><td>512</td></tr>
+<tr><td><code>--bounded-index-cache</code></td><td>off</td><td>on</td></tr>
+<tr><td><code>--max-background-jobs</code></td><td>6</td><td>2</td></tr>
+</tbody></table></div>
+<p>Each flag also reads an environment variable (<code>SOLIDB_BLOCK_CACHE</code>, <code>SOLIDB_MEMTABLE_BUDGET</code>, <code>SOLIDB_WRITE_BUFFER_SIZE</code>, <code>SOLIDB_MAX_OPEN_FILES</code>, <code>SOLIDB_BOUNDED_INDEX_CACHE</code>, <code>SOLIDB_MAX_BACKGROUND_JOBS</code>). A production node does not need <code>--dev</code> to bound its memory, and should not take its smaller cache and fewer background jobs just for that:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># prod throughput, with the three unbounded consumers capped</span>
+solidb --data-dir /var/lib/solidb \
+  --memtable-budget 1GB --bounded-index-cache --max-open-files 5000</pre></div>
+<p>The three that matter are the ones prod leaves open. <code>--memtable-budget</code> caps total memtable memory, forcing flushes before each collection fills its own buffer. <code>--bounded-index-cache</code> moves index and filter blocks into the block cache, where they are counted and evicted, at some read latency. <code>--max-open-files</code> caps the table cache, which is what bounds pinned index and filter blocks when they stay outside the cache. The server says so at startup when they are unset: a warning that there is no global memtable budget, and one that index and filter blocks are pinned per SST with an unlimited table cache.</p>
+<p>The dev profile was measured on a box with 1718 column families across 89 databases and 2 GB on disk. RocksDB accounted for about 135 MB there — 18 MB of memtables and 116 MB of block cache, both capped by the profile. Most of the rest of the 2.7–3.8 GB RSS was traffic-driven and on the Rust side, which is where the jemalloc tuning helped.</p>
+</section>
+
+<section id="open"><h2>What is not established</h2>
+<p>Whether the allocator change alone accounts for the 21.7 GB is not known. The comparison is one run per variant, and 400 000 documents peak at 1.9 GB, not 21.7. Which consumer grew under the original load was never measured, because until 1.1.0 there was nothing to measure it with. On a large instance, set the three storage knobs above, scrape <code>/metrics</code>, and compare <code>solidb_jemalloc_resident_bytes</code> with the RocksDB gauges: the part that is growing now has a name.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

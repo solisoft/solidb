@@ -61,17 +61,107 @@ class BlogController < Controller
 
   # Newest first. `date` is ISO (YYYY-MM-DD); `display_date` is what readers see.
   def posts
-    return [{
-      "slug": "sdbql-1-3-new-functions",
-      "title": "33 new SDBQL functions, and FOR x IN anything",
-      "date": "2026-09-27",
-      "display_date": "September 27, 2026",
-      "summary": "SoliDB 1.2.2 and 1.3.0 add date series, lookup maps, object diffs, "
-      + "accent folding, IBAN and SIRET checks, banker's rounding — and FOR now "
-      + "accepts any expression after IN.",
-      "tags": ["SDBQL", "Release 1.3.0"],
-      "read_minutes": 9
-    }]
+    return [
+      {
+        "slug": "sdbql-1-3-new-functions",
+        "title": "33 new SDBQL functions, and FOR x IN anything",
+        "date": "2026-09-27",
+        "display_date": "September 27, 2026",
+        "summary": "SoliDB 1.2.2 and 1.3.0 add date series, lookup maps, object diffs, "
+        + "accent folding, IBAN and SIRET checks, banker's rounding — and FOR now "
+        + "accepts any expression after IN.",
+        "tags": ["SDBQL", "Release 1.3.0"],
+        "read_minutes": 9
+      },
+      {
+        "slug": "a-request-must-never-take-the-server-down",
+        "title": "A 3 MB bind variable, 20,200 rows, and a server killed at 61 GB",
+        "date": "2026-09-26",
+        "display_date": "September 26, 2026",
+        "summary": "SoliDB's rule is that a request may fail but never take the server down. A bulk "
+        + "UPSERT over @rows broke it: bind variables were copied once per row. How 1.2.3 "
+        + "fixed it.",
+        "tags": ["Reliability", "Release 1.2.3"],
+        "read_minutes": 6
+      },
+      {
+        "slug": "faster-startup-many-collections",
+        "title": "What hundreds of collections cost, and what 1.2.0 took off the bill",
+        "date": "2026-09-24",
+        "display_date": "September 24, 2026",
+        "summary": "One collection is one RocksDB column family, and each create or drop rewrites "
+        + "the whole OPTIONS file. 1.2.0 stops paying for that at startup, on delete-and-"
+        + "recreate, on listing, and on every WAL flush.",
+        "tags": ["Performance", "Release 1.2.0"],
+        "read_minutes": 7
+      },
+      {
+        "slug": "where-the-memory-goes",
+        "title": "jemalloc now serves RocksDB, and /metrics says where memory goes",
+        "date": "2026-09-03",
+        "display_date": "September 3, 2026",
+        "summary": "Until 1.1.0, RocksDB's block cache, table readers and memtables lived in glibc "
+        + "arenas that jemalloc's tuning never reached. What changed, the new per-component"
+        + " gauges in /metrics, and the knobs that bound memory.",
+        "tags": ["Internals", "Release 1.1.0"],
+        "read_minutes": 7
+      },
+      {
+        "slug": "secure-by-default",
+        "title": "SoliDB 1.1.0: the collections you can no longer write by name",
+        "date": "2026-09-03",
+        "display_date": "September 3, 2026",
+        "summary": "1.1.0 puts SoliDB's own collections in three tiers behind one check, makes Lua "
+        + "scripts write as their caller, and gates the admin console. Each one closes a "
+        + "real finding; here is what a Write user now sees.",
+        "tags": ["Security", "Release 1.1.0"],
+        "read_minutes": 7
+      },
+      {
+        "slug": "solidb-1-0",
+        "title": "SoliDB 1.0: closed by default, set operations, and no more job queue",
+        "date": "2026-08-31",
+        "display_date": "August 31, 2026",
+        "summary": "1.0.0 starts a fresh node closed (loopback, keyfile-only replication, "
+        + "authenticated /metrics), adds UNION/INTERSECT/EXCEPT, recursive CTEs and RETURN "
+        + "DISTINCT, and moves background jobs to Soli.",
+        "tags": ["SDBQL", "Release 1.0.0"],
+        "read_minutes": 8
+      },
+      {
+        "slug": "clustering-across-machines",
+        "title": "SoliDB 0.34.0: a cluster that actually spans machines",
+        "date": "2026-08-05",
+        "display_date": "August 5, 2026",
+        "summary": "Before 0.34.0 a multi-machine cluster came up and replicated nothing. What was "
+        + "broken, --host vs --advertise, the now-mandatory keyfile, and a three-node setup"
+        + " on three machines.",
+        "tags": ["Cluster", "Release 0.34.0"],
+        "read_minutes": 9
+      },
+      {
+        "slug": "columnar-collections-in-sdbql",
+        "title": "Columnar collections now take FILTER, SORT and joins in SDBQL",
+        "date": "2026-07-27",
+        "display_date": "July 27, 2026",
+        "summary": "In 0.33.0, FOR reads columnar collections like any other source, so FILTER, "
+        + "SORT, joins and subqueries work on them. Four aggregate bugs that returned wrong"
+        + " numbers instead of errors are also fixed.",
+        "tags": ["SDBQL", "Release 0.33.0"],
+        "read_minutes": 7
+      },
+      {
+        "slug": "backups-checkpoints-vs-dumps",
+        "title": "Backing up SoliDB: checkpoints, dumps, and when to use each",
+        "date": "2026-07-27",
+        "display_date": "July 27, 2026",
+        "summary": "0.33.0 adds POST /_api/backup, an instant RocksDB checkpoint of the whole "
+        + "instance, next to solidb-dump's portable JSONL. What each does, what it can't "
+        + "do, a decision table, and a runbook.",
+        "tags": ["Operations", "Release 0.33.0"],
+        "read_minutes": 7
+      }
+    ]
   end
 
   # Same origin as the site_url() view helper (app/helpers/application_helper.sl),

@@ -16,6 +16,32 @@ describe("BlogController", fn() {
     expect(body.include?("application/atom+xml")).to_equal(true)
   })
 
+  test("every listed post renders with its title", fn() {
+    posts = {
+      "a-request-must-never-take-the-server-down": "20,200 rows",
+      "faster-startup-many-collections": "What hundreds of collections cost",
+      "where-the-memory-goes": "jemalloc now serves RocksDB",
+      "secure-by-default": "the collections you can no longer write by name",
+      "solidb-1-0": "SoliDB 1.0: closed by default",
+      "clustering-across-machines": "a cluster that actually spans machines",
+      "columnar-collections-in-sdbql": "Columnar collections now take FILTER",
+      "backups-checkpoints-vs-dumps": "Backing up SoliDB"
+    }
+    posts.each(&{ |slug, title|
+      response = get("/blog/#{slug}")
+      expect(res_status(response)).to_equal(200)
+      expect(res_body(response).include?(title)).to_equal(true)
+    })
+  })
+
+  test("the index links every post, newest first", fn() {
+    body = res_body(get("/blog"))
+    expect(body.split("class=\"post-card\"").length()).to_equal(10)
+    newest = body.index_of("/blog/sdbql-1-3-new-functions")
+    oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
+    expect(newest > 0 && newest < oldest).to_equal(true)
+  })
+
   test("GET /blog/:slug is 404 for an unknown slug", fn() {
     response = get("/blog/no-such-post")
     expect(res_status(response)).to_equal(404)

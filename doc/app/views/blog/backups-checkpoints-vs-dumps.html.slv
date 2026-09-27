@@ -1,0 +1,159 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 0.33.0 · Operations</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">Until 0.33.0 the only way to back up SoliDB was <code>solidb-dump</code>: re-read every document over HTTP and write it out as JSON lines. 0.33.0 adds a physical backup, <code>POST /_api/backup</code>, which takes a RocksDB checkpoint of the whole instance in about the time it takes to flush. The two are not interchangeable. This is what each one does, when to reach for which, and the commands.</p>
+  <p class="post-note">The dump, restore and checkpoint shown here were run on a throwaway server. That build was newer than 0.33.0; where it behaves differently, this post describes 0.33.0 as its source reads, and the extra password warning the newer tools print is left out.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#two-kinds">Two kinds of backup</a></li>
+    <li><a href="#checkpoint">Physical: <code>POST /_api/backup</code></a></li>
+    <li><a href="#dump">Logical: <code>solidb-dump</code> and <code>solidb-restore</code></a></li>
+    <li><a href="#which">Which one, when</a></li>
+    <li><a href="#runbook">A runbook</a></li>
+  </ol>
+</nav>
+
+<section id="two-kinds"><h2>Two kinds of backup</h2>
+<p>All databases on a SoliDB server share one RocksDB instance, and each collection is a column family inside it. That fixes what a backup can be.</p>
+<p>A <em>physical</em> backup copies the storage engine's files. RocksDB can do this without copying bytes: a checkpoint is a new directory whose immutable SST files are hard links to the ones the live database is using, plus the small files that describe them. It covers the whole instance, because that is the unit RocksDB knows about. There is no per-database checkpoint.</p>
+<p>A <em>logical</em> backup asks the server for documents and writes them down. <code>solidb-dump</code> runs <code>FOR doc IN c RETURN doc</code> through the cursor API, collection by collection, and writes one JSON record per line. It can take one database or one collection, and the result is text you can read, edit and load into another version.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 290" role="img" aria-labelledby="bk-two-t">
+<title id="bk-two-t">A checkpoint hard-links SST files; a dump writes JSONL through the API</title>
+<defs><marker id="bk-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4fd1c5"/></marker></defs>
+<text x="20" y="26" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Checkpoint</text>
+<text x="20" y="44" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">same disk, same inodes</text>
+<rect x="20" y="60" width="130" height="150" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="32" y="80" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">data/</text>
+<text x="32" y="104" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">000031.sst</text>
+<text x="32" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">000032.sst</text>
+<text x="32" y="148" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">…</text>
+<text x="32" y="170" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">MANIFEST</text>
+<rect x="200" y="60" width="130" height="150" rx="4" fill="#101716" stroke="#f5a623"/>
+<text x="212" y="80" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">checkpoint/</text>
+<text x="212" y="104" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">000031.sst</text>
+<text x="212" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">000032.sst</text>
+<text x="212" y="148" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">…</text>
+<text x="212" y="170" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">MANIFEST</text>
+<line x1="126" y1="100" x2="206" y2="100" stroke="#f5a623" stroke-dasharray="3 3"/>
+<line x1="126" y1="122" x2="206" y2="122" stroke="#f5a623" stroke-dasharray="3 3"/>
+<text x="20" y="236" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">- - - hard link: one file, two names</text>
+<text x="20" y="258" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">whole instance, point in time,</text>
+<text x="20" y="276" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">lost with the volume</text>
+<line x1="350" y1="16" x2="350" y2="280" stroke="#3a4541"/>
+<text x="370" y="26" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Dump</text>
+<text x="370" y="44" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">re-reads documents over HTTP</text>
+<rect x="370" y="60" width="110" height="60" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="382" y="86" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">server</text>
+<text x="382" y="106" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">cursor API</text>
+<rect x="530" y="60" width="130" height="60" rx="4" fill="#141d1b" stroke="#29322f"/>
+<text x="542" y="86" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">solidb-dump</text>
+<text x="542" y="106" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">-d shop</text>
+<line x1="480" y1="90" x2="526" y2="90" stroke="#4fd1c5" marker-end="url(#bk-arr)"/>
+<line x1="595" y1="120" x2="595" y2="146" stroke="#4fd1c5" marker-end="url(#bk-arr)"/>
+<rect x="370" y="150" width="290" height="84" rx="4" fill="#101716" stroke="#29322f"/>
+<text x="382" y="172" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">{"_type":"collection",…}</text>
+<text x="382" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">{"_type":"index",…}</text>
+<text x="382" y="216" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">{"_type":"document","doc":{…}}</text>
+<text x="370" y="258" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">one database or collection, portable,</text>
+<text x="370" y="276" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">bigger, slower to load back</text>
+</svg><figcaption>A checkpoint gives the same SST files a second name in a new directory; a dump reads documents through the API and writes a new file of JSON lines.</figcaption></figure>
+</section>
+
+<section id="checkpoint"><h2>Physical: <code>POST /_api/backup</code></h2>
+<p>The endpoint takes one field, <code>path</code>: a directory on the <em>server</em>, since the server process is the one holding the database open. It must not exist yet. It requires admin, because the caller picks where the server writes and the result holds every database whatever the caller's grants.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -X POST http://localhost:6745/_api/backup \
+  -u admin:"$SOLIDB_PASS" \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/var/backups/solidb/2026-07-27"}'</pre></div>
+<p>The server flushes the memtables first, so the checkpoint holds recent writes without depending on WAL replay, then asks RocksDB for the checkpoint. That work runs off the async worker threads, because hard-linking scales with the number of column families. The reply says <code>"status": "created"</code>, echoes the path, states <code>"scope": "instance"</code> and carries a note repeating the warning below. A second request to the same path is refused with a 400: <em>checkpoint target … already exists</em>.</p>
+<p>On the test server the hard links were easy to see. An SST file in the data directory and its namesake in the checkpoint had the same inode and a link count of 2. A document inserted after the checkpoint was absent when a server was started on a copy of it; the three customers written before it were there, and so was the index on <code>orders</code>.</p>
+<p>That is the restore procedure. A checkpoint is a complete data directory, so you point a server at it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>solidb --port 6745 --data-dir /var/backups/solidb/2026-07-27</pre></div>
+<p>Two limits come with that speed. First, the checkpoint is <em>not</em> protection against losing the filesystem. The hard links point at the same blocks on the same volume as the live database, so a checkpoint guards against a bad write or a dropped collection and nothing else. Copy it somewhere else once it is taken. A plain copy writes new files, and on the test server the copied SST had its own inode and a link count of 1. Second, it covers the instance you sent it to. On a cluster, the handler checkpoints the local node's RocksDB and nothing else.</p>
+<p>It is also all or nothing. Starting from a checkpoint rolls every database back to that moment. To get back one collection someone dropped, start the checkpoint as a second server and dump that collection out of it.</p>
+</section>
+
+<section id="dump"><h2>Logical: <code>solidb-dump</code> and <code>solidb-restore</code></h2>
+<p>In 0.33.0 <code>solidb-dump</code> needs <code>-d</code>. Add <code>-c</code> for a single collection, and <code>-o</code> for a file (it writes to stdout otherwise). The shop database on the test server has two collections and one persistent index:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>solidb-dump -H localhost -P 6745 -u admin -p "$SOLIDB_PASS" -d shop -o shop.jsonl</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>Authenticating as user: admin
+Dumping database: shop
+Found 2 collections
+  Collection: customers
+  Collection: orders
+✓ Dump written to shop.jsonl</pre></div></div>
+<p>The file declares each collection, then its indexes, then its documents:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> shop.jsonl (excerpt)</div><pre>{"_collection":"orders","_collectionType":"document","_database":"shop","_type":"collection"}
+{"_collection":"orders","_collectionType":"document","_database":"shop","_index_kind":"persistent","_type":"index","field":"customer","fields":["customer"],"name":"by_customer","unique":false}
+{"_collection":"orders","_collectionType":"document","_database":"shop","_type":"document","doc":{"_created_at":"2026-09-27T15:56:25.709817613+00:00","_id":"shop:orders/o1","_key":"o1","_rev":"db28e364-ee38-4635-97dc-d42e9de5a3a2","_updated_at":"2026-09-27T15:56:25.709817613+00:00","customer":"c1","total":10}}</pre></div>
+<p>Restoring into a new database, created on the way:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>solidb-restore -u admin -p "$SOLIDB_PASS" -i shop.jsonl -d shop_copy --create-database</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>Authenticating as user: admin
+Restoring using streaming mode (JSONL/Mixed)...
+  Created database: shop_copy
+✓ Restore completed
+  → 6 items imported</pre></div></div>
+<p>Afterwards <code>shop_copy</code> held 3 customers, 2 orders and the <code>by_customer</code> index.</p>
+<p>0.33.0 made both tools safer to put in a script:</p>
+<ul>
+<li><strong>Exit codes mean something.</strong> A dump that hit a warning, such as an index list it could not read, now ends with <em>Dump finished with N warning(s); output may be incomplete</em> and a non-zero status. A restore with failed items exits non-zero, and so does one that skipped records it could not route. <code>--allow-skipped</code> accepts those, for dumps from older versions.</li>
+<li><strong>Documents are enveloped.</strong> Routing fields sit outside <code>doc</code>, as above, so a user field named <code>_type</code> or <code>_collection</code> no longer collides with the dump's own.</li>
+<li><strong>Columnar indexes</strong> travel as <code>columnar_index</code> records rather than schema <code>indexed</code> flags.</li>
+<li><strong><code>--overwrite</code></strong> upserts by <code>_key</code> (the import endpoint's <code>mode=upsert</code>) instead of failing on a key that exists. <code>--drop</code> is still the clean option: it drops the collections before restoring.</li>
+<li><strong><code>--scheme https</code></strong> for a server behind TLS, collection and database names encoded in URLs, and <code>-u</code> or <code>-p</code> given without the other is rejected.</li>
+</ul>
+<p>What it costs: a comment in the backup handler's source puts a dump at roughly 3x the on-disk size, and a restore replays every write. A dump is also read collection by collection, so it is not a single point in time across collections.</p>
+</section>
+
+<section id="which"><h2>Which one, when</h2>
+<div class="post-table"><table><thead><tr><th></th><th>Checkpoint</th><th>solidb-dump</th></tr></thead><tbody>
+<tr><td>Scope</td><td>Whole instance</td><td>One database or collection</td></tr>
+<tr><td>Speed</td><td>Near-instant</td><td>Scales with document count</td></tr>
+<tr><td>Size</td><td>Hard-linked, ~0 extra at first</td><td>Several times the on-disk size</td></tr>
+<tr><td>Consistency</td><td>Point-in-time across all collections</td><td>Per collection, as read</td></tr>
+<tr><td>Portable</td><td>Same storage format only</td><td>JSONL: readable, editable, portable</td></tr>
+</tbody></table></div>
+<p>And by situation:</p>
+<div class="post-table"><table><thead><tr><th>You need to…</th><th>Use</th></tr></thead><tbody>
+<tr><td>Survive losing the server or its disk</td><td>Checkpoint, copied off the volume</td></tr>
+<tr><td>Undo a bad deploy across several collections</td><td>Checkpoint: every collection from the same moment</td></tr>
+<tr><td>Get back one dropped collection</td><td>Dump it from a server started on a checkpoint, then restore it</td></tr>
+<tr><td>Move data to a different SoliDB version</td><td><code>solidb-dump</code> / <code>solidb-restore</code></td></tr>
+<tr><td>Copy one database to staging, or clone a collection</td><td><code>solidb-dump -d</code> (and <code>-c</code>), restore with <code>-d</code> / <code>-c</code></td></tr>
+<tr><td>Inspect or edit the data before loading it</td><td><code>solidb-dump</code></td></tr>
+</tbody></table></div>
+</section>
+
+<section id="runbook"><h2>A runbook</h2>
+<p>Nightly: a checkpoint, then a copy to another machine. The copy is the backup; the local directory is only the snapshot it was taken from.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># 1. Checkpoint the instance (admin, path on the server, must not exist)</span>
+DAY=$(date +%F)
+curl -fsS -X POST http://localhost:6745/_api/backup \
+  -u admin:"$SOLIDB_PASS" -H 'Content-Type: application/json' \
+  -d "{\"path\": \"/var/backups/solidb/$DAY\"}"
+
+<span class="tok-com"># 2. Copy it off the volume</span>
+rsync -a /var/backups/solidb/$DAY backup-host:/srv/solidb/</pre></div>
+<p>Per database, where you want something portable, check the exit status:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># Non-zero on any warning: a partial dump must not look like a good one</span>
+solidb-dump -u admin -p "$SOLIDB_PASS" -d shop -o shop-$DAY.jsonl \
+  &amp;&amp; gzip shop-$DAY.jsonl \
+  || echo "dump of shop failed" &gt;&amp;2</pre></div>
+<p>Restoring a whole instance: start a server on a copy of the checkpoint.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>rsync -a backup-host:/srv/solidb/2026-07-27/ /var/lib/solidb-restored/
+solidb --port 6745 --data-dir /var/lib/solidb-restored</pre></div>
+<p>Restoring one database from a dump. <code>solidb-restore</code> reads a file, so decompress first:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>gunzip -k shop-2026-07-27.jsonl.gz
+<span class="tok-com"># into a fresh database, side by side with the live one</span>
+solidb-restore -u admin -p "$SOLIDB_PASS" -i shop-2026-07-27.jsonl -d shop_restored --create-database
+<span class="tok-com"># or over the original, dropping its collections first</span>
+solidb-restore -u admin -p "$SOLIDB_PASS" -i shop-2026-07-27.jsonl --drop</pre></div>
+<p>Keep dumps and checkpoints somewhere access-controlled: both hold every document in plain form. Full option tables are on the <a href="/docs/tooling">tooling page</a>, and the 0.33.0 entry in the <a href="/docs/changelog">changelog</a> lists the rest of the release.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

@@ -997,3 +997,7 @@ a { color: inherit; text-decoration: none; }
 .post-footer a { font-family: var(--font-mono); font-size: 14px; color: var(--amber-soft); }
 .foot-bottom a { color: var(--paper-dim); }
 .foot-bottom a:hover { color: var(--paper); }
+
+.post-figure { margin: 8px 0 30px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--ink-850); padding: 18px 18px 14px; }
+.post-figure svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.post-figure figcaption { margin-top: 12px; font-size: 13.5px; color: var(--paper-faint); line-height: 1.55; }

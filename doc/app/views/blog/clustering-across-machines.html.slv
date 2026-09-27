@@ -1,0 +1,157 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 0.34.0 · Cluster</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">Before 0.34.0, a SoliDB cluster spread over several machines came up, logged nothing unusual, and replicated nothing. Five faults stacked on top of each other, and each one hid the next. They were found by deploying two real nodes rather than by a test. This post covers what changed, the two flags that matter (<code>--advertise</code> and <code>--keyfile</code>), and how to start three nodes on three machines.</p>
+  <p class="post-note">The error messages and the status output below were produced by starting real nodes on one host.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#broken">What was broken</a></li>
+    <li><a href="#advertise">Listening is not advertising</a></li>
+    <li><a href="#keyfile">A secret is now required</a></li>
+    <li><a href="#admin">The admin account and the data that came first</a></li>
+    <li><a href="#walkthrough">Three nodes on three machines</a></li>
+    <li><a href="#check">Checking that they see each other</a></li>
+    <li><a href="#upgrading">Upgrading a running cluster</a></li>
+  </ol>
+</nav>
+
+<section id="broken"><h2>What was broken</h2>
+<p>Each of these, alone, was enough to stop a multi-machine cluster from working. None of them produced an error.</p>
+<div class="post-table"><table><thead><tr><th>Before 0.34.0</th><th>In 0.34.0</th></tr></thead><tbody>
+<tr><td><pre>The advertised replication address was hardcoded to 127.0.0.1, with no flag to change it. Every node told every peer to reach it at an address each peer reads as itself.</pre></td><td><pre>New --advertise flag, defaulting to --host. An unroutable value is refused at startup.</pre></td></tr>
+<tr><td><pre>A node with peers skipped creating _admins. In a cluster whose members list each other, that was every node, the first one included: the cluster answered 401 to everything.</pre></td><td><pre>The skip is now a WARN naming both ways out.</pre></td></tr>
+<tr><td><pre>A joining node could not get data that predated it. The full-sync command channel was discarded, the framing was off by a byte, and the batch could never deserialise. Full sync had never once completed.</pre></td><td><pre>A joining node asks its seed for a full sync.</pre></td></tr>
+<tr><td><pre>--advertise 10.0.0.1:6746 became 10.0.0.1:6746:6746. The joiner never learned its peers; the error was discarded.</pre></td><td><pre>A port is attached only when there is not one already.</pre></td></tr>
+<tr><td><pre>With no secret, the cluster bus sent unsigned messages and accepted unverified ones.</pre></td><td><pre>A shared secret is required.</pre></td></tr>
+</tbody></table></div>
+<p>The address mismatch mattered most, and the address mangling made it worse. With the second fault, the seed counted two healthy nodes and the member counted one: <code>solidb_cluster_healthy_nodes</code> read 2 on the seed and 1 on the member, and neither side logged anything.</p>
+</section>
+
+<section id="advertise"><h2>Listening is not advertising</h2>
+<p>A node needs two addresses. The first is the one it <em>listens</em> on: <code>--host</code>, which binds the listeners. In 0.34.0, when the flag is absent, the <code>SOLIDB_HOST</code> environment variable is used, and after that <code>0.0.0.0</code>, meaning every interface. The second is the one it <em>advertises</em>: the address it gives peers so they can reach it. That is <code>--advertise</code>, and it defaults to the value of <code>--host</code>.</p>
+<p>The first can be guessed and the second cannot. <code>0.0.0.0</code> makes sense as a bind address, but no peer can dial "every interface". A machine with a public and a private interface cannot tell which one its peers can route to. So when <code>--peer</code> is set, 0.34.0 checks the advertised address before starting:</p>
+<ul>
+<li><code>0.0.0.0</code>, <code>::</code> or an empty host is always refused. It is a bind address.</li>
+<li>Loopback and <code>localhost</code> are refused when at least one peer is on another host. When every peer is loopback too, the whole cluster is on one machine, and <code>127.0.0.1:6923</code> and <code>127.0.0.1:6933</code> really are different endpoints. That is how anyone first tries a cluster, so it still works.</li>
+<li>A hostname is accepted without resolving it. Otherwise a DNS answer would decide whether a node may start, and that answer can differ from the one a peer gets.</li>
+</ul>
+<p>Here are the two refusals, from a node given a peer on another host:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># binds every interface, advertises nothing better</span>
+solidb --host 0.0.0.0 --port 6933 --peer 10.0.0.1:6746 --keyfile solidb.key</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>ERROR: --peer is set but this node would advertise itself as "0.0.0.0", which is a bind address, not one a peer can dial
+       Set --advertise to the address peers can reach this node on, or bind --host to that address.</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># loopback, with a peer that is not on this host</span>
+solidb --host 127.0.0.1 --port 6933 --peer 10.0.0.1:6746 --keyfile solidb.key</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>ERROR: --peer is set but this node would advertise itself as "127.0.0.1", which every peer reads as its own loopback — and 10.0.0.1:6746 is not on this host
+       Set --advertise to the address peers can reach this node on, or bind --host to that address.</pre></div></div>
+<p><code>--advertise</code> takes a bare host (<code>10.0.0.1</code>) or a host with a port (<code>10.0.0.1:6746</code>). With a port, that is the port peers dial. Without one, the node appends its replication port, which defaults to <code>--port</code> because replication and the HTTP API share one multiplexed port unless <code>--replication-port</code> says otherwise. Whether a port is already there is decided by parsing, not by counting colons. A bare IPv6 address gets brackets before a port is appended: appending to <code>::1</code> gives <code>::1:6746</code>, which parses as a different address and fails only at connect time.</p>
+</section>
+
+<section id="keyfile"><h2>A secret is now required</h2>
+<p>Cluster messages drive membership and shard rebalancing. Before 0.34.0 they were signed only <em>when a secret was configured</em>. Without one, a node sent them unsigned and accepted anything. The asymmetry was the dangerous part. A node with a secret rejects unsigned messages. A node without one accepts both. So one misconfigured member was an open door into the replicated state of the whole cluster, and nothing on the other nodes showed it.</p>
+<p>Now both directions fail closed. Every cluster message is wrapped in an envelope carrying a timestamp, a random nonce and an HMAC-SHA256 signature over both and the payload. A receiver rejects anything unsigned, badly signed, or more than five minutes away from its own clock, so keep the nodes' clocks in sync. The same file is used for the challenge-response when a replication connection opens.</p>
+<p>A node started with <code>--peer</code> and no keyfile does not start:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>solidb --host 127.0.0.1 --port 6933 --peer 127.0.0.1:6924</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>Error: Cluster peers are configured but no keyfile is available. Create a shared secret of 32 cryptographically random bytes, hex-encoded, and pass it with --keyfile (the same file on every node). Unix: `openssl rand -hex 32 &gt; solidb.key`. […] Refusing to start an unauthenticated cluster.</pre></div></div>
+<p>The first node of a cluster has no <code>--peer</code>, so it will start without a keyfile, with a warning that its replication and cluster ports accept unauthenticated connections. But it then refuses every cluster message it is sent, so it cannot take part in a cluster until it has one. Give every node the keyfile, the seed included. The secret signs traffic; it does not encrypt it, so keep the cluster port on a private network.</p>
+</section>
+
+<section id="admin"><h2>The admin account and the data that came first</h2>
+<p>A node started with <code>--peer</code> assumes it is joining an existing cluster and waits to receive the admin account by sync instead of creating one. The database cannot tell "I am joining" from "we are all starting at once", because both look like a non-empty peer list. When every node lists the others, nobody creates an admin. In 0.34.0 that is still the rule, but it is logged as a WARN that says what to do: start the first node with no <code>--peer</code>, or set <code>SOLIDB_ADMIN_PASSWORD</code>.</p>
+<p>The first node, started alone, creates the <code>admin</code> user. It uses the password in <code>SOLIDB_ADMIN_PASSWORD</code>, or generates a random one and writes it to <code>&lt;data-dir&gt;/.admin_password</code>. A node that sets <code>SOLIDB_ADMIN_PASSWORD</code> creates its own admin even when it has peers. The walkthrough below sets it on every node, so no node's login depends on a sync having finished.</p>
+<p>Replication carries writes forward from the moment a node joins. It knows nothing about earlier data. In 0.34.0 a joining node asks the seed it joined through for a full sync as soon as the join succeeds. If it cannot ask, it logs an error saying it will only have the writes made from then on.</p>
+</section>
+
+<section id="walkthrough"><h2>Three nodes on three machines</h2>
+<p>Three machines on a private network, <code>10.0.0.1</code> to <code>10.0.0.3</code>, each running SoliDB on the default port 6745, with HTTP and replication multiplexed on it. <code>db1</code> binds its private address. <code>db2</code> binds every interface, so it has to say what to advertise. <code>db3</code> binds its private address, which is also what it advertises.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 390" role="img" aria-labelledby="cam-t">
+<title id="cam-t">Three nodes: the address each listens on, the address each advertises, and how the joiners reach the seed</title>
+<defs><marker id="cam-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ba39c"/></marker></defs>
+<text x="15" y="40" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Private network 10.0.0.0/24 · one port per node, HTTP API and replication multiplexed</text>
+<rect x="15" y="60" width="200" height="190" rx="10" fill="#101716" stroke="#3a4541"/>
+<rect x="240" y="60" width="200" height="190" rx="10" fill="#101716" stroke="#3a4541"/>
+<rect x="465" y="60" width="200" height="190" rx="10" fill="#101716" stroke="#3a4541"/>
+<g font-family="Inter, sans-serif" font-size="14" fill="#ece6d6" font-weight="600">
+<text x="29" y="88">db1 · seed</text><text x="254" y="88">db2</text><text x="479" y="88">db3</text></g>
+<g font-family="Inter, sans-serif" font-size="11" fill="#6b746c">
+<text x="29" y="116">listens (--host)</text><text x="254" y="116">listens (--host)</text><text x="479" y="116">listens (--host)</text>
+<text x="29" y="162">advertises</text><text x="254" y="162">advertises (--advertise)</text><text x="479" y="162">advertises</text></g>
+<g font-family="JetBrains Mono, monospace" font-size="13" fill="#ece6d6">
+<text x="29" y="136">10.0.0.1:6745</text><text x="254" y="136">0.0.0.0:6745</text><text x="479" y="136">10.0.0.3:6745</text></g>
+<g font-family="JetBrains Mono, monospace" font-size="13" fill="#f5a623">
+<text x="29" y="182">10.0.0.1:6745</text><text x="254" y="182">10.0.0.2:6745</text><text x="479" y="182">10.0.0.3:6745</text></g>
+<rect x="29" y="202" width="172" height="30" rx="6" fill="#141d1b" stroke="#29322f"/>
+<rect x="254" y="202" width="172" height="30" rx="6" fill="#141d1b" stroke="#29322f"/>
+<rect x="479" y="202" width="172" height="30" rx="6" fill="#141d1b" stroke="#29322f"/>
+<g font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">
+<text x="40" y="222">:6745 HTTP + repl</text><text x="265" y="222">:6745 HTTP + repl</text><text x="490" y="222">:6745 HTTP + repl</text></g>
+<path d="M340,250 C340,295 115,295 115,256" fill="none" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#cam-arr)"/>
+<path d="M565,250 C565,330 115,330 115,256" fill="none" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#cam-arr)"/>
+<text x="340" y="345" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">db2, db3: --peer 10.0.0.1:6745</text>
+<text x="340" y="374" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#ff6b6b">Before 0.34.0 all three advertised 127.0.0.1, which each peer reads as itself</text>
+</svg><figcaption>Only the amber line travels to peers. db2 listens on every interface, so it has to name the address to advertise.</figcaption></figure>
+<p>Create the secret once and copy the same file to every machine:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># once, then copy solidb.key to all three machines</span>
+openssl rand -hex 32 &gt; solidb.key</pre></div>
+<p>Start the seed first, with no <code>--peer</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># on 10.0.0.1</span>
+SOLIDB_ADMIN_PASSWORD='…' solidb --host 10.0.0.1 --port 6745 --node-id db1 \
+  --keyfile /etc/solidb/solidb.key --data-dir /var/lib/solidb</pre></div>
+<p>Then the two others, pointing at the seed:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># on 10.0.0.2 — binds every interface, so --advertise is required</span>
+SOLIDB_ADMIN_PASSWORD='…' solidb --host 0.0.0.0 --advertise 10.0.0.2 --port 6745 --node-id db2 \
+  --peer 10.0.0.1:6745 --keyfile /etc/solidb/solidb.key --data-dir /var/lib/solidb
+
+<span class="tok-com"># on 10.0.0.3 — binds its private address, which is also what it advertises</span>
+SOLIDB_ADMIN_PASSWORD='…' solidb --host 10.0.0.3 --port 6745 --node-id db3 \
+  --peer 10.0.0.1:6745 --keyfile /etc/solidb/solidb.key --data-dir /var/lib/solidb</pre></div>
+<p><code>--node-id</code> is optional; a UUID is generated without it, but a readable name makes the status output easier to follow. <code>--peer</code> can be repeated. A joining node tries its seeds in order and stops at the first that answers. The seed's answer lists the other members, so <code>db3</code> learns about <code>db2</code> without being told.</p>
+</section>
+
+<section id="check"><h2>Checking that they see each other</h2>
+<p><code>GET /_api/cluster/status</code> returns a node's id and its peers, as that node sees them. Ask more than one node: the bug fixed in 0.34.0 was exactly a seed that saw its member while the member saw nobody. Here are two nodes started on one host with the flags above (<code>--host 127.0.0.1</code>, ports 6923 and 6933, the second with <code>--peer 127.0.0.1:6923</code>). The <code>stats</code> and <code>data_dir</code> fields are omitted:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -s -u admin:… localhost:6923/_api/cluster/status</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>{
+  "node_id": "n1",
+  "status": "cluster",
+  "replication_port": 6923,
+  "current_sequence": 5,
+  "log_entries": 5,
+  "peers": [
+    {"address": "127.0.0.1:6933", "is_connected": true, "last_seen_secs_ago": 1, "replication_lag": 5, "stats": null}
+  ]
+}</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -s -u admin:… localhost:6933/_api/cluster/status</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>{
+  "node_id": "n2",
+  "status": "cluster",
+  "replication_port": 6933,
+  "current_sequence": 5,
+  "log_entries": 5,
+  "peers": [
+    {"address": "127.0.0.1:6923", "is_connected": true, "last_seen_secs_ago": 1, "replication_lag": 5, "stats": null}
+  ]
+}</pre></div></div>
+<p>The joining node's log shows the join and the full sync, one after the other:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> n2 log</div><pre>INFO solidb: Sent join request to 127.0.0.1:6923
+INFO solidb: Requesting a full sync from 127.0.0.1:6923
+INFO solidb::cluster::manager: Successfully joined cluster. Received 2 peers.
+INFO solidb::sync::worker: Starting full sync: 1 databases, 7 documents
+INFO solidb::sync::worker: Full sync complete, final sequence: 5</pre></div>
+<p>After that, a collection created and a document inserted on the first node could be read from the second:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> query on n2</div><pre><span class="tok-kw">FOR</span> n <span class="tok-kw">IN</span> notes <span class="tok-kw">RETURN</span> {key: n._key, from: n.from}</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[{"from": "n1", "key": "hello"}]</pre></div></div>
+<p><code>GET /_api/cluster/info</code> returns the node's own configuration, including the peers it was started with. The endpoints are listed in the <a href="/docs/api-cluster">cluster API reference</a>.</p>
+</section>
+
+<section id="upgrading"><h2>Upgrading a running cluster</h2>
+<p>Two changes in 0.34.0 can stop a node that used to start. That is why this is a minor release and not a patch.</p>
+<ul>
+<li><strong>No keyfile, no cluster.</strong> A node with <code>--peer</code> and no <code>--keyfile</code> refuses to start. Generate one secret, put the same file on every node, and add <code>--keyfile</code> to each node's command line, the seed included.</li>
+<li><strong>No unroutable advertise address.</strong> A node with peers on other machines that would advertise loopback, <code>localhost</code>, <code>0.0.0.0</code> or <code>::</code> refuses to start. A unit file with <code>--host 0.0.0.0</code> needs an <code>--advertise</code> next to it. Leaving out <code>--host</code> is not a way around this: the advertised address then falls back to <code>127.0.0.1</code>.</li>
+</ul>
+<p>Before 0.34.0, such a cluster started and did not work: the old behaviour was a cluster that could not replicate and gave no sign of it. More on sharding and failover is in the <a href="/docs/cluster">cluster</a> and <a href="/docs/sharding">sharding</a> docs.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

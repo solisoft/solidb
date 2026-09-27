@@ -1,0 +1,163 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 1.2.0 · Performance</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">In SoliDB, one collection is one RocksDB column family, and the instance pays for every one of them in places that have nothing to do with the collection you are touching: at startup, when a collection is created or dropped, when collections are listed, when the WAL fills. 1.2.0 removes most of that bill. This is where it came from and what changed.</p>
+  <p class="post-note">The numbers are the ones measured for the 1.2.0 changelog. The terminal output was captured on a throwaway test server; the code paths it exercises are the ones 1.2.0 shipped.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#options">Why a collection costs more than its data</a></li>
+    <li><a href="#startup">Startup: two sweeps that a graceful stop made pointless</a></li>
+    <li><a href="#create-db">Databases no longer start with two collections</a></li>
+    <li><a href="#listing">Listing without the column-family lock</a></li>
+    <li><a href="#delete">Delete, then recreate, for free</a></li>
+    <li><a href="#wal">The WAL budget is a flush trigger</a></li>
+    <li><a href="#watch">What to watch, and one switch</a></li>
+  </ol>
+</nav>
+
+<section id="options"><h2>Why a collection costs more than its data</h2>
+<p>Every collection lives in its own column family. That keeps a collection’s documents, indexes, fulltext entries and blob chunks together — the <code>doc:</code>, <code>idx:</code>, <code>ft:</code> and <code>blo:</code> prefixes all sit inside it — and makes dropping a collection a single operation. It also means RocksDB knows about every collection individually.</p>
+<p>The expensive part is the OPTIONS file. Each <code>create_cf</code> and <code>drop_cf</code> rewrites and fsyncs the whole file, which holds one section per column family, and then re-parses what it just wrote. The cost is proportional to the instance’s <em>total</em> collection count, not to the collection being created. RocksDB has no setting that avoids it. While the rewrite runs it holds the database mutex, so writes elsewhere wait behind it — latency that no single query accounts for.</p>
+<p>On an instance with a handful of collections none of this shows. On one with hundreds, spread over dozens of databases and churned by test suites, it was most of the work the server did. Each 1.2.0 change below removes one place where that total count was paid for.</p>
+</section>
+
+<section id="startup"><h2>Startup: two sweeps that a graceful stop made pointless</h2>
+<p>On an instance with ~920 collections, SoliDB took 22.5–33.0 s to start. RocksDB’s own open measured 1.81 s. The rest was two full sweeps of every collection:</p>
+<ul>
+  <li><code>initialize</code> recounted every <code>doc:</code> key of every collection, unconditionally. That is the right thing after a crash, when the persisted document counts may be behind the data. After a graceful stop it was wasted.</li>
+  <li><code>Collection::new</code> walked the <code>blo:</code> prefix of every collection to count blob chunks — including the ~96% of collections that held no blob at all.</li>
+</ul>
+<p>1.2.0 writes a clean-shutdown marker into <code>_meta</code> during a graceful shutdown, once the collection stats and RocksDB have been flushed, so the marker never vouches for data that is not on disk. At the next start the marker is read and cleared in the same step. If it was there, the persisted counts are trusted and the recount is skipped. The blob chunk count is no longer computed up front; it is resolved the first time a collection needs it.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 300" role="img" aria-labelledby="fsm-st-t">
+<title id="fsm-st-t">Startup before and after 1.2.0: before, RocksDB open followed by two full sweeps of every collection; after, RocksDB open and a check of the clean-shutdown marker.</title>
+<defs><marker id="fsm-st-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#9ba39c"/></marker></defs>
+<rect x="0" y="0" width="680" height="300" fill="#101716"/>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Before 1.2.0 — ~920 collections</text>
+<rect x="40" y="44" width="33" height="34" fill="#4fd1c5"/>
+<rect x="73" y="44" width="376" height="34" fill="#141d1b" stroke="#ff6b6b" stroke-width="1.5"/>
+<rect x="449" y="44" width="191" height="34" fill="none" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="84" y="59" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">sweep: recount every doc: key</text>
+<text x="84" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">sweep: walk blo: per collection</text>
+<text x="40" y="96" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">RocksDB open 1.81 s</text>
+<line x1="40" y1="112" x2="449" y2="112" stroke="#3a4541"/>
+<line x1="449" y1="106" x2="449" y2="118" stroke="#f5a623" stroke-width="1.5"/>
+<line x1="640" y1="106" x2="640" y2="118" stroke="#f5a623" stroke-width="1.5"/>
+<line x1="449" y1="112" x2="640" y2="112" stroke="#f5a623" stroke-width="1.5"/>
+<text x="544" y="134" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">start: 22.5–33.0 s</text>
+<line x1="20" y1="156" x2="660" y2="156" stroke="#29322f"/>
+<text x="20" y="182" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">1.2.0 — graceful restart</text>
+<rect x="40" y="196" width="33" height="34" fill="#4fd1c5"/>
+<rect x="73" y="196" width="8" height="34" fill="#f5a623"/>
+<text x="40" y="248" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">RocksDB open 1.81 s</text>
+<line x1="81" y1="213" x2="128" y2="213" stroke="#9ba39c" marker-end="url(#fsm-st-a)"/>
+<text x="136" y="208" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">shutdown:clean in _meta?</text>
+<text x="136" y="224" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">yes: trust persisted counts, no sweep</text>
+<text x="136" y="264" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">no (crash): full recount, as before</text>
+<text x="136" y="282" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">blob chunk count: resolved on first use</text>
+</svg><figcaption>Bars share one scale, from the measured open (1.81 s) and total (22.5–33.0 s); the 1.2.0 row shows what was removed, not a measured start time.</figcaption></figure>
+<p>The crash path did not change. No marker — because the process was killed, or because the marker could not be cleared — means the full recount runs, exactly as before. The server log says which path it took. After a stop with <code>SIGTERM</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> server.log</div><pre>2026-09-27T15:56:28.322968Z  INFO solidb::storage::engine: Clean shutdown detected — trusting persisted document counts</pre></div>
+<p>And after a start that followed a failed one, with no marker to find:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> server.log</div><pre>2026-09-27T15:56:04.371341Z  INFO solidb::storage::engine: Recalculated document counts for 7 collections</pre></div>
+</section>
+
+<section id="create-db"><h2>Databases no longer start with two collections</h2>
+<p>Creating a database used to create <code>_scripts</code> and <code>_slow_queries</code> in it up front: two <code>create_cf</code> calls, two full OPTIONS rewrites, whether that database would ever run a script or log a slow query. On one dev instance that came to 43 <code>_scripts</code> and 42 <code>_slow_queries</code> column families across 46 databases, almost all empty.</p>
+<p>Both collections were already created on first use, so 1.2.0 simply stops pre-creating them. The race the pre-creation was guarding against is handled where it happens: the slow-query logger creates the collection and then retries the lookup ten times.</p>
+</section>
+
+<section id="listing"><h2>Listing without the column-family lock</h2>
+<p>Whether a collection existed was answered by RocksDB’s column-family map. Reading it cloned every name in the whole instance — 963 allocations to list one database — and took a read lock that <code>create_cf</code> and <code>drop_cf</code> hold for the whole OPTIONS rewrite. So listing one database’s collections could block for hundreds of milliseconds behind a collection being created in another.</p>
+<p>1.2.0 keeps a <code>coll:{db}:{name}</code> entry per collection in <code>_meta</code>. Listing is a prefix scan over those entries, with no column-family lock.</p>
+<p>The column-family map stays the truth; the entries are an index over it. A startup pass adopts any column family that has no entry, so a crash between <code>create_cf</code> and the entry write — or a downgrade to a binary that never wrote entries — heals itself, and every listing path falls back to the map when there is no <code>_meta</code> to consult. A missing entry can never make a collection disappear.</p>
+<p>The same clone-every-name call drove the embedding and TTL sweeps once per database, so each pass cost <em>databases × total collections</em> string allocations. Both now take a single grouped pass.</p>
+</section>
+
+<section id="delete"><h2>Delete, then recreate, for free</h2>
+<p>Deleting a collection called <code>drop_cf</code> inline. Creating one with the same name afterwards called <code>create_cf</code>. Two full rewrites and fsyncs of the OPTIONS file, to end up exactly where it started. That pattern is ordinary traffic: test suites drop and recreate the same collections on every run, and writing to a collection that does not exist creates it. On one dev instance, 11,241 collections were auto-created in eighteen days, across 321 distinct names — one of them 358 times. That was the dominant cost of the instance’s traffic.</p>
+<p>In 1.2.0 a delete no longer drops the column family. It erases the collection’s data with a range tombstone, so the space is reclaimed at deletion time, and keeps the empty column family for a grace period — <code>SOLIDB_CF_REUSE_GRACE_SECS</code>, 300 seconds by default. A create under the same name within that window claims the shell and reuses it. Every column family is built from the same options, so a reused one is indistinguishable from a new one. A single reaper thread drops the shells nobody came back for.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 280" role="img" aria-labelledby="fsm-dr-t">
+<title id="fsm-dr-t">Delete and same-name recreate: before 1.2.0, drop_cf then create_cf, two OPTIONS rewrites; in 1.2.0, a range tombstone on delete and reuse of the kept column family on recreate, no rewrite.</title>
+<defs><marker id="fsm-dr-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#9ba39c"/></marker></defs>
+<rect x="0" y="0" width="680" height="280" fill="#101716"/>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Before 1.2.0</text>
+<rect x="20" y="40" width="120" height="40" fill="#141d1b" stroke="#29322f"/>
+<text x="80" y="65" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">DELETE orders</text>
+<line x1="140" y1="60" x2="168" y2="60" stroke="#9ba39c" marker-end="url(#fsm-dr-a)"/>
+<rect x="172" y="40" width="130" height="40" fill="#141d1b" stroke="#ff6b6b" stroke-width="1.5"/>
+<text x="237" y="57" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">drop_cf</text>
+<text x="237" y="73" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ff6b6b">OPTIONS rewrite</text>
+<rect x="340" y="40" width="120" height="40" fill="#141d1b" stroke="#29322f"/>
+<text x="400" y="65" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">write orders</text>
+<line x1="460" y1="60" x2="488" y2="60" stroke="#9ba39c" marker-end="url(#fsm-dr-a)"/>
+<rect x="492" y="40" width="130" height="40" fill="#141d1b" stroke="#ff6b6b" stroke-width="1.5"/>
+<text x="557" y="57" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">create_cf</text>
+<text x="557" y="73" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ff6b6b">OPTIONS rewrite</text>
+<text x="20" y="106" font-family="Inter, sans-serif" font-size="12" fill="#ff6b6b">two rewrites + fsyncs, each proportional to the total collection count</text>
+<line x1="20" y1="124" x2="660" y2="124" stroke="#29322f"/>
+<text x="20" y="150" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">1.2.0</text>
+<rect x="20" y="162" width="120" height="40" fill="#141d1b" stroke="#29322f"/>
+<text x="80" y="187" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">DELETE orders</text>
+<line x1="140" y1="182" x2="168" y2="182" stroke="#9ba39c" marker-end="url(#fsm-dr-a)"/>
+<rect x="172" y="162" width="130" height="40" fill="#141d1b" stroke="#4fd1c5" stroke-width="1.5"/>
+<text x="237" y="179" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">range tombstone</text>
+<text x="237" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#4fd1c5">shell kept</text>
+<rect x="340" y="162" width="120" height="40" fill="#141d1b" stroke="#29322f"/>
+<text x="400" y="187" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">write orders</text>
+<line x1="460" y1="182" x2="488" y2="182" stroke="#9ba39c" marker-end="url(#fsm-dr-a)"/>
+<rect x="492" y="162" width="130" height="40" fill="#141d1b" stroke="#f5a623" stroke-width="1.5"/>
+<text x="557" y="179" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">reuse shell</text>
+<text x="557" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#f5a623">no rewrite</text>
+<text x="20" y="228" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">within SOLIDB_CF_REUSE_GRACE_SECS (300 s): zero rewrites</text>
+<text x="20" y="250" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">nobody comes back: the reaper thread drops the shell later, off the request</text>
+</svg><figcaption>The same delete-and-recreate before and in 1.2.0: the two OPTIONS rewrites become none when the name comes back within the grace period.</figcaption></figure>
+<p>Nothing visible changes. The collection is gone the instant the delete returns, as before, and its data is already erased, so the shell holds nothing while it waits. Pending drops are persisted as markers in <code>_meta</code>; on shutdown the reaper stops without spending rewrites, and the next startup resumes them.</p>
+<p>Here it is on a fresh server. Writing a document to <code>orders</code> auto-creates it, deleting it keeps the shell, and writing again reuses it — <code>solidb_cf_ops_total</code> does not move, <code>solidb_cf_reuses_total</code> does, and the query sees only the new document:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># server started with SOLIDB_METRICS_TOKEN=tok; /metrics needs it</span>
+curl -s -o /dev/null -u admin:admin -X POST localhost:6745/_api/database/blog/document/orders \
+  -H 'content-type: application/json' -d '{"total":15}'
+curl -s -H 'X-Metrics-Token: tok' localhost:6745/metrics | grep -E '^solidb_(cf_|collections_auto)'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>solidb_cf_ops_total 2
+solidb_cf_reuses_total 0
+solidb_collections_autocreated_total 1
+solidb_cf_op_seconds_total 0.003977</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -s -o /dev/null -u admin:admin -X DELETE localhost:6745/_api/database/blog/collection/orders
+curl -s -o /dev/null -u admin:admin -X POST localhost:6745/_api/database/blog/document/orders \
+  -H 'content-type: application/json' -d '{"total":40}'
+curl -s -H 'X-Metrics-Token: tok' localhost:6745/metrics | grep -E '^solidb_(cf_|collections_auto)'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>solidb_cf_ops_total 2
+solidb_cf_reuses_total 1
+solidb_collections_autocreated_total 2
+solidb_cf_op_seconds_total 0.003977</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> query.sdbql</div><pre><span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders <span class="tok-kw">RETURN</span> o.total</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[40]</pre></div></div>
+<p>On a fresh instance a rewrite takes milliseconds, as <code>solidb_cf_op_seconds_total</code> shows. The point is that it grows with every collection the instance holds, and the reuse path does not.</p>
+</section>
+
+<section id="wal"><h2>The WAL budget is a flush trigger</h2>
+<p><code>max_total_wal_size</code> was pinned at 50 MB. It reads like a disk cap, but it is a flush trigger: when the WAL crosses it, RocksDB flushes <em>every</em> column family that holds data in the oldest WAL file. With many collections each holding a little recent data, that is a stampede.</p>
+<p>Measured on a 963-collection instance: 27,904 of 27,910 flushes were <code>WAL Full</code>, 97.7% of them writing under 4 KB, in 39 bursts averaging ~715 column families each. That is where 3,717 SST files came from, 87.8% of them under 64 KB. And it did not even hold the line: the WAL sat at 201.8 MB.</p>
+<p>In 1.2.0 the budget is part of the storage profile — 2 GB in prod, 256 MB under <code>--dev</code> — and <code>--max-total-wal-size</code> (or <code>SOLIDB_MAX_TOTAL_WAL_SIZE</code>) overrides it. Lowering it to save disk is a false economy; it brings back the thousands of tiny SSTs. To bound memory, use <code>--memtable-budget</code>: the prod profile now sets a global memtable budget, and that trigger flushes one column family at a time rather than all of them. Two smaller fixes rode along: <code>arena_block_size</code> is down to 64 KB, since the 1 MB default is reserved per column family, and RocksDB’s info log has a size bound after reaching 118 MB.</p>
+</section>
+
+<section id="watch"><h2>What to watch, and one switch</h2>
+<p>1.2.0 adds four counters to <code>/metrics</code>, so column-family churn shows up as a number instead of as unexplained latency:</p>
+<div class="post-table"><table><thead><tr><th>Metric</th><th>Counts</th></tr></thead><tbody>
+<tr><td><code>solidb_cf_ops_total</code></td><td>Column-family creates and drops since start — each one an OPTIONS rewrite</td></tr>
+<tr><td><code>solidb_cf_op_seconds_total</code></td><td>Wall time spent inside those creates and drops</td></tr>
+<tr><td><code>solidb_cf_reuses_total</code></td><td>Deleted collections’ column families wiped and reused instead of dropped and recreated</td></tr>
+<tr><td><code>solidb_collections_autocreated_total</code></td><td>Collections created by a write to a name that did not exist</td></tr>
+</tbody></table></div>
+<p>If <code>solidb_collections_autocreated_total</code> climbs on an instance whose schema is managed elsewhere, every one of those is a new column family and a bigger OPTIONS file — sometimes from a typo. <code>SOLIDB_AUTO_CREATE_COLLECTIONS=0</code> turns auto-creation off, and the write fails instead:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># server started with SOLIDB_AUTO_CREATE_COLLECTIONS=0</span>
+curl -s -u admin:admin -X POST localhost:6745/_api/database/blog/document/ordres \
+  -H 'content-type: application/json' -d '{"total":15}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>{"code":404,"error":"ordres","type":"CollectionNotFound"}</pre></div></div>
+<p>Auto-creation stays on by default, because applications rely on it.</p>
+<p>None of this needs configuration to take effect: the first graceful stop on 1.2.0 writes the marker, the <code>_meta</code> entries are backfilled at startup, and deletes start keeping their shells. The <code>/metrics</code> endpoint is described in <a href="/docs/api-monitoring">monitoring</a>; the full list of 1.2.0 changes is in the <a href="/docs/changelog">changelog</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

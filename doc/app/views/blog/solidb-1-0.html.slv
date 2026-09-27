@@ -1,0 +1,159 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 1.0.0</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">SoliDB 1.0.0 is security hardening, SDBQL completeness, and one product breaking change: the client-facing job and cron queue is gone. A fresh node now starts closed — loopback only, no unauthenticated replication, no public <code>/metrics</code> — and SDBQL gains set operations, recursive CTEs and <code>RETURN DISTINCT</code>. If you run 0.34 today, read the last section before upgrading.</p>
+  <p class="post-note">Every query result on this page was produced by running the query on a test server.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#what">What 1.0 is</a></li>
+    <li><a href="#sdbql">Set operations, recursive CTEs, <code>RETURN DISTINCT</code></a></li>
+    <li><a href="#auto-index">Indexes created by the queries that need them</a></li>
+    <li><a href="#defaults">A fresh node starts closed</a></li>
+    <li><a href="#tls">HTTPS and rate limiting in the server</a></li>
+    <li><a href="#queue">The job and cron queue moves to Soli</a></li>
+    <li><a href="#smaller">Smaller changes worth knowing</a></li>
+    <li><a href="#upgrading">Upgrading from 0.34</a></li>
+  </ol>
+</nav>
+
+<section id="what"><h2>What 1.0 is</h2>
+<p>The changelog describes this release as <em>security hardening, SDBQL function completeness, and one product breaking change</em>. Application background jobs now belong to the Soli framework, not to the database.</p>
+<p>Several defaults change to fail closed, and each of them can break a deployment that relied on the old behaviour. The one that fails quietly is the queue removal: a configured cron schedule stops firing, with no error. The <a href="#upgrading">upgrade section</a> lists what to act on.</p>
+</section>
+
+<section id="sdbql"><h2>Set operations, recursive CTEs, <code>RETURN DISTINCT</code></h2>
+<p>Comparing two result sets used to mean two queries and a merge in application code. Query blocks combine with <code>UNION [ALL]</code>, <code>INTERSECT</code> and <code>EXCEPT</code>. Rows are compared by value — the same equality the <code>UNION()</code> and <code>INTERSECTION()</code> functions use — and duplicates are removed except with <code>UNION ALL</code>. Which newsletter subscribers are also customers:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> subscribers-who-buy.sdbql</div><pre><span class="tok-kw">FOR</span> n <span class="tok-kw">IN</span> newsletter <span class="tok-kw">RETURN</span> n.email
+<span class="tok-kw">INTERSECT</span>
+<span class="tok-kw">FOR</span> c <span class="tok-kw">IN</span> customers <span class="tok-kw">RETURN</span> c.email</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>["bo@example.com", "cy@example.com"]</pre></div></div>
+<p>And which customers have never subscribed:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> customers-not-subscribed.sdbql</div><pre><span class="tok-kw">FOR</span> c <span class="tok-kw">IN</span> customers <span class="tok-kw">RETURN</span> c.email
+<span class="tok-kw">EXCEPT</span>
+<span class="tok-kw">FOR</span> n <span class="tok-kw">IN</span> newsletter <span class="tok-kw">RETURN</span> n.email</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>["di@example.com"]</pre></div></div>
+<p>Either side may be parenthesized, and chains follow SQL precedence: <code>INTERSECT</code> binds tighter than <code>UNION</code> and <code>EXCEPT</code>, which chain left to right. Each operand is a full query block, and permission checks see through the operands.</p>
+<p>Hierarchies were the other gap. <code>WITH RECURSIVE name AS (&lt;anchor&gt; UNION ALL &lt;step&gt;)</code> runs the anchor once, then runs the step until it stops producing rows. Inside the step, the CTE name holds the rows of the <em>previous</em> iteration, so each pass goes one level deeper. Everyone under Bob in an org chart, at any depth:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> reports.sdbql</div><pre><span class="tok-kw">WITH RECURSIVE</span> reports <span class="tok-kw">AS</span> (
+  <span class="tok-com">-- Anchor: the root of the hierarchy</span>
+  <span class="tok-kw">FOR</span> e <span class="tok-kw">IN</span> employees
+    <span class="tok-kw">FILTER</span> e._key <span class="tok-punc">==</span> <span class="tok-str">"bob"</span>
+    <span class="tok-kw">RETURN</span> e._key
+  <span class="tok-kw">UNION ALL</span>
+  <span class="tok-com">-- Step: direct reports of the previous level</span>
+  <span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> employees
+    <span class="tok-kw">FILTER</span> m.manager <span class="tok-kw">IN</span> reports
+    <span class="tok-kw">RETURN</span> m._key
+)
+<span class="tok-kw">FOR</span> x <span class="tok-kw">IN</span> reports
+  <span class="tok-kw">RETURN</span> x</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>["bob", "dan", "erin"]</pre></div></div>
+<p>Dan reports to Bob and Erin to Dan; Alice, Carol and Frank are outside that branch. Recursion is capped at 1,000 iterations and 1M rows, so cyclic data (a → b → a) ends in an iteration-limit error rather than a hung query — filter out visited rows in the step, or carry a depth and stop at it. The <a href="/docs/sdbql-cte">CTE page</a> has the full syntax.</p>
+<p><code>RETURN DISTINCT</code> deduplicates result rows, first occurrence wins. Five orders from three cities:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> cities.sdbql</div><pre><span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders
+  <span class="tok-kw">RETURN DISTINCT</span> o.city</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>["Lyon", "Nantes", "Paris"]</pre></div></div>
+<p>The same release adds <code>COLLECT … INTO g KEEP v1, v2</code>, which limits which variables are stored in the group arrays (an unknown name is an error); the <code>NONE</code> quantifier, as <code>NONE(x IN arr SATISFIES cond)</code> or <code>NONE(arr, x -&gt; cond)</code>; and <code>OFFSET</code>, alone or as <code>LIMIT n OFFSET m</code>. Functions the reference already listed now exist, and string <code>LENGTH</code> counts Unicode scalars. See <a href="/docs/sdbql-syntax">SDBQL syntax</a>.</p>
+</section>
+
+<section id="auto-index"><h2>Indexes created by the queries that need them</h2>
+<p>A <code>FILTER</code> on an unindexed field is a full scan. 1.0 can create the index itself, on collections that opt in with <code>autoIndex: true</code> — or leave the property unset and set <code>SOLIDB_AUTO_INDEX=1</code>; an explicit <code>autoIndex: false</code> wins over the variable. The first time a <code>FOR</code> + <code>FILTER</code> equality or range comparison would have used an index and none exists, SoliDB creates a persistent <code>_auto_{field}</code> index, backfills it, and uses it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># collection created with {"name": "events", "autoIndex": true}, 500 documents</span>
+<span class="tok-com"># then: FOR e IN events FILTER e.kind == "signup" COLLECT WITH COUNT INTO n RETURN n</span>
+curl -s -u admin:$PASS localhost:6745/_api/database/blog/index/events \
+  | jq -c '.indexes[] | {name, fields, index_type}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>{"name": "_auto_kind", "fields": ["kind"], "index_type": "Persistent"}</pre></div></div>
+<p>Creating an index is a write, so only a caller holding Write or Admin triggers one, on every query route; a query with no principal — a view refresh, a stream task — never does. There is a cap of 16 per collection. <code>SORT</code>, null comparisons, <code>_key</code>/<code>_id</code>/<code>_rev</code>, sharded collections, filters a composite index already covers, fields no document carries and collections above <code>SOLIDB_AUTO_INDEX_MAX_DOCS</code> (default 1,000,000) are left alone. <code>EXPLAIN</code> reports <code>auto_index_candidate</code> without creating anything. Details on the <a href="/docs/indexes">indexes page</a>.</p>
+</section>
+
+<section id="defaults"><h2>A fresh node starts closed</h2>
+<p>A 0.34 node started with no flags listened on every interface, accepted replication connections without a keyfile, and served <code>/metrics</code> to anyone. Each was reasonable on a laptop and a finding on a server. In 1.0 all three default the other way:</p>
+<figure class="post-figure"><svg viewBox="0 0 680 290" role="img" aria-labelledby="s10-exp-title">
+<title id="s10-exp-title">What another host on the network can reach on a node started with no flags, in 0.34.0 and in 1.0.0</title>
+<defs><marker id="s10-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9ba39c"/></marker></defs>
+<rect x="0" y="0" width="680" height="290" fill="#101716"/>
+<text x="175" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#9ba39c">0.34.0, no flags</text>
+<text x="505" y="28" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#f5a623">1.0.0, no flags</text>
+<line x1="340" y1="14" x2="340" y2="276" stroke="#29322f" stroke-width="1"/>
+<rect x="20" y="44" width="310" height="36" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="175" y="67" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">another host on the network</text>
+<rect x="350" y="44" width="310" height="36" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="505" y="67" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">another host on the network</text>
+<line x1="75" y1="82" x2="75" y2="176" stroke="#4fd1c5" stroke-width="1.5" marker-end="url(#s10-arrow)"/>
+<line x1="175" y1="82" x2="175" y2="176" stroke="#4fd1c5" stroke-width="1.5" marker-end="url(#s10-arrow)"/>
+<line x1="275" y1="82" x2="275" y2="176" stroke="#4fd1c5" stroke-width="1.5" marker-end="url(#s10-arrow)"/>
+<line x1="405" y1="82" x2="405" y2="126" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="505" y1="82" x2="505" y2="126" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="605" y1="82" x2="605" y2="126" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="390" y1="130" x2="420" y2="130" stroke="#ff6b6b" stroke-width="3"/>
+<line x1="490" y1="130" x2="520" y2="130" stroke="#ff6b6b" stroke-width="3"/>
+<line x1="590" y1="130" x2="620" y2="130" stroke="#ff6b6b" stroke-width="3"/>
+<text x="405" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ff6b6b">no route</text>
+<text x="505" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ff6b6b">refused</text>
+<text x="605" y="152" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#ff6b6b">401</text>
+<rect x="20" y="180" width="310" height="44" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<rect x="350" y="180" width="310" height="44" rx="6" fill="#141d1b" stroke="#f5a623"/>
+<text x="75" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">HTTP API</text>
+<text x="175" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">sync TCP</text>
+<text x="275" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">/metrics</text>
+<text x="405" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">HTTP API</text>
+<text x="505" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">sync TCP</text>
+<text x="605" y="207" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">/metrics</text>
+<text x="75" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">0.0.0.0</text>
+<text x="175" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">no keyfile:</text>
+<text x="175" y="262" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">no HMAC</text>
+<text x="275" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">public</text>
+<text x="405" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">127.0.0.1</text>
+<text x="505" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">no keyfile:</text>
+<text x="505" y="262" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">fails closed</text>
+<text x="605" y="246" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">token or</text>
+<text x="605" y="262" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">admin JWT</text>
+</svg><figcaption>The same node started with no flags: in 0.34.0 all three surfaces answer the network; in 1.0.0 none does until you say so.</figcaption></figure>
+<p>Listeners bind <code>127.0.0.1</code> unless <code>--host</code> or <code>SOLIDB_HOST</code> says otherwise. Use <code>0.0.0.0</code> only when something in front of the process terminates TLS — or when the server does, below.</p>
+<p>For replication, the HTTP cluster bus already required a secret in 0.34; the multiplexed sync socket still skipped HMAC when no keyfile existed. Unauthenticated replication is now refused unless <code>SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true</code>, meant for local tests.</p>
+<p><code>/metrics</code> requires <code>SOLIDB_METRICS_TOKEN</code> (as <code>X-Metrics-Token</code> or <code>Bearer</code>) or an admin JWT, unless <code>SOLIDB_METRICS_PUBLIC=1</code>.</p>
+<p>The permission model tightened the same way. Creating or changing <code>_scripts</code> and <code>_services</code> needed only Write, so a collection editor could publish an unauthenticated <code>/api/{db}/{service}/…</code> handler; installing Lua is now Admin, and new services default to <code>require_auth: true</code>. Cluster control-plane endpoints now require Admin. Webhook URLs are checked against loopback, RFC1918, link-local and metadata hosts. API keys must declare at least one role. Passwords must be at least 12 characters. A JWT in <code>?token=</code> is accepted only on the three WebSocket endpoints. The <a href="/docs/security">security page</a> covers each.</p>
+</section>
+
+<section id="tls"><h2>HTTPS and rate limiting in the server</h2>
+<p>Serving TLS used to mean a reverse proxy. <code>--tls-cert</code> and <code>--tls-key</code> now terminate it in the server, through rustls. Both are required together; one without the other refuses to start rather than listening in plaintext.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># HTTPS on all interfaces, TLS terminated by SoliDB itself</span>
+solidb --host 0.0.0.0 --tls-cert /etc/solidb/cert.pem --tls-key /etc/solidb/key.pem</pre></div>
+<p>On the multiplexed port the listener sniffs for a TLS ClientHello and handshakes only when one is offered. HTTPS clients get the tunnel, with HTTP and the native driver protocol both working inside it, while plaintext peers keep connecting — the shipped SDKs' driver protocol and the sync and cluster transports do not speak TLS yet. <code>SOLIDB_TLS_REQUIRE=1</code> refuses plaintext on that port anyway, which is safe only on a single node with no native-protocol clients.</p>
+<p>Before 1.0 only <code>/auth/login</code> was throttled. The whole router now has a sliding-window limiter answering <code>429</code> with <code>Retry-After</code> before any handler runs. It is <em>opt-in</em>: <code>SOLIDB_API_RATE_LIMIT</code> defaults to <code>0</code>, because a database usually sits behind an application tier it trusts, and throttling that tier turns a capacity problem into an availability one. When on, the budget is keyed on the request's credential where there is one and on the address otherwise; <code>SOLIDB_API_RATE_LIMIT_PER_IP</code> (default 10× the budget) still caps the address. The window is <code>SOLIDB_API_RATE_WINDOW_SECS</code>, 60 by default.</p>
+</section>
+
+<section id="queue"><h2>The job and cron queue moves to Soli</h2>
+<p>Application jobs now live in the Soli framework, which claims and runs them in its own process. The queue SoliDB exposed for that work is removed: ten HTTP endpoints, eight driver commands, the Lua <code>db:enqueue</code> global, the jobs and cron sub-clients in six SDKs, and the admin Queues and Cron pages.</p>
+<p><a href="/docs/triggers">Triggers</a> keep working. A trigger still fires by inserting a row into <code>_jobs</code>, and the worker still claims it and runs its Lua script or posts its signed webhook. Embedding generation and materialized-view refresh are untouched.</p>
+</section>
+
+<section id="smaller"><h2>Smaller changes worth knowing</h2>
+<p><code>LENGTH("users")</code> used to return the document count when the string happened to name a collection. It is now the character length, always. Use <code>COLLECTION_COUNT</code> for the count:</p>
+<div class="post-table"><table><thead><tr><th>Query</th><th>Result</th></tr></thead><tbody><tr><td><pre><span class="tok-kw">RETURN</span> [<span class="tok-fn">LENGTH</span>(<span class="tok-str">"orders"</span>), <span class="tok-fn">COLLECTION_COUNT</span>(<span class="tok-str">"orders"</span>)]</pre></td><td><pre>[[6, 5]]</pre></td></tr><tr><td><pre><span class="tok-kw">FOR</span> i <span class="tok-kw">IN</span> <span class="tok-num">1</span><span class="tok-punc">..</span><span class="tok-num">10</span> <span class="tok-kw">LIMIT</span> <span class="tok-num">3</span> <span class="tok-kw">OFFSET</span> <span class="tok-num">4</span> <span class="tok-kw">RETURN</span> i</pre></td><td><pre>[5, 6, 7]</pre></td></tr></tbody></table></div>
+<p><code>--no-lua</code> (or <code>SOLIDB_NO_LUA=1</code>) skips the Lua VM pool on nodes that never run Lua, dropping the idle memory of the pre-warmed VMs — at least four states. Custom scripts, service routes and the REPL return 501, and a trigger whose action is a Lua script fails its job immediately, without retries.</p>
+<p>Freed memory now goes back to the operating system. jemalloc was linked but never configured, so every Tokio worker that handled a burst grew an arena and went idle holding it. Measured: 3200 queries at 32× concurrency took RSS from 662 MB to 1296 MB, and it was still 954 MB five minutes later; with a background purger the same burst comes back to 625 MB.</p>
+<p>Driver queries now run under the same 30-second cap as HTTP queries, and carry the session principal, so row policies filter driver reads too.</p>
+</section>
+
+<section id="upgrading"><h2>Upgrading from 0.34</h2>
+<p>These are the changes that need action. Everything else in 1.0 is additive.</p>
+<div class="post-table"><table><thead><tr><th>If you…</th><th>Then</th></tr></thead><tbody>
+<tr><td>reach the node from another host</td><td>Start it with <code>--host 0.0.0.0</code> (or <code>SOLIDB_HOST</code>). The default is now loopback.</td></tr>
+<tr><td>run replication without a keyfile</td><td>Give every node <code>--keyfile</code>. Without one, sync connections are refused; <code>SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true</code> is for local tests.</td></tr>
+<tr><td>scrape <code>/metrics</code></td><td>Set <code>SOLIDB_METRICS_TOKEN</code> and send it as <code>X-Metrics-Token</code> or <code>Bearer</code>, or set <code>SOLIDB_METRICS_PUBLIC=1</code>.</td></tr>
+<tr><td>create API keys without roles</td><td>Name the roles. Empty <code>roles</code> no longer default to <code>admin</code>.</td></tr>
+<tr><td>let non-admins write <code>_scripts</code> or <code>_services</code></td><td>Those writes now need Admin.</td></tr>
+<tr><td>call the queue or cron API, <code>db:enqueue</code>, or an SDK jobs client</td><td>Move that work to Soli's job engine. Let the queue drain first: a <code>pending</code> row that no trigger created will never run. A cron schedule you configured <em>stops firing with no error</em>. <code>_cron_jobs</code> and <code>_queue_config</code> become orphan data; drop them when ready.</td></tr>
+<tr><td>use <code>LENGTH("coll")</code> as a count</td><td>Switch to <code>COLLECTION_COUNT("coll")</code>.</td></tr>
+<tr><td>pass a JWT in <code>?token=</code> to a REST endpoint</td><td>Send it as <code>Authorization: Bearer</code>. The query string works only on the WebSocket endpoints.</td></tr>
+<tr><td>rely on <code>SOLIDB_DB_AUTHZ_MODE=warn</code> or <code>SOLIDB_LUA_FAST_MODE</code></td><td>Both are ignored unless <code>SOLIDB_DB_AUTHZ_ALLOW_WARN=1</code> / <code>SOLIDB_LUA_FAST_MODE_UNSAFE=1</code> is also set.</td></tr>
+<tr><td>have passwords under 12 characters</td><td>New passwords must be at least 12. The admin app no longer falls back to <code>admin</code>/<code>admin</code>.</td></tr>
+</tbody></table></div>
+<p>The complete list is in the <a href="/docs/changelog">changelog</a>.</p>
+</section>
+</div>
+
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

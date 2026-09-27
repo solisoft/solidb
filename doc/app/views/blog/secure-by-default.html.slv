@@ -1,0 +1,140 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 1.1.0 · Security</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">A handful of SoliDB’s own collections are not data: they hold credentials, the rules that decide who is an admin, and Lua code the server runs. Until 1.1.0 most of them could be written like any other collection by anyone with Write. 1.1.0 puts them in three tiers behind one check, makes Lua scripts write as the person who called them, and puts a login in front of the admin console. Each of these closes a real finding.</p>
+  <p class="post-note">The responses on this page were captured on a throwaway server. <code>src/storage/protected.rs</code>, where the tiers and their error messages live, has not changed since 1.1.0.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#problem">Collections the server reads back</a></li>
+    <li><a href="#tiers">Three tiers, one decision point</a></li>
+    <li><a href="#demo">What a Write user sees</a></li>
+    <li><a href="#lua">Scripts write as their caller</a></li>
+    <li><a href="#console">A login in front of the admin console</a></li>
+    <li><a href="#switches">The switches, and their defaults</a></li>
+  </ol>
+</nav>
+
+<section id="problem"><h2>Collections the server reads back</h2>
+<p>SoliDB keeps its own state in ordinary collections. <code>_admins</code> holds argon2 password hashes, <code>_env</code> is where the docs tell you to put provider API keys, <code>_scripts</code> holds the Lua source that <code>/api/{db}/{service}/{path}</code> executes, and <code>_user_roles</code> says who holds which role. Being ordinary collections, they were reachable from every path that takes a collection name from the caller: the document API, SDBQL, the driver, import.</p>
+<p>That was found in stages. 0.34.0 stopped <code>_env</code>, <code>_admins</code> and <code>_api_keys</code> from being read with plain Read. 1.0.0 made creating or changing a script Admin on the dedicated endpoints, because a collection editor could publish unauthenticated handlers. But the generic document API still wrote those collections by name, so the Admin gate on the script endpoints could be walked around, and a row in <code>_scripts</code> was Lua running as <code>_system</code>. Worse, <code>_roles</code> and <code>_user_roles</code> <em>are</em> the authorization decision: the server trusts every row of <code>_user_roles</code> for the username it matches, and prefers a stored <code>_roles</code> definition to the built-in one. With only Write on <code>_system</code>, inserting one document into either made the caller an admin.</p>
+</section>
+
+<section id="tiers"><h2>Three tiers, one decision point</h2>
+<p>1.1.0 sorts these collections by what the server does with them after they are stored:</p>
+<div class="post-table"><table><thead><tr><th>Tier</th><th>Collections</th><th>By name</th><th>Why</th></tr></thead><tbody>
+<tr><td>Protected</td><td><code>_env</code>, <code>_admins</code>, <code>_api_keys</code>, <code>_roles</code>, <code>_user_roles</code></td><td>Not read, not written</td><td>Credentials, and the authorization state the server reads back to decide permissions.</td></tr>
+<tr><td>Write-protected</td><td><code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, <code>_views</code>, <code>_graphs</code>, <code>_config</code>, <code>_rag_pipelines</code></td><td>Read, never written</td><td>The server executes or schedules what is in them. Writes go through the Admin-gated endpoints, which validate their input.</td></tr>
+<tr><td>Admin-write</td><td><code>_jobs</code></td><td>Read; written with Admin only</td><td>The trigger dispatcher runs its pending rows as <code>_system</code>, but it is also the Soli framework’s job store.</td></tr>
+</tbody></table></div>
+<p>The second tier is readable on purpose: listing them is a documented feature — the admin UI browses <code>_scripts</code>. Each entry is there for what the server does with it: <code>_services</code> decides which scripts are routable, <code>_triggers</code> schedules work that runs with the <code>_system</code> admin identity, and a <code>_views</code> row names the collection a <code>REFRESH</code> truncates.</p>
+<p><code>_jobs</code> gets a tier of its own because denying everyone would break every Soli app: <code>perform_later</code> inserts into <code>_jobs</code> by name and the worker updates rows in place, always with an admin credential. An admin can already do anything the dispatcher can, so admitting admins gives nothing away. Plain Write stays out.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 390" role="img" aria-labelledby="sbd-tiers-t">
+<title id="sbd-tiers-t">Every by-name access goes through check_write_access; three tiers of collections decide who may read and write</title>
+<defs><marker id="sbd-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3a4541"/></marker></defs>
+<rect x="120" y="14" width="440" height="42" rx="6" fill="#141d1b" stroke="#f5a623"/>
+<text x="340" y="32" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">caller-supplied collection name</text>
+<text x="340" y="48" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="#f5a623">check_write_access(name, WriteActor)</text>
+<line x1="340" y1="56" x2="340" y2="82" stroke="#3a4541" stroke-width="1.5" marker-end="url(#sbd-arr)"/>
+<rect x="160" y="88" width="164" height="112" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="172" y="108" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Protected</text>
+<text x="172" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_env  _admins</text>
+<text x="172" y="150" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_api_keys</text>
+<text x="172" y="168" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_roles</text>
+<text x="172" y="186" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_user_roles</text>
+<rect x="332" y="88" width="164" height="112" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="344" y="108" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Write-protected</text>
+<text x="344" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_scripts _services</text>
+<text x="344" y="150" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_triggers _views</text>
+<text x="344" y="168" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_graphs  _config</text>
+<text x="344" y="186" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_rag_pipelines</text>
+<rect x="504" y="88" width="164" height="112" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="516" y="108" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Admin-write</text>
+<text x="516" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">_jobs</text>
+<text x="16" y="235" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">read by name</text>
+<text x="16" y="277" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">write, no Admin</text>
+<text x="16" y="319" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">write, Admin</text>
+<rect x="160" y="214" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="242" y="235" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="160" y="256" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="242" y="277" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="160" y="298" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="242" y="319" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="332" y="214" width="164" height="32" rx="4" fill="#141d1b" stroke="#4fd1c5"/><text x="414" y="235" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">allowed</text>
+<rect x="332" y="256" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="414" y="277" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="332" y="298" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="414" y="319" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="504" y="214" width="164" height="32" rx="4" fill="#141d1b" stroke="#4fd1c5"/><text x="586" y="235" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">allowed</text>
+<rect x="504" y="256" width="164" height="32" rx="4" fill="#141d1b" stroke="#ff6b6b"/><text x="586" y="277" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">403</text>
+<rect x="504" y="298" width="164" height="32" rx="4" fill="#141d1b" stroke="#4fd1c5"/><text x="586" y="319" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">allowed</text>
+<rect x="16" y="346" width="652" height="32" rx="4" fill="none" stroke="#29322f" stroke-dasharray="4 4"/>
+<text x="342" y="366" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Server-side code uses Database::system_collection, not a caller-supplied name</text>
+</svg><figcaption>Only <code>_jobs</code> can be written by name, and only with Admin; the second tier stays shut even to admins, who use the dedicated endpoints.</figcaption></figure>
+<p>The enforcement matters as much as the lists. Rather than each handler re-deriving the rules, there is one function, <code>check_write_access(name, WriteActor)</code>, and it is called by the storage getters that hand out a collection for writing. Those getters take the actor as an argument, so a handler cannot ask for a writable collection without saying who is writing: a client, with or without Admin, or the server itself. That covers the document API, SDBQL, the driver, import, truncate, blob uploads and the Lua bindings. Names are matched with or without their database prefix, so <code>tenant:_scripts</code> is caught too.</p>
+</section>
+
+<section id="demo"><h2>What a Write user sees</h2>
+<p>Take a user with the built-in <code>editor</code> role, which reads and writes every database but is not Admin (see <a href="/docs/api-auth">the auth API</a> for creating users and assigning roles). Its token writes an ordinary collection as before. Pointing the same request at <code>_scripts</code> is refused, and so is the SDBQL route to the same place:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># ana holds the editor role; $T is her JWT from /auth/login</span>
+curl -s -X POST localhost:6745/_api/database/blog/document/_scripts \
+  -H "authorization: Bearer $T" -H 'content-type: application/json' \
+  -d '{"name":"pwn","path":"pwn","methods":["GET"],"code":"return 1"}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>HTTP 403
+{"code": 403,
+ "error": "Access denied: '_scripts' is managed by the server and is not writable through this API; use the dedicated admin endpoints",
+ "type": "Forbidden"}</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> cursor as ana</div><pre><span class="tok-kw">INSERT</span> {name: <span class="tok-str">"pwn"</span>, code: <span class="tok-str">"return 1"</span>} <span class="tok-kw">INTO</span> _scripts</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>HTTP 403
+{"code": 403,
+ "error": "Access denied: '_scripts' is managed by the server and is not writable through this API; use the dedicated admin endpoints",
+ "type": "Forbidden"}</pre></div></div>
+<p>The other two tiers answer with their own messages, so an operator reading a log can tell which rule fired:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> cursor as ana</div><pre><span class="tok-kw">FOR</span> e <span class="tok-kw">IN</span> _env <span class="tok-kw">RETURN</span> e</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>HTTP 403
+{"code": 403,
+ "error": "Access denied: '_env' stores credentials and is not readable or writable through this API; use the admin-only endpoints",
+ "type": "Forbidden"}</pre></div></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -s -X POST localhost:6745/_api/database/blog/document/_jobs \
+  -H "authorization: Bearer $T" -H 'content-type: application/json' \
+  -d '{"status":"pending"}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>HTTP 403
+{"code": 403,
+ "error": "Access denied: '_jobs' is executed by the server and is writable only with an Admin credential",
+ "type": "Forbidden"}</pre></div></div>
+<p>These are <code>403 Forbidden</code>, not <code>404</code>. The names are fixed and documented, so acknowledging them leaks nothing, and a 403 tells you what happened. An admin writing <code>_scripts</code> by name gets the same 403 as ana: scripts are created with <code>POST /_api/database/:db/scripts</code> (<a href="/docs/api-scripting">scripting API</a>).</p>
+</section>
+
+<section id="lua"><h2>Scripts write as their caller</h2>
+<p>Closing the HTTP paths was not enough while Lua kept a side door. Script code is fixed by an admin, but a public route can be called by anyone, and a script that writes to whatever collection the request names would let that anyone pick <code>_scripts</code>. From 1.1.0 a script’s by-name writes are attributed to its caller, never to the server. The caller is kept in the Lua state’s app data rather than a global a script could overwrite, and it is read at call time, because a pooled state serves requests from different callers. If nothing is installed, it fails closed as an anonymous caller.</p>
+<p>A deliberately careless public endpoint, on a service created with <code>require_auth: false</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> save.lua</div><pre><span class="tok-kw">local</span> c = db:collection(request.body.collection)
+<span class="tok-kw">return</span> c:insert(request.body.doc)</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># no credentials at all</span>
+curl -s -X POST localhost:6745/api/blog/public/save -H 'content-type: application/json' \
+  -d '{"collection":"_scripts","doc":{"name":"pwn","path":"pwn","methods":["GET"],"service":"public","code":"return os"}}'</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>HTTP 403
+{"code": 403,
+ "error": "Access denied: '_scripts' is managed by the server and is not writable through this API; use the dedicated admin endpoints",
+ "type": "Forbidden"}</pre></div></div>
+<p>With <code>"collection": "notes"</code> the same call inserts the document, as it should. Refusals reach the client as a 403 rather than a generic script error. <code>db:query</code> runs under the caller’s principal too, the same one the caller would get on <code>/cursor</code>, and the Lua REPL carries the identity of the admin who opened it. Trigger and job scripts are the exception by design: the queue worker runs them as <code>_system</code> with the admin role, which is what lets them write <code>_jobs</code>. <a href="/docs/scripting-database">Scripting: database access</a> has the full rules.</p>
+</section>
+
+<section id="console"><h2>A login in front of the admin console</h2>
+<p>The <code>admin/</code> console signs in to SoliDB with an administrator account and attaches that credential to every upstream call on behalf of whoever is browsing. Its routes file used to say access protection happens at the reverse proxy, but the repository ships no such proxy and the app binds <code>0.0.0.0</code>. Anyone who could reach the port had the Lua REPL, user creation and database drops.</p>
+<p>From 1.1.0 every route goes through a middleware that fails closed. Set <code>ADMIN_UI_PASSWORD</code> to require a login, or set <code>ADMIN_UI_ALLOW_NO_AUTH=1</code> to declare that something in front of the app really does authenticate. With neither, the console answers 503 with an explanation instead of serving.</p>
+</section>
+
+<section id="switches"><h2>The switches, and their defaults</h2>
+<p>Everything below is off unless you turn it on. The first four arrived in 1.1.0; the rest were already in place from 1.0.0.</p>
+<div class="post-table"><table><thead><tr><th>Variable</th><th>Since</th><th>Default, and what setting it does</th></tr></thead><tbody>
+<tr><td><code>ADMIN_UI_PASSWORD</code> / <code>ADMIN_UI_ALLOW_NO_AUTH</code></td><td>1.1.0</td><td>Unset: the admin console refuses to serve. One of the two must be set.</td></tr>
+<tr><td><code>SOLIDB_ENABLE_AI_VALIDATION</code></td><td>1.1.0</td><td>Off. Enables <code>/_api/ai/validate</code>, which shells out to <code>cargo</code> on the server host. Development hosts only; also requires a global admin.</td></tr>
+<tr><td><code>SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET</code></td><td>1.1.0</td><td>Off: a job with no <code>webhook_secret</code> is delivered unsigned. On, it is signed with <code>SOLI_WEBHOOK_SECRET</code> — but the target URL is tenant-chosen, which makes it a signing oracle for the instance secret.</td></tr>
+<tr><td><code>SOLIDB_MAX_INTERMEDIATE_ROWS</code></td><td>1.1.0</td><td>5,000,000. A ceiling rather than a switch: the rows one query may materialise, which bounds nested-<code>FOR</code> cartesian products no <code>LIMIT</code> applies to.</td></tr>
+<tr><td><code>SOLIDB_ALLOW_WEBHOOK_LOOPBACK</code>, <code>SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS</code></td><td>1.0.0</td><td>Off: webhook URLs are SSRF-checked (loopback, RFC1918, link-local, metadata hosts), and permissive TLS for <code>*.test</code> / <code>*.local</code> is refused. Dev-only escape hatches.</td></tr>
+<tr><td><code>SOLIDB_DB_AUTHZ_ALLOW_WARN</code></td><td>1.0.0</td><td>Off: <code>SOLIDB_DB_AUTHZ_MODE=warn</code>, the per-database authorization dry run, is ignored unless this is also set.</td></tr>
+<tr><td><code>SOLIDB_METRICS_PUBLIC</code></td><td>1.0.0</td><td>Off: <code>/metrics</code> requires authentication.</td></tr>
+<tr><td><code>SOLIDB_LUA_FAST_MODE_UNSAFE</code></td><td>1.0.0</td><td>Off: <code>SOLIDB_LUA_FAST_MODE</code> is ignored, because it leaks Lua state across requests.</td></tr>
+<tr><td><code>SOLIDB_ALLOW_UNAUTHENTICATED_SYNC</code></td><td>1.0.0</td><td>Off: replication TCP is refused without a keyfile. For local tests.</td></tr>
+</tbody></table></div>
+<p>Flipping any of these back is a decision about your deployment, not a default to reach for when something stops working. If a 1.1.0 upgrade breaks a tool that wrote <code>_scripts</code>, <code>_services</code> or <code>_triggers</code> through the document API, move it to the dedicated endpoints; if it wrote <code>_jobs</code>, give it an admin credential, as the Soli framework already does. <a href="/docs/security">Security</a> covers roles and production configuration, and every entry is in the <a href="/docs/changelog">changelog</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

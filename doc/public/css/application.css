@@ -7277,6 +7277,25 @@ a {
 .foot-bottom a:hover {
   color: var(--paper);
 }
+.post-figure {
+  margin: 8px 0 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: var(--ink-850);
+  padding: 18px 18px 14px;
+}
+.post-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+.post-figure figcaption {
+  margin-top: 12px;
+  font-size: 13.5px;
+  color: var(--paper-faint);
+  line-height: 1.55;
+}
 @property --tw-rotate-x {
   syntax: "*";
   inherits: false;
