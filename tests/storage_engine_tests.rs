@@ -717,14 +717,14 @@ fn test_blob_chunk_count_is_exact_when_deleting_before_first_read() {
 }
 
 // ============================================================================
-// Reusing a doomed column family instead of dropping and recreating it
+// Creating and dropping collections without column-family operations
 // ============================================================================
 
-/// Deleting a collection and recreating it under the same name must reuse the
-/// column family — the pair of OPTIONS rewrites this avoids is the whole
-/// point — and the new incarnation must start empty.
+/// Deleting a collection and recreating it under the same name is two catalog
+/// writes — no `create_cf`/`drop_cf`, so no OPTIONS rewrite — and the new
+/// incarnation (a fresh keyspace) must start empty.
 #[test]
-fn test_recreating_a_deleted_collection_reuses_its_column_family() {
+fn test_recreating_a_deleted_collection_touches_no_column_family() {
     let (engine, _tmp) = create_test_engine();
     engine.initialize().unwrap();
     let db = engine.get_database("_system").unwrap();
@@ -734,14 +734,17 @@ fn test_recreating_a_deleted_collection_reuses_its_column_family() {
     coll.insert(json!({ "_key": "before", "v": 1 })).unwrap();
     assert_eq!(coll.count(), 1);
 
-    let reuses_before = solidb::storage::cf_ops::reuses();
+    let cf_ops_before = solidb::storage::cf_ops::snapshot();
     db.delete_collection("churn").unwrap();
     db.create_collection("churn".to_string(), None).unwrap();
     assert_eq!(
-        solidb::storage::cf_ops::reuses(),
-        reuses_before + 1,
-        "the recreate should have reused the column family, not rebuilt it"
+        cf_ops_before.ops_since(&solidb::storage::cf_ops::snapshot()),
+        0,
+        "delete + recreate must not create or drop a column family"
     );
+
+    // The handle taken before the drop is dead, not pointing at the new data.
+    assert!(coll.get("before").is_err());
 
     // Nothing of the previous incarnation survives.
     let coll = db.get_collection("churn").unwrap();

@@ -90,7 +90,24 @@ impl Database {
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
-        // Create column family - requires exclusive lock
+        if super::collection_registry::shared_layout_enabled(&self.db) {
+            {
+                let _catalog = super::collection_registry::catalog_lock();
+                if super::collection_registry::get(&self.db, &cf_name).is_some()
+                    || (self.db.cf_handle(&cf_name).is_some()
+                        && !self.pending_cf_drops.contains(&cf_name))
+                {
+                    return Err(DbError::CollectionAlreadyExists(collection_name));
+                }
+                super::collection_registry::create_shared(&self.db, &cf_name, &type_)?;
+            }
+            self.evict_cached_collection(&collection_name);
+            super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
+            self.create_edge_indexes(&collection_name, &type_);
+            return Ok(());
+        }
+
+        // Legacy layout: one column family per collection.
         {
             let _cf_guard = self.cf_lock.write().unwrap();
 
@@ -186,14 +203,19 @@ impl Database {
             }
         }
 
-        // Edge collections are traversed by their _from/_to fields; index those
-        // up-front so graph traversals and GRAPH_RAG never fall back to a full
-        // edge scan. The indexes are non-unique (many edges share a _from/_to)
-        // and creation is idempotent thanks to the pre-probe (skips a field a
-        // user index already covers). The collection is empty here, so the
-        // index backfill is free.
+        self.create_edge_indexes(&collection_name, &type_);
+        Ok(())
+    }
+
+    /// Edge collections are traversed by their _from/_to fields; index those
+    /// up-front so graph traversals and GRAPH_RAG never fall back to a full
+    /// edge scan. The indexes are non-unique (many edges share a _from/_to)
+    /// and creation is idempotent thanks to the pre-probe (skips a field a
+    /// user index already covers). The collection is empty here, so the
+    /// index backfill is free.
+    fn create_edge_indexes(&self, collection_name: &str, type_: &str) {
         if type_ == "edge" {
-            if let Ok(coll) = self.get_collection(&collection_name) {
+            if let Ok(coll) = self.get_collection(collection_name) {
                 let probe = serde_json::Value::String(String::new());
                 for (idx_name, field) in [("_edge_from_idx", "_from"), ("_edge_to_idx", "_to")] {
                     if coll.index_lookup_eq(field, &probe).is_none() {
@@ -207,13 +229,22 @@ impl Database {
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Delete a collection from this database
     pub fn delete_collection(&self, collection_name: &str) -> DbResult<()> {
         let cf_name = self.collection_cf_name(collection_name);
+
+        // Shared layout: the record and a range delete, nothing else.
+        if let Some(ks) = super::collection_registry::get(&self.db, &cf_name).and_then(|r| r.ks) {
+            {
+                let _catalog = super::collection_registry::catalog_lock();
+                super::collection_registry::drop_shared(&self.db, &cf_name, ks)?;
+            }
+            self.evict_cached_collection(collection_name);
+            super::collection::index_meta::invalidate_index_meta(&self.db, &cf_name);
+            return Ok(());
+        }
 
         // Already scheduled for background drop — logically gone
         if self.pending_cf_drops.contains(&cf_name) {
@@ -379,18 +410,17 @@ impl Database {
 
         let cf_name = self.collection_cf_name(collection_name);
 
-        // A CF awaiting its background drop is logically deleted
-        if self.pending_cf_drops.contains(&cf_name) {
+        // Registry first: a shared record wins over a same-name legacy column
+        // family still awaiting its background drop, which reads as deleted.
+        let pending = &self.pending_cf_drops;
+        let Some(ks) =
+            super::collection_registry::keyspace_of(&self.db, &cf_name, |cf| pending.contains(cf))
+        else {
             return Err(DbError::CollectionNotFound(collection_name.to_string()));
-        }
-
-        // Check if collection exists (lock-free read)
-        if self.db.cf_handle(&cf_name).is_none() {
-            return Err(DbError::CollectionNotFound(collection_name.to_string()));
-        }
+        };
 
         // Create and cache the collection
-        let collection = Collection::new(cf_name, self.db.clone());
+        let collection = Collection::open(cf_name, ks, self.db.clone());
         self.collections
             .insert(collection_name.to_string(), collection.clone());
 
@@ -600,7 +630,9 @@ impl Database {
     /// Check if a collection is a columnar collection
     pub fn is_columnar_collection(&self, collection_name: &str) -> bool {
         let cf_name = self.columnar_cf_name(collection_name);
-        self.db.cf_handle(&cf_name).is_some() && !self.pending_cf_drops.contains(&cf_name)
+        let pending = &self.pending_cf_drops;
+        super::collection_registry::keyspace_of(&self.db, &cf_name, |cf| pending.contains(cf))
+            .is_some()
     }
 
     /// List all columnar collections in this database

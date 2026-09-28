@@ -82,7 +82,9 @@ impl Collection {
     /// alone collides when several `StorageEngine` instances share a process
     /// (e.g. tests), so fold in the RocksDB instance pointer.
     fn version_cache_key(&self) -> String {
-        format!("{:p}/{}", std::sync::Arc::as_ptr(&self.db), self.name)
+        // By keyspace, not name: a dropped and recreated collection must not
+        // inherit its predecessor's versioning flag.
+        format!("{:p}/{:?}", std::sync::Arc::as_ptr(&self.db), self.ks.id())
     }
 
     fn version_prefix(key: &str) -> String {

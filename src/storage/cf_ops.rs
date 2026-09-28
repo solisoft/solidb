@@ -25,6 +25,26 @@ static CF_OP_COUNT: AtomicU64 = AtomicU64::new(0);
 static CF_OP_NANOS: AtomicU64 = AtomicU64::new(0);
 static CF_REUSE_COUNT: AtomicU64 = AtomicU64::new(0);
 static AUTO_CREATE_COUNT: AtomicU64 = AtomicU64::new(0);
+static KS_CREATE_COUNT: AtomicU64 = AtomicU64::new(0);
+static KS_DROP_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Collections created in the shared keyspace (no column-family operation).
+pub fn keyspace_creates() -> u64 {
+    KS_CREATE_COUNT.load(Ordering::Relaxed)
+}
+
+pub fn record_keyspace_create() {
+    KS_CREATE_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Shared-keyspace collections dropped (one range delete, no `drop_cf`).
+pub fn keyspace_drops() -> u64 {
+    KS_DROP_COUNT.load(Ordering::Relaxed)
+}
+
+pub fn record_keyspace_drop() {
+    KS_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
+}
 
 /// Cumulative CF-op activity since process start.
 #[derive(Clone, Copy, Debug, PartialEq)]

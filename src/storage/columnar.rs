@@ -268,9 +268,10 @@ impl ColumnarCollection {
 
         // Store metadata (lock-free, RocksDB is thread-safe)
         // Scope the CF handle so its borrow of `db` ends before `db` is moved
-        let ks = super::collection_registry::keyspace_of(&db, &cf_name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
-        })?;
+        let ks =
+            super::collection_registry::keyspace_of(&db, &cf_name, |_| false).ok_or_else(|| {
+                DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
+            })?;
         {
             let cf = ks.handle(&db).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
@@ -297,9 +298,10 @@ impl ColumnarCollection {
 
         // Lock-free read - RocksDB is thread-safe
         // Scope the CF handle so its borrow of `db` ends before `db` is moved
-        let ks = super::collection_registry::keyspace_of(&db, &cf_name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
-        })?;
+        let ks =
+            super::collection_registry::keyspace_of(&db, &cf_name, |_| false).ok_or_else(|| {
+                DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
+            })?;
         let meta_bytes = {
             let cf = ks.handle(&db).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
@@ -1168,6 +1170,13 @@ impl ColumnarCollection {
 
     /// Drop the entire columnar collection (removes everything including schema)
     pub fn drop(&self) -> DbResult<()> {
+        // Shared layout: a record and a range, no column family to drop.
+        if let Some(ks) =
+            super::collection_registry::get(&self.db, &self.cf_name).and_then(|r| r.ks)
+        {
+            let _catalog = super::collection_registry::catalog_lock();
+            return super::collection_registry::drop_shared(&self.db, &self.cf_name, ks);
+        }
         // MultiThreaded mode: drop_cf takes &self and synchronizes internally
         super::cf_ops::timed(|| self.db.drop_cf(&self.cf_name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop CF: {}", e)))?;

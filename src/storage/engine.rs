@@ -322,6 +322,11 @@ impl StorageEngine {
         if !cf_names.contains(&META_CF.to_string()) {
             cf_names.push(META_CF.to_string());
         }
+        // The shared keyspace every 2.x collection lives in. Created once;
+        // after that, creating a collection never touches the CF map.
+        if !cf_names.contains(&super::keyspace::SHARED_CF.to_string()) {
+            cf_names.push(super::keyspace::SHARED_CF.to_string());
+        }
 
         // Create column family descriptors with optimized options
         // All column families inherit compression and performance settings
@@ -414,7 +419,7 @@ impl StorageEngine {
 
         // Flush memtables first so the checkpoint reflects recent writes
         // without depending on WAL replay at restore time.
-        if let Err(e) = self.db.flush() {
+        if let Err(e) = self.flush() {
             tracing::warn!("checkpoint: flush before snapshot failed: {}", e);
         }
 
@@ -469,6 +474,9 @@ impl StorageEngine {
         // Reclaim column families left by deleted collections once their
         // reuse grace expires (see `pending_drops::ensure_reaper`).
         PendingCfDrops::ensure_reaper(self.db.clone(), self.pending_cf_drops.clone());
+        // Compacts the ranges of dropped shared-layout collections, resuming
+        // any markers a crash left behind.
+        super::keyspace_gc::ensure_started(&self.db);
 
         // Resume column-family drops interrupted by a previous shutdown/crash
         let resumed = self.pending_cf_drops.resume_from_meta(&self.db);
@@ -661,6 +669,15 @@ impl StorageEngine {
 
         PendingCfDrops::spawn_dropper(self.db.clone(), self.pending_cf_drops.clone(), doomed);
 
+        // Every shared-layout collection of the database: one range delete.
+        // After the registry entries are gone, so a crash in between leaves
+        // unreachable data (reclaimed by the next drop of the range), never a
+        // collection whose data vanished under it.
+        {
+            let _catalog = super::collection_registry::catalog_lock();
+            super::collection_registry::drop_database_keyspaces(&self.db, name)?;
+        }
+
         Ok(())
     }
 
@@ -719,7 +736,24 @@ impl StorageEngine {
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());
 
-        // Create the column family - requires exclusive lock
+        if super::collection_registry::shared_layout_enabled(&self.db) {
+            {
+                let _catalog = super::collection_registry::catalog_lock();
+                if super::collection_registry::get(&self.db, &name).is_some()
+                    || (self.db.cf_handle(&name).is_some()
+                        && !self.pending_cf_drops.contains(&name))
+                {
+                    return Err(DbError::CollectionAlreadyExists(name));
+                }
+                super::collection_registry::create_shared(&self.db, &name, &type_)?;
+            }
+            self.collections.remove(&name);
+            self.evict_database_cached_collection(&name);
+            super::collection::index_meta::invalidate_index_meta(&self.db, &name);
+            return Ok(());
+        }
+
+        // Legacy layout: create the column family - requires exclusive lock
         let opts = tuned_cf_options();
         {
             let _cf_guard = self.cf_lock.write().unwrap();
@@ -846,21 +880,22 @@ impl StorageEngine {
             return Ok(collection.clone());
         }
 
-        // First, try the exact name (for backward compatibility or direct access)
-        let actual_name = if self.db.cf_handle(name).is_some() {
-            name.to_string()
+        // First, try the exact name (for backward compatibility or direct
+        // access), then the `_system` database.
+        let pending = &self.pending_cf_drops;
+        let resolve = |n: &str| {
+            super::collection_registry::keyspace_of(&self.db, n, |cf| pending.contains(cf))
+        };
+        let (actual_name, ks) = if let Some(ks) = resolve(name) {
+            (name.to_string(), ks)
         } else {
-            // If not found, try prefixing with _system database
             let system_name = format!("_system:{}", name);
-            if self.pending_cf_drops.contains(&system_name) {
-                self.collections.remove(&system_name);
-                return Err(DbError::CollectionNotFound(name.to_string()));
-            }
-            if self.db.cf_handle(&system_name).is_some() {
-                system_name
-            } else {
-                // Not found in either format
-                return Err(DbError::CollectionNotFound(name.to_string()));
+            match resolve(&system_name) {
+                Some(ks) => (system_name, ks),
+                None => {
+                    self.collections.remove(&system_name);
+                    return Err(DbError::CollectionNotFound(name.to_string()));
+                }
             }
         };
 
@@ -878,8 +913,10 @@ impl StorageEngine {
             Some((db_name, coll_name)) => self
                 .get_database(db_name)
                 .and_then(|db| db.system_collection(coll_name))
-                .unwrap_or_else(|_| Collection::new(actual_name.clone(), self.db.clone())),
-            None => Collection::new(actual_name.clone(), self.db.clone()),
+                .unwrap_or_else(|_| {
+                    Collection::open(actual_name.clone(), ks.clone(), self.db.clone())
+                }),
+            None => Collection::open(actual_name.clone(), ks.clone(), self.db.clone()),
         };
 
         self.collections
@@ -893,6 +930,16 @@ impl StorageEngine {
 
     /// Delete a collection
     pub fn delete_collection(&self, name: &str) -> DbResult<()> {
+        if let Some(ks) = super::collection_registry::get(&self.db, name).and_then(|r| r.ks) {
+            {
+                let _catalog = super::collection_registry::catalog_lock();
+                super::collection_registry::drop_shared(&self.db, name, ks)?;
+            }
+            self.collections.remove(name);
+            self.evict_database_cached_collection(name);
+            super::collection::index_meta::invalidate_index_meta(&self.db, name);
+            return Ok(());
+        }
         if self.db.cf_handle(name).is_none() {
             return Err(DbError::CollectionNotFound(name.to_string()));
         }
@@ -925,6 +972,14 @@ impl StorageEngine {
 
     /// List all collection names
     pub fn list_collections(&self) -> Vec<String> {
+        // Shared-layout collections have no column family: the registry is
+        // the list.
+        if super::collection_registry::available(&self.db) {
+            return super::collection_registry::list_all(&self.db)
+                .into_iter()
+                .filter(|name| !self.pending_cf_drops.contains(name))
+                .collect();
+        }
         // Use the live in-memory CF list — DB::list_cf would re-read the
         // MANIFEST from disk on every call
         self.db
@@ -1068,9 +1123,19 @@ impl StorageEngine {
 
     /// Flush all pending writes to disk
     pub fn flush(&self) -> DbResult<()> {
+        // `DB::flush` flushes the default column family only. Collection data
+        // lives in the shared keyspace (and `_meta` holds the catalog), so
+        // flush those explicitly.
         self.db
             .flush()
             .map_err(|e| DbError::InternalError(format!("Failed to flush: {}", e)))?;
+        for name in [super::keyspace::SHARED_CF, META_CF] {
+            if let Some(cf) = self.db.cf_handle(name) {
+                self.db.flush_cf(&cf).map_err(|e| {
+                    DbError::InternalError(format!("Failed to flush {}: {}", name, e))
+                })?;
+            }
+        }
         Ok(())
     }
 
@@ -1307,6 +1372,6 @@ impl Drop for StorageEngine {
         }
 
         // Flush RocksDB before drop (DB is thread-safe, direct access is safe)
-        let _ = self.db.flush();
+        let _ = self.flush();
     }
 }

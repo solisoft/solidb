@@ -24,8 +24,10 @@ use rust_rocksdb::WriteBatch;
 use serde::{Deserialize, Serialize};
 
 use super::engine::META_CF;
+use super::keyspace::{self, Keyspace, KsNum, BARE_DB_ID, RESERVED_DB_ID, SHARED_CF};
 use super::RocksDb as DB;
 use crate::error::{DbError, DbResult};
+use std::sync::Arc;
 
 /// `_meta` key prefix for registry entries.
 pub(crate) const ENTRY_PREFIX: &str = "coll:";
@@ -40,6 +42,15 @@ pub struct CollectionRecord {
     /// of collections nothing has used.
     #[serde(default)]
     pub created_ms: u64,
+    /// Shared-layout keyspace (`db_id << 32 | coll_id`). Absent for a legacy
+    /// collection living in its own column family — which is what every
+    /// record written by 1.x reads as.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ks: Option<KsNum>,
+    /// Set while the startup migration copies this legacy collection into
+    /// the shared keyspace it names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migrating_to: Option<KsNum>,
 }
 
 fn default_type() -> String {
@@ -84,6 +95,8 @@ pub fn record(db: &DB, cf_name: &str, type_: &str) -> DbResult<()> {
     let value = serde_json::to_vec(&CollectionRecord {
         type_: type_.to_string(),
         created_ms: now_ms(),
+        ks: None,
+        migrating_to: None,
     })
     .map_err(|e| DbError::InternalError(format!("Failed to encode collection record: {e}")))?;
 
@@ -179,6 +192,8 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
         if let Ok(value) = serde_json::to_vec(&CollectionRecord {
             type_,
             created_ms: 0, // unknown: this column family predates the registry
+            ks: None,
+            migrating_to: None,
         }) {
             batch.put_cf(&meta_cf, entry_key(&cf_name).as_bytes(), value);
             adopted += 1;
@@ -198,14 +213,252 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
     adopted
 }
 
+// ==================== Shared-layout catalog ====================
+//
+// A shared-layout collection is a registry record carrying `ks`, plus the
+// keys under that eight-byte prefix in `SHARED_CF`. Creating one is a single
+// `_meta` + data write; dropping one is a record delete and one range delete.
+// Neither touches the column-family map, so neither rewrites OPTIONS.
+
+/// `_meta` key holding a database's id, allocated on its first shared
+/// collection. Separate from `db:{name}` so that value stays `"1"`, which a
+/// 1.x binary still understands.
+const DB_ID_PREFIX: &str = "dbid:";
+/// `_meta` counter for database ids.
+const NEXT_DB_ID_KEY: &str = "ks:next_db_id";
+/// `_meta` per-database collection-id counter prefix.
+const NEXT_COLL_ID_PREFIX: &str = "ks:next_coll:";
+/// `_meta` markers for dropped keyspace ranges awaiting compaction.
+pub(crate) const DEAD_KS_PREFIX: &str = "dead_ks:";
+
+/// Serialises catalog changes (id allocation, create, drop) across every
+/// `Database` handle and the engine: both used to guard creation with their
+/// own lock, so the two paths were not serialised against each other.
+static CATALOG: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+pub(crate) fn catalog_lock() -> parking_lot::MutexGuard<'static, ()> {
+    CATALOG.lock()
+}
+
+/// Whether new collections go into the shared keyspace. Needs `_meta` and the
+/// shared column family (a `Database` over a bare RocksDB handle has
+/// neither); `SOLIDB_LEGACY_COLLECTION_CFS=1` forces the 1.x layout.
+pub fn shared_layout_enabled(db: &DB) -> bool {
+    if std::env::var("SOLIDB_LEGACY_COLLECTION_CFS").is_ok_and(|v| v == "1" || v == "true") {
+        return false;
+    }
+    available(db) && db.cf_handle(SHARED_CF).is_some()
+}
+
+/// The registry record of `full_name`, if any.
+pub fn get(db: &DB, full_name: &str) -> Option<CollectionRecord> {
+    let meta_cf = db.cf_handle(META_CF)?;
+    let bytes = db
+        .get_cf(&meta_cf, entry_key(full_name).as_bytes())
+        .ok()??;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// Where the collection `full_name` (`db:coll`, or a bare engine-level name)
-/// keeps its keys, or `None` when it does not exist.
+/// keeps its keys, or `None` when it does not exist. A shared record wins;
+/// otherwise a live (not `is_pending`) column family of that name is a legacy
+/// collection.
 pub fn keyspace_of(
-    db: &std::sync::Arc<crate::storage::RocksDb>,
+    db: &Arc<DB>,
     full_name: &str,
-) -> Option<crate::storage::keyspace::Keyspace> {
+    is_pending: impl Fn(&str) -> bool,
+) -> Option<Keyspace> {
+    if let Some(ks) = get(db, full_name).and_then(|r| r.ks) {
+        return Some(Keyspace::shared(db, ks));
+    }
+    if is_pending(full_name) {
+        return None;
+    }
     db.cf_handle(full_name)
-        .map(|_| crate::storage::keyspace::Keyspace::legacy(db, full_name))
+        .map(|_| Keyspace::legacy(db, full_name))
+}
+
+fn read_u32(db: &DB, meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>, key: &str) -> Option<u32> {
+    let bytes = db.get_cf(meta_cf, key.as_bytes()).ok()??;
+    std::str::from_utf8(&bytes).ok()?.parse().ok()
+}
+
+/// The database part of a collection name: `Some("db")` for `db:coll`,
+/// `None` for a bare engine-level name.
+fn database_of(full_name: &str) -> Option<&str> {
+    full_name.split_once(':').map(|(db, _)| db)
+}
+
+/// Id of `db_name`, allocating (into `batch`) when it has none yet.
+fn database_id(
+    db: &DB,
+    meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>,
+    db_name: Option<&str>,
+    batch: &mut WriteBatch,
+) -> DbResult<u32> {
+    let Some(name) = db_name else {
+        return Ok(BARE_DB_ID);
+    };
+    let key = format!("{}{}", DB_ID_PREFIX, name);
+    if let Some(id) = read_u32(db, meta_cf, &key) {
+        return Ok(id);
+    }
+    let id = read_u32(db, meta_cf, NEXT_DB_ID_KEY).unwrap_or(1).max(1);
+    if id == RESERVED_DB_ID {
+        return Err(DbError::InternalError("database ids exhausted".to_string()));
+    }
+    batch.put_cf(meta_cf, NEXT_DB_ID_KEY.as_bytes(), (id + 1).to_string());
+    batch.put_cf(meta_cf, key.as_bytes(), id.to_string());
+    Ok(id)
+}
+
+/// The id of an existing database, if it has one.
+pub fn existing_database_id(db: &DB, db_name: &str) -> Option<u32> {
+    let meta_cf = db.cf_handle(META_CF)?;
+    read_u32(db, &meta_cf, &format!("{}{}", DB_ID_PREFIX, db_name))
+}
+
+/// Allocate a keyspace for `full_name` and add its counters to `batch`.
+/// Caller holds [`catalog_lock`].
+pub(crate) fn allocate_keyspace(
+    db: &DB,
+    full_name: &str,
+    batch: &mut WriteBatch,
+) -> DbResult<KsNum> {
+    let meta_cf = db
+        .cf_handle(META_CF)
+        .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
+    let db_id = database_id(db, &meta_cf, database_of(full_name), batch)?;
+    let counter = format!("{}{}", NEXT_COLL_ID_PREFIX, db_id);
+    let coll_id = read_u32(db, &meta_cf, &counter).unwrap_or(0);
+    if coll_id == u32::MAX {
+        return Err(DbError::InternalError(format!(
+            "collection ids exhausted for database id {}",
+            db_id
+        )));
+    }
+    batch.put_cf(&meta_cf, counter.as_bytes(), (coll_id + 1).to_string());
+    Ok(keyspace::ks_num(db_id, coll_id))
+}
+
+/// Create `full_name` in a fresh shared keyspace: record, id counters and
+/// its `_stats:type`, in one write. Caller holds [`catalog_lock`] and has
+/// checked that the name is free.
+pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbResult<Keyspace> {
+    let meta_cf = db
+        .cf_handle(META_CF)
+        .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
+    let mut batch = WriteBatch::default();
+    let ks = allocate_keyspace(db, full_name, &mut batch)?;
+    let record = CollectionRecord {
+        type_: type_.to_string(),
+        created_ms: now_ms(),
+        ks: Some(ks),
+        migrating_to: None,
+    };
+    let value = serde_json::to_vec(&record)
+        .map_err(|e| DbError::InternalError(format!("Failed to encode collection record: {e}")))?;
+    batch.put_cf(&meta_cf, entry_key(full_name).as_bytes(), value);
+
+    let keyspace = Keyspace::shared(db, ks);
+    let data = keyspace.live(db, full_name)?;
+    use super::keyspace::KsBatchExt;
+    batch.put_ks(&data, "_stats:type".as_bytes(), type_.as_bytes());
+
+    db.write(&batch)
+        .map_err(|e| DbError::InternalError(format!("Failed to create collection: {e}")))?;
+    super::cf_ops::record_keyspace_create();
+    Ok(keyspace)
+}
+
+/// Queue `[lo, hi)` of the shared column family for background compaction,
+/// in `batch`.
+fn mark_range_dead(
+    meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>,
+    batch: &mut WriteBatch,
+    lo: &[u8],
+    hi: &[u8],
+) {
+    let key = format!("{}{}", DEAD_KS_PREFIX, hex::encode(lo));
+    batch.put_cf(meta_cf, key.as_bytes(), hi);
+}
+
+/// Drop the shared-layout collection `full_name` living in `ks`: record,
+/// data and a compaction marker in one write. Every handle of the keyspace
+/// reports `CollectionNotFound` from here on.
+pub(crate) fn drop_shared(db: &Arc<DB>, full_name: &str, ks: KsNum) -> DbResult<()> {
+    let meta_cf = db
+        .cf_handle(META_CF)
+        .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
+    let shared = db
+        .cf_handle(SHARED_CF)
+        .ok_or_else(|| DbError::InternalError("shared column family missing".to_string()))?;
+    let prefix = keyspace::KsPrefix::shared(ks);
+    let lo = prefix.as_bytes().to_vec();
+    let hi = prefix.upper().expect("shared prefix has an upper bound");
+
+    let mut batch = WriteBatch::default();
+    batch.delete_cf(&meta_cf, entry_key(full_name).as_bytes());
+    batch.delete_range_cf(&shared, &lo, &hi);
+    mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
+    db.write(&batch)
+        .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {e}")))?;
+
+    keyspace::mark_dead(db, &keyspace::KsId::Shared(ks));
+    super::cf_ops::record_keyspace_drop();
+    super::keyspace_gc::wake();
+    Ok(())
+}
+
+/// Erase every shared keyspace of database `db_name` (one range delete) and
+/// forget its id. Returns the id, so the caller can mark live handles dead.
+pub(crate) fn drop_database_keyspaces(db: &Arc<DB>, db_name: &str) -> DbResult<Option<u32>> {
+    let (Some(meta_cf), Some(shared)) = (db.cf_handle(META_CF), db.cf_handle(SHARED_CF)) else {
+        return Ok(None);
+    };
+    let key = format!("{}{}", DB_ID_PREFIX, db_name);
+    let Some(db_id) = read_u32(db, &meta_cf, &key) else {
+        return Ok(None);
+    };
+    let lo = keyspace::ks_num(db_id, 0).to_be_bytes().to_vec();
+    let hi = keyspace::ks_num(db_id + 1, 0).to_be_bytes().to_vec();
+
+    let mut batch = WriteBatch::default();
+    // Its collections' records: the legacy drop path only removes those of
+    // the column families it schedules, which shared collections have none of.
+    forget_database_in_batch(db, &mut batch, db_name);
+    batch.delete_cf(&meta_cf, key.as_bytes());
+    batch.delete_cf(
+        &meta_cf,
+        format!("{}{}", NEXT_COLL_ID_PREFIX, db_id).as_bytes(),
+    );
+    batch.delete_range_cf(&shared, &lo, &hi);
+    mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
+    db.write(&batch)
+        .map_err(|e| DbError::InternalError(format!("Failed to delete database data: {e}")))?;
+    keyspace::mark_database_dead(db, db_id);
+    super::keyspace_gc::wake();
+    Ok(Some(db_id))
+}
+
+/// Pending `dead_ks:` markers: `(marker key, lo, hi)`.
+pub(crate) fn dead_ranges(db: &DB) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let Some(meta_cf) = db.cf_handle(META_CF) else {
+        return Vec::new();
+    };
+    let prefix = DEAD_KS_PREFIX.as_bytes();
+    let mut out = Vec::new();
+    for item in db.prefix_iterator_cf(&meta_cf, prefix) {
+        let Ok((key, hi)) = item else { break };
+        if !key.starts_with(prefix) {
+            break;
+        }
+        let Ok(lo) = hex::decode(&key[prefix.len()..]) else {
+            continue;
+        };
+        out.push((key.to_vec(), lo, hi.to_vec()));
+    }
+    out
 }
 
 #[cfg(test)]
