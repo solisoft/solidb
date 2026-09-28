@@ -117,6 +117,7 @@ fn sst_size(db: &DB, cf_name: &str) -> u64 {
 }
 
 /// Free bytes on the filesystem holding `path`.
+#[cfg(unix)]
 fn free_space(path: &std::path::Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
@@ -126,6 +127,12 @@ fn free_space(path: &std::path::Path) -> Option<u64> {
         return None;
     }
     Some(st.f_bavail as u64 * st.f_frsize as u64)
+}
+
+/// Not measured off Unix: the migration then skips the disk-space check.
+#[cfg(not(unix))]
+fn free_space(_path: &std::path::Path) -> Option<u64> {
+    None
 }
 
 /// Delete everything under keyspace `ks` in the shared column family.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.1](https://github.com/solisoft/solidb/compare/v2.0.0...v2.0.1) (2026-09-28)
+
 ### Fixed
 
 * **A separate `--replication-port` no longer breaks the cluster.** Peers send
@@ -22,6 +24,8 @@
   between peers that proved the cluster keyfile. `_env` stays node-local.
   The sync transport is not encrypted, so password and key hashes now cross
   it: keep it on a private network or a tunnel, as the docs already say.
+* **2.0.0 did not compile on Windows.** The migration's free-disk check used
+  `statvfs`; off Unix the check is now skipped.
 
 ### Documentation
 

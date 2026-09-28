@@ -9,6 +9,22 @@
     </p>
   </div>
 
+  <!-- 2.0.1 -->
+  <section id="v2-0-1" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.0.1</h2>
+      <span class="text-sm font-medium text-gray-400">September 28, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Fixed: a separate <code>--replication-port</code> broke the cluster</strong> &mdash; peers send both sync streams and cluster control messages (join, heartbeats) to a node&rsquo;s replication address, but in dual-port mode only the sync server listened there and it rejected every control message with <code>Invalid protocol header</code>; the node never listed its peers. The replication port now recognises and routes both, as the single port does.</li>
+        <li><strong class="text-white">Fixed: a joining node receives the admin account, users, roles and API keys</strong> &mdash; replication skipped <code>_admins</code>, <code>_api_keys</code>, <code>_roles</code> and <code>_user_roles</code> without an error, so a node that joined without <code>SOLIDB_ADMIN_PASSWORD</code> synced all data and then answered 401 to the admin login, and a user created later existed on one node only. <code>_env</code> stays on the node where it was set. Password and key hashes now cross the sync transport, which is not encrypted: keep it on a private network or a tunnel.</li>
+        <li><strong class="text-white">Fixed: 2.0.0 did not compile on Windows</strong> &mdash; the migration&rsquo;s free-disk check is Unix-only and is now skipped elsewhere.</li>
+        <li><strong class="text-white">Docs: cluster quick-start</strong> &mdash; every node gets <code>--keyfile</code> (required with <code>--peer</code> since 0.34.0), the admin password is set on the bootstrap node only, and the check uses <code>/_api/cluster/status</code>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.0.0 -->
   <section id="v2-0-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
