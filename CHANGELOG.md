@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.3](https://github.com/solisoft/solidb/compare/v2.0.2...v2.0.3) (2026-09-28)
+
 ### Performance
 
 * **A primary-key update costs ~40% less CPU on a node without peers.** Every

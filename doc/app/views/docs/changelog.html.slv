@@ -9,6 +9,22 @@
     </p>
   </div>
 
+  <!-- 2.0.3 -->
+  <section id="v2-0-3" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.0.3</h2>
+      <span class="text-sm font-medium text-gray-400">September 28, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A primary-key update costs ~40% less CPU on a node without peers</strong> &mdash; every document write also appended an entry to the replication log, a second RocksDB with its own WAL write, under a lock all writers shared, and on a standalone server nothing reads it. A node started without <code>--peer</code> that has never replicated with one now writes the log only once a peer or an offline-sync device connects, and keeps writing it from then on, across restarts. Measured on 800,000 documents, driver updates by <code>_key</code>: 74 &rarr; 45&nbsp;&micro;s of SoliDB CPU per update.</li>
+        <li><strong class="text-white">Smaller sync log entries</strong> &mdash; stored as MessagePack instead of JSON, which wrote the document bytes as an array of decimal numbers (about four times their size). Entries written by earlier versions are still read.</li>
+        <li><strong class="text-white">Cheaper cache invalidation on writes</strong> &mdash; a document write no longer takes the query cache&rsquo;s write lock when nothing is cached for its collection.</li>
+        <li><strong class="text-white">Docs: offline sync</strong> &mdash; a device&rsquo;s first pull is not a copy of the database; load initial data with a query, then pull to stay in step.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.0.2 -->
   <section id="v2-0-2" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
