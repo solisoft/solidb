@@ -9,11 +9,18 @@
     </p>
   </div>
 
-  <!-- Unreleased -->
-  <section id="unreleased" class="mb-16 scroll-mt-24">
-    <h2 class="text-3xl font-bold text-white mb-4">Unreleased</h2>
+  <!-- 2.0.0 -->
+  <section id="v2-0-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.0.0</h2>
+      <span class="text-sm font-medium text-gray-400">September 28, 2026</span>
+    </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Breaking: all collections now live in one shared column family</strong> &mdash; up to 1.3 each collection was its own RocksDB column family, and every create or drop rewrote and fsynced the whole OPTIONS file, a cost proportional to the instance&rsquo;s total collection count: on a 1,144-collection instance, creating 10 collections took 1,952&nbsp;ms, and every insert that auto-created its collection paid ~0.2&nbsp;s. 2.0 stores every collection under an 8-byte key prefix in one family: creating a collection is one catalog write, dropping one (or a whole database) one range delete. Same instance: <strong class="text-white">53&nbsp;ms</strong> for 10 creates; the OPTIONS file went from 6.3&nbsp;MB to 44&nbsp;KB.</li>
+        <li><strong class="text-white">Automatic migration at the first start</strong> &mdash; each collection is copied, verified by key count and digest, switched over and its old column family freed, before the server binds its port. Resumable after a crash; a collection that fails stays where it was, still served, and is retried at the next start. <code>--migrate-only</code> runs it and exits. Measured: 1,148 collections, 7.4&nbsp;GB, 128.6&nbsp;s. <strong class="text-white">One-way</strong>: take a checkpoint (<code>POST /_api/backup</code>) before upgrading.</li>
+        <li><strong class="text-white">Behaviour changes</strong> &mdash; per-collection <code>disk_usage</code> is the approximate size of the collection&rsquo;s key range (flushed data); a handle held across a drop returns <code>CollectionNotFound</code> instead of reaching a later same-name collection; new metrics <code>solidb_keyspace_creates_total</code>, <code>solidb_keyspace_drops_total</code>, <code>solidb_keyspace_gc_compactions_total</code>.</li>
+        <li><strong class="text-white">Fixed</strong> &mdash; four scans could walk past the end of their collection (every iterator is now bounded to it); flush, shutdown and checkpoints flushed only the default column family.</li>
         <li><strong class="text-white">Fulltext indexes can fold accents</strong> &mdash; create the index with <code>"fold_accents": true</code> and <code>FULLTEXT(clients, "name", "helene")</code> finds &ldquo;Hélène Dupré&rdquo;: words are stored and searched with accents removed from Latin letters, the same folding as <code>UNACCENT</code>, in <code>FULLTEXT</code>, <code>SEARCH_INDEX</code>, <code>HYBRID_SEARCH</code> and <code>COMMUNITY_SEARCH</code>. Opt-in &mdash; an existing index keeps its words until it is dropped and recreated. The option replicates and survives dump and restore.</li>
         <li><strong class="text-white">Fixed: fulltext <code>min_length</code> over HTTP</strong> &mdash; the create endpoint ignored it and used 3.</li>
         <li><strong class="text-white">Fixed: dropping a fulltext index reaches the other nodes</strong> &mdash; the drop was treated as already done on peers and remote shards, which kept the index.</li>

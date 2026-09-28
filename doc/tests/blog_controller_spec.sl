@@ -18,6 +18,7 @@ describe("BlogController", fn() {
 
   test("every listed post renders with its title", fn() {
     posts = {
+      "solidb-2-0-shared-keyspace": "creating a collection no longer depends",
       "a-request-must-never-take-the-server-down": "20,200 rows",
       "faster-startup-many-collections": "What hundreds of collections cost",
       "where-the-memory-goes": "jemalloc now serves RocksDB",
@@ -36,8 +37,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(10)
-    newest = body.index_of("/blog/sdbql-1-3-new-functions")
+    expect(body.split("class=\"post-card\"").length()).to_equal(11)
+    newest = body.index_of("/blog/solidb-2-0-shared-keyspace")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })

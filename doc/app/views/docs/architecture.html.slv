@@ -596,7 +596,7 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            The storage layer provides an abstraction over <strong>RocksDB</strong> using column families for isolation. Each collection gets its own column family with documents, indexes, and metadata stored using prefixed keys.
+            The storage layer provides an abstraction over <strong>RocksDB</strong>. Since 2.0 every collection lives in one shared column family, each under its own 8-byte key prefix (database id, then collection id) — so creating or dropping a collection or a whole database never changes RocksDB's column-family set. Within a collection, documents, indexes and metadata are stored under the logical prefixes below.
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -618,7 +618,7 @@
                 <div><span class="text-blue-400">idx:</span> <span class="text-gray-500">Secondary index entries</span></div>
                 <div><span class="text-purple-400">idx_meta:</span> <span class="text-gray-500">Index metadata</span></div>
                 <div><span class="text-teal-400">geo:</span> <span class="text-gray-500">Geo index entries</span></div>
-                <div><span class="text-orange-400">ft:</span> <span class="text-gray-500">Fulltext n-grams</span></div>
+                <div><span class="text-orange-400">ft_term:</span> <span class="text-gray-500">Fulltext terms</span></div>
                 <div><span class="text-rose-400">ttl:</span> <span class="text-gray-500">TTL index metadata</span></div>
                 <div><span class="text-emerald-400">col:</span> <span class="text-gray-500">Columnar data & metadata</span></div>
               </div>

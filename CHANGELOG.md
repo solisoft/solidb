@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+## [2.0.0](https://github.com/solisoft/solidb/compare/v1.3.0...v2.0.0) (2026-09-28)
+
+### ⚠ Breaking: storage format
+
+* **All collections now live in one shared column family.** Up to 1.3 each
+  collection was its own RocksDB column family, and every create or drop
+  rewrote and fsynced the whole OPTIONS file — a cost proportional to the
+  instance's total collection count. On a 1,144-collection instance, creating
+  10 collections took 1,952 ms (≈0.2 s each, also for every insert that
+  auto-creates its collection). 2.0 stores every collection in
+  `__keyspaces__` under an 8-byte key prefix (database id, collection id,
+  never reused): creating a collection is one catalog write, dropping one is
+  a registry delete plus one range delete, dropping a database is one range
+  delete. Same instance, same operations: **53 ms** for 10 creates, 56 ms for
+  10 auto-creating inserts; the OPTIONS file went from 6.3 MB to 44 KB.
+* **Existing data is migrated automatically at the first start**, before the
+  server binds its port: each collection is copied, verified (key count and
+  digest), switched over, and its old column family freed. Resumable after a
+  crash; a collection that fails stays in its own column family, still
+  served, and is retried at the next start. `--migrate-only` runs it and
+  exits. Measured on the same 7.4 GB instance: 1,148 collections in 128.6 s,
+  0 failures.
+* **One-way.** A 1.x binary cannot open a migrated data directory. Take a
+  checkpoint first (`POST /_api/backup`); see `docs/BACKUP.md` and
+  `docs/storage-format.md`.
+* Per-collection `disk_usage` is now RocksDB's approximate size of the
+  collection's key range (flushed data only; memtable and SST count read 0).
+* A collection handle taken before its collection (or database) was dropped
+  now returns `CollectionNotFound`, never data of a later same-name
+  collection.
+* New metrics `solidb_keyspace_creates_total`, `solidb_keyspace_drops_total`,
+  `solidb_keyspace_gc_compactions_total`; `solidb_cf_ops_total` now counts only
+  drops of migrated 1.x column families.
+
+### Fixed
+
+* **Iterators can no longer run past a collection.** Four scans (`all()`,
+  vector-index config listing, index stats, columnar stats) filtered keys
+  without stopping and walked to the end of the column family; every
+  collection iterator is now bounded to its keyspace.
+* **`flush`, shutdown and checkpoints flush collection data.** They flushed
+  only the default column family.
+
 ### Added
 
 * **Fulltext indexes can fold accents.** Create the index with

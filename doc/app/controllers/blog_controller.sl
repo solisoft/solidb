@@ -63,6 +63,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-2-0-shared-keyspace",
+        "title": "SoliDB 2.0: creating a collection no longer depends on how many you have",
+        "date": "2026-09-28",
+        "display_date": "September 28, 2026",
+        "summary": "Every collection used to be a RocksDB column family, and every create rewrote "
+        + "a file sized by the whole instance. 2.0 moves them into one shared keyspace: "
+        + "10 creates went from 1,952 ms to 53 ms.",
+        "tags": ["Storage", "Release 2.0.0"],
+        "read_minutes": 7
+      },
+      {
         "slug": "sdbql-1-3-new-functions",
         "title": "33 new SDBQL functions, and FOR x IN anything",
         "date": "2026-09-27",

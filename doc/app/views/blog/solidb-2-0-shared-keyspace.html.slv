@@ -1,0 +1,112 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 2.0.0 · Storage</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">On a development instance with 1,144 collections, creating a collection took about 0.2&nbsp;s — and so did every insert into a collection that did not exist yet. On a fresh instance the same operation took 9&nbsp;ms. Inserting documents cost the same on both. SoliDB 2.0 changes how collections are stored so that creating one costs a few milliseconds however large the instance is.</p>
+  <p class="post-note">All figures on this page were measured on copies of that instance (7.4&nbsp;GB, 1,148 collections), never on the live data.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#why">Why a create got slower as the instance grew</a></li>
+    <li><a href="#keyspaces">One column family, many keyspaces</a></li>
+    <li><a href="#numbers">The numbers</a></li>
+    <li><a href="#migration">The migration</a></li>
+    <li><a href="#upgrading">Upgrading</a></li>
+  </ol>
+</nav>
+
+<section id="why"><h2>Why a create got slower as the instance grew</h2>
+<p>Up to 1.3, every SoliDB collection was its own RocksDB column family. That is a natural fit — a collection's documents, indexes and metadata sit together, and dropping the collection drops the family — but it has a cost that grows quietly: RocksDB keeps the options of every column family in one OPTIONS file, and every <code>create_cf</code> or <code>drop_cf</code> rewrites that whole file and fsyncs it, under the database mutex. The file has one section per column family, so the cost of creating <em>one</em> collection is proportional to the number of collections in the <em>whole instance</em>.</p>
+<p>On the instance that prompted this, the OPTIONS file had grown to 6.3&nbsp;MB. We compared a checkpoint copy of it with an empty server, same binary:</p>
+<div class="post-table"><table><thead><tr><th>Operation</th><th>Empty server</th><th>1,144 collections</th></tr></thead><tbody>
+<tr><td><pre>300 inserts into an existing collection</pre></td><td><pre>2,347 ms</pre></td><td><pre>1,973 ms</pre></td></tr>
+<tr><td><pre>bulk INSERT of 20,000 rows</pre></td><td><pre>166 ms</pre></td><td><pre>189 ms</pre></td></tr>
+<tr><td><pre>create 10 collections</pre></td><td><pre>94 ms</pre></td><td><pre>2,132 ms</pre></td></tr>
+<tr><td><pre>10 inserts that auto-create their collection</pre></td><td><pre>110 ms</pre></td><td><pre>2,234 ms</pre></td></tr>
+</tbody></table></div>
+<p>Documents were never the problem. Collections were — and a test suite that drops and recreates a 63-collection database on every run pays that 0.2&nbsp;s sixty-three times, plus the drops. There is no RocksDB option that makes the OPTIONS rewrite cheaper; the only way out is to stop creating column families.</p>
+</section>
+
+<section id="keyspaces"><h2>One column family, many keyspaces</h2>
+<p>In 2.0 every collection lives in a single column family, <code>__keyspaces__</code>. What used to be the column family's boundary is now a key prefix: eight bytes, the database id then the collection id, each a big-endian 32-bit number allocated in SoliDB's catalog and never reused.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 300" role="img" aria-labelledby="ks-layout-t">
+<title id="ks-layout-t">Storage layout in 1.3 and in 2.0</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">1.3 — a column family per collection</text>
+<rect x="20" y="44" width="300" height="200" rx="8" fill="#101716" stroke="#29322f"/>
+<rect x="36" y="60" width="126" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="46" y="82" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">shop:users</text>
+<rect x="178" y="60" width="126" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="188" y="82" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">shop:orders</text>
+<rect x="36" y="104" width="126" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="46" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">grc:audit</text>
+<rect x="178" y="104" width="126" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="188" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">… 1,140 more</text>
+<rect x="36" y="168" width="268" height="60" rx="6" fill="#141d1b" stroke="#ff6b6b"/>
+<text x="50" y="192" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">OPTIONS  6.3 MB</text>
+<text x="50" y="214" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">rewritten + fsynced on every create/drop</text>
+<text x="360" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">2.0 — one family, a prefix per collection</text>
+<rect x="360" y="44" width="300" height="200" rx="8" fill="#101716" stroke="#29322f"/>
+<text x="376" y="70" font-family="JetBrains Mono, monospace" font-size="12" fill="#6b746c">__keyspaces__</text>
+<rect x="376" y="80" width="268" height="28" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="388" y="99" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0003 0000</text><text x="476" y="99" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">doc:u001 …</text>
+<rect x="376" y="114" width="268" height="28" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="388" y="133" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0003 0001</text><text x="476" y="133" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">doc:o17 …</text>
+<rect x="376" y="148" width="268" height="28" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="388" y="167" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0007 0000</text><text x="476" y="167" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">idx:by_date …</text>
+<rect x="376" y="192" width="268" height="36" rx="6" fill="#141d1b" stroke="#4fd1c5"/>
+<text x="390" y="215" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">OPTIONS  44 KB, never rewritten</text>
+<text x="20" y="276" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">Prefix = database id ‖ collection id (u32 each, big-endian). A collection is the range [prefix, prefix + 1).</text>
+</svg><figcaption>What was a column family is now a key range; the file that every create used to rewrite stops changing.</figcaption></figure>
+<p>Creating a collection is one atomic write: the registry entry with its keyspace id, the id counter, and the collection's type. Dropping one is the registry delete plus one <code>DeleteRange</code> over <code>[prefix, prefix&nbsp;+&nbsp;1)</code>; dropping a whole database is a single range delete over its id range. A background thread compacts dropped ranges so their disk space comes back soon after, and resumes after a restart.</p>
+<p>Because ids are never reused, a collection dropped and recreated under the same name gets a fresh, empty range: it cannot see anything its predecessor wrote, and caches keyed by keyspace simply miss. A handle that some request still holds on the old collection now answers <code>CollectionNotFound</code> instead of writing into the new one.</p>
+<p>Inside a keyspace nothing changed: documents are still under <code>doc:</code>, index entries under <code>idx:</code>, fulltext terms under <code>ft_term:</code>. Collection code keeps building those logical keys; one small layer adds the prefix on the way in, strips it on the way out, and bounds every iterator to its keyspace — which also fixed four scans that, in 1.x, could walk past the end of their collection.</p>
+</section>
+
+<section id="numbers"><h2>The numbers</h2>
+<p>The same operations on two copies of the 1,144-collection instance — one left on the 1.3 layout, one migrated — each run twice:</p>
+<figure class="post-figure"><svg viewBox="0 0 680 190" role="img" aria-labelledby="ks-bars-t">
+<title id="ks-bars-t">Time to create 10 collections, 1.3 versus 2.0</title>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Create 10 collections, same 1,144-collection instance (ms)</text>
+<line x1="170" y1="46" x2="170" y2="150" stroke="#29322f"/>
+<text x="20" y="76" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">1.3</text>
+<rect x="170" y="60" width="440" height="24" rx="3" fill="#6b746c"/>
+<text x="620" y="77" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6" text-anchor="end">1,952</text>
+<text x="20" y="120" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">2.0</text>
+<rect x="170" y="104" width="12" height="24" rx="3" fill="#f5a623"/>
+<text x="192" y="121" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">53</text>
+<text x="20" y="176" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. Empty server, 1.3: 94 ms.</text>
+</svg><figcaption>Creating a collection no longer depends on how many collections the instance holds.</figcaption></figure>
+<div class="post-table"><table><thead><tr><th>Operation</th><th>1.3</th><th>2.0</th></tr></thead><tbody>
+<tr><td><pre>create 10 collections</pre></td><td><pre>1,952 ms</pre></td><td><pre>53 ms</pre></td></tr>
+<tr><td><pre>10 inserts that auto-create</pre></td><td><pre>1,918 / 1,971 ms</pre></td><td><pre>56 / 57 ms</pre></td></tr>
+<tr><td><pre>delete 10 collections</pre></td><td><pre>49 / 56 ms</pre></td><td><pre>54 / 56 ms</pre></td></tr>
+<tr><td><pre>drop a database</pre></td><td><pre>6 / 7 ms</pre></td><td><pre>6 / 7 ms</pre></td></tr>
+<tr><td><pre>300 single inserts</pre></td><td><pre>3,201 ms</pre></td><td><pre>1,580 / 1,601 ms</pre></td></tr>
+<tr><td><pre>OPTIONS file</pre></td><td><pre>6.3 MB</pre></td><td><pre>43,887 bytes</pre></td></tr>
+</tbody></table></div>
+<p>1.3&rsquo;s second &ldquo;create 10&rdquo; run took 55&nbsp;ms and is left out of the table: it recreated the same ten names within the five-minute window in which 1.x reuses a dropped collection&rsquo;s column family. A name the instance had not seen recently still cost ~0.2&nbsp;s. Deletes and database drops were already cheap in 1.x, which deferred the column-family drop to a background thread; they stay cheap. The create path is where the time went, and it is now flat. The timings are wall-clock times of HTTP calls from a shell loop, so they include the client; they are for comparing the two columns, not for quoting as per-operation latency.</p>
+</section>
+
+<section id="migration"><h2>The migration</h2>
+<p>A data directory written by 1.x is migrated automatically at the first start of 2.0, inside the storage engine's initialisation and before the server binds its port, so no request ever sees a collection half-moved. Collections move one at a time, smallest first:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> per collection</div><pre><span class="tok-com"># 1. record migrating_to = ks in the registry (synced)</span>
+<span class="tok-com"># 2. copy every key into ks, counting keys and hashing key + value</span>
+<span class="tok-com"># 3. re-read the copy, compare count and hash</span>
+<span class="tok-com"># 4. switch the registry entry to ks (synced)</span>
+<span class="tok-com"># 5. free the old column family's files; drop it in the background</span></pre></div>
+<p>Every step can be interrupted. A crash during the copy leaves <code>migrating_to</code> on the entry, and the next start wipes the target range and copies again. A crash after the switch leaves an old column family to free, which the next start does. A collection that fails verification or hits an I/O error stays in its own column family — still served, exactly as in 1.x — and is retried at the next start. Freeing each old column family's files right after its copy means the migration needs about one extra collection of disk, not a second copy of everything.</p>
+<p>On the 7.4&nbsp;GB instance: 1,148 collections in 128.6&nbsp;s, 11.2&nbsp;GB copied uncompressed, no failures, and five column families left alone because their database no longer existed — the remains of interrupted drops, reported rather than resurrected or deleted. The per-collection document counts matched the untouched copy everywhere except in three test databases that a test suite was writing to between the two checkpoints. The 1,147 emptied column families were then dropped in the background, one at a time, in 124.5&nbsp;s — the last time this instance pays for OPTIONS rewrites.</p>
+</section>
+
+<section id="upgrading"><h2>Upgrading</h2>
+<p>The change is one-way: a 1.x binary cannot open a data directory once its collections have moved. Before upgrading, take a checkpoint — <code>POST /_api/backup</code> — and copy it off the volume; rolling back means restoring it. Check that free disk is at least 1.2&nbsp;× your largest collection plus 1&nbsp;GiB (the migration refuses to start otherwise). Then either start 2.0 normally, or run the migration on its own first:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>solidb --data-dir ./data --migrate-only</pre></div>
+<p>A few things behave differently afterwards. A collection's <code>disk_usage</code> is RocksDB's approximate size of its key range, counting flushed data only. The <code>/metrics</code> endpoint gains <code>solidb_keyspace_creates_total</code>, <code>solidb_keyspace_drops_total</code> and <code>solidb_keyspace_gc_compactions_total</code>, while <code>solidb_cf_ops_total</code> now only counts the drops of migrated 1.x column families. The full layout is described in <code>docs/storage-format.md</code>, the upgrade steps in <code>docs/BACKUP.md</code>, and every change in the <a href="/docs/changelog">changelog</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>
