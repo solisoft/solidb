@@ -26,6 +26,7 @@ fn now_secs() -> u64 {
 /// Returns false when the persist failed and the flag was re-armed.
 fn flush_vector_index_map(
     db: &DB,
+    ks: &Keyspace,
     name: &str,
     indexes: &DashMap<String, Arc<VectorIndex>>,
     dirty: &AtomicBool,
@@ -36,7 +37,7 @@ fn flush_vector_index_map(
     if !dirty.swap(false, Ordering::Relaxed) {
         return true; // Nothing to persist
     }
-    if let Err(e) = Collection::persist_vector_index_map(db, name, indexes) {
+    if let Err(e) = Collection::persist_vector_index_map(db, ks, name, indexes) {
         tracing::warn!("Failed to persist vector indexes: {}", e);
         // Re-arm so a later throttled call / shutdown flush retries rather
         // than silently dropping the change.
@@ -52,13 +53,14 @@ fn flush_vector_index_map(
 /// instance open.
 struct DirtyVecEntry {
     db: Weak<DB>,
+    ks: Keyspace,
     name: String,
     vector_indexes: Weak<DashMap<String, Arc<VectorIndex>>>,
     vec_dirty: Arc<AtomicBool>,
     vec_last_persist: Arc<AtomicU64>,
 }
 
-static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, String), DirtyVecEntry>> =
+static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, crate::storage::keyspace::KsId), DirtyVecEntry>> =
     Lazy::new(DashMap::new);
 
 /// Persist every vector index whose changes are older than the throttle
@@ -70,7 +72,7 @@ static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, String), DirtyVecEntry>> =
 /// Returns the number of collections persisted.
 pub fn flush_dirty_vector_indexes() -> usize {
     let now = now_secs();
-    let due: Vec<(usize, String)> = DIRTY_VECTOR_INDEXES
+    let due: Vec<(usize, crate::storage::keyspace::KsId)> = DIRTY_VECTOR_INDEXES
         .iter()
         .filter(|e| {
             now.saturating_sub(e.vec_last_persist.load(Ordering::Relaxed))
@@ -87,11 +89,12 @@ pub fn flush_dirty_vector_indexes() -> usize {
         let (Some(db), Some(indexes)) = (entry.db.upgrade(), entry.vector_indexes.upgrade()) else {
             continue; // engine or handle gone; nothing left to persist into
         };
-        if db.cf_handle(&entry.name).is_none() {
+        if entry.ks.handle(&db).is_none() {
             continue; // collection dropped
         }
         if flush_vector_index_map(
             &db,
+            &entry.ks,
             &entry.name,
             &indexes,
             &entry.vec_dirty,
@@ -107,11 +110,17 @@ pub fn flush_dirty_vector_indexes() -> usize {
 }
 
 impl Collection {
-    /// Create a new collection handle
+    /// A handle on a legacy collection: its own column family named `name`.
     pub fn new(name: String, db: Arc<DB>) -> Self {
+        let ks = Keyspace::legacy(&db, &name);
+        Self::open(name, ks, db)
+    }
+
+    /// A handle on the collection `name` whose keys live in `ks`.
+    pub fn open(name: String, ks: Keyspace, db: Arc<DB>) -> Self {
         // Load cached count from disk, or calculate if not present
-        let count = if let Some(cf) = db.cf_handle(&name) {
-            match db.get_cf(&cf, STATS_COUNT_KEY.as_bytes()) {
+        let count = if let Some(cf) = ks.handle(&db) {
+            match db.get_ks(&cf, STATS_COUNT_KEY.as_bytes()) {
                 Ok(Some(bytes)) => String::from_utf8_lossy(&bytes)
                     .parse::<usize>()
                     .unwrap_or(0),
@@ -128,8 +137,8 @@ impl Collection {
         let (change_sender, _) = tokio::sync::broadcast::channel(100);
 
         // Load collection type
-        let collection_type = if let Some(cf) = db.cf_handle(&name) {
-            match db.get_cf(&cf, COLLECTION_TYPE_KEY.as_bytes()) {
+        let collection_type = if let Some(cf) = ks.handle(&db) {
+            match db.get_ks(&cf, COLLECTION_TYPE_KEY.as_bytes()) {
                 Ok(Some(bytes)) => String::from_utf8_lossy(&bytes).to_string(),
                 _ => "document".to_string(),
             }
@@ -140,6 +149,7 @@ impl Collection {
         Self {
             name,
             db,
+            ks,
             doc_count: Arc::new(AtomicUsize::new(count)),
             chunk_count: Arc::new(AtomicUsize::new(0)),
             chunk_count_ready: Arc::new(AtomicBool::new(false)),
@@ -160,9 +170,9 @@ impl Collection {
     /// Count live documents under `doc:`. Pre-H8 TTL expiry entries also live
     /// there (`doc:ttl_exp::…`) with an empty value; a serialized document is
     /// never empty, so skipping empty values excludes exactly those.
-    pub(crate) fn count_doc_entries(db: &DB, cf: &impl rust_rocksdb::AsColumnFamilyRef) -> usize {
+    pub(crate) fn count_doc_entries(db: &DB, cf: &KsCf) -> usize {
         let prefix = DOC_PREFIX.as_bytes();
-        db.prefix_iterator_cf(cf, prefix)
+        db.prefix_iterator_ks(cf, prefix)
             .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
             .filter(|r| r.as_ref().is_ok_and(|(_, v)| !v.is_empty()))
             .count()
@@ -179,11 +189,11 @@ impl Collection {
         if self.chunk_count_ready.load(Ordering::Acquire) {
             return;
         }
-        let count = match self.db.cf_handle(&self.name) {
+        let count = match self.ks.handle(&self.db) {
             Some(cf) => {
                 let prefix = BLO_PREFIX.as_bytes();
                 self.db
-                    .prefix_iterator_cf(&cf, prefix)
+                    .prefix_iterator_ks(&cf, prefix)
                     .take_while(|r| r.as_ref().is_ok_and(|(k, _)| k.starts_with(prefix)))
                     .count()
             }
@@ -208,12 +218,12 @@ impl Collection {
     /// Set collection type (persists to disk)
     pub fn set_type(&self, type_: &str) -> DbResult<()> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         self.db
-            .put_cf(&cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
+            .put_ks(&cf, COLLECTION_TYPE_KEY.as_bytes(), type_.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to set collection type: {}", e)))?;
 
         // Update in-memory state
@@ -226,8 +236,8 @@ impl Collection {
     pub fn flush_stats(&self) {
         if self.count_dirty.swap(false, Ordering::Relaxed) {
             let count = self.doc_count.load(Ordering::Relaxed);
-            if let Some(cf) = self.db.cf_handle(&self.name) {
-                let _ = self.db.put_cf(
+            if let Some(cf) = self.ks.handle(&self.db) {
+                let _ = self.db.put_ks(
                     &cf,
                     STATS_COUNT_KEY.as_bytes(),
                     count.to_string().as_bytes(),
@@ -300,6 +310,7 @@ impl Collection {
     pub fn flush_vector_indexes(&self) {
         let _ = flush_vector_index_map(
             &self.db,
+            &self.ks,
             &self.name,
             &self.vector_indexes,
             &self.vec_dirty,
@@ -317,9 +328,10 @@ impl Collection {
             return; // already registered
         }
         DIRTY_VECTOR_INDEXES.insert(
-            (Arc::as_ptr(&self.db) as usize, self.name.clone()),
+            (Arc::as_ptr(&self.db) as usize, self.ks.id().clone()),
             DirtyVecEntry {
                 db: Arc::downgrade(&self.db),
+                ks: self.ks.clone(),
                 name: self.name.clone(),
                 vector_indexes: Arc::downgrade(&self.vector_indexes),
                 vec_dirty: self.vec_dirty.clone(),
@@ -330,8 +342,8 @@ impl Collection {
 
     /// Compact the collection to remove tombstones and reclaim space
     pub fn compact(&self) {
-        if let Some(cf) = self.db.cf_handle(&self.name) {
-            self.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+        if let Some(cf) = self.ks.handle(&self.db) {
+            self.db.compact_range_ks(&cf, None::<&[u8]>, None::<&[u8]>);
         }
     }
 
@@ -352,7 +364,7 @@ impl Collection {
 
     /// Get disk usage statistics for this collection
     pub fn disk_usage(&self) -> DiskUsage {
-        let cf = match self.db.cf_handle(&self.name) {
+        let cf = match self.ks.handle(&self.db) {
             Some(cf) => cf,
             None => {
                 return DiskUsage {
@@ -363,6 +375,21 @@ impl Collection {
                 }
             }
         };
+
+        // A shared keyspace is a slice of one column family whose properties
+        // describe every collection at once: size the key range instead.
+        // Approximate, and flushed data only — the memtable and the SST file
+        // count cannot be attributed to one keyspace.
+        if !self.ks.is_legacy() {
+            let size = self.ks.approximate_size(&self.db);
+            return DiskUsage {
+                sst_files_size: size,
+                live_data_size: size,
+                num_sst_files: 0,
+                memtable_size: 0,
+            };
+        }
+        let cf = cf.raw().clone();
 
         // Get SST files size
         let sst_files_size = self
@@ -415,13 +442,13 @@ impl Collection {
         config: &crate::sharding::coordinator::CollectionShardConfig,
     ) -> DbResult<()> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let config_bytes = serde_json::to_vec(config)?;
         self.db
-            .put_cf(&cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
+            .put_ks(&cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
 
         tracing::info!(
@@ -435,10 +462,10 @@ impl Collection {
 
     /// Get sharding configuration for this collection (None if not sharded)
     pub fn get_shard_config(&self) -> Option<crate::sharding::coordinator::CollectionShardConfig> {
-        let cf = self.db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         self.db
-            .get_cf(&cf, SHARD_CONFIG_KEY.as_bytes())
+            .get_ks(&cf, SHARD_CONFIG_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -450,13 +477,13 @@ impl Collection {
         table: &crate::sharding::coordinator::ShardTable,
     ) -> DbResult<()> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let table_bytes = serde_json::to_vec(table)?;
         self.db
-            .put_cf(&cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
+            .put_ks(&cf, SHARD_TABLE_KEY.as_bytes(), &table_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard table: {}", e)))?;
 
         Ok(())
@@ -464,10 +491,10 @@ impl Collection {
 
     /// Load shard table from storage
     pub fn get_stored_shard_table(&self) -> Option<crate::sharding::coordinator::ShardTable> {
-        let cf = self.db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         self.db
-            .get_cf(&cf, SHARD_TABLE_KEY.as_bytes())
+            .get_ks(&cf, SHARD_TABLE_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())

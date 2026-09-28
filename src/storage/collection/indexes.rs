@@ -170,10 +170,11 @@ impl Collection {
         // Store index metadata and build index
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_cf(&cf, Self::idx_meta_key(&name), &index_bytes)
+            db.put_ks(&cf, Self::idx_meta_key(&name), &index_bytes)
                 .map_err(|e| DbError::InternalError(format!("Failed to create index: {}", e)))?;
         }
         self.invalidate_index_meta();
@@ -238,8 +239,9 @@ impl Collection {
         index_type: &IndexType,
     ) -> DbResult<usize> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         let prefix = DOC_PREFIX.as_bytes();
 
@@ -248,7 +250,7 @@ impl Collection {
         let mut indexed_count = 0;
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
 
-        for item in db.prefix_iterator_cf(&cf, prefix) {
+        for item in db.prefix_iterator_ks(&cf, prefix) {
             let (key, value) = item.map_err(|e| {
                 DbError::InternalError(format!("Failed to read documents for index: {}", e))
             })?;
@@ -270,7 +272,7 @@ impl Collection {
             }
 
             let entry_key = Self::idx_entry_key(name, &field_values, &doc.key);
-            batch.put_cf(&cf, entry_key, doc.key.as_bytes());
+            batch.put_ks(&cf, entry_key, doc.key.as_bytes());
             indexed_count += 1;
 
             // If bloom/cuckoo filter, also update in-memory filter
@@ -313,8 +315,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Use WriteBatch for atomic, high-performance index deletion
@@ -323,16 +326,16 @@ impl Collection {
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries
 
         // Delete index metadata
-        batch.delete_cf(&cf, Self::idx_meta_key(name));
+        batch.delete_ks(&cf, Self::idx_meta_key(name));
 
         // Delete all index entries
         let prefix = format!("{}{}:", IDX_PREFIX, name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         for result in iter.flatten() {
             let (key, _) = result;
             if key.starts_with(prefix.as_bytes()) {
-                batch.delete_cf(&cf, &key);
+                batch.delete_ks(&cf, &key);
                 deleted_count += 1;
 
                 // Flush batch periodically to avoid excessive memory usage
@@ -408,19 +411,20 @@ impl Collection {
         let clear_start = std::time::Instant::now();
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
             let mut batch = WriteBatch::default();
 
             // Clear regular indexes
             for index in &indexes {
                 let prefix = format!("{}{}:", IDX_PREFIX, index.name);
-                let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+                let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
                 for result in iter.flatten() {
                     let (key, _) = result;
                     if key.starts_with(prefix.as_bytes()) {
-                        batch.delete_cf(&cf, &key);
+                        batch.delete_ks(&cf, &key);
                     } else {
                         break;
                     }
@@ -430,11 +434,11 @@ impl Collection {
             // Clear geo indexes
             for geo_index in &geo_indexes {
                 let prefix = format!("{}{}:", GEO_PREFIX, geo_index.name);
-                let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+                let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
                 for result in iter.flatten() {
                     let (key, _) = result;
                     if key.starts_with(prefix.as_bytes()) {
-                        batch.delete_cf(&cf, &key);
+                        batch.delete_ks(&cf, &key);
                     } else {
                         break;
                     }
@@ -446,22 +450,22 @@ impl Collection {
             // what older versions left behind.
             for ft_index in &ft_indexes {
                 let ngram_prefix = format!("{}{}:", FT_PREFIX, ft_index.name);
-                let iter = db.prefix_iterator_cf(&cf, ngram_prefix.as_bytes());
+                let iter = db.prefix_iterator_ks(&cf, ngram_prefix.as_bytes());
                 for result in iter.flatten() {
                     let (key, _) = result;
                     if key.starts_with(ngram_prefix.as_bytes()) {
-                        batch.delete_cf(&cf, &key);
+                        batch.delete_ks(&cf, &key);
                     } else {
                         break;
                     }
                 }
 
                 let term_prefix = format!("{}{}:", FT_TERM_PREFIX, ft_index.name);
-                let iter = db.prefix_iterator_cf(&cf, term_prefix.as_bytes());
+                let iter = db.prefix_iterator_ks(&cf, term_prefix.as_bytes());
                 for result in iter.flatten() {
                     let (key, _) = result;
                     if key.starts_with(term_prefix.as_bytes()) {
-                        batch.delete_cf(&cf, &key);
+                        batch.delete_ks(&cf, &key);
                     } else {
                         break;
                     }
@@ -479,12 +483,13 @@ impl Collection {
         // This allows handling collections with millions of documents without OOM
         let stream_start = std::time::Instant::now();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         // Build all index types in a single pass with periodic batch flushing
         // This reduces memory usage and I/O compared to loading all docs then multiple passes
@@ -535,7 +540,7 @@ impl Collection {
                         if !field_values.iter().all(|v| v.is_null()) {
                             let entry_key =
                                 Self::idx_entry_key(&index.name, &field_values, &doc.key);
-                            batch.put_cf(&cf, entry_key, doc.key.as_bytes());
+                            batch.put_ks(&cf, entry_key, doc.key.as_bytes());
                             regular_count += 1;
 
                             // Flush batch periodically
@@ -554,7 +559,7 @@ impl Collection {
                         if !field_value.is_null() {
                             let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
                             if let Ok(geo_data) = serde_json::to_vec(&field_value) {
-                                batch.put_cf(&cf, entry_key, &geo_data);
+                                batch.put_ks(&cf, entry_key, &geo_data);
                                 geo_count += 1;
 
                                 // Flush batch periodically
@@ -576,7 +581,7 @@ impl Collection {
                                 for term in &Self::ft_terms(ft_index, text) {
                                     let term_key =
                                         Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                    batch.put_cf(&cf, term_key, doc.key.as_bytes());
+                                    batch.put_ks(&cf, term_key, doc.key.as_bytes());
                                     ft_count += 1;
                                 }
 
@@ -628,7 +633,7 @@ impl Collection {
 
             // Re-index all documents - stream from storage
             let prefix = DOC_PREFIX.as_bytes();
-            let iter = db.prefix_iterator_cf(&cf, prefix);
+            let iter = db.prefix_iterator_ks(&cf, prefix);
 
             for result in iter.flatten() {
                 let (key, value) = result;
@@ -683,8 +688,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Build regular indexes
@@ -701,7 +707,7 @@ impl Collection {
 
                     if !field_values.iter().all(|v| v.is_null()) {
                         let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
-                        batch.put_cf(&cf, entry_key, doc.key.as_bytes());
+                        batch.put_ks(&cf, entry_key, doc.key.as_bytes());
 
                         if index.index_type == IndexType::Bloom {
                             for value in &field_values {
@@ -728,7 +734,7 @@ impl Collection {
                     if !field_value.is_null() {
                         let entry_key = Self::geo_entry_key(&geo_index.name, &doc.key);
                         if let Ok(geo_data) = serde_json::to_vec(&field_value) {
-                            batch.put_cf(&cf, entry_key, &geo_data);
+                            batch.put_ks(&cf, entry_key, &geo_data);
                         }
                     }
                 }
@@ -747,7 +753,7 @@ impl Collection {
                         if let Some(text) = field_value.as_str() {
                             for term in &Self::ft_terms(ft_index, text) {
                                 let term_key = Self::ft_term_key(&ft_index.name, term, &doc.key);
-                                batch.put_cf(&cf, term_key, doc.key.as_bytes());
+                                batch.put_ks(&cf, term_key, doc.key.as_bytes());
                             }
                         }
                     }
@@ -765,11 +771,11 @@ impl Collection {
         let index = self.get_index(name)?;
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         // Count entries
         let prefix = format!("{}{}:", IDX_PREFIX, name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
         let count = iter
             .filter(|r| {
                 r.as_ref()
@@ -852,7 +858,7 @@ impl Collection {
             return Ok(());
         }
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
                 "{} (column family dropped mid-operation)",
                 self.name
@@ -874,7 +880,7 @@ impl Collection {
             // Every entry under the value, not just the first: the first may be
             // this document's own (or a stale) entry while a later one belongs
             // to another document.
-            for item in db.prefix_iterator_cf(&cf, prefix.as_bytes()) {
+            for item in db.prefix_iterator_ks(&cf, prefix.as_bytes()) {
                 let Ok((key, value)) = item else {
                     break;
                 };
@@ -922,8 +928,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for index in indexes {
@@ -935,7 +942,7 @@ impl Collection {
 
             if !field_values.iter().all(|v| v.is_null()) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                db.put_cf(&cf, entry_key, doc_key.as_bytes()).map_err(|e| {
+                db.put_ks(&cf, entry_key, doc_key.as_bytes()).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
 
@@ -955,8 +962,9 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for geo_index in geo_indexes {
@@ -964,7 +972,7 @@ impl Collection {
             if !field_value.is_null() {
                 let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
                 let geo_data = serde_json::to_vec(&field_value)?;
-                db.put_cf(&cf, entry_key, &geo_data).map_err(|e| {
+                db.put_ks(&cf, entry_key, &geo_data).map_err(|e| {
                     DbError::InternalError(format!("Failed to update geo index: {}", e))
                 })?;
             }
@@ -983,8 +991,9 @@ impl Collection {
     ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for index in indexes {
@@ -1002,7 +1011,7 @@ impl Collection {
             // Remove old entry
             if !old_values.iter().all(|v| v.is_null()) {
                 let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
-                db.delete_cf(&cf, old_entry_key).map_err(|e| {
+                db.delete_ks(&cf, old_entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
             }
@@ -1010,7 +1019,7 @@ impl Collection {
             // Add new entry
             if !new_values.iter().all(|v| v.is_null()) {
                 let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
-                db.put_cf(&cf, new_entry_key, doc_key.as_bytes())
+                db.put_ks(&cf, new_entry_key, doc_key.as_bytes())
                     .map_err(|e| {
                         DbError::InternalError(format!("Failed to update index: {}", e))
                     })?;
@@ -1021,8 +1030,9 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for geo_index in geo_indexes {
@@ -1031,11 +1041,11 @@ impl Collection {
 
             if !new_field.is_null() {
                 let geo_data = serde_json::to_vec(&new_field)?;
-                db.put_cf(&cf, entry_key, &geo_data).map_err(|e| {
+                db.put_ks(&cf, entry_key, &geo_data).map_err(|e| {
                     DbError::InternalError(format!("Failed to update geo index: {}", e))
                 })?;
             } else {
-                db.delete_cf(&cf, entry_key).map_err(|e| {
+                db.delete_ks(&cf, entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update geo index: {}", e))
                 })?;
             }
@@ -1053,8 +1063,9 @@ impl Collection {
     ) -> DbResult<()> {
         let indexes = self.get_all_indexes();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for index in indexes {
@@ -1066,7 +1077,7 @@ impl Collection {
 
             if !field_values.iter().all(|v| v.is_null()) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                db.delete_cf(&cf, entry_key).map_err(|e| {
+                db.delete_ks(&cf, entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
                 })?;
             }
@@ -1076,13 +1087,14 @@ impl Collection {
         // Update geo indexes
         let geo_indexes = self.get_all_geo_indexes();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         for geo_index in geo_indexes {
             let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
-            db.delete_cf(&cf, entry_key).map_err(|e| {
+            db.delete_ks(&cf, entry_key).map_err(|e| {
                 DbError::InternalError(format!("Failed to update geo index: {}", e))
             })?;
         }
@@ -1168,7 +1180,7 @@ impl Collection {
         let value_str = hex::encode(value_key);
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         let prefix_base = format!("{}{}:", IDX_PREFIX, index_name);
         let seek_key = format!("{}{}:", prefix_base, value_str);
@@ -1183,7 +1195,7 @@ impl Collection {
 
         if forward {
             let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Forward);
-            let iter = db.iterator_cf(&cf, mode);
+            let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
                 if let Ok((k, v)) = result {
@@ -1211,7 +1223,7 @@ impl Collection {
             // between the two, so only this value's entries lie in the gap.
             let reverse_seek = format!("{}{};", prefix_base, value_str);
             let mode = IteratorMode::From(reverse_seek.as_bytes(), Direction::Reverse);
-            let iter = db.iterator_cf(&cf, mode);
+            let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
                 if let Ok((k, v)) = result {
@@ -1236,7 +1248,7 @@ impl Collection {
             return Some(Vec::new());
         }
 
-        let results = db.multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())));
+        let results = db.multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()));
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
@@ -1269,11 +1281,11 @@ impl Collection {
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         // Prefix for the lookup
         let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         // Collect document keys from index
         let doc_keys: Vec<Vec<u8>> = iter
@@ -1296,7 +1308,7 @@ impl Collection {
         }
 
         // Use multi_get for batch retrieval
-        let results = db.multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())));
+        let results = db.multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()));
 
         let docs: Vec<Document> = results
             .into_iter()
@@ -1368,9 +1380,9 @@ impl Collection {
         let value_part = encoded.join("_");
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
         let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_part);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         let doc_keys: Vec<Vec<u8>> = iter
             .filter_map(|r| r.ok())
@@ -1385,7 +1397,7 @@ impl Collection {
             return Some((index, Vec::new()));
         }
 
-        let results = db.multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())));
+        let results = db.multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()));
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
@@ -1420,10 +1432,10 @@ impl Collection {
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
         let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         let doc_keys: Vec<Vec<u8>> = iter
             .filter_map(|r| r.ok())
@@ -1439,7 +1451,7 @@ impl Collection {
             return Some(Vec::new());
         }
 
-        let results = db.multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())));
+        let results = db.multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()));
         let docs: Vec<Document> = results
             .into_iter()
             .filter_map(|r| r.ok())
@@ -1460,18 +1472,18 @@ impl Collection {
         // Optimization for Primary Key Sort
         if field == "_id" || field == "_key" {
             let db = &self.db;
-            let cf = db.cf_handle(&self.name)?;
+            let cf = self.ks.handle(&self.db)?;
             let prefix = DOC_PREFIX.as_bytes();
 
             let iter = if ascending {
                 let mode = IteratorMode::From(prefix, Direction::Forward);
-                db.iterator_cf(&cf, mode)
+                db.iterator_ks(&cf, mode)
             } else {
                 // For descending, we seek past the end of the prefix
                 let mut seek_key = prefix.to_vec();
                 seek_key.push(0xFF);
                 let mode = IteratorMode::From(&seek_key, Direction::Reverse);
-                db.iterator_cf(&cf, mode)
+                db.iterator_ks(&cf, mode)
             };
 
             let docs: Vec<Document> = iter
@@ -1489,17 +1501,17 @@ impl Collection {
         let prefix = format!("{}{}:", IDX_PREFIX, index_name);
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
         let prefix_bytes = prefix.as_bytes();
 
         let iter = if ascending {
             let mode = IteratorMode::From(prefix_bytes, Direction::Forward);
-            db.iterator_cf(&cf, mode)
+            db.iterator_ks(&cf, mode)
         } else {
             let mut seek_key = prefix.as_bytes().to_vec();
             seek_key.push(0xFF);
             let mode = IteratorMode::From(&seek_key, Direction::Reverse);
-            db.iterator_cf(&cf, mode)
+            db.iterator_ks(&cf, mode)
         };
 
         let doc_keys: Vec<String> = iter
@@ -1538,11 +1550,12 @@ impl Collection {
 
         // Try load from DB
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::InternalError("CF not found".into()))?;
         let key = format!("{}{}", BLO_IDX_PREFIX, index_name);
-        let new_filter = if let Ok(Some(bytes)) = db.get_cf(&cf, key.as_bytes()) {
+        let new_filter = if let Ok(Some(bytes)) = db.get_ks(&cf, key.as_bytes()) {
             // Deserialize bloom filter from bytes
             if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
                 filter
@@ -1561,12 +1574,13 @@ impl Collection {
 
     pub(crate) fn save_bloom_filter(&self, index_name: &str, filter: &BloomFilter) -> DbResult<()> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::InternalError("CF not found".into()))?;
         let key = format!("{}{}", BLO_IDX_PREFIX, index_name);
         let bytes = serde_json::to_vec(filter)?;
-        db.put_cf(&cf, key.as_bytes(), &bytes)
+        db.put_ks(&cf, key.as_bytes(), &bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         Ok(())
     }
@@ -1596,9 +1610,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        if let Some(cf) = db.cf_handle(&self.name) {
+        if let Some(cf) = self.ks.handle(&self.db) {
             let key = format!("{}{}", CFO_IDX_PREFIX, index_name);
-            if let Ok(Some(_bytes)) = db.get_cf(&cf, key.as_bytes()) {
+            if let Ok(Some(_bytes)) = db.get_ks(&cf, key.as_bytes()) {
                 // CuckooFilter doesn't implement Serialize/Deserialize due to DefaultHasher,
                 // so we create a new empty filter instead of deserializing
                 // This means bloom filters are rebuilt on restart - acceptable for the use case
@@ -1616,9 +1630,9 @@ impl Collection {
         index_name: &str,
         _filter: &CuckooFilter<DefaultHasher>,
     ) -> DbResult<()> {
-        let db = &self.db;
-        let _cf = db
-            .cf_handle(&self.name)
+        let _cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::InternalError("CF not found".into()))?;
         let _key = format!("{}{}", CFO_IDX_PREFIX, index_name);
 

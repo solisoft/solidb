@@ -16,8 +16,9 @@
 
 use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
+use crate::storage::keyspace::{KsBatchExt, KsCf, KsDbExt};
 use dashmap::DashMap;
-use rust_rocksdb::{AsColumnFamilyRef, Direction, IteratorMode, ReadOptions, WriteBatch};
+use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -117,12 +118,6 @@ impl Collection {
         b
     }
 
-    fn version_read_opts(key: &str) -> ReadOptions {
-        let mut opts = ReadOptions::default();
-        opts.set_iterate_upper_bound(Self::version_upper_bound(key));
-        opts
-    }
-
     /// Whether this collection records document history.
     pub fn is_versioned(&self) -> bool {
         let ck = self.version_cache_key();
@@ -130,11 +125,11 @@ impl Collection {
             return *v;
         }
         let enabled = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .and_then(|cf| {
                 self.db
-                    .get_cf(&cf, VERSIONING_META_KEY.as_bytes())
+                    .get_ks(&cf, VERSIONING_META_KEY.as_bytes())
                     .ok()
                     .flatten()
             })
@@ -146,11 +141,11 @@ impl Collection {
     /// Enable versioning. Subsequent single-document writes record history.
     pub fn enable_versioning(&self) -> DbResult<()> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         self.db
-            .put_cf(&cf, VERSIONING_META_KEY.as_bytes(), b"1")
+            .put_ks(&cf, VERSIONING_META_KEY.as_bytes(), b"1")
             .map_err(|e| DbError::InternalError(format!("enable_versioning: {}", e)))?;
         versioned_cache().insert(self.version_cache_key(), true);
         Ok(())
@@ -158,8 +153,8 @@ impl Collection {
 
     /// Disable versioning (existing history is retained until pruned/dropped).
     pub fn disable_versioning(&self) -> DbResult<()> {
-        if let Some(cf) = self.db.cf_handle(&self.name) {
-            let _ = self.db.delete_cf(&cf, VERSIONING_META_KEY.as_bytes());
+        if let Some(cf) = self.ks.handle(&self.db) {
+            let _ = self.db.delete_ks(&cf, VERSIONING_META_KEY.as_bytes());
         }
         versioned_cache().insert(self.version_cache_key(), false);
         Ok(())
@@ -167,10 +162,10 @@ impl Collection {
 
     /// Append a version record into the same `WriteBatch` as the mutation (atomic).
     /// `value = None` records a delete tombstone.
-    pub(crate) fn append_version_to_batch<C: AsColumnFamilyRef>(
+    pub(crate) fn append_version_to_batch(
         &self,
         batch: &mut WriteBatch,
-        cf: &C,
+        cf: &KsCf,
         key: &str,
         value: Option<&Value>,
     ) {
@@ -181,7 +176,7 @@ impl Collection {
             value: value.cloned(),
         };
         if let Ok(bytes) = serde_json::to_vec(&record) {
-            batch.put_cf(cf, Self::version_key(key, ts), bytes);
+            batch.put_ks(cf, Self::version_key(key, ts), bytes);
         }
     }
 
@@ -191,16 +186,18 @@ impl Collection {
     /// a delete tombstone).
     pub fn get_as_of(&self, key: &str, as_of_micros: u64) -> DbResult<Option<Value>> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         let prefix = Self::version_prefix(key);
         // First key >= inverted(as_of) is the newest version with ts <= as_of.
         let seek = Self::version_key(key, as_of_micros);
-        let iter = self.db.iterator_cf_opt(
+        let upper = Self::version_upper_bound(key);
+        let iter = self.db.iterator_ks_bounded(
             &cf,
-            Self::version_read_opts(key),
             IteratorMode::From(seek.as_bytes(), Direction::Forward),
+            None,
+            Some(&upper),
         );
         for item in iter {
             let (k, v) = match item {
@@ -225,13 +222,13 @@ impl Collection {
     /// All live documents as of `as_of_micros`. Full `docv:` scan; no indexes.
     pub fn scan_as_of(&self, as_of_micros: u64) -> DbResult<Vec<Value>> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         let prefix = DOCV_PREFIX.as_bytes();
         let mut chosen: std::collections::HashMap<String, VersionRecord> =
             std::collections::HashMap::new();
-        for item in self.db.prefix_iterator_cf(&cf, prefix) {
+        for item in self.db.prefix_iterator_ks(&cf, prefix) {
             let Ok((k, v)) = item else {
                 break;
             };
@@ -272,15 +269,17 @@ impl Collection {
     /// Full version history for a document, newest first. Each entry is
     /// `{ ts: <epoch millis>, ts_micros, deleted, value }`.
     pub fn doc_history(&self, key: &str) -> Vec<Value> {
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Vec::new();
         };
         let prefix = Self::version_prefix(key);
         let mut out = Vec::new();
-        let iter = self.db.iterator_cf_opt(
+        let upper = Self::version_upper_bound(key);
+        let iter = self.db.iterator_ks_bounded(
             &cf,
-            Self::version_read_opts(key),
             IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+            None,
+            Some(&upper),
         );
         for item in iter {
             let Ok((k, v)) = item else {
@@ -307,15 +306,17 @@ impl Collection {
     /// Drop the oldest versions of `key` beyond the retention cap.
     pub(crate) fn prune_versions(&self, key: &str) {
         let max = max_versions();
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return;
         };
         let prefix = Self::version_prefix(key);
         let mut to_delete: Vec<Box<[u8]>> = Vec::new();
-        let iter = self.db.iterator_cf_opt(
+        let upper = Self::version_upper_bound(key);
+        let iter = self.db.iterator_ks_bounded(
             &cf,
-            Self::version_read_opts(key),
             IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+            None,
+            Some(&upper),
         );
         let mut own = 0usize;
         for item in iter {
@@ -334,32 +335,32 @@ impl Collection {
             own += 1;
         }
         for k in to_delete {
-            let _ = self.db.delete_cf(&cf, k);
+            let _ = self.db.delete_ks(&cf, k);
         }
     }
 
     pub fn set_row_policy(&self, expr: Option<&str>) -> DbResult<()> {
         let cf = self
-            .db
-            .cf_handle(&self.name)
+            .ks
+            .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         match expr {
             Some(s) => {
                 self.db
-                    .put_cf(&cf, ROW_POLICY_META_KEY.as_bytes(), s.as_bytes())
+                    .put_ks(&cf, ROW_POLICY_META_KEY.as_bytes(), s.as_bytes())
                     .map_err(|e| DbError::InternalError(format!("set_row_policy: {e}")))?;
             }
             None => {
-                let _ = self.db.delete_cf(&cf, ROW_POLICY_META_KEY.as_bytes());
+                let _ = self.db.delete_ks(&cf, ROW_POLICY_META_KEY.as_bytes());
             }
         }
         Ok(())
     }
 
     pub fn get_row_policy(&self) -> Option<String> {
-        let cf = self.db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
         self.db
-            .get_cf(&cf, ROW_POLICY_META_KEY.as_bytes())
+            .get_ks(&cf, ROW_POLICY_META_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|b| String::from_utf8(b).ok())

@@ -50,10 +50,11 @@ impl Collection {
 
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_cf(&cf, Self::ttl_meta_key(&name), &index_bytes)
+            db.put_ks(&cf, Self::ttl_meta_key(&name), &index_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create TTL index: {}", e))
                 })?;
@@ -81,11 +82,12 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
-        db.delete_cf(&cf, Self::ttl_meta_key(name))
+        db.delete_ks(&cf, Self::ttl_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop TTL index: {}", e)))?;
         self.invalidate_index_meta();
 
@@ -93,17 +95,17 @@ impl Collection {
         // index of the same name does not inherit them.
         let mut batch = WriteBatch::default();
         let prefix = Self::ttl_expiry_prefix(name);
-        for (key, _) in db.prefix_iterator_cf(&cf, prefix.as_slice()).flatten() {
+        for (key, _) in db.prefix_iterator_ks(&cf, prefix.as_slice()).flatten() {
             if !key.starts_with(prefix.as_slice()) {
                 break;
             }
             if Self::parse_expiry_suffix(&key[prefix.len()..]).is_some() {
-                batch.delete_cf(&cf, &key);
+                batch.delete_ks(&cf, &key);
             }
         }
         let legacy_prefix = Self::legacy_ttl_expiry_prefix(name);
         for (key, value) in db
-            .prefix_iterator_cf(&cf, legacy_prefix.as_slice())
+            .prefix_iterator_ks(&cf, legacy_prefix.as_slice())
             .flatten()
         {
             if !key.starts_with(legacy_prefix.as_slice()) {
@@ -111,7 +113,7 @@ impl Collection {
             }
             // Empty value only: a non-empty one is a document.
             if value.is_empty() {
-                batch.delete_cf(&cf, &key);
+                batch.delete_ks(&cf, &key);
             }
         }
         if !batch.is_empty() {
@@ -275,7 +277,7 @@ impl Collection {
             .as_secs();
 
         let db = &self.db;
-        let Some(cf) = db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Ok(0); // collection dropped mid-pass
         };
 
@@ -285,7 +287,7 @@ impl Collection {
         // Current entries: "ttl_exp:<index>:<ts, 20 digits>:<doc_key>", sorted
         // by timestamp, so the scan stops at the first unexpired one.
         let prefix = Self::ttl_expiry_prefix(&index.name);
-        for (key_bytes, _) in db.prefix_iterator_cf(&cf, prefix.as_slice()).flatten() {
+        for (key_bytes, _) in db.prefix_iterator_ks(&cf, prefix.as_slice()).flatten() {
             if !key_bytes.starts_with(prefix.as_slice()) {
                 break;
             }
@@ -308,7 +310,7 @@ impl Collection {
         let mut migrate = WriteBatch::default();
         let mut legacy_seen = 0usize;
         for (key_bytes, value) in db
-            .prefix_iterator_cf(&cf, legacy_prefix.as_slice())
+            .prefix_iterator_ks(&cf, legacy_prefix.as_slice())
             .flatten()
         {
             if !key_bytes.starts_with(legacy_prefix.as_slice()) || legacy_seen >= LEGACY_PER_PASS {
@@ -326,12 +328,12 @@ impl Collection {
             if expiry_ts <= now {
                 expired.push((key_bytes.to_vec(), doc_key));
             } else {
-                migrate.put_cf(
+                migrate.put_ks(
                     &cf,
                     Self::ttl_expiry_key(&index.name, expiry_ts, &doc_key),
                     b"",
                 );
-                migrate.delete_cf(&cf, &key_bytes);
+                migrate.delete_ks(&cf, &key_bytes);
             }
         }
         if !migrate.is_empty() {
@@ -442,9 +444,9 @@ mod tests {
         let old_entry = legacy(1001, "old");
         let fresh_entry = legacy(now + 3601, "fresh");
         {
-            let cf = coll.db.cf_handle("s").unwrap();
-            coll.db.put_cf(&cf, &old_entry, b"").unwrap();
-            coll.db.put_cf(&cf, &fresh_entry, b"").unwrap();
+            let cf = coll.live_cf().unwrap();
+            coll.db.put_ks(&cf, &old_entry, b"").unwrap();
+            coll.db.put_ks(&cf, &fresh_entry, b"").unwrap();
         }
 
         // Legacy entries are not documents.
@@ -454,10 +456,10 @@ mod tests {
         assert!(coll.get("old").is_err());
         assert!(coll.get("fresh").is_ok());
 
-        let cf = coll.db.cf_handle("s").unwrap();
-        assert!(coll.db.get_cf(&cf, &old_entry).unwrap().is_none());
-        assert!(coll.db.get_cf(&cf, &fresh_entry).unwrap().is_none());
+        let cf = coll.live_cf().unwrap();
+        assert!(coll.db.get_ks(&cf, &old_entry).unwrap().is_none());
+        assert!(coll.db.get_ks(&cf, &fresh_entry).unwrap().is_none());
         let migrated = Collection::ttl_expiry_key("ttl", now + 3601, "fresh");
-        assert!(coll.db.get_cf(&cf, &migrated).unwrap().is_some());
+        assert!(coll.db.get_ks(&cf, &migrated).unwrap().is_some());
     }
 }

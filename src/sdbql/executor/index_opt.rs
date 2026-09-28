@@ -17,6 +17,7 @@
 
 use std::collections::HashSet;
 
+use crate::storage::keyspace::KsDbExt;
 use rust_rocksdb::{Direction, IteratorMode};
 use serde_json::Value;
 
@@ -129,9 +130,9 @@ fn index_prefix_scan(
     let hi = format!("{}{}", base, encode(&upper));
 
     let db = &collection.db;
-    let cf = db.cf_handle(&collection.name)?;
+    let cf = collection.ks.handle(db)?;
     let mut doc_keys: Vec<Vec<u8>> = Vec::new();
-    let iter = db.iterator_cf(&cf, IteratorMode::From(lo.as_bytes(), Direction::Forward));
+    let iter = db.iterator_ks(&cf, IteratorMode::From(lo.as_bytes(), Direction::Forward));
     for (k, v) in iter.flatten() {
         if !k.starts_with(base.as_bytes()) || k.as_ref() >= hi.as_bytes() {
             break;
@@ -145,7 +146,7 @@ fn index_prefix_scan(
         return Some(Vec::new());
     }
     let docs = db
-        .multi_get_cf(doc_keys.iter().map(|k| (&cf, k.as_slice())))
+        .multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()))
         .into_iter()
         .filter_map(|r| r.ok())
         .flatten()

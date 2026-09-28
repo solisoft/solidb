@@ -71,13 +71,13 @@ impl Collection {
             }
         }
 
-        let cf = self.db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
         let mut snapshot = IndexMetaSnapshot::default();
 
         macro_rules! load {
             ($prefix:expr, $target:expr) => {
                 let prefix = $prefix.as_bytes();
-                for (key, value) in self.db.prefix_iterator_cf(&cf, prefix).flatten() {
+                for (key, value) in self.db.prefix_iterator_ks(&cf, prefix).flatten() {
                     if !key.starts_with(prefix) {
                         break;
                     }

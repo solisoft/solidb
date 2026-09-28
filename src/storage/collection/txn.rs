@@ -212,7 +212,7 @@ impl Collection {
         operations: &[Operation],
         batch: &mut WriteBatch,
     ) -> DbResult<StagedTransaction> {
-        let cf = self.db.cf_handle(&self.name).ok_or_else(|| {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
                 "{} (column family dropped before commit)",
                 self.name
@@ -240,7 +240,7 @@ impl Collection {
                     let value = doc.to_value();
                     self.check_unique_constraints(key, &value)?;
                     let doc_bytes = serialize_doc(&doc)?;
-                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+                    batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
                         self.append_version_to_batch(batch, &cf, key, Some(&value));
                     }
@@ -248,15 +248,15 @@ impl Collection {
                     let (regular_entries, geo_entries) =
                         self.compute_index_entries_for_insert(key, &value)?;
                     for (entry_key, entry_value) in regular_entries.into_iter().chain(geo_entries) {
-                        batch.put_cf(&cf, entry_key, entry_value);
+                        batch.put_ks(&cf, entry_key, entry_value);
                     }
                     for (entry_key, entry_value) in
                         self.compute_fulltext_entries_for_insert(key, &value)
                     {
-                        batch.put_cf(&cf, entry_key, entry_value);
+                        batch.put_ks(&cf, entry_key, entry_value);
                     }
                     for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, &value) {
-                        batch.put_cf(&cf, entry_key, Vec::new());
+                        batch.put_ks(&cf, entry_key, Vec::new());
                     }
 
                     staged.events.push(ChangeEvent {
@@ -282,7 +282,7 @@ impl Collection {
                     let value = doc.to_value();
                     self.check_unique_constraints(key, &value)?;
                     let doc_bytes = serialize_doc(&doc)?;
-                    batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+                    batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
                         self.append_version_to_batch(batch, &cf, key, Some(&value));
                     }
@@ -290,30 +290,30 @@ impl Collection {
                     let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
                         self.compute_index_entries_for_update(key, &current, &value)?;
                     for k in keys_to_remove.into_iter().chain(geo_keys_to_remove) {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
                     for (entry_key, entry_value) in
                         entries_to_add.into_iter().chain(geo_entries_to_add)
                     {
-                        batch.put_cf(&cf, entry_key, entry_value);
+                        batch.put_ks(&cf, entry_key, entry_value);
                     }
 
                     for k in self.compute_fulltext_entries_for_delete(key, &current) {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
                     for (entry_key, entry_value) in
                         self.compute_fulltext_entries_for_insert(key, &value)
                     {
-                        batch.put_cf(&cf, entry_key, entry_value);
+                        batch.put_ks(&cf, entry_key, entry_value);
                     }
 
                     let (ttl_entries_to_add, ttl_keys_to_remove) =
                         self.compute_ttl_expiry_entries_for_update(key, &current, &value);
                     for k in ttl_keys_to_remove {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
                     for (entry_key, _) in ttl_entries_to_add {
-                        batch.put_cf(&cf, entry_key, Vec::new());
+                        batch.put_ks(&cf, entry_key, Vec::new());
                     }
 
                     staged.events.push(ChangeEvent {
@@ -330,7 +330,7 @@ impl Collection {
                 Operation::Delete { key, old_data, .. } => {
                     let current = self.txn_expect_unchanged(&pending, key, old_data)?;
 
-                    batch.delete_cf(&cf, Self::doc_key(key));
+                    batch.delete_ks(&cf, Self::doc_key(key));
                     if versioned {
                         self.append_version_to_batch(batch, &cf, key, None);
                     }
@@ -338,13 +338,13 @@ impl Collection {
                     let (regular_keys, geo_keys) =
                         self.compute_index_entries_for_delete(key, &current)?;
                     for k in regular_keys.into_iter().chain(geo_keys) {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
                     for k in self.compute_fulltext_entries_for_delete(key, &current) {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
                     for k in self.compute_ttl_expiry_entries_for_delete(key, &current) {
-                        batch.delete_cf(&cf, k);
+                        batch.delete_ks(&cf, k);
                     }
 
                     staged.events.push(ChangeEvent {

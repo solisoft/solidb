@@ -41,10 +41,11 @@ impl Collection {
         // Store metadata
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_cf(&cf, Self::geo_meta_key(&name), &index_bytes)
+            db.put_ks(&cf, Self::geo_meta_key(&name), &index_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create geo index: {}", e))
                 })?;
@@ -59,8 +60,9 @@ impl Collection {
         // index existed were invisible to it while later ones were not.
         let docs = self.all();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let mut count = 0;
@@ -70,7 +72,7 @@ impl Collection {
             if !field_value.is_null() {
                 let entry_key = Self::geo_entry_key(&name, &doc.key);
                 let geo_data = serde_json::to_vec(&field_value)?;
-                db.put_cf(&cf, entry_key, &geo_data).map_err(|e| {
+                db.put_ks(&cf, entry_key, &geo_data).map_err(|e| {
                     DbError::InternalError(format!("Failed to build geo index: {}", e))
                 })?;
                 count += 1;
@@ -96,23 +98,24 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Delete metadata
-        db.delete_cf(&cf, Self::geo_meta_key(name))
+        db.delete_ks(&cf, Self::geo_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop geo index: {}", e)))?;
         self.invalidate_index_meta();
 
         // Delete entries
         let prefix = format!("{}{}:", GEO_PREFIX, name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         for result in iter.flatten() {
             let (key, _) = result;
             if key.starts_with(prefix.as_bytes()) {
-                db.delete_cf(&cf, &key).map_err(|e| {
+                db.delete_ks(&cf, &key).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop geo index entry: {}", e))
                 })?;
             } else {
@@ -130,12 +133,13 @@ impl Collection {
             .map(|idx| {
                 // Count entries
                 let db = &self.db;
-                let cf = db
-                    .cf_handle(&self.name)
+                let cf = self
+                    .ks
+                    .handle(&self.db)
                     .expect("Column family should exist");
                 let prefix = format!("{}{}:", GEO_PREFIX, idx.name);
                 let count = db
-                    .prefix_iterator_cf(&cf, prefix.as_bytes())
+                    .prefix_iterator_ks(&cf, prefix.as_bytes())
                     .take_while(|r| {
                         r.as_ref()
                             .is_ok_and(|(k, _)| k.starts_with(prefix.as_bytes()))
@@ -170,9 +174,9 @@ impl Collection {
             .into_iter()
             .find(|idx| idx.field == field)?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
         let prefix = format!("{}{}:", GEO_PREFIX, index.name);
-        for (key, value) in db.prefix_iterator_cf(&cf, prefix.as_bytes()).flatten() {
+        for (key, value) in db.prefix_iterator_ks(&cf, prefix.as_bytes()).flatten() {
             if !key.starts_with(prefix.as_bytes()) {
                 break;
             }

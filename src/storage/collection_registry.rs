@@ -198,6 +198,16 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
     adopted
 }
 
+/// Where the collection `full_name` (`db:coll`, or a bare engine-level name)
+/// keeps its keys, or `None` when it does not exist.
+pub fn keyspace_of(
+    db: &std::sync::Arc<crate::storage::RocksDb>,
+    full_name: &str,
+) -> Option<crate::storage::keyspace::Keyspace> {
+    db.cf_handle(full_name)
+        .map(|_| crate::storage::keyspace::Keyspace::legacy(db, full_name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -76,12 +76,13 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let schema_bytes = serde_json::to_vec(&schema)?;
-        db.put_cf(&cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
+        db.put_ks(&cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to set schema: {}", e)))?;
 
         Ok(())
@@ -90,9 +91,9 @@ impl Collection {
     /// Get JSON schema
     pub fn get_json_schema(&self) -> Option<CollectionSchema> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.name)?;
+        let cf = self.ks.handle(&self.db)?;
 
-        db.get_cf(&cf, SCHEMA_KEY.as_bytes())
+        db.get_ks(&cf, SCHEMA_KEY.as_bytes())
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -103,11 +104,12 @@ impl Collection {
         self.invalidate_schema_cache();
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
-        db.delete_cf(&cf, SCHEMA_KEY.as_bytes())
+        db.delete_ks(&cf, SCHEMA_KEY.as_bytes())
             .map_err(|e| DbError::InternalError(format!("Failed to remove schema: {}", e)))?;
 
         Ok(())

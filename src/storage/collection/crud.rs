@@ -1,13 +1,10 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::serializer::{deserialize_doc, deserialize_doc_as_value, serialize_doc};
-use rust_rocksdb::{
-    AsColumnFamilyRef, BoundColumnFamily, Direction, IteratorMode, ReadOptions, WriteBatch,
-};
+use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 /// The error for an insert whose `_key` is already taken. Single-document and
 /// batch inserts return the same conflict (audit D1: the single path used to
@@ -34,13 +31,8 @@ fn take_key(data: &mut Value) -> DbResult<String> {
 impl Collection {
     // ==================== Basic CRUD ====================
 
-    fn live_cf(&self) -> DbResult<Arc<BoundColumnFamily<'_>>> {
-        self.db.cf_handle(&self.name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                self.name
-            ))
-        })
+    pub(crate) fn live_cf(&self) -> DbResult<KsCf<'_>> {
+        self.ks.live(&self.db, &self.name)
     }
 
     /// Get a document by key
@@ -50,7 +42,7 @@ impl Collection {
         let cf = self.live_cf()?;
 
         let bytes = db
-            .get_cf(&cf, Self::doc_key(key))
+            .get_ks(&cf, Self::doc_key(key))
             .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
             .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
 
@@ -65,30 +57,30 @@ impl Collection {
 
     // ---------- per-document derived entries (idx / geo / ft / ttl) ----------
 
-    fn add_insert_entries<C: AsColumnFamilyRef>(
+    fn add_insert_entries(
         &self,
         batch: &mut WriteBatch,
-        cf: &C,
+        cf: &KsCf,
         key: &str,
         doc_value: &Value,
     ) -> DbResult<()> {
         let (regular, geo) = self.compute_index_entries_for_insert(key, doc_value)?;
         for (entry_key, entry_value) in regular.into_iter().chain(geo) {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_ks(cf, entry_key, entry_value);
         }
         for (entry_key, entry_value) in self.compute_fulltext_entries_for_insert(key, doc_value) {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_ks(cf, entry_key, entry_value);
         }
         for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, doc_value) {
-            batch.put_cf(cf, entry_key, b"");
+            batch.put_ks(cf, entry_key, b"");
         }
         Ok(())
     }
 
-    fn add_update_entries<C: AsColumnFamilyRef>(
+    fn add_update_entries(
         &self,
         batch: &mut WriteBatch,
-        cf: &C,
+        cf: &KsCf,
         key: &str,
         old_value: &Value,
         new_value: &Value,
@@ -98,48 +90,48 @@ impl Collection {
         let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
             self.compute_index_entries_for_update(key, old_value, new_value)?;
         for key_to_remove in keys_to_remove.into_iter().chain(geo_keys_to_remove) {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         for (entry_key, entry_value) in entries_to_add.into_iter().chain(geo_entries_to_add) {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_ks(cf, entry_key, entry_value);
         }
 
         let (ft_to_add, ft_to_remove) =
             self.compute_fulltext_entries_for_update(key, old_value, new_value);
         for key_to_remove in ft_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         for (entry_key, entry_value) in ft_to_add {
-            batch.put_cf(cf, entry_key, entry_value);
+            batch.put_ks(cf, entry_key, entry_value);
         }
 
         let (ttl_to_add, ttl_to_remove) =
             self.compute_ttl_expiry_entries_for_update(key, old_value, new_value);
         for key_to_remove in ttl_to_remove {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         for (entry_key, _) in ttl_to_add {
-            batch.put_cf(cf, entry_key, b"");
+            batch.put_ks(cf, entry_key, b"");
         }
         Ok(())
     }
 
-    fn add_delete_entries<C: AsColumnFamilyRef>(
+    fn add_delete_entries(
         &self,
         batch: &mut WriteBatch,
-        cf: &C,
+        cf: &KsCf,
         key: &str,
         doc_value: &Value,
     ) -> DbResult<()> {
         let (regular_keys, geo_keys) = self.compute_index_entries_for_delete(key, doc_value)?;
         for key_to_remove in regular_keys.into_iter().chain(geo_keys) {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         for key_to_remove in self.compute_fulltext_entries_for_delete(key, doc_value) {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         for key_to_remove in self.compute_ttl_expiry_entries_for_delete(key, doc_value) {
-            batch.delete_cf(cf, key_to_remove);
+            batch.delete_ks(cf, key_to_remove);
         }
         Ok(())
     }
@@ -214,7 +206,7 @@ impl Collection {
 
         // Audit D1: an existing key is a conflict, never an overwrite.
         if db
-            .get_pinned_cf(&cf, Self::doc_key(&key))
+            .get_pinned_ks(&cf, Self::doc_key(&key))
             .map_err(|e| DbError::InternalError(format!("Failed to check existing key: {}", e)))?
             .is_some()
         {
@@ -229,7 +221,7 @@ impl Collection {
 
         // Build WriteBatch with document and all index entries atomically
         let mut batch = WriteBatch::default();
-        batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+        batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
 
         // Record a version in the same atomic batch (if versioning is enabled).
         let versioned = self.is_versioned();
@@ -406,7 +398,7 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         // Update document in batch
-        batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+        batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
 
         // Record a version in the same atomic batch (if versioning is enabled).
         let versioned = self.is_versioned();
@@ -478,14 +470,14 @@ impl Collection {
         let mut batch = WriteBatch::default();
 
         for (key, doc_value) in &docs {
-            batch.delete_cf(&cf, Self::doc_key(key));
+            batch.delete_ks(&cf, Self::doc_key(key));
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, key, None);
             }
             self.add_delete_entries(&mut batch, &cf, key, doc_value)?;
         }
         for extra in extra_deletes {
-            batch.delete_cf(&cf, extra);
+            batch.delete_ks(&cf, extra);
         }
 
         // Atomic write: document deletions + index removals together
@@ -577,7 +569,7 @@ impl Collection {
 
             // The bool is "the document already existed", which decides the
             // count and whether the change event is an Update or an Insert.
-            let stored = db.get_cf(&cf, Self::doc_key(&key)).ok().flatten();
+            let stored = db.get_ks(&cf, Self::doc_key(&key)).ok().flatten();
             let existed = stored.is_some();
             let (old_value, doc) = match stored.and_then(|bytes| deserialize_doc(&bytes).ok()) {
                 Some(mut existing) => {
@@ -602,7 +594,7 @@ impl Collection {
                 continue;
             };
             let new_value = doc.to_value();
-            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+            batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
             }
@@ -689,7 +681,7 @@ impl Collection {
                 continue;
             }
             // Get document first (needed for index cleanup and change events)
-            if let Ok(Some(bytes)) = db.get_cf(&cf, Self::doc_key(&key)) {
+            if let Ok(Some(bytes)) = db.get_ks(&cf, Self::doc_key(&key)) {
                 if let Ok(doc) = deserialize_doc(&bytes) {
                     docs.push((key, doc.to_value()));
                 }
@@ -815,7 +807,7 @@ impl Collection {
                     continue;
                 }
             };
-            batch.put_cf(&cf, Self::doc_key(&key), &doc_bytes);
+            batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
             }
@@ -923,7 +915,7 @@ impl Collection {
 
             // Check if document with this key already exists in the DB
             if db
-                .get_pinned_cf(&cf, Self::doc_key(key))
+                .get_pinned_ks(&cf, Self::doc_key(key))
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to check existing key: {}", e))
                 })?
@@ -948,7 +940,7 @@ impl Collection {
             let doc_bytes = serialize_doc(doc)?;
 
             // Add document to batch
-            batch.put_cf(&cf, Self::doc_key(key), &doc_bytes);
+            batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, key, Some(doc_value));
             }
@@ -998,14 +990,14 @@ impl Collection {
     pub fn scan(&self, limit: Option<usize>) -> Vec<Document> {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = match db.cf_handle(&self.name) {
+        let cf = match self.ks.handle(&self.db) {
             Some(cf) => cf,
             // CF dropped mid-operation (concurrent database delete): an
             // empty scan is the graceful answer.
             None => return Vec::new(),
         };
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         let iter = iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -1038,7 +1030,7 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = match db.cf_handle(&self.name) {
+        let cf = match self.ks.handle(&self.db) {
             Some(cf) => cf,
             // CF dropped mid-operation (concurrent database delete): an
             // empty scan is the graceful answer.
@@ -1059,7 +1051,7 @@ impl Collection {
             read_opts.set_readahead_size(readahead);
         }
 
-        let iter = db.iterator_cf_opt(
+        let iter = db.iterator_ks_opt(
             &cf,
             read_opts,
             IteratorMode::From(prefix, Direction::Forward),
@@ -1096,7 +1088,7 @@ impl Collection {
     pub fn recalculate_count(&self) -> usize {
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        if let Some(cf) = db.cf_handle(&self.name) {
+        if let Some(cf) = self.ks.handle(&self.db) {
             let count = Self::count_doc_entries(db, &cf);
 
             self.doc_count
@@ -1126,7 +1118,7 @@ impl Collection {
 
     /// Recount documents from actual RocksDB data (slow but accurate)
     pub fn recount_documents(&self) -> usize {
-        if let Some(cf) = self.db.cf_handle(&self.name) {
+        if let Some(cf) = self.ks.handle(&self.db) {
             let actual_count = Self::count_doc_entries(&self.db, &cf);
 
             // Update the cached count to match reality
@@ -1177,7 +1169,7 @@ impl Collection {
         let count = self.count();
 
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
                 "{} (column family dropped mid-operation)",
                 self.name
@@ -1207,7 +1199,7 @@ impl Collection {
 
         let mut batch = WriteBatch::default();
         for (start, end) in data_ranges {
-            batch.delete_range_cf(&cf, start, end);
+            batch.delete_range_ks(&cf, start, end);
         }
         db.write(&batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
@@ -1257,14 +1249,14 @@ impl Collection {
         // Collect keys to delete
         // Lock-free: RocksDB is thread-safe for reads
         let db = &self.db;
-        let cf = db.cf_handle(&self.name).ok_or_else(|| {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
                 "{} (column family dropped mid-operation)",
                 self.name
             ))
         })?;
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         let mut keys_to_delete = Vec::new();
 

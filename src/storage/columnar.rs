@@ -6,9 +6,10 @@
 //! - Column pruning (only read needed columns)
 //! - LZ4 compression for efficient storage
 
+use super::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
 use fastbloom::BloomFilter;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use rust_rocksdb::{AsColumnFamilyRef, WriteBatch};
+use rust_rocksdb::WriteBatch;
 
 use super::RocksDb as DB;
 use serde::{Deserialize, Serialize};
@@ -208,7 +209,10 @@ impl GroupByColumn {
 pub struct ColumnarCollection {
     pub name: String,
     db: Arc<DB>,
-    cf_name: String, // Column family name for this columnar collection
+    /// Name of the backing collection, `db:_columnar_{name}`.
+    cf_name: String,
+    /// Where the backing collection keeps its keys.
+    ks: Keyspace,
     meta: Arc<RwLock<ColumnarCollectionMeta>>,
 }
 
@@ -218,6 +222,7 @@ impl Clone for ColumnarCollection {
             name: self.name.clone(),
             db: self.db.clone(),
             cf_name: self.cf_name.clone(),
+            ks: self.ks.clone(),
             meta: self.meta.clone(),
         }
     }
@@ -263,14 +268,17 @@ impl ColumnarCollection {
 
         // Store metadata (lock-free, RocksDB is thread-safe)
         // Scope the CF handle so its borrow of `db` ends before `db` is moved
+        let ks = super::collection_registry::keyspace_of(&db, &cf_name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
+        })?;
         {
-            let cf = db.cf_handle(&cf_name).ok_or_else(|| {
+            let cf = ks.handle(&db).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar CF '{}' not found", cf_name))
             })?;
 
             let meta_key = format!("{}{}", COL_META_PREFIX, name);
             let meta_bytes = serde_json::to_vec(&meta)?;
-            db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+            db.put_ks(&cf, meta_key.as_bytes(), &meta_bytes)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
@@ -278,6 +286,7 @@ impl ColumnarCollection {
             name,
             db,
             cf_name,
+            ks,
             meta: Arc::new(RwLock::new(meta)),
         })
     }
@@ -288,13 +297,16 @@ impl ColumnarCollection {
 
         // Lock-free read - RocksDB is thread-safe
         // Scope the CF handle so its borrow of `db` ends before `db` is moved
+        let ks = super::collection_registry::keyspace_of(&db, &cf_name).ok_or_else(|| {
+            DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
+        })?;
         let meta_bytes = {
-            let cf = db.cf_handle(&cf_name).ok_or_else(|| {
+            let cf = ks.handle(&db).ok_or_else(|| {
                 DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
             })?;
 
             let meta_key = format!("{}{}", COL_META_PREFIX, name);
-            db.get_cf(&cf, meta_key.as_bytes())
+            db.get_ks(&cf, meta_key.as_bytes())
                 .map_err(|e| DbError::InternalError(e.to_string()))?
                 .ok_or_else(|| {
                     DbError::CollectionNotFound(format!(
@@ -310,6 +322,7 @@ impl ColumnarCollection {
             name,
             db,
             cf_name,
+            ks,
             meta: Arc::new(RwLock::new(meta)),
         })
     }
@@ -327,14 +340,9 @@ impl ColumnarCollection {
 
     /// Reload metadata from disk; another handle may have written it since
     /// this one was loaded. Call under the shared write lock.
-    fn refresh_meta(
-        &self,
-        db: &DB,
-        cf: &impl AsColumnFamilyRef,
-        meta: &mut ColumnarCollectionMeta,
-    ) {
+    fn refresh_meta(&self, db: &DB, cf: &KsCf, meta: &mut ColumnarCollectionMeta) {
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        if let Ok(Some(bytes)) = db.get_cf(cf, meta_key.as_bytes()) {
+        if let Ok(Some(bytes)) = db.get_ks(cf, meta_key.as_bytes()) {
             if let Ok(disk_meta) = serde_json::from_slice::<ColumnarCollectionMeta>(&bytes) {
                 *meta = disk_meta;
             }
@@ -343,12 +351,12 @@ impl ColumnarCollection {
 
     fn stage_meta(
         &self,
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         batch: &mut WriteBatch,
         meta: &ColumnarCollectionMeta,
     ) -> DbResult<()> {
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        batch.put_cf(cf, meta_key.as_bytes(), serde_json::to_vec(meta)?);
+        batch.put_ks(cf, meta_key.as_bytes(), serde_json::to_vec(meta)?);
         Ok(())
     }
 
@@ -360,7 +368,7 @@ impl ColumnarCollection {
     fn stage_row(
         &self,
         db: &DB,
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         batch: &mut WriteBatch,
         uuid_indexes: &mut HashMap<String, Vec<String>>,
         meta: &ColumnarCollectionMeta,
@@ -373,7 +381,7 @@ impl ColumnarCollection {
             let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
             let value_bytes = serde_json::to_vec(value)?;
-            batch.put_cf(
+            batch.put_ks(
                 cf,
                 col_key.as_bytes(),
                 self.compress_data(&value_bytes, &meta.compression),
@@ -393,7 +401,7 @@ impl ColumnarCollection {
             let uuids = match uuid_indexes.entry(uuid_idx_key) {
                 std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                 std::collections::hash_map::Entry::Vacant(e) => {
-                    let existing: Vec<String> = match db.get_cf(cf, e.key().as_bytes()) {
+                    let existing: Vec<String> = match db.get_ks(cf, e.key().as_bytes()) {
                         Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
                         Ok(None) => Vec::new(),
                         Err(err) => return Err(DbError::InternalError(err.to_string())),
@@ -407,7 +415,7 @@ impl ColumnarCollection {
         // Also store full row for reconstruction
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
         let row_bytes = serde_json::to_vec(row)?;
-        batch.put_cf(
+        batch.put_ks(
             cf,
             row_key.as_bytes(),
             self.compress_data(&row_bytes, &meta.compression),
@@ -416,12 +424,12 @@ impl ColumnarCollection {
     }
 
     fn stage_uuid_indexes(
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         batch: &mut WriteBatch,
         uuid_indexes: HashMap<String, Vec<String>>,
     ) -> DbResult<()> {
         for (key, uuids) in uuid_indexes {
-            batch.put_cf(cf, key.as_bytes(), serde_json::to_vec(&uuids)?);
+            batch.put_ks(cf, key.as_bytes(), serde_json::to_vec(&uuids)?);
         }
         Ok(())
     }
@@ -443,7 +451,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -495,7 +503,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -503,7 +511,7 @@ impl ColumnarCollection {
         // Check if row already exists (idempotency for replication)
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
         if db
-            .get_cf(&cf, row_key.as_bytes())
+            .get_ks(&cf, row_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?
             .is_some()
         {
@@ -550,7 +558,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -558,7 +566,7 @@ impl ColumnarCollection {
         // Check if row exists
         let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
         if db
-            .get_cf(&cf, row_key.as_bytes())
+            .get_ks(&cf, row_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?
             .is_none()
         {
@@ -570,11 +578,11 @@ impl ColumnarCollection {
         // Delete column values
         for col_def in &meta.columns {
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-            batch.delete_cf(&cf, col_key.as_bytes());
+            batch.delete_ks(&cf, col_key.as_bytes());
         }
 
         // Delete full row
-        batch.delete_cf(&cf, row_key.as_bytes());
+        batch.delete_ks(&cf, row_key.as_bytes());
 
         // Update metadata
         let mut new_meta = meta.clone();
@@ -592,12 +600,12 @@ impl ColumnarCollection {
     /// List all row UUIDs in the collection
     pub fn list_row_uuids(&self) -> DbResult<Vec<String>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         let prefix = COL_ROW_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         let mut uuids = Vec::new();
         for item in iter.flatten() {
@@ -621,7 +629,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let _cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let _cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -649,7 +657,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -658,7 +666,7 @@ impl ColumnarCollection {
         for row_uuid in &uuids {
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
 
-            match db.get_cf(&cf, col_key.as_bytes()) {
+            match db.get_ks(&cf, col_key.as_bytes()) {
                 Ok(Some(bytes)) => {
                     let decompressed = self.decompress_data(&bytes, &meta.compression)?;
                     let value: Value = serde_json::from_slice(&decompressed)?;
@@ -683,7 +691,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let _cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let _cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -710,7 +718,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -722,7 +730,7 @@ impl ColumnarCollection {
             for col in columns {
                 let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col, row_uuid);
 
-                let value = match db.get_cf(&cf, col_key.as_bytes()) {
+                let value = match db.get_ks(&cf, col_key.as_bytes()) {
                     Ok(Some(bytes)) => {
                         let decompressed = self.decompress_data(&bytes, &meta.compression)?;
                         serde_json::from_slice(&decompressed)?
@@ -752,13 +760,13 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
 
-        match db.get_cf(&cf, col_key.as_bytes()) {
+        match db.get_ks(&cf, col_key.as_bytes()) {
             Ok(Some(bytes)) => {
                 let decompressed = self.decompress_data(&bytes, &meta.compression)?;
                 let value: Value = serde_json::from_slice(&decompressed)?;
@@ -795,14 +803,14 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         // Optimization: Use prefix iterator directly to avoid loading all values into memory
         // This relies on the fact that aggregation is commutative/associative and order doesn't matter
         let prefix = format!("{}{}:", COL_DATA_PREFIX, column);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         match op {
             AggregateOp::Count => {
@@ -1066,7 +1074,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -1075,7 +1083,7 @@ impl ColumnarCollection {
 
         // Iterate over all column data to calculate sizes
         let prefix = COL_DATA_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         for (_, value) in iter.flatten() {
             compressed_size += value.len() as u64;
@@ -1118,7 +1126,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -1136,11 +1144,11 @@ impl ColumnarCollection {
             COL_IDX_BLOOM_PREFIX,
         ] {
             let prefix = prefix.as_bytes();
-            for (key, _) in db.prefix_iterator_cf(&cf, prefix).flatten() {
+            for (key, _) in db.prefix_iterator_ks(&cf, prefix).flatten() {
                 if !key.starts_with(prefix) {
                     break;
                 }
-                batch.delete_cf(&cf, &key);
+                batch.delete_ks(&cf, &key);
             }
         }
 
@@ -1190,7 +1198,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -1215,7 +1223,7 @@ impl ColumnarCollection {
         // Build index from existing data by iterating over actual row UUIDs
         // Get all row UUIDs from the col_row: prefix
         let row_prefix = COL_ROW_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, row_prefix);
+        let iter = db.prefix_iterator_ks(&cf, row_prefix);
 
         let mut row_uuids = Vec::new();
         for (key, _) in iter.flatten() {
@@ -1231,7 +1239,7 @@ impl ColumnarCollection {
         // Build index using UUIDs, but storing row position for bitmap
         for (row_id, row_uuid) in row_uuids.iter().enumerate() {
             let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
-            if let Ok(Some(bytes)) = db.get_cf(&cf, col_key.as_bytes()) {
+            if let Ok(Some(bytes)) = db.get_ks(&cf, col_key.as_bytes()) {
                 if let Ok(decompressed) = self.decompress_data(&bytes, &compression) {
                     if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
                         match index_type {
@@ -1269,7 +1277,7 @@ impl ColumnarCollection {
         };
         let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
         let idx_meta_bytes = serde_json::to_vec(&idx_meta)?;
-        db.put_cf(&cf, idx_meta_key.as_bytes(), &idx_meta_bytes)
+        db.put_ks(&cf, idx_meta_key.as_bytes(), &idx_meta_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Mark column as indexed
@@ -1279,7 +1287,7 @@ impl ColumnarCollection {
         // Update collection metadata
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
         let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+        db.put_ks(&cf, meta_key.as_bytes(), &meta_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1294,7 +1302,7 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
         self.refresh_meta(db, &cf, &mut meta);
@@ -1315,18 +1323,18 @@ impl ColumnarCollection {
 
         // Delete all index entries for this column
         let prefix = format!("{}{}:", COL_IDX_PREFIX, column);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
         for (key, _) in iter.flatten() {
             if !key.starts_with(prefix.as_bytes()) {
                 break;
             }
-            db.delete_cf(&cf, &key)
+            db.delete_ks(&cf, &key)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
         // Delete index metadata
         let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-        db.delete_cf(&cf, idx_meta_key.as_bytes())
+        db.delete_ks(&cf, idx_meta_key.as_bytes())
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         // Mark column as not indexed
@@ -1335,7 +1343,7 @@ impl ColumnarCollection {
         // Update collection metadata
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
         let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_cf(&cf, meta_key.as_bytes(), &meta_bytes)
+        db.put_ks(&cf, meta_key.as_bytes(), &meta_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1348,7 +1356,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -1356,7 +1364,7 @@ impl ColumnarCollection {
         for col_def in &meta.columns {
             if col_def.indexed {
                 let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, col_def.name);
-                if let Ok(Some(bytes)) = db.get_cf(&cf, idx_meta_key.as_bytes()) {
+                if let Ok(Some(bytes)) = db.get_ks(&cf, idx_meta_key.as_bytes()) {
                     if let Ok(idx_meta) = serde_json::from_slice::<ColumnarIndexMeta>(&bytes) {
                         indexes.push(idx_meta);
                     }
@@ -1381,9 +1389,9 @@ impl ColumnarCollection {
             return false;
         }
         // Check index type
-        if let Some(cf) = self.db.cf_handle(&self.cf_name) {
+        if let Some(cf) = self.ks.handle(&self.db) {
             let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-            if let Ok(Some(bytes)) = self.db.get_cf(&cf, idx_meta_key.as_bytes()) {
+            if let Ok(Some(bytes)) = self.db.get_ks(&cf, idx_meta_key.as_bytes()) {
                 if let Ok(idx_meta) = serde_json::from_slice::<ColumnarIndexMeta>(&bytes) {
                     return idx_meta.index_type == ColumnarIndexType::Sorted;
                 }
@@ -1405,14 +1413,14 @@ impl ColumnarCollection {
     /// Lookup rows using Bitmap index
     fn index_lookup_bitmap(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         let idx_key = self.encode_bitmap_key(column, value);
         let mut row_ids = Vec::new();
 
-        if let Ok(Some(bytes)) = db.get_cf(&cf, idx_key.as_bytes()) {
+        if let Ok(Some(bytes)) = db.get_ks(&cf, idx_key.as_bytes()) {
             if let Ok(bitmap) = self.decompress_data(&bytes, &CompressionType::Lz4) {
                 for (byte_idx, &byte) in bitmap.iter().enumerate() {
                     if byte == 0 {
@@ -1437,7 +1445,7 @@ impl ColumnarCollection {
         filter: &ColumnFilter,
     ) -> DbResult<Vec<u64>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -1452,7 +1460,7 @@ impl ColumnarCollection {
 
         for chunk_id in 0..chunk_count {
             let idx_key = self.encode_minmax_key(column, chunk_id);
-            if let Ok(Some(bytes)) = db.get_cf(&cf, idx_key.as_bytes()) {
+            if let Ok(Some(bytes)) = db.get_ks(&cf, idx_key.as_bytes()) {
                 if let Ok(chunk) = serde_json::from_slice::<MinMaxChunk>(&bytes) {
                     let mut matches = false;
                     match filter {
@@ -1488,7 +1496,7 @@ impl ColumnarCollection {
     /// Get candidate chunks/rows from Bloom index
     fn get_candidate_rows_from_bloom(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
@@ -1507,7 +1515,7 @@ impl ColumnarCollection {
             // If bloom filter missing, assume match (safe default)
             let mut matches = true;
 
-            if let Ok(Some(bytes)) = db.get_cf(&cf, idx_key.as_bytes()) {
+            if let Ok(Some(bytes)) = db.get_ks(&cf, idx_key.as_bytes()) {
                 if let Ok(filter) = serde_json::from_slice::<BloomFilter>(&bytes) {
                     matches = filter.contains(&val_str);
                 }
@@ -1526,12 +1534,12 @@ impl ColumnarCollection {
     /// Lookup rows matching a value using index (O(1) for equality)
     fn index_lookup_eq(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         let idx_key = self.encode_index_key(column, value);
-        match db.get_cf(&cf, idx_key.as_bytes()) {
+        match db.get_ks(&cf, idx_key.as_bytes()) {
             Ok(Some(bytes)) => {
                 let row_ids: Vec<u64> = serde_json::from_slice(&bytes)?;
                 Ok(row_ids)
@@ -1544,12 +1552,12 @@ impl ColumnarCollection {
     /// Range scan using sorted index
     fn index_range_scan(&self, column: &str, filter: &ColumnFilter) -> DbResult<Vec<u64>> {
         let db = &self.db;
-        let cf = db.cf_handle(&self.cf_name).ok_or_else(|| {
+        let cf = self.ks.handle(db).ok_or_else(|| {
             DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
         })?;
 
         let prefix = format!("{}{}:", COL_IDX_PREFIX, column);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
         let mut result = Vec::new();
 
@@ -1691,14 +1699,8 @@ impl ColumnarCollection {
     }
 
     /// Append a row ID to an index entry
-    fn append_row_to_index(
-        &self,
-        db: &DB,
-        cf: &impl AsColumnFamilyRef,
-        idx_key: &str,
-        row_id: u64,
-    ) -> DbResult<()> {
-        let mut row_ids: Vec<u64> = match db.get_cf(cf, idx_key.as_bytes()) {
+    fn append_row_to_index(&self, db: &DB, cf: &KsCf, idx_key: &str, row_id: u64) -> DbResult<()> {
+        let mut row_ids: Vec<u64> = match db.get_ks(cf, idx_key.as_bytes()) {
             Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
             Ok(None) => Vec::new(),
             Err(e) => return Err(DbError::InternalError(e.to_string())),
@@ -1707,7 +1709,7 @@ impl ColumnarCollection {
         row_ids.push(row_id);
 
         let row_ids_bytes = serde_json::to_vec(&row_ids)?;
-        db.put_cf(cf, idx_key.as_bytes(), &row_ids_bytes)
+        db.put_ks(cf, idx_key.as_bytes(), &row_ids_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1717,13 +1719,13 @@ impl ColumnarCollection {
     fn append_row_to_bitmap_index(
         &self,
         db: &DB,
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         idx_key: &str,
         row_id: u64,
         _compression: &CompressionType,
     ) -> DbResult<()> {
         let bmp_compression = CompressionType::Lz4;
-        let mut bitmap = match db.get_cf(cf, idx_key.as_bytes()) {
+        let mut bitmap = match db.get_ks(cf, idx_key.as_bytes()) {
             Ok(Some(bytes)) => self.decompress_data(&bytes, &bmp_compression)?,
             Ok(None) => Vec::new(),
             Err(e) => return Err(DbError::InternalError(e.to_string())),
@@ -1741,7 +1743,7 @@ impl ColumnarCollection {
 
         // Compress and store
         let compressed = self.compress_data(&bitmap, &bmp_compression);
-        db.put_cf(cf, idx_key.as_bytes(), &compressed)
+        db.put_ks(cf, idx_key.as_bytes(), &compressed)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1751,7 +1753,7 @@ impl ColumnarCollection {
     fn update_bloom_index(
         &self,
         db: &DB,
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         column: &str,
         value: &Value,
         row_id: u64,
@@ -1759,7 +1761,7 @@ impl ColumnarCollection {
         let chunk_id = row_id / MINMAX_CHUNK_SIZE;
         let idx_key = self.encode_bloom_key(column, chunk_id);
 
-        let mut filter: BloomFilter = match db.get_cf(cf, idx_key.as_bytes()) {
+        let mut filter: BloomFilter = match db.get_ks(cf, idx_key.as_bytes()) {
             Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
             Ok(None) => BloomFilter::with_num_bits(10_000).expected_items(1000),
             Err(e) => return Err(DbError::InternalError(e.to_string())),
@@ -1768,7 +1770,7 @@ impl ColumnarCollection {
         filter.insert(&value.to_string());
 
         let filter_bytes = serde_json::to_vec(&filter)?;
-        db.put_cf(cf, idx_key.as_bytes(), &filter_bytes)
+        db.put_ks(cf, idx_key.as_bytes(), &filter_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())
@@ -1778,7 +1780,7 @@ impl ColumnarCollection {
     fn update_minmax_index(
         &self,
         db: &DB,
-        cf: &impl AsColumnFamilyRef,
+        cf: &KsCf,
         column: &str,
         value: &Value,
         row_id: u64,
@@ -1786,7 +1788,7 @@ impl ColumnarCollection {
         let chunk_id = row_id / MINMAX_CHUNK_SIZE;
         let idx_key = self.encode_minmax_key(column, chunk_id);
 
-        let mut chunk: MinMaxChunk = match db.get_cf(cf, idx_key.as_bytes()) {
+        let mut chunk: MinMaxChunk = match db.get_ks(cf, idx_key.as_bytes()) {
             Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
             Ok(None) => MinMaxChunk {
                 min: value.clone(),
@@ -1806,7 +1808,7 @@ impl ColumnarCollection {
         chunk.count += 1;
 
         let chunk_bytes = serde_json::to_vec(&chunk)?;
-        db.put_cf(cf, idx_key.as_bytes(), &chunk_bytes)
+        db.put_ks(cf, idx_key.as_bytes(), &chunk_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
         Ok(())

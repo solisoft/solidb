@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+pub(crate) use crate::storage::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -141,10 +143,14 @@ pub struct DiskUsage {
 
 /// Represents a collection of documents backed by RocksDB
 pub struct Collection {
-    /// Collection name (column family name)
+    /// Collection name, `db:coll` (for a legacy collection also its column
+    /// family's name).
     pub name: String,
     /// RocksDB instance - thread-safe for reads and writes
     pub(crate) db: Arc<DB>,
+    /// Where this collection's keys live (own column family, or a prefix in
+    /// the shared one). Every read and write goes through it.
+    pub(crate) ks: Keyspace,
     /// Cached document count (atomic for lock-free updates)
     pub(crate) doc_count: Arc<AtomicUsize>,
     /// Cached blob chunk count (atomic for lock-free updates).
@@ -188,6 +194,7 @@ impl Clone for Collection {
         Self {
             name: self.name.clone(),
             db: self.db.clone(),
+            ks: self.ks.clone(),
             doc_count: self.doc_count.clone(),
             chunk_count: self.chunk_count.clone(),
             chunk_count_ready: self.chunk_count_ready.clone(),

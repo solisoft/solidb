@@ -10,6 +10,7 @@
 //! is safe between pages: the cursor is a key, not an offset.
 
 use crate::storage::collection::{Collection, Document, DOC_PREFIX};
+use crate::storage::keyspace::KsDbExt;
 use crate::storage::serializer::deserialize_doc;
 use rust_rocksdb::{Direction, IteratorMode, ReadOptions};
 
@@ -39,7 +40,7 @@ pub fn scan_page(
 ) -> (Vec<Document>, Option<ScanCursor>) {
     let limit = limit.max(1);
     let db = &coll.db;
-    let cf = match db.cf_handle(&coll.name) {
+    let cf = match coll.ks.handle(db) {
         Some(cf) => cf,
         // Dropped concurrently: nothing left to scan.
         None => return (Vec::new(), None),
@@ -57,7 +58,9 @@ pub fn scan_page(
 
     let mut opts = ReadOptions::default();
     opts.set_readahead_size(256 * 1024);
-    let iter = db.iterator_cf_opt(
+    // Keys come back logical (keyspace prefix stripped), so the cursor holds
+    // a logical key too.
+    let iter = db.iterator_ks_opt(
         &cf,
         opts,
         IteratorMode::From(start.as_slice(), Direction::Forward),

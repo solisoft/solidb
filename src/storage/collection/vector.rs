@@ -24,11 +24,11 @@ impl Collection {
     /// Get all vector index configurations
     pub fn get_all_vector_index_configs(&self) -> Vec<VectorIndexConfig> {
         let db = &self.db;
-        let Some(cf) = db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Vec::new(); // column family dropped mid-operation
         };
         let prefix = VEC_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
 
         iter.filter_map(|result| {
             result.ok().and_then(|(key, value)| {
@@ -59,13 +59,14 @@ impl Collection {
         name: &str,
     ) -> DbResult<Arc<super::vector::VectorIndex>> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::InternalError("Column family not found".into()))?;
 
         // Check metadata first
         let meta_key = Self::vec_meta_key(name);
-        if db.get_cf(&cf, &meta_key)?.is_none() {
+        if db.get_ks(&cf, &meta_key)?.is_none() {
             return Err(DbError::InvalidDocument(format!(
                 "Vector Index '{}' not found",
                 name
@@ -74,7 +75,7 @@ impl Collection {
 
         // Load data
         let data_key = Self::vec_data_key(name);
-        if let Some(bytes) = db.get_cf(&cf, &data_key)? {
+        if let Some(bytes) = db.get_ks(&cf, &data_key)? {
             match super::vector::VectorIndex::deserialize(&bytes) {
                 Ok(index) => {
                     let index_arc = Arc::new(index);
@@ -106,10 +107,11 @@ impl Collection {
         let config_bytes = serde_json::to_vec(&config)?;
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_cf(&cf, Self::vec_meta_key(&name), &config_bytes)
+            db.put_ks(&cf, Self::vec_meta_key(&name), &config_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create vector index: {}", e))
                 })?;
@@ -209,18 +211,19 @@ impl Collection {
     /// Drop a vector index
     pub fn drop_vector_index(&self, name: &str) -> DbResult<()> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Remove from memory
         self.vector_indexes.remove(name);
 
         // Remove from disk
-        db.delete_cf(&cf, Self::vec_meta_key(name)).map_err(|e| {
+        db.delete_ks(&cf, Self::vec_meta_key(name)).map_err(|e| {
             DbError::InternalError(format!("Failed to delete vector config: {}", e))
         })?;
-        db.delete_cf(&cf, Self::vec_data_key(name))
+        db.delete_ks(&cf, Self::vec_data_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
 
         Ok(())
@@ -340,9 +343,9 @@ impl Collection {
 
             // Save config
             let db = &self.db;
-            let cf = db.cf_handle(&self.name).unwrap();
+            let cf = self.ks.handle(&self.db).unwrap();
             let config_bytes = serde_json::to_vec(config)?;
-            db.put_cf(&cf, Self::vec_meta_key(name), &config_bytes)
+            db.put_ks(&cf, Self::vec_meta_key(name), &config_bytes)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
@@ -363,21 +366,18 @@ impl Collection {
 
     /// Persist all in-memory vector indexes to disk
     pub fn persist_vector_indexes(&self) -> DbResult<()> {
-        Self::persist_vector_index_map(&self.db, &self.name, &self.vector_indexes)
+        Self::persist_vector_index_map(&self.db, &self.ks, &self.name, &self.vector_indexes)
     }
 
-    /// Persist every index in `indexes` into column family `cf_name`.
+    /// Persist every index in `indexes` into the keyspace `ks` of collection
+    /// `name`.
     pub(crate) fn persist_vector_index_map(
         db: &crate::storage::RocksDb,
-        cf_name: &str,
+        ks: &Keyspace,
+        name: &str,
         indexes: &dashmap::DashMap<String, Arc<VectorIndex>>,
     ) -> DbResult<()> {
-        let cf = db.cf_handle(cf_name).ok_or_else(|| {
-            DbError::CollectionNotFound(format!(
-                "{} (column family dropped mid-operation)",
-                cf_name
-            ))
-        })?;
+        let cf = ks.live(db, name)?;
 
         // Snapshot the handles first: serializing a large index takes a
         // while, and must not pin a DashMap shard lock meanwhile.
@@ -387,7 +387,7 @@ impl Collection {
             .collect();
         for (name, index_arc) in snapshot {
             let bytes = index_arc.serialize()?;
-            db.put_cf(&cf, Self::vec_data_key(&name), &bytes)
+            db.put_ks(&cf, Self::vec_data_key(&name), &bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!(
                         "Failed to persist vector index {}: {}",
@@ -527,27 +527,27 @@ impl Collection {
     /// Record that `doc_key` needs an embedding generated for vector index `index`.
     /// Cheap and network-free — consumed later by the async embedding worker.
     pub(crate) fn mark_embed_pending(&self, index: &str, doc_key: &str) {
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return;
         };
         let key = Self::embed_pending_key(index, doc_key);
         // Only count genuinely new markers so the process-wide gauge stays meaningful.
-        if matches!(self.db.get_cf(&cf, key.as_bytes()), Ok(Some(_))) {
+        if matches!(self.db.get_ks(&cf, key.as_bytes()), Ok(Some(_))) {
             return;
         }
-        if self.db.put_cf(&cf, key.as_bytes(), b"").is_ok() {
+        if self.db.put_ks(&cf, key.as_bytes(), b"").is_ok() {
             PENDING_EMBED_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     /// Remove a pending-embed marker (if present).
     pub(crate) fn clear_embed_pending(&self, index: &str, doc_key: &str) {
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return;
         };
         let key = Self::embed_pending_key(index, doc_key);
-        if matches!(self.db.get_cf(&cf, key.as_bytes()), Ok(Some(_)))
-            && self.db.delete_cf(&cf, key.as_bytes()).is_ok()
+        if matches!(self.db.get_ks(&cf, key.as_bytes()), Ok(Some(_)))
+            && self.db.delete_ks(&cf, key.as_bytes()).is_ok()
         {
             PENDING_EMBED_COUNT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -555,12 +555,12 @@ impl Collection {
 
     /// Doc keys awaiting embedding for a given vector index (bounded by `limit`).
     pub fn list_embed_pending(&self, index: &str, limit: usize) -> Vec<String> {
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Vec::new();
         };
         let prefix = Self::embed_pending_index_prefix(index);
         let mut out = Vec::new();
-        for item in self.db.prefix_iterator_cf(&cf, prefix.as_bytes()) {
+        for item in self.db.prefix_iterator_ks(&cf, prefix.as_bytes()) {
             if out.len() >= limit {
                 break;
             }
@@ -577,12 +577,12 @@ impl Collection {
 
     /// Total documents awaiting embedding in this collection (all auto-embed indexes).
     pub fn count_embed_pending(&self) -> usize {
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return 0;
         };
         let prefix = EMBED_PENDING_PREFIX.as_bytes();
         let mut n = 0;
-        for item in self.db.prefix_iterator_cf(&cf, prefix) {
+        for item in self.db.prefix_iterator_ks(&cf, prefix) {
             let Ok((k, _)) = item else {
                 break;
             };

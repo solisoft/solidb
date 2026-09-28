@@ -91,10 +91,11 @@ impl Collection {
         // Store metadata
         {
             let db = &self.db;
-            let cf = db
-                .cf_handle(&self.name)
+            let cf = self
+                .ks
+                .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_cf(&cf, Self::ft_meta_key(&name), &index_bytes)
+            db.put_ks(&cf, Self::ft_meta_key(&name), &index_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create fulltext index: {}", e))
                 })?;
@@ -104,8 +105,9 @@ impl Collection {
         // Build index
         let docs = self.all();
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let mut batch = WriteBatch::default();
@@ -118,7 +120,7 @@ impl Collection {
                 if let Some(text) = field_value.as_str() {
                     for term in &Self::ft_terms(&index, text) {
                         let term_key = Self::ft_term_key(&name, term, &doc.key);
-                        batch.put_cf(&cf, term_key, doc.key.as_bytes());
+                        batch.put_ks(&cf, term_key, doc.key.as_bytes());
                     }
                     // No `ft:` n-gram entries: nothing reads them (audit P5).
                     count += 1;
@@ -153,12 +155,13 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Delete metadata
-        db.delete_cf(&cf, Self::ft_meta_key(name))
+        db.delete_ks(&cf, Self::ft_meta_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
         self.invalidate_index_meta();
 
@@ -167,11 +170,11 @@ impl Collection {
 
         // Delete ngrams
         let prefix = format!("{}{}:", FT_PREFIX, name);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(prefix.as_bytes()) {
-                    batch.delete_cf(&cf, key);
+                    batch.delete_ks(&cf, key);
                     count += 1;
                 } else {
                     break;
@@ -188,11 +191,11 @@ impl Collection {
 
         // Delete terms
         let term_prefix = format!("{}{}:", FT_TERM_PREFIX, name);
-        let iter = db.prefix_iterator_cf(&cf, term_prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, term_prefix.as_bytes());
         for result in iter {
             if let Ok((key, _)) = result {
                 if key.starts_with(term_prefix.as_bytes()) {
-                    batch.delete_cf(&cf, key);
+                    batch.delete_ks(&cf, key);
                     count += 1;
                 } else {
                     break; // Fixed from original loop which implied break
@@ -229,8 +232,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
         let mut batch = WriteBatch::default();
 
@@ -240,7 +244,7 @@ impl Collection {
                 if let Some(text) = field_value.as_str() {
                     for term in &Self::ft_terms(&index, text) {
                         let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                        batch.put_cf(&cf, term_key, doc_key.as_bytes());
+                        batch.put_ks(&cf, term_key, doc_key.as_bytes());
                     }
                 }
             }
@@ -263,8 +267,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
         let mut batch = WriteBatch::default();
 
@@ -274,13 +279,13 @@ impl Collection {
                 if let Some(text) = field_value.as_str() {
                     for term in &Self::ft_terms(&index, text) {
                         let term_key = Self::ft_term_key(&index.name, term, doc_key);
-                        batch.delete_cf(&cf, term_key);
+                        batch.delete_ks(&cf, term_key);
                     }
 
                     let ngrams = generate_ngrams(text, NGRAM_SIZE);
                     for ngram in &ngrams {
                         let ngram_key = Self::ft_ngram_key(&index.name, ngram, doc_key);
-                        batch.delete_cf(&cf, ngram_key);
+                        batch.delete_ks(&cf, ngram_key);
                     }
                 }
             }
@@ -331,7 +336,7 @@ impl Collection {
         // 3. Collect candidate documents (using term matching first)
         let mut candidate_counts: HashMap<String, usize> = HashMap::new();
         let db = &self.db;
-        let Some(cf) = db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Ok(Vec::new()); // column family dropped mid-operation
         };
 
@@ -340,7 +345,7 @@ impl Collection {
                 if term.len() >= index.min_length {
                     // Exact term lookup
                     let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
-                    let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+                    let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
 
                     for (scanned, result) in iter.flatten().enumerate() {
                         let (key, _) = result;
@@ -469,11 +474,11 @@ impl Collection {
         let Some(first) = ngrams.first() else {
             return Vec::new();
         };
-        let Some(cf) = self.db.cf_handle(&self.name) else {
+        let Some(cf) = self.ks.handle(&self.db) else {
             return Vec::new();
         };
         let probe = Self::ft_ngram_key(&index.name, first, doc_key);
-        if !matches!(self.db.get_pinned_cf(&cf, &probe), Ok(Some(_))) {
+        if !matches!(self.db.get_pinned_ks(&cf, &probe), Ok(Some(_))) {
             return Vec::new();
         }
         ngrams

@@ -215,15 +215,16 @@ pub async fn handle_export_collection(
 /// Stream the collection's documents, giving up as soon as their encoded
 /// size passes `max_bytes`.
 fn export_bounded(coll: &crate::storage::Collection, max_bytes: usize) -> Response {
+    use crate::storage::keyspace::KsDbExt;
     use rust_rocksdb::{Direction, IteratorMode};
 
-    let Some(cf) = coll.db.cf_handle(&coll.name) else {
+    let Some(cf) = coll.ks.handle(&coll.db) else {
         return Response::ok(serde_json::json!([]));
     };
     let prefix = crate::storage::collection::DOC_PREFIX.as_bytes();
     let iter = coll
         .db
-        .iterator_cf(&cf, IteratorMode::From(prefix, Direction::Forward));
+        .iterator_ks(&cf, IteratorMode::From(prefix, Direction::Forward));
 
     let mut docs = Vec::new();
     let mut bytes = 0usize;

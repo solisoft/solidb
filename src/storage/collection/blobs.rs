@@ -20,8 +20,9 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
@@ -32,9 +33,9 @@ impl Collection {
         self.ensure_chunk_count();
 
         // ... existence check ...
-        let exists = db.get_cf(&cf, &chunk_key).ok().flatten().is_some();
+        let exists = db.get_ks(&cf, &chunk_key).ok().flatten().is_some();
 
-        db.put_cf(&cf, chunk_key, data)
+        db.put_ks(&cf, chunk_key, data)
             .map_err(|e| DbError::InternalError(format!("Failed to store blob chunk: {}", e)))?;
 
         if !exists {
@@ -48,12 +49,13 @@ impl Collection {
     /// Get a blob chunk
     pub fn get_blob_chunk(&self, key: &str, chunk_index: u32) -> DbResult<Option<Vec<u8>>> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
 
         let chunk_key = Self::blo_chunk_key(key, chunk_index as usize);
-        match db.get_cf(&cf, chunk_key) {
+        match db.get_ks(&cf, chunk_key) {
             Ok(Some(data)) => Ok(Some(data)),
             Ok(None) => Ok(None),
             Err(e) => Err(DbError::InternalError(format!(
@@ -66,8 +68,9 @@ impl Collection {
     /// Delete all blob chunks for a document
     pub fn delete_blob_data(&self, key: &str) -> DbResult<()> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Before the delete: the walk reads an absolute value, so resolving
@@ -76,7 +79,7 @@ impl Collection {
         self.ensure_chunk_count();
 
         let prefix = format!("{}{}:", BLO_PREFIX, key);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
         let mut batch = WriteBatch::default();
         let mut count = 0;
 
@@ -90,7 +93,7 @@ impl Collection {
             if !is_chunk_suffix(&k[prefix.len()..]) {
                 continue;
             }
-            batch.delete_cf(&cf, k);
+            batch.delete_ks(&cf, k);
             count += 1;
         }
 
@@ -126,12 +129,13 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, chunk_index);
-        db.put_cf(&cf, key.as_bytes(), data).map_err(|e| {
+        db.put_ks(&cf, key.as_bytes(), data).map_err(|e| {
             DbError::InternalError(format!("Failed to store temp blob chunk: {}", e))
         })?;
 
@@ -147,8 +151,9 @@ impl Collection {
         total_chunks: u32,
     ) -> DbResult<()> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         // Before the batch lands, for the same reason as the other two sites.
@@ -159,7 +164,7 @@ impl Collection {
         for i in 0..total_chunks {
             let tmp_key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, i);
             let data = db
-                .get_cf(&cf, tmp_key.as_bytes())
+                .get_ks(&cf, tmp_key.as_bytes())
                 .map_err(|e| DbError::InternalError(format!("Failed to read temp chunk: {}", e)))?
                 .ok_or_else(|| {
                     DbError::InternalError(format!(
@@ -169,8 +174,8 @@ impl Collection {
                 })?;
 
             let perm_key = Self::blo_chunk_key(blob_key, i as usize);
-            batch.put_cf(&cf, &perm_key, &data);
-            batch.delete_cf(&cf, tmp_key.as_bytes());
+            batch.put_ks(&cf, &perm_key, &data);
+            batch.delete_ks(&cf, tmp_key.as_bytes());
         }
 
         db.write(&batch).map_err(|e| {
@@ -187,12 +192,13 @@ impl Collection {
     /// Delete all temporary chunks for a given upload session (used by cleanup task)
     pub fn delete_upload_chunks(&self, upload_id: &str) -> DbResult<()> {
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .expect("Column family should exist");
 
         let prefix = format!("{}{}:", BLO_TMP_PREFIX, upload_id);
-        let iter = db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
         let mut batch = WriteBatch::default();
         let mut count = 0;
 
@@ -204,7 +210,7 @@ impl Collection {
             if !is_chunk_suffix(&k[prefix.len()..]) {
                 continue; // another upload whose id extends this one
             }
-            batch.delete_cf(&cf, k);
+            batch.delete_ks(&cf, k);
             count += 1;
         }
 
@@ -223,15 +229,16 @@ impl Collection {
         }
 
         let db = &self.db;
-        let cf = db
-            .cf_handle(&self.name)
+        let cf = self
+            .ks
+            .handle(&self.db)
             .ok_or(DbError::CollectionNotFound(self.name.clone()))?;
 
         let prefix = BLO_PREFIX.as_bytes();
         let mut total_bytes = 0u64;
         let mut chunk_count = 0usize;
 
-        let iter = db.prefix_iterator_cf(&cf, prefix);
+        let iter = db.prefix_iterator_ks(&cf, prefix);
         for item in iter.flatten() {
             let (key, value) = item;
             if !key.starts_with(prefix) {
