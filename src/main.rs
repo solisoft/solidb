@@ -229,6 +229,13 @@ struct Args {
     #[arg(long)]
     keyfile: Option<String>,
 
+    /// Migrate a 1.x data directory to the 2.x storage layout (every
+    /// collection into the shared keyspace), then exit without serving. The
+    /// same migration runs automatically at a normal start; this lets it run
+    /// offline, e.g. before a deploy with a short startup probe.
+    #[arg(long)]
+    migrate_only: bool,
+
     /// OpenTelemetry OTLP endpoint (e.g., http://localhost:4317)
     /// If not set, tracing is disabled
     #[arg(long)]
@@ -274,16 +281,14 @@ struct Args {
     /// Global cap on total memtable memory across ALL collections; `0` means
     /// unlimited.
     ///
-    /// Unset by default in the prod profile, which lets memtable RAM scale
-    /// with the number of collections being written — one collection is one
-    /// column family, each holding up to --write-buffer-size before it
-    /// flushes, with nothing forcing a flush earlier. Set this on any
-    /// instance with more than a handful of write-active collections.
+    /// Since 2.0 collections share one column family, so memtable RAM no
+    /// longer scales with the number of collections; this still bounds the
+    /// shared family and any 1.x column families not yet migrated.
     #[arg(long, value_parser = parse_size, env = "SOLIDB_MEMTABLE_BUDGET")]
     memtable_budget: Option<usize>,
 
-    /// Per-collection memtable size (`64MB`, or a byte count). This times the
-    /// number of write-active collections is what --memtable-budget caps.
+    /// Memtable size per column family (`64MB`, or a byte count) — the shared
+    /// collection family and any 1.x column families not yet migrated.
     #[arg(long, value_parser = parse_size, env = "SOLIDB_WRITE_BUFFER_SIZE")]
     write_buffer_size: Option<usize>,
 
@@ -621,6 +626,11 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.initialize()?;
     tracing::info!("Storage engine initialized");
+    if args.migrate_only {
+        storage.flush()?;
+        tracing::info!("--migrate-only: storage is on the 2.x layout; exiting");
+        return Ok(());
+    }
 
     let storage_for_shutdown = Arc::new(storage.clone());
 

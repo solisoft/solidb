@@ -19,6 +19,7 @@ pub mod http_client;
 pub mod index;
 pub mod keyspace;
 pub mod keyspace_gc;
+pub mod keyspace_migration;
 pub mod pending_drops;
 pub mod protected;
 pub mod query_cache;

@@ -342,9 +342,9 @@ impl Database {
             // Skip collections awaiting their background drop — logically
             // deleted, and their entry is already gone in the common path.
             .filter(|name| {
-                !self
-                    .pending_cf_drops
-                    .contains(&format!("{}{}", prefix, name))
+                let full = format!("{}{}", prefix, name);
+                !self.pending_cf_drops.contains(&full)
+                    || super::collection_registry::is_shared(&self.db, &full)
             })
             .collect()
     }

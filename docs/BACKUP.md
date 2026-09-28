@@ -347,3 +347,27 @@ solidb-restore -i migration.json --create-database
 - [Sharding Documentation](./SHARDING.md)
 - [API Reference](./API.md)
 - [SDBQL Query Language](./SDBQL.md)
+
+## Upgrading from 1.x to 2.0
+
+2.0 moves every collection from its own RocksDB column family into one shared
+column family (see `storage-format.md`). The move happens automatically at the
+first start of 2.0 and is **one-way**: a 1.x binary cannot open the data
+directory afterwards.
+
+1. **Take a checkpoint** while still on 1.x:
+   `curl -X POST -u admin:… localhost:6745/_api/backup -d '{"path":"pre-2.0"}'`,
+   then copy it off the volume. Rolling back = restoring this checkpoint.
+2. **Check free disk**: at least 1.2 × your largest collection + 1 GiB. The
+   migration copies one collection at a time and frees the old files right
+   after, so it never needs twice the whole data set.
+3. **Migrate** — either start 2.0 normally (it migrates before binding its
+   port; progress is logged every 5 s), or run it offline first:
+   `solidb --data-dir ./data --migrate-only`. Raise a Kubernetes
+   `startupProbe` accordingly if you migrate on a normal start.
+4. **Read the report**: the last log line says how many collections were
+   migrated, skipped and failed. A failed one keeps working from its own column
+   family and is retried at the next start.
+
+The old column families are dropped in the background after the server has
+started; `solidb_column_families` on `/metrics` shows them draining.

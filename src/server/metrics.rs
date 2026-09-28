@@ -259,9 +259,10 @@ pub async fn metrics_handler(
         output.push_str(&format!("{} {}\n\n", name, value));
     }
 
-    // Column-family churn. Every create/drop rewrites and fsyncs the entire
-    // OPTIONS file under the DB mutex, so these are the counters that explain
-    // both OPTIONS growth and latency that no single query accounts for.
+    // Catalog churn. Since 2.0 collections are created and dropped as
+    // keyspaces (no column-family operation); `solidb_cf_ops_*` now counts
+    // only the drops of legacy 1.x column families after migration — each
+    // of which still rewrites and fsyncs the entire OPTIONS file.
     let cf_ops = crate::storage::cf_ops::snapshot();
     for (name, help, value) in [
         (
@@ -278,6 +279,21 @@ pub async fn metrics_handler(
             "solidb_collections_autocreated_total",
             "Collections brought into existence by a write to an unknown name",
             crate::storage::cf_ops::autocreates(),
+        ),
+        (
+            "solidb_keyspace_creates_total",
+            "Collections created in the shared keyspace (no column-family operation)",
+            crate::storage::cf_ops::keyspace_creates(),
+        ),
+        (
+            "solidb_keyspace_drops_total",
+            "Shared-keyspace collections dropped (one range delete)",
+            crate::storage::cf_ops::keyspace_drops(),
+        ),
+        (
+            "solidb_keyspace_gc_compactions_total",
+            "Dropped keyspace ranges compacted to reclaim their space",
+            crate::storage::keyspace_gc::compactions(),
         ),
     ] {
         output.push_str(&format!("# HELP {} {}\n", name, help));

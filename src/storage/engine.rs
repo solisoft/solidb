@@ -441,6 +441,22 @@ impl StorageEngine {
 
     /// Initialize the storage engine with default _system database
     pub fn initialize(&self) -> DbResult<()> {
+        // First of all, before anything reads a collection: move any 1.x
+        // collections into the shared keyspace (see `keyspace_migration`).
+        // Their old column families are scheduled for a background drop,
+        // which the resume below picks up.
+        if let Some(report) =
+            super::keyspace_migration::run(&self.db, &self.pending_cf_drops, &self.path)?
+        {
+            if !report.failed.is_empty() {
+                tracing::warn!(
+                    "{} collections could not be migrated and stay in their own column \
+                     families; retried at the next start",
+                    report.failed.len()
+                );
+            }
+        }
+
         // Check if _system database exists
         let databases = self.list_databases();
         if !databases.contains(&"_system".to_string()) {
@@ -870,7 +886,9 @@ impl StorageEngine {
         // A CF scheduled for background drop must read as already deleted —
         // serving it (cached or fresh) hands out a handle whose CF can vanish
         // mid-operation.
-        if self.pending_cf_drops.contains(name) {
+        if self.pending_cf_drops.contains(name)
+            && !super::collection_registry::is_shared(&self.db, name)
+        {
             self.collections.remove(name);
             return Err(DbError::CollectionNotFound(name.to_string()));
         }
@@ -977,7 +995,10 @@ impl StorageEngine {
         if super::collection_registry::available(&self.db) {
             return super::collection_registry::list_all(&self.db)
                 .into_iter()
-                .filter(|name| !self.pending_cf_drops.contains(name))
+                .filter(|name| {
+                    !self.pending_cf_drops.contains(name)
+                        || super::collection_registry::is_shared(&self.db, name)
+                })
                 .collect();
         }
         // Use the live in-memory CF list — DB::list_cf would re-read the
@@ -1024,7 +1045,9 @@ impl StorageEngine {
         };
 
         for cf_name in registered {
-            if self.pending_cf_drops.contains(&cf_name) {
+            if self.pending_cf_drops.contains(&cf_name)
+                && !super::collection_registry::is_shared(&self.db, &cf_name)
+            {
                 continue;
             }
             // Collection CFs are named "<database>:<collection>"; anything

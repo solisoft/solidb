@@ -158,8 +158,10 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 - **storage/** - RocksDB-backed persistence layer. `collection/` holds document
   operations, indexing and TTL, split across `crud.rs`, `indexes.rs`,
   `fulltext.rs`, `geo.rs`, `ttl.rs`, `blobs.rs`, `vector.rs` and `versioning.rs`.
-  One collection is one RocksDB column family; `collection/mod.rs` defines the
-  key prefixes (`doc:`, `idx:`, `ft:`, `blo:` …) that namespace data within it.
+  Since 2.0 every collection lives in one shared column family, `__keyspaces__`,
+  under an 8-byte key prefix (its *keyspace*, `storage/keyspace.rs`);
+  `collection/mod.rs` defines the logical key prefixes (`doc:`, `idx:`, `ft:`,
+  `blo:` …) that namespace data within it. See `docs/storage-format.md`.
 - **server/** - Axum-based HTTP API and WebSocket handlers. Endpoint logic is in
   the `handlers/` directory plus ~28 sibling files in `src/server/`; routes are
   declared in one place, `routes.rs`.
@@ -269,23 +271,47 @@ falls back to the default.
 `peer_url`); anything but `http` means https. Build new inter-node URLs with
 that helper, never `format!("http://…")`.
 
-### Column-family lifecycle knobs
+### Keyspaces: how collections are stored (2.0)
 
-One collection is one RocksDB column family, and every `create_cf`/`drop_cf`
-rewrites *and fsyncs* the whole OPTIONS file — one section per CF, so the cost
-is proportional to the instance's **total** collection count, not to the
-collection being touched. There is no RocksDB setting that avoids this; the
-write is unconditional and ends with a re-parse of the file it just wrote.
+Up to 1.3, one collection was one RocksDB column family, and every
+`create_cf`/`drop_cf` rewrote *and fsynced* the whole OPTIONS file — a cost
+proportional to the instance's **total** collection count (≈0.2 s per create at
+1,232 collections). Since 2.0 all collections share the `__keyspaces__` column
+family, each under a fixed 8-byte prefix: database id then collection id, both
+big-endian `u32`, allocated in `_meta` and never reused. Creating a collection
+is one `_meta` write; dropping one is a registry delete plus one `DeleteRange`;
+dropping a database is one `DeleteRange` over its id range. None of them touch
+the column-family map. Full layout: `docs/storage-format.md`.
+
+Rules for code that touches storage:
+
+- Collection code reaches RocksDB only through its `Keyspace`
+  (`coll.ks.handle(&db)` → `KsCf`) and the `*_ks` methods of `KsDbExt` /
+  `KsBatchExt`. Key builders stay *logical*; the prefix is added and stripped
+  there, and every iterator is bounded to the keyspace. A raw `*_cf` call does
+  not accept a `KsCf`, so a missed site fails to compile — keep it that way.
+- Existence is the `_meta` registry (`collection_registry::keyspace_of`), not
+  `cf_handle(name)`. A dropped keyspace's handles all report
+  `CollectionNotFound` (shared dead flag), never the next incarnation's data.
+- 1.x collections are migrated automatically at the first 2.x start
+  (`storage/keyspace_migration.rs`, resumable; `--migrate-only` runs it and
+  exits). One that fails stays *legacy* — its own column family, empty prefix —
+  and is served as before until the next start retries it.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | How long a deleted collection's column family is kept so a same-name recreate can wipe and reuse it, saving two OPTIONS rewrites. Its data is erased at deletion time, so the shell holds nothing while it waits. A single reaper thread drops the ones nobody reclaims. |
-| `SOLIDB_AUTO_CREATE_COLLECTIONS` | on | Writing a document to an unknown collection creates it. Set to `0` to get `CollectionNotFound` instead — worth it on an instance whose schema is managed elsewhere, since every auto-creation grows the OPTIONS file. |
-| `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap: crossing it flushes every CF holding data in the oldest WAL. Lowering it to save disk is a false economy — it produces thousands of sub-4KB SSTs. Bound memory with `--memtable-budget`, which flushes one CF at a time. |
+| `SOLIDB_AUTO_CREATE_COLLECTIONS` | on | Writing a document to an unknown collection creates it. Set to `0` to get `CollectionNotFound` instead, for an instance whose schema is managed elsewhere. |
+| `SOLIDB_KS_GC_DELAY_SECS` | 10 | Delay before a dropped keyspace's range is compacted (its space reclaimed). |
+| `SOLIDB_LEGACY_COLLECTION_CFS` | off | Create new collections as 1.x column families and skip the migration. For tests of the legacy path only. |
+| `SOLIDB_MIGRATION_SKIP_SPACE_CHECK` | off | Start the migration even when free disk is below 1.2 × the largest collection + 1 GiB. |
+| `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | Legacy collections only: grace before an emptied 1.x column family is dropped. |
+| `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap. Lowering it to save disk is a false economy — it produces thousands of tiny SSTs. Bound memory with `--memtable-budget`. |
 
-Watch `solidb_cf_ops_total`, `solidb_cf_op_seconds_total`,
-`solidb_cf_reuses_total` and `solidb_collections_autocreated_total` on
-`/metrics`; CF churn shows up as latency that no single query accounts for.
+Per-collection `disk_usage` of a shared collection is RocksDB's approximate
+size of its key range (flushed data only; memtable and SST count read 0).
+`/metrics` carries `solidb_keyspace_creates_total`,
+`solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
+`solidb_cf_ops_total` now counts only legacy column-family drops.
 
 ### Three tiers of protected collections
 

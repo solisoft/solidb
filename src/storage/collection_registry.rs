@@ -250,6 +250,13 @@ pub fn shared_layout_enabled(db: &DB) -> bool {
     available(db) && db.cf_handle(SHARED_CF).is_some()
 }
 
+/// Whether `full_name` is a shared-layout collection. A legacy column family
+/// of the same name awaiting its drop (left by the migration) does not make
+/// it deleted.
+pub fn is_shared(db: &DB, full_name: &str) -> bool {
+    get(db, full_name).is_some_and(|r| r.ks.is_some())
+}
+
 /// The registry record of `full_name`, if any.
 pub fn get(db: &DB, full_name: &str) -> Option<CollectionRecord> {
     let meta_cf = db.cf_handle(META_CF)?;
