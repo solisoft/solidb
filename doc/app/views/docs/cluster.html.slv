@@ -145,7 +145,7 @@
 
           <div class="p-8 space-y-8">
             <p class="text-gray-300 leading-relaxed">
-              Start a fully functional, fault-tolerant cluster on your local machine. SoliDB uses <strong>Single-Port Multiplexing</strong> by default, so you don't need to manage separate ports for replication.
+              Start a fully functional, fault-tolerant cluster on your local machine. SoliDB uses <strong>Single-Port Multiplexing</strong> by default, so you don't need to manage separate ports for replication. Every node needs the same <code class="text-cyan-400">--keyfile</code>: a node started with <code class="text-cyan-400">--peer</code> and no keyfile refuses to start, and a node without one refuses its peers' replication connections. Create it once with <code class="text-cyan-400">openssl rand -hex 32 &gt; solidb.key</code>. The admin account is created on the bootstrap node (from <code class="text-cyan-400">SOLIDB_ADMIN_PASSWORD</code>, or a random password written to <code class="text-cyan-400">&lt;data-dir&gt;/.admin_password</code>) and replicated to each joining node with the rest of the data, together with users, roles and API keys. Per-database environment variables (<code class="text-cyan-400">_env</code>) are the exception: they stay on the node where they were set.
             </p>
 
             <div class="grid gap-4">
@@ -156,7 +156,7 @@
                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/30 text-purple-400 font-bold font-mono">1</div>
                    <div class="flex-1 overflow-x-auto">
                       <p class="text-xs text-gray-500 font-bold uppercase mb-1">Bootstrap Node</p>
-                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8081 --data-dir ./data1</code>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">SOLIDB_ADMIN_PASSWORD=secret solidb --port 8081 --data-dir ./data1 --keyfile ./solidb.key</code>
                    </div>
                 </div>
               </div>
@@ -168,7 +168,7 @@
                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 text-indigo-400 font-bold font-mono">2</div>
                    <div class="flex-1 overflow-x-auto">
                       <p class="text-xs text-gray-500 font-bold uppercase mb-1">Join Node 2</p>
-                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8082 --data-dir ./data2 --peer 127.0.0.1:8081</code>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8082 --data-dir ./data2 --keyfile ./solidb.key --peer 127.0.0.1:8081</code>
                    </div>
                 </div>
               </div>
@@ -180,7 +180,7 @@
                    <div class="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30 text-blue-400 font-bold font-mono">3</div>
                    <div class="flex-1 overflow-x-auto">
                       <p class="text-xs text-gray-500 font-bold uppercase mb-1">Join Node 3</p>
-                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8083 --data-dir ./data3 --peer 127.0.0.1:8081</code>
+                      <code class="text-sm text-gray-200 whitespace-nowrap">solidb --port 8083 --data-dir ./data3 --keyfile ./solidb.key --peer 127.0.0.1:8081</code>
                    </div>
                 </div>
               </div>
@@ -188,8 +188,8 @@
 
             <!-- Verification Tip -->
             <div class="bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg p-4 border border-white/5 flex items-center justify-between">
-              <span class="text-sm text-gray-400">Verify cluster health:</span>
-              <code class="text-sm text-green-400 font-mono bg-black/30 px-3 py-1.5 rounded">curl http://localhost:8081/_api/health</code>
+              <span class="text-sm text-gray-400">Verify the peers are connected:</span>
+              <code class="text-sm text-green-400 font-mono bg-black/30 px-3 py-1.5 rounded">curl -u admin:secret http://localhost:8081/_api/cluster/status</code>
             </div>
           </div>
         </div>
@@ -217,9 +217,9 @@
               <div class="bg-gray-800/30 rounded-xl p-6 border border-white/5 hover:border-yellow-500/30 transition-colors">
                 <h3 class="text-yellow-400 font-bold mb-3 flex items-center"><span class="w-6 h-6 rounded-full bg-yellow-500/20 text-center leading-6 text-xs mr-2">1</span> Generate Secret</h3>
                 <div class="bg-gray-950 p-4 rounded-lg font-mono text-sm text-gray-300 border border-white/10 mb-2 relative group">
-                  openssl rand -base64 756 > solidb.key
+                  openssl rand -hex 32 &gt; solidb.key
                 </div>
-                <p class="text-xs text-gray-500">Creates a high-entropy keyfile.</p>
+                <p class="text-xs text-gray-500">32 random bytes, hex-encoded. On Windows, the server's startup error prints a PowerShell equivalent.</p>
               </div>
 
               <!-- Use -->

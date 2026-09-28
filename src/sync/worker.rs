@@ -682,6 +682,10 @@ impl SyncWorker {
         let collection = &first.collection;
         let operation = first.operation;
 
+        if is_node_local(collection) {
+            return Ok(());
+        }
+
         // Skip physical shard collections - sharded data is partitioned, NOT replicated cluster-wide
         // Physical shards have names like "users_s0", "users_s1" etc.
         let is_physical_shard = collection.contains("_s")
@@ -706,7 +710,7 @@ impl SyncWorker {
             }
 
             if let Ok(db) = self.storage.get_database(database) {
-                if db.get_collection(collection).is_err() {
+                if db.system_collection(collection).is_err() {
                     let _ = db.create_collection(collection.clone(), None);
                 }
             }
@@ -715,7 +719,7 @@ impl SyncWorker {
         match operation {
             Operation::Insert | Operation::Update => {
                 if let Ok(db) = self.storage.get_database(database) {
-                    if let Ok(coll) = db.get_collection(collection) {
+                    if let Ok(coll) = db.system_collection(collection) {
                         let mut batch_data = Vec::with_capacity(entries.len());
 
                         for entry in entries {
@@ -766,7 +770,7 @@ impl SyncWorker {
             }
             Operation::Delete => {
                 if let Ok(db) = self.storage.get_database(database) {
-                    if let Ok(coll) = db.get_collection(collection) {
+                    if let Ok(coll) = db.system_collection(collection) {
                         let mut keys_to_delete = Vec::with_capacity(entries.len());
 
                         for entry in entries {
@@ -821,6 +825,10 @@ impl SyncWorker {
             return Ok(());
         }
 
+        if is_node_local(&entry.collection) {
+            return Ok(());
+        }
+
         // Skip physical shard collections - sharded data is partitioned, NOT replicated cluster-wide
         let is_physical_shard = entry.collection.contains("_s")
             && entry
@@ -848,11 +856,11 @@ impl SyncWorker {
 
                     if let Ok(db) = self.storage.get_database(&entry.database) {
                         // Create collection if it doesn't exist
-                        if db.get_collection(&entry.collection).is_err() {
+                        if db.system_collection(&entry.collection).is_err() {
                             let _ = db.create_collection(entry.collection.clone(), None);
                         }
 
-                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                        if let Ok(coll) = db.system_collection(&entry.collection) {
                             // Replicated _api_keys writes must also refresh the
                             // in-memory auth cache (handlers are bypassed here).
                             let api_key_doc =
@@ -878,7 +886,7 @@ impl SyncWorker {
             }
             Operation::Delete => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    if let Ok(coll) = db.get_collection(&entry.collection) {
+                    if let Ok(coll) = db.system_collection(&entry.collection) {
                         let _ = coll.delete(&entry.document_key);
                     }
                 }
@@ -916,7 +924,7 @@ impl SyncWorker {
                         if let Some(ref meta) = metadata {
                             if let Some(shard_config_obj) = meta.get("shardConfig") {
                                 if !shard_config_obj.is_null() {
-                                    if let Ok(coll) = db.get_collection(&entry.collection) {
+                                    if let Ok(coll) = db.system_collection(&entry.collection) {
                                         // Parse shard config (CollectionShardConfig uses u16)
                                         let num_shards = shard_config_obj
                                             .get("num_shards")
@@ -960,14 +968,14 @@ impl SyncWorker {
             }
             Operation::TruncateCollection => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    if let Ok(coll) = db.get_collection(&entry.collection) {
+                    if let Ok(coll) = db.system_collection(&entry.collection) {
                         // Check if sharded and truncate physical shards first
                         if let Some(shard_config) = coll.get_shard_config() {
                             if shard_config.num_shards > 0 {
                                 for shard_id in 0..shard_config.num_shards {
                                     let physical_name =
                                         format!("{}_s{}", entry.collection, shard_id);
-                                    if let Ok(shard_coll) = db.get_collection(&physical_name) {
+                                    if let Ok(shard_coll) = db.system_collection(&physical_name) {
                                         let _ = shard_coll.truncate();
                                     }
                                 }
@@ -995,7 +1003,7 @@ impl SyncWorker {
                             TransportError::DecodeError(format!("Invalid index spec: {}", e))
                         })?;
                     if let Ok(db) = self.storage.get_database(&entry.database) {
-                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                        if let Ok(coll) = db.system_collection(&entry.collection) {
                             if let Err(e) = coll.apply_index_spec(&spec) {
                                 warn!(
                                     "apply_entry: failed to create index '{}' on {}.{}: {}",
@@ -1016,7 +1024,7 @@ impl SyncWorker {
                             TransportError::DecodeError(format!("Invalid index ref: {}", e))
                         })?;
                     if let Ok(db) = self.storage.get_database(&entry.database) {
-                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                        if let Ok(coll) = db.system_collection(&entry.collection) {
                             if let Err(e) = coll.apply_index_drop(index_ref.kind, &index_ref.name) {
                                 warn!(
                                     "apply_entry: failed to drop index '{}' on {}.{}: {}",
@@ -1186,7 +1194,7 @@ impl SyncWorker {
                         // The collection may already exist from an earlier sync
                         // with the type unset; make the type stick either way.
                         if let (Some(ref ctype), Ok(coll)) =
-                            (collection_type, db.get_collection(&name))
+                            (collection_type, db.system_collection(&name))
                         {
                             if coll.get_type() != *ctype {
                                 let _ = coll.set_type(ctype);
@@ -1218,9 +1226,9 @@ impl SyncWorker {
                             Some((key, doc))
                         })
                         .collect();
-                    if !keyed.is_empty() {
+                    if !keyed.is_empty() && !is_node_local(&collection) {
                         if let Ok(db) = self.storage.get_database(&database) {
-                            if let Ok(coll) = db.get_collection(&collection) {
+                            if let Ok(coll) = db.system_collection(&collection) {
                                 if let Err(e) = coll.upsert_batch(keyed) {
                                     warn!(
                                         "Full sync: upsert into {}.{} failed: {}",
@@ -1477,7 +1485,10 @@ impl SyncWorker {
                 };
                 ConnectionPool::write_message(stream, &coll_msg).await?;
 
-                if let Ok(coll) = db.get_collection(&coll_name) {
+                if is_node_local(&coll_name) {
+                    continue;
+                }
+                if let Ok(coll) = db.system_collection(&coll_name) {
                     stream_collection_documents(stream, db_name, &coll_name, coll).await?;
                 }
             }
@@ -1726,6 +1737,19 @@ where
         total_parts
     );
     Ok(())
+}
+
+/// Collections that stay on the node that wrote them.
+///
+/// Replication is server-side work between peers that proved the cluster
+/// keyfile, so it reads and writes through `system_collection` and carries
+/// the credential tier — `_admins`, `_api_keys`, `_roles`, `_user_roles` —
+/// which is what gives a joining node the admin account and keeps logins and
+/// API keys the same on every node. `_env` is the exception: it holds
+/// per-deployment settings and secrets (LLM endpoints, API tokens) that one
+/// node's operator sets for that node.
+fn is_node_local(collection: &str) -> bool {
+    collection == "_env"
 }
 
 /// Stream one collection's documents as byte-bounded `FullSyncDocuments`.

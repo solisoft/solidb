@@ -1315,55 +1315,12 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                         else if peeked_data.first() == Some(&b'{') {
                             // Cluster Message (JSON) - need peeked bytes for parsing
                             let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
-                            let mgr = connection_mgr.clone();
-                            tokio::spawn(async move {
-                                // Bound both the size (cluster control messages are
-                                // small; an unbounded read_to_end lets anyone OOM the
-                                // node by streaming data) and the time (a held-open
-                                // connection would park this task forever).
-                                let mut buf = Vec::new();
-                                let mut stream = tokio::io::AsyncReadExt::take(
-                                    peeked_stream,
-                                    (solidb::cluster::transport::MAX_CLUSTER_MESSAGE_SIZE + 1) as u64,
-                                );
-                                let read = tokio::time::timeout(
-                                    std::time::Duration::from_secs(10),
-                                    stream.read_to_end(&mut buf),
-                                )
-                                .await;
-                                match read {
-                                    Ok(Ok(_)) if buf.len() <= solidb::cluster::transport::MAX_CLUSTER_MESSAGE_SIZE => {
-                                        // When a keyfile is configured, only HMAC-signed
-                                        // messages are accepted — membership changes and
-                                        // rebalances must not be attacker-injectable.
-                                        match solidb::cluster::transport::open_cluster_message(
-                                            &buf,
-                                            cluster_secret.as_deref(),
-                                        ) {
-                                            Ok(msg) => mgr.handle_message(msg).await,
-                                            Err(e) => {
-                                                tracing::warn!(
-                                                    "Rejected cluster message from {}: {}",
-                                                    addr,
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Ok(Ok(_)) => {
-                                        tracing::warn!(
-                                            "Cluster message from {} exceeds size limit, dropped",
-                                            addr
-                                        );
-                                    }
-                                    _ => {
-                                        tracing::warn!(
-                                            "Cluster message read from {} failed or timed out",
-                                            addr
-                                        );
-                                    }
-                                }
-                            });
+                            tokio::spawn(handle_cluster_connection(
+                                peeked_stream,
+                                connection_mgr.clone(),
+                                cluster_secret.clone(),
+                                addr,
+                            ));
                         } else {
                             // HTTP traffic - need peeked bytes for HTTP parsing
                             let peeked_stream = PeekedStream::new(stream, peeked_data.clone());
@@ -1380,9 +1337,65 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
             replication_port
         );
 
-        // 1. Spawn Sync Worker (standard mode)
+        // 1. Replication listener.
+        //
+        // Peers send two protocols to a node's replication address: sync
+        // streams (`solidb-sync-v1`) and sealed cluster control messages
+        // (JSON — join, heartbeats, membership). This port used to be owned by
+        // the sync server alone, which rejected every control message with
+        // "Invalid protocol header"; the seed never learnt of its peers. It
+        // now sniffs the first bytes and routes both, like the multiplexed
+        // port does.
+        let repl_bind = format!("{}:{}", host, replication_port);
+        let repl_listener = tokio::net::TcpListener::bind(&repl_bind).await?;
+        tracing::info!("Replication listening on {}", repl_bind);
+        let (sync_tx, sync_rx) = mpsc::channel(8192);
+        let sync_worker = sync_worker.with_incoming_channel(sync_rx);
         tokio::spawn(async move {
-            sync_worker.run().await;
+            sync_worker.run_background().await;
+        });
+        let repl_mgr = cluster_manager.clone();
+        let repl_secret = cluster_config.keyfile.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, addr) = match repl_listener.accept().await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        tracing::error!("Replication accept error: {}", e);
+                        // Avoid a hot loop on persistent accept errors (EMFILE).
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+                let sync_tx = sync_tx.clone();
+                let mgr = repl_mgr.clone();
+                let secret = repl_secret.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 14];
+                    let n = match tokio::time::timeout(
+                        Duration::from_secs(10),
+                        read_prefix(&mut stream, &mut buf),
+                    )
+                    .await
+                    {
+                        Ok(Ok(n)) => n,
+                        _ => {
+                            tracing::debug!(peer = %addr, "replication protocol detection failed");
+                            return;
+                        }
+                    };
+                    let peeked = &buf[..n];
+                    if peeked == b"solidb-sync-v1" {
+                        let sync_stream: solidb::sync::transport::SyncStream = Box::new(stream);
+                        dispatch_or_drop(&sync_tx, (sync_stream, addr.to_string()), "sync", &addr);
+                    } else if peeked.first() == Some(&b'{') {
+                        let peeked_stream = PeekedStream::new(stream, peeked.to_vec());
+                        handle_cluster_connection(peeked_stream, mgr, secret, addr).await;
+                    } else {
+                        tracing::warn!(peer = %addr, "unknown protocol on the replication port; dropping connection");
+                    }
+                });
+            }
         });
 
         // 2. Serve HTTP (standard mode)
@@ -1494,6 +1507,63 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Read up to `buf.len()` bytes, stopping early only at EOF or when the
+/// first byte is `{` (a cluster message, which may be shorter than a sync
+/// magic header). A single `read` can return a partial magic header on a
+/// slow link, which would misroute a sync connection.
+async fn read_prefix(stream: &mut tokio::net::TcpStream, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut n = 0;
+    while n < buf.len() {
+        let got = stream.read(&mut buf[n..]).await?;
+        if got == 0 {
+            break;
+        }
+        n += got;
+        if buf[0] == b'{' {
+            break;
+        }
+    }
+    Ok(n)
+}
+
+/// Read one sealed cluster control message from a connection whose first
+/// bytes were already sniffed, and hand it to the cluster manager.
+///
+/// Shared by the multiplexed listener and the replication listener of the
+/// dual-port mode: peers send these to a node's *replication* address, so
+/// whichever listener owns that port has to recognise them.
+async fn handle_cluster_connection(
+    stream: PeekedStream,
+    mgr: Arc<solidb::cluster::manager::ClusterManager>,
+    cluster_secret: Option<String>,
+    addr: std::net::SocketAddr,
+) {
+    use solidb::cluster::transport::{open_cluster_message, MAX_CLUSTER_MESSAGE_SIZE};
+    // Bound both the size (cluster control messages are small; an unbounded
+    // read_to_end lets anyone OOM the node by streaming data) and the time (a
+    // held-open connection would park this task forever).
+    let mut buf = Vec::new();
+    let mut stream = stream.take((MAX_CLUSTER_MESSAGE_SIZE + 1) as u64);
+    let read = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        stream.read_to_end(&mut buf),
+    )
+    .await;
+    match read {
+        Ok(Ok(_)) if buf.len() <= MAX_CLUSTER_MESSAGE_SIZE => {
+            // When a keyfile is configured, only HMAC-signed messages are
+            // accepted — membership changes and rebalances must not be
+            // attacker-injectable.
+            match open_cluster_message(&buf, cluster_secret.as_deref()) {
+                Ok(msg) => mgr.handle_message(msg).await,
+                Err(e) => tracing::warn!("Rejected cluster message from {}: {}", addr, e),
+            }
+        }
+        Ok(Ok(_)) => tracing::warn!("Cluster message from {} exceeds size limit, dropped", addr),
+        _ => tracing::warn!("Cluster message read from {} failed or timed out", addr),
+    }
 }
 
 /// A connection on the multiplexed port after optional TLS termination,

@@ -47,7 +47,7 @@ pub async fn get_blob_chunk(
         .map_err(|_| DbError::BadRequest("Invalid chunk index".to_string()))?;
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    let collection = database.system_collection(&coll_name)?;
 
     if collection.get_type() != "blob" {
         return Err(DbError::BadRequest(format!(
@@ -162,7 +162,7 @@ pub async fn receive_blob_replication(
     verify_cluster_secret(&state, &headers)?;
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database.get_collection(&coll_name)?;
+    let collection = database.system_collection(&coll_name)?;
 
     if collection.get_type() != "blob" {
         return Err(DbError::BadRequest(format!(
@@ -281,7 +281,7 @@ pub async fn receive_blob_upload(
 
     // Auto-create the physical shard blob collection if it doesn't exist
     // This can happen when blob uploads are forwarded to a node before the shard was explicitly created
-    let collection = match database.get_collection(&coll_name) {
+    let collection = match database.system_collection(&coll_name) {
         Ok(coll) => coll,
         Err(_) => {
             tracing::info!(
@@ -290,7 +290,7 @@ pub async fn receive_blob_upload(
                 coll_name
             );
             database.create_collection(coll_name.clone(), Some("blob".to_string()))?;
-            let coll = database.get_collection(&coll_name)?;
+            let coll = database.system_collection(&coll_name)?;
             // Ensure the in-memory collection object knows it's a blob immediately
             // (In case the read back from RocksDB was too fast or cached)
             if coll.get_type() != "blob" {

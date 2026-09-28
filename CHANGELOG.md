@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **A separate `--replication-port` no longer breaks the cluster.** Peers send
+  both sync streams and cluster control messages (join, heartbeats) to a
+  node's replication address, but in dual-port mode only the sync server
+  listened there: it rejected every control message with `Invalid protocol
+  header` (logged every ~500 ms) and the node never listed its peers. The
+  replication port now sniffs the protocol and routes both, as the
+  multiplexed port does.
+* **A joining node receives the admin account, users, roles and API keys.**
+  Replication read and applied documents through the caller-facing
+  collection accessor, which refuses the credential tier (`_admins`,
+  `_api_keys`, `_roles`, `_user_roles`): the full sync sent none of their
+  documents and every replicated write to them was dropped without an error.
+  A node that joined without `SOLIDB_ADMIN_PASSWORD` synced all data and then
+  answered 401 to the admin login, and a user created later existed on one
+  node only. Replication now uses the server-side accessor, as it runs
+  between peers that proved the cluster keyfile. `_env` stays node-local.
+  The sync transport is not encrypted, so password and key hashes now cross
+  it: keep it on a private network or a tunnel, as the docs already say.
+
+### Documentation
+
+* The cluster quick-start sets `--keyfile` on every node (required with
+  `--peer` since 0.34.0), sets the admin password on the bootstrap node only,
+  and checks `/_api/cluster/status`.
+
 ## [2.0.0](https://github.com/solisoft/solidb/compare/v1.3.0...v2.0.0) (2026-09-28)
 
 ### ⚠ Breaking: storage format
