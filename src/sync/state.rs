@@ -358,6 +358,15 @@ impl SyncState {
     }
 
     /// Get list of all known peers
+    /// Whether this node has ever pulled from, or been pulled by, a peer
+    /// (the persisted cursors say so). Such a node keeps its sync log
+    /// active from startup: a peer resuming from its cursor needs every
+    /// entry since, not just those written after it reconnects.
+    pub fn has_replicated_with_peers(&self) -> bool {
+        !self.pull_cursors.read().unwrap().is_empty()
+            || !self.sent_sequences.read().unwrap().is_empty()
+    }
+
     pub fn get_peers(&self) -> Vec<PeerInfo> {
         self.peers.read().unwrap().values().cloned().collect()
     }

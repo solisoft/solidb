@@ -267,6 +267,19 @@ falls back to the default.
 | `SOLIDB_CLUSTER_HTTP_TIMEOUT_SECS` / `_READ_TIMEOUT_SECS` | 60 / 60 | Inter-node HTTP requests |
 | `SOLIDB_CLUSTER_STREAM_TIMEOUT_SECS` | 21600 | Shard copy / export streams |
 
+### The sync log is written only when something reads it (2.0.3)
+
+Every document write appends an entry to the replication log
+(`<data-dir>/sync_log`, a second RocksDB): a second WAL write under a lock all
+writers share, ~40% of a primary-key update. A node started without `--peer`,
+and with no persisted replication history (`SyncState::has_replicated_with_peers`),
+starts it *deferred* (`SyncLog::defer_until_needed`) and activates it on the
+first authenticated peer sync connection or offline-sync session/pull —
+before serving anything from it. Activation is persisted (`_meta:active` in
+the log DB), so a node that has ever had a reader keeps logging across
+restarts. Any new reader of the log must call `SyncLog::activate` first.
+`--no-sync-log` still disables it outright.
+
 `SOLIDB_CLUSTER_SCHEME` now applies to every inter-node URL (`src/cluster/http.rs`
 `peer_url`); anything but `http` means https. Build new inter-node URLs with
 that helper, never `format!("http://…")`.

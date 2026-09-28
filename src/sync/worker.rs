@@ -1511,6 +1511,10 @@ impl SyncWorker {
         cluster_manager: Option<Arc<crate::cluster::manager::ClusterManager>>,
     ) -> Result<(), TransportError> {
         use crate::cluster::HybridLogicalClock;
+        // An authenticated peer is here to read the log (or to full-sync,
+        // which is followed by incremental pulls): it must be written from
+        // now on, before anything is served. See `SyncLog::defer_until_needed`.
+        sync_log.activate("peer sync connection");
         let hlc = HybridLogicalClock::now(sync_log.node_id());
 
         loop {

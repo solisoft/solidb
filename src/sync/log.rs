@@ -14,7 +14,35 @@ use super::protocol::{Operation, SyncEntry};
 use crate::cluster::HybridLogicalClock;
 
 const LOG_PREFIX: &[u8] = b"sync_log:";
+
+/// First byte of an entry stored as MessagePack. JSON entries (every entry
+/// written before 2.0.2) start with `{`, so the two are told apart by it.
+const MSGPACK_ENTRY: u8 = 0xB1;
+
+/// On-disk form of a log entry.
+///
+/// Entries used to be JSON, where `data` (the document, already JSON) became
+/// an array of decimal byte values — about four times its size — written to a
+/// second RocksDB on every document write, then flushed and compacted. On a
+/// primary-key update that was a large part of the ~35 µs the log costs.
+fn encode_entry(entry: &LogEntry) -> Vec<u8> {
+    let mut out = Vec::with_capacity(64 + entry.data.as_ref().map_or(0, Vec::len));
+    out.push(MSGPACK_ENTRY);
+    rmp_serde::encode::write_named(&mut out, entry).expect("encoding a LogEntry cannot fail");
+    out
+}
+
+/// Read an entry in either on-disk form.
+fn decode_entry(bytes: &[u8]) -> Option<LogEntry> {
+    match bytes.split_first() {
+        Some((&MSGPACK_ENTRY, rest)) => rmp_serde::from_slice(rest).ok(),
+        _ => serde_json::from_slice(bytes).ok(),
+    }
+}
 const SEQ_KEY: &[u8] = b"sync_log:_sequence";
+/// Present once the log has been activated (see [`SyncLog::defer_until_needed`]).
+/// Outside `LOG_PREFIX`, so no entry scan or prune ever sees it.
+const ACTIVE_KEY: &[u8] = b"_meta:active";
 
 /// Entry for the sync log (similar to old LogEntry for compatibility)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +117,11 @@ pub struct SyncLog {
     /// When true, append/append_batch are no-ops. Used in standalone mode
     /// to avoid the disk overhead of a replication log no peer will ever read.
     disabled: bool,
+    /// Whether appends are written. Shared by every clone. Starts true; a
+    /// node with no peer defers it until something needs the log.
+    active: Arc<std::sync::atomic::AtomicBool>,
+    /// Set once the activation marker is known to be on disk.
+    marked: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SyncLog {
@@ -133,6 +166,8 @@ impl SyncLog {
             cache: Arc::new(RwLock::new(VecDeque::with_capacity(max_cache_size))),
             max_cache_size,
             disabled,
+            active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            marked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
 
         log.load_cache();
@@ -154,7 +189,7 @@ impl SyncLog {
                 continue;
             }
 
-            if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
+            if let Some(entry) = decode_entry(&value) {
                 cache.push_back(entry);
                 count += 1;
 
@@ -167,7 +202,7 @@ impl SyncLog {
 
     /// Append an entry to the log
     pub fn append(&self, mut entry: LogEntry) -> u64 {
-        if self.disabled {
+        if !self.writes() {
             return self.current_sequence();
         }
 
@@ -184,7 +219,7 @@ impl SyncLog {
         // `put` calls (two fsyncs). This roughly halves the per-write
         // disk cost on hot insert/update paths.
         let key = format!("sync_log:{:020}", *seq);
-        let value = serde_json::to_vec(&entry).unwrap();
+        let value = encode_entry(&entry);
 
         let mut batch = WriteBatch::default();
         batch.put(key.as_bytes(), &value);
@@ -232,7 +267,7 @@ impl SyncLog {
 
     /// Append multiple entries atomically
     pub fn append_batch(&self, mut entries: Vec<LogEntry>) -> u64 {
-        if self.disabled || entries.is_empty() {
+        if !self.writes() || entries.is_empty() {
             return self.current_sequence();
         }
 
@@ -248,7 +283,7 @@ impl SyncLog {
             }
 
             let key = format!("sync_log:{:020}", *seq);
-            let value = serde_json::to_vec(&entry).unwrap();
+            let value = encode_entry(entry);
             batch.put(key.as_bytes(), &value);
         }
 
@@ -267,6 +302,65 @@ impl SyncLog {
         }
 
         *seq
+    }
+
+    fn writes(&self) -> bool {
+        !self.disabled && self.active.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Stop writing entries until [`Self::activate`] is called, unless this
+    /// log was activated before (the marker survives restarts).
+    ///
+    /// For a node with no configured peer. Every document write appends an
+    /// entry here — a second RocksDB, a second WAL write, under a lock all
+    /// writers share — and on a node nobody replicates from, nothing reads
+    /// it: a primary-key update cost ~70 µs of CPU with the log and ~45
+    /// without. The readers are peers (sync connections) and offline-sync
+    /// devices, and both activate the log before they read it.
+    pub fn defer_until_needed(&self) {
+        if self.disabled {
+            return;
+        }
+        let activated_before = matches!(self.db.get(ACTIVE_KEY), Ok(Some(_)));
+        if !activated_before {
+            self.active
+                .store(false, std::sync::atomic::Ordering::Release);
+            tracing::info!(
+                "Sync log: no peer configured; entries are written once a peer or an \
+                 offline-sync device connects"
+            );
+        }
+    }
+
+    /// Start writing entries, for good: the marker keeps the log active
+    /// across restarts, as it always was before 2.0.3.
+    ///
+    /// Must run before anything is served from the log. A write that found
+    /// the log inactive had already committed its data (entries are appended
+    /// after the write), so a full sync or snapshot taken after this call
+    /// includes it.
+    pub fn activate(&self, reason: &str) {
+        if self.disabled {
+            return;
+        }
+        // Persisted even when already active: a node started with `--peer`
+        // writes from the start, and must keep doing so if it is later
+        // restarted without the flag (as the seed of the cluster it formed).
+        if !self.marked.swap(true, std::sync::atomic::Ordering::AcqRel)
+            && !matches!(self.db.get(ACTIVE_KEY), Ok(Some(_)))
+        {
+            if let Err(e) = self.db.put(ACTIVE_KEY, b"1") {
+                tracing::error!("Sync log: failed to persist activation: {}", e);
+            }
+        }
+        if !self.active.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            tracing::info!("Sync log activated ({reason})");
+        }
+    }
+
+    /// Whether entries are currently written.
+    pub fn is_active(&self) -> bool {
+        self.writes()
     }
 
     /// Returns true if append/append_batch are no-ops.
@@ -400,7 +494,7 @@ impl SyncLog {
                 continue;
             }
 
-            if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
+            if let Some(entry) = decode_entry(&value) {
                 if entry.sequence > after_sequence {
                     entries.push(entry);
                     if entries.len() >= limit {
@@ -456,6 +550,8 @@ impl Clone for SyncLog {
             cache: self.cache.clone(),
             max_cache_size: self.max_cache_size,
             disabled: self.disabled,
+            active: self.active.clone(),
+            marked: self.marked.clone(),
         }
     }
 }
@@ -679,6 +775,82 @@ mod tests {
         assert_eq!(log.prune_before(100).unwrap(), 0);
         assert_eq!(log.oldest_sequence(), None);
         assert_eq!(log.entry_count(), 0);
+    }
+
+    /// Entries written as JSON before 2.0.2 and MessagePack entries written
+    /// since are both read back, from the cache at open and from disk.
+    #[test]
+    fn json_and_msgpack_entries_are_both_read() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        {
+            let log = SyncLog::new("node1".to_string(), path, 0).unwrap();
+            let mut legacy = create_test_entry(1);
+            legacy.data = Some(br#"{"views":7}"#.to_vec());
+            let mut batch = WriteBatch::default();
+            batch.put(
+                format!("sync_log:{:020}", 1).as_bytes(),
+                serde_json::to_vec(&legacy).unwrap(),
+            );
+            batch.put(SEQ_KEY, 1u64.to_be_bytes());
+            log.db.write(&batch).unwrap();
+        }
+        for cache in [0, 100] {
+            let log = SyncLog::new("node1".to_string(), path, cache).unwrap();
+            if log.current_sequence() == 1 {
+                let mut entry = create_test_entry(0);
+                entry.data = Some(br#"{"views":42}"#.to_vec());
+                assert_eq!(log.append(entry), 2);
+            }
+            let entries = log.get_entries_after(0, 10);
+            assert_eq!(entries.len(), 2, "cache size {cache}");
+            assert_eq!(entries[0].data.as_deref(), Some(&br#"{"views":7}"#[..]));
+            assert_eq!(entries[1].data.as_deref(), Some(&br#"{"views":42}"#[..]));
+            assert_eq!(entries[1].sequence, 2);
+        }
+        let log = SyncLog::new("node1".to_string(), path, 0).unwrap();
+        let raw = log
+            .db
+            .get(format!("sync_log:{:020}", 2).as_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(raw[0], MSGPACK_ENTRY);
+    }
+
+    /// A deferred log writes nothing until activated, then keeps writing,
+    /// including after a restart.
+    #[test]
+    fn deferred_log_activates_and_stays_active() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        {
+            let log = SyncLog::new("node1".to_string(), path, 100).unwrap();
+            log.defer_until_needed();
+            assert!(!log.is_active());
+            assert_eq!(log.append(create_test_entry(0)), 0);
+            assert_eq!(log.entry_count(), 0);
+
+            let clone = log.clone();
+            clone.activate("test");
+            assert!(log.is_active());
+            assert_eq!(log.append(create_test_entry(0)), 1);
+            assert_eq!(log.get_entries_after(0, 10).len(), 1);
+        }
+        let log = SyncLog::new("node1".to_string(), path, 100).unwrap();
+        log.defer_until_needed();
+        assert!(log.is_active(), "activation must survive a restart");
+        assert_eq!(log.append(create_test_entry(0)), 2);
+    }
+
+    #[test]
+    fn a_disabled_log_is_never_activated() {
+        let tmp = TempDir::new().unwrap();
+        let log =
+            SyncLog::new_with_options("n".to_string(), tmp.path().to_str().unwrap(), 10, true)
+                .unwrap();
+        log.activate("test");
+        assert!(!log.is_active());
+        assert_eq!(log.append(create_test_entry(0)), 0);
     }
 
     #[test]

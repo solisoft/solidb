@@ -297,6 +297,11 @@ pub async fn register_sync_session(
     axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
+    // Devices pull from the sync log; a node with no peer only writes it once
+    // one of them shows up (`SyncLog::defer_until_needed`).
+    if let Some(log) = &state.replication_log {
+        log.activate("offline-sync session");
+    }
     // Parse request fields from JSON
     let device_id = req
         .get("device_id")
@@ -437,6 +442,7 @@ pub async fn pull_changes(
         .as_ref()
         .ok_or_else(|| DbError::InternalError("Replication log not initialized".to_string()))?;
 
+    sync_log.activate("offline-sync pull");
     let log_entries = sync_log.get_entries_after(after_sequence, limit);
 
     // Cursor and paging come from what was *read*, not what survives the

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **A primary-key update costs ~40% less CPU on a node without peers.** Every
+  document write also appended an entry to the replication log — a second
+  RocksDB and a second WAL write, under a lock all writers shared — which on a
+  standalone server nothing reads. A node started without `--peer`, and that
+  has never replicated with one, now writes the log only once a peer or an
+  offline-sync device connects, and keeps writing it from then on, across
+  restarts. Measured on 800,000 documents, driver updates by `_key`: 74 → 45 µs
+  of SoliDB CPU per update.
+* Sync log entries are stored as MessagePack instead of JSON, where the
+  document bytes were written as an array of decimal numbers (~4× their size).
+  Entries written by earlier versions are still read.
+* A document write no longer takes the query cache's write lock when nothing
+  is cached for its collection.
+
+### Documentation
+
+* Offline sync: a device's first pull is not a copy of the database (the
+  change log keeps recent changes, and on a server without peers starts at the
+  first device); load initial data with a query.
+
 ## [2.0.2](https://github.com/solisoft/solidb/compare/v2.0.1...v2.0.2) (2026-09-28)
 
 ### Performance

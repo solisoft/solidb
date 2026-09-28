@@ -175,6 +175,19 @@ impl QueryCache {
     /// instead of the previous O(total cache) scan.
     pub fn invalidate_collection(&self, collection_name: &str) {
         bump_generation();
+        // Every document write lands here (twice for a driver update), and
+        // most target a collection with nothing cached: check under the read
+        // lock rather than serialising all writers on the write lock. The
+        // generation bump above is what rejects a result computed before this
+        // write, so an entry added after the check is not stale.
+        if !self
+            .inner
+            .read()
+            .by_collection
+            .contains_key(collection_name)
+        {
+            return;
+        }
         let mut inner = self.inner.write();
         let Some(keys_to_remove) = inner.by_collection.remove(collection_name) else {
             return;

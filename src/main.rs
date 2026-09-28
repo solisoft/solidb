@@ -799,6 +799,15 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         worker_node_id.clone(),
     ));
 
+    // A node with no peer, and no history of replicating with one, defers
+    // its sync log until a peer or an offline-sync device connects: nothing
+    // reads it before then, and it is ~40% of a document write's cost.
+    if args.peers.is_empty() && !sync_state.has_replicated_with_peers() {
+        replication_log.defer_until_needed();
+    } else {
+        replication_log.activate("peers configured or known");
+    }
+
     let connection_pool = Arc::new(solidb::sync::transport::ConnectionPool::new(
         worker_node_id.clone(),
         worker_keyfile.clone(),
