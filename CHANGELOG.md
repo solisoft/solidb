@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [2.0.2](https://github.com/solisoft/solidb/compare/v2.0.1...v2.0.2) (2026-09-28)
+
+### Performance
+
+* **Small reads cost about a third of the CPU they did.** Measured on a
+  50-document collection projected to 3 fields, 32 connections, SoliDB CPU per
+  request: native driver with the query cache off 170 → 60 µs; HTTP `/cursor`
+  with the cache off 380 → 150 µs, with a cache hit 200 → 48 µs. Through a
+  Soli application the same read went from 30k to 49.5k requests/s.
+* **Unbounded scans no longer reserve memory for the 5M-row ceiling.** A
+  `FOR` without `LIMIT` pre-sized its result for `SOLIDB_MAX_INTERMEDIATE_ROWS`
+  (160 MB), faulted in as zeroed huge pages and returned on every query —
+  about 30% of the server's CPU on small reads. jemalloc now also runs with
+  `thp:never`, and scan readahead is sized by the collection.
+* **A lone `FOR` over a small local collection (≤ 256 documents) runs inline**
+  instead of on the blocking pool, whose handoff cost more than the scan.
+* **Scans decode only the fields a query reads**, when it provably reads the
+  loop variable through `var.field` alone.
+* Timestamps are no longer parsed and re-formatted per document; row
+  contexts use a faster hasher; the HTTP server state is cloned as one `Arc`
+  per middleware instead of ~26; query-cache hits are sent without copying
+  the cached rows (HTTP and driver, same bytes on the wire).
+
 ## [2.0.1](https://github.com/solisoft/solidb/compare/v2.0.0...v2.0.1) (2026-09-28)
 
 ### Fixed

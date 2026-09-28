@@ -9,6 +9,22 @@
     </p>
   </div>
 
+  <!-- 2.0.2 -->
+  <section id="v2-0-2" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.0.2</h2>
+      <span class="text-sm font-medium text-gray-400">September 28, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Small reads cost about a third of the CPU they did</strong> &mdash; on a 50-document collection projected to 3 fields, SoliDB CPU per request went from 170 to 60&nbsp;&micro;s over the native driver with the query cache off, from 380 to 150&nbsp;&micro;s over HTTP without the cache and from 200 to 48&nbsp;&micro;s on a cache hit. Through a Soli application the same read went from 30k to 49.5k requests/s.</li>
+        <li><strong class="text-white">Unbounded scans no longer reserve memory for the row ceiling</strong> &mdash; a <code>FOR</code> without <code>LIMIT</code> pre-sized its result for <code>SOLIDB_MAX_INTERMEDIATE_ROWS</code> (160&nbsp;MB), faulted in and returned on every query: about 30% of the CPU on small reads. jemalloc also runs with <code>thp:never</code> now.</li>
+        <li><strong class="text-white">Small scans run inline, and read only the fields they use</strong> &mdash; a lone <code>FOR</code> over a local collection of at most 256 documents skips the blocking pool, and when a query reads the loop variable only through <code>var.field</code>, the scan decodes just those fields.</li>
+        <li><strong class="text-white">Less per-row and per-request overhead</strong> &mdash; no timestamp parsing per document, a faster hasher for row contexts, one <code>Arc</code> clone for the server state per middleware, and query-cache hits sent without copying the cached rows (same bytes on the wire).</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.0.1 -->
   <section id="v2-0-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
