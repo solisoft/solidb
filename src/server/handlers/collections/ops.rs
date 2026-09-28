@@ -182,7 +182,7 @@ pub async fn repair_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
 ) -> Result<Json<Value>, DbError> {
-    if let Some(coordinator) = state.shard_coordinator {
+    if let Some(coordinator) = &state.shard_coordinator {
         let report = coordinator
             .repair_collection(&db_name, &coll_name)
             .await

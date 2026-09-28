@@ -24,11 +24,18 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 /// concurrency took RSS from 662 MB to 1296 MB and was still at 954 MB five
 /// minutes later. With a background purger and a 2s decay the same burst came
 /// back to 625 MB, and the idle baseline dropped ~18%.
+///
+/// `thp:never` keeps jemalloc's mappings out of transparent huge pages. With
+/// the kernel in THP `always` mode (the default on many distributions), every
+/// range the decay purged came back on the next allocation as a freshly
+/// zeroed 2 MB page: on an uncached 50-row driver query, page faults clearing
+/// huge pages were ~30% of the server's CPU, and this option alone took the
+/// query from ~200 to ~174 µs of CPU.
 #[cfg(not(target_env = "msvc"))]
 #[allow(non_upper_case_globals)]
 #[export_name = "malloc_conf"]
-pub static malloc_conf: &[u8; 63] =
-    b"background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000\0";
+pub static malloc_conf: &[u8; 73] =
+    b"background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,thp:never\0";
 
 /// Report the allocator options jemalloc actually started with.
 ///

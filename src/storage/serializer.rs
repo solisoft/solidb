@@ -74,6 +74,139 @@ const REV_FIELD: &str = "_rev";
 const CREATED_AT_FIELD: &str = "_created_at";
 const UPDATED_AT_FIELD: &str = "_updated_at";
 
+/// [`DocumentWithVersion`] as stored, borrowed from the RocksDB value. Bincode
+/// is positional, so the fields mirror that struct's order; the timestamps
+/// are the strings chrono's `Serialize` wrote.
+#[derive(Deserialize)]
+struct StoredDocRef<'a> {
+    #[allow(dead_code)]
+    version: u8,
+    key: &'a str,
+    id: &'a str,
+    rev: &'a str,
+    created_at: &'a str,
+    updated_at: &'a str,
+    #[serde(with = "serde_bytes")]
+    data: &'a [u8],
+}
+
+/// The API form of a stored timestamp, `DateTime::to_rfc3339`, without
+/// parsing it.
+///
+/// chrono serializes a `DateTime<Utc>` with `write_rfc3339(.., AutoSi,
+/// use_z: true)` and `to_rfc3339` calls the same writer with `use_z: false`:
+/// for a UTC offset the two differ only in the suffix, `Z` against `+00:00`.
+/// Parsing and re-formatting two dates per document was ~6% of an uncached
+/// 50-row scan. Anything else still goes through chrono.
+fn stored_timestamp_to_rfc3339(stored: &str) -> String {
+    if let Some(base) = stored.strip_suffix('Z') {
+        let mut out = String::with_capacity(base.len() + 6);
+        out.push_str(base);
+        out.push_str("+00:00");
+        return out;
+    }
+    chrono::DateTime::parse_from_rfc3339(stored)
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
+        .unwrap_or_else(|_| stored.to_string())
+}
+
+/// A map key borrowed from the input when the format allows it (serde's own
+/// `Cow<str>` impl always allocates).
+struct MapKey<'de>(std::borrow::Cow<'de, str>);
+
+impl<'de> Deserialize<'de> for MapKey<'de> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+        impl<'de> serde::de::Visitor<'de> for KeyVisitor {
+            type Value = MapKey<'de>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a string key")
+            }
+            fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E> {
+                Ok(MapKey(std::borrow::Cow::Borrowed(v)))
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(MapKey(std::borrow::Cow::Owned(v.to_owned())))
+            }
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
+                Ok(MapKey(std::borrow::Cow::Owned(v)))
+            }
+        }
+        d.deserialize_str(KeyVisitor)
+    }
+}
+
+/// Decodes a MessagePack map keeping only the keys in `fields`; the other
+/// values are skipped without being built.
+struct ProjectedMap<'f> {
+    fields: &'f [String],
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for ProjectedMap<'_> {
+    type Value = serde_json::Map<String, serde_json::Value>;
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_map(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for ProjectedMap<'_> {
+    type Value = serde_json::Map<String, serde_json::Value>;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a document map")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut out = serde_json::Map::new();
+        while let Some(MapKey(key)) = map.next_key()? {
+            if self.fields.iter().any(|f| f.as_str() == key.as_ref()) {
+                out.insert(key.into_owned(), map.next_value()?);
+            } else {
+                map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// [`deserialize_doc_as_value`] restricted to `fields` (top-level data fields
+/// and system fields alike). Same values for the fields it keeps; anything
+/// the fast path cannot read falls back to the full decode and drops the rest.
+pub fn deserialize_doc_projected(bytes: &[u8], fields: &[String]) -> DbResult<serde_json::Value> {
+    if bytes.first() == Some(&2) {
+        if let Ok(stored) = bincode::deserialize::<StoredDocRef>(&bytes[1..]) {
+            let mut de = rmp_serde::Deserializer::from_read_ref(stored.data);
+            if let Ok(mut map) =
+                serde::de::DeserializeSeed::deserialize(ProjectedMap { fields }, &mut de)
+            {
+                // System fields last, overriding a same-named data field, as
+                // the full decode does.
+                for field in fields {
+                    let value = match field.as_str() {
+                        KEY_FIELD => stored.key.into(),
+                        ID_FIELD => stored.id.into(),
+                        REV_FIELD => stored.rev.into(),
+                        CREATED_AT_FIELD => stored_timestamp_to_rfc3339(stored.created_at).into(),
+                        UPDATED_AT_FIELD => stored_timestamp_to_rfc3339(stored.updated_at).into(),
+                        _ => continue,
+                    };
+                    map.insert(field.clone(), value);
+                }
+                return Ok(serde_json::Value::Object(map));
+            }
+        }
+    }
+    let value = deserialize_doc_as_value(bytes)?;
+    Ok(match value {
+        serde_json::Value::Object(mut map) => {
+            map.retain(|k, _| fields.iter().any(|f| f == k));
+            serde_json::Value::Object(map)
+        }
+        other => other,
+    })
+}
+
 /// Deserialize directly to a serde_json::Value, skipping the intermediate Document allocation.
 /// Used by scan_values for the fast query path.
 pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
@@ -83,6 +216,25 @@ pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
 
     match bytes[0] {
         2 => {
+            // Borrowed view: no timestamp parse, no intermediate Strings.
+            if let Ok(stored) = bincode::deserialize::<StoredDocRef>(&bytes[1..]) {
+                let data: serde_json::Value =
+                    rmp_serde::from_slice(stored.data).unwrap_or_default();
+                if let serde_json::Value::Object(mut map) = data {
+                    map.insert(KEY_FIELD.to_owned(), stored.key.into());
+                    map.insert(ID_FIELD.to_owned(), stored.id.into());
+                    map.insert(REV_FIELD.to_owned(), stored.rev.into());
+                    map.insert(
+                        CREATED_AT_FIELD.to_owned(),
+                        stored_timestamp_to_rfc3339(stored.created_at).into(),
+                    );
+                    map.insert(
+                        UPDATED_AT_FIELD.to_owned(),
+                        stored_timestamp_to_rfc3339(stored.updated_at).into(),
+                    );
+                    return Ok(serde_json::Value::Object(map));
+                }
+            }
             let dwv: DocumentWithVersion = bincode::deserialize(&bytes[1..])
                 .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))?;
             // V2 format always uses MessagePack for data - no JSON fallback needed
@@ -367,5 +519,47 @@ mod tests {
         let deserialized = deserialize_doc(&bytes).unwrap();
 
         assert_eq!(doc.data, deserialized.data);
+    }
+
+    /// The borrowed fast path must produce exactly what the `Document` path
+    /// produces, for every sub-second precision chrono can emit.
+    #[test]
+    fn fast_value_path_matches_document_path() {
+        use chrono::{TimeZone, Timelike};
+        for nanos in [0u32, 5_000_000, 123_456_000, 123_456_789, 1] {
+            let mut doc = create_test_doc();
+            let ts = chrono::Utc
+                .with_ymd_and_hms(2026, 9, 28, 8, 15, 6)
+                .unwrap()
+                .with_nanosecond(nanos)
+                .unwrap();
+            doc.created_at = ts;
+            doc.updated_at = ts + chrono::Duration::seconds(1);
+            let bytes = serialize_doc(&doc).unwrap();
+            let fast = deserialize_doc_as_value(&bytes).unwrap();
+            let slow = deserialize_doc(&bytes).unwrap().into_value();
+            assert_eq!(fast, slow, "nanos = {nanos}");
+            assert_eq!(fast["_created_at"], ts.to_rfc3339());
+        }
+    }
+
+    /// A projected decode keeps exactly the requested fields, with the same
+    /// values as the full decode.
+    #[test]
+    fn projected_decode_matches_full_decode() {
+        let doc = create_test_doc();
+        let bytes = serialize_doc(&doc).unwrap();
+        let full = deserialize_doc_as_value(&bytes).unwrap();
+        let fields: Vec<String> = ["name", "tags", "_key", "_created_at", "absent"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let projected = deserialize_doc_projected(&bytes, &fields).unwrap();
+        let obj = projected.as_object().unwrap();
+        assert_eq!(obj.len(), 4, "{projected}");
+        for f in ["name", "tags", "_key", "_created_at"] {
+            assert_eq!(obj[f], full[f], "{f}");
+        }
+        assert!(obj.get("absent").is_none());
     }
 }

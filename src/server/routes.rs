@@ -318,7 +318,7 @@ pub fn create_router(
         });
     }
 
-    let state = AppState {
+    let state = AppState::new(AppStateInner {
         storage,
         cursor_store,
         cluster_manager,
@@ -343,7 +343,7 @@ pub fn create_router(
         service_cache,
         blob_rebalance_worker,
         upload_session_store,
-    };
+    });
 
     // The rate limiter is applied after `.with_state(state)` (it must sit
     // outside compression and tracing), by which point `state` is moved.

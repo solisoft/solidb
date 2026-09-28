@@ -40,7 +40,7 @@ impl<'a> QueryExecutor<'a> {
         // the evaluator and never copied into the context, which is cloned per
         // row: a 3 MB `@rows` iterated 20k times was 60 GB, and the server was
         // OOM-killed.
-        self.execute_query_with_bindings(query, Context::new())
+        self.execute_query_with_bindings(query, Context::default())
     }
 
     /// Execute a query block against a set of outer bindings.
@@ -160,6 +160,12 @@ impl<'a> QueryExecutor<'a> {
             _ => false,
         });
         let has_windows = return_has_windows || late_lets_have_windows || body_has_windows;
+
+        if let Some((for_clause, fields)) =
+            crate::sdbql::executor::projection::scan_projection(query)
+        {
+            self.record_scan_projection(for_clause, fields);
+        }
 
         // `SORT DISTANCE(…) LIMIT n` served from a geo index. Windows need
         // every row, so they rule it out like the other fast paths.

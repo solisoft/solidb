@@ -23,6 +23,7 @@ mod helpers;
 mod index_opt;
 mod materialized_views;
 pub mod phonetic;
+mod projection;
 pub mod types;
 pub mod utils;
 mod window;
@@ -80,6 +81,10 @@ pub struct QueryExecutor<'a> {
     caches: ExecCaches,
 }
 
+/// A recorded scan projection: the `FOR` clause's collection name, and the
+/// fields its scan decodes.
+type ScanProjection = (String, std::sync::Arc<[String]>);
+
 /// Memo tables that live as long as one executor (one query).
 ///
 /// Mutex rather than RefCell so the executor stays `Sync`; every lock is
@@ -104,6 +109,11 @@ struct ExecCaches {
     /// Last BM25 query string and its tokens: BM25 runs once per row with
     /// the same query.
     bm25_query: parking_lot::Mutex<Option<(String, std::sync::Arc<Vec<String>>)>>,
+    /// Fields a plain collection scan needs to decode, keyed by the address
+    /// of its `FOR` clause (see [`projection`]). The collection name is kept
+    /// and compared on lookup, so another AST reusing the address cannot
+    /// pick up the wrong projection.
+    scan_projections: parking_lot::Mutex<HashMap<usize, ScanProjection>>,
 }
 
 impl ExecCaches {
@@ -115,6 +125,7 @@ impl ExecCaches {
         self.window_keys.lock().clear();
         self.graph_results.lock().clear();
         *self.bm25_query.lock() = None;
+        self.scan_projections.lock().clear();
     }
 }
 

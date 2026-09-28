@@ -47,9 +47,42 @@ fn default_batch_size() -> usize {
     1000
 }
 
+/// The rows of a query response: owned, or shared with the query cache.
+///
+/// A cache hit used to deep-clone every cached document into the response,
+/// only to serialize and drop the copy — on a repeated 50-row read that clone
+/// and its drop were most of what was left after the state clones.
+/// Serializes exactly like the `Vec` it wraps.
+#[derive(Debug)]
+pub enum QueryRows {
+    Owned(Vec<Value>),
+    Shared(std::sync::Arc<Vec<Value>>),
+}
+
+impl QueryRows {
+    pub fn as_slice(&self) -> &[Value] {
+        match self {
+            QueryRows::Owned(rows) => rows,
+            QueryRows::Shared(rows) => rows,
+        }
+    }
+}
+
+impl From<Vec<Value>> for QueryRows {
+    fn from(rows: Vec<Value>) -> Self {
+        QueryRows::Owned(rows)
+    }
+}
+
+impl Serialize for QueryRows {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_slice().serialize(serializer)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ExecuteQueryResponse {
-    pub result: Vec<Value>,
+    pub result: QueryRows,
     pub count: usize,
     pub has_more: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,6 +137,73 @@ pub(crate) fn is_long_running_query(query: &Query) -> bool {
             .return_clause
             .as_ref()
             .is_some_and(|r| expression_is_heavy(&r.expression))
+}
+
+/// Largest collection a lone `FOR` may scan inline, on the async worker.
+const INLINE_SCAN_MAX_DOCS: usize = 256;
+
+/// A read whose only loop is one `FOR` over a small local collection.
+///
+/// [`is_long_running_query`] sends every `FOR` to the blocking pool, because
+/// a scan can be arbitrarily large. When the collection holds at most
+/// [`INLINE_SCAN_MAX_DOCS`] documents the scan is tens of microseconds, less
+/// than the handoff itself (a futex wake, two context switches, and the
+/// timeout machinery): measured on a 50-document collection it is several
+/// percent of the request. Anything that could grow the work — a second
+/// loop, a join, a mutation, a subquery or heavy function, a sharded or
+/// unknown collection — keeps the blocking pool.
+pub(crate) fn is_small_local_scan(query: &Query, storage: &StorageEngine, db_name: &str) -> bool {
+    if !query.set_operations.is_empty()
+        || !query.join_clauses.is_empty()
+        || query.with_clause.is_some()
+        || query.window_clause.is_some()
+        || query.has_mutations()
+    {
+        return false;
+    }
+    let Some((BodyClause::For(for_clause), rest)) = query.body_clauses.split_first() else {
+        return false;
+    };
+    if for_clause.source_expression.is_some()
+        || for_clause.system_time.is_some()
+        || for_clause.valid_time.is_some()
+        || for_clause
+            .source_variable
+            .as_ref()
+            .is_some_and(|s| s != &for_clause.collection)
+    {
+        return false;
+    }
+    let light = |e: &Expression| !expression_is_heavy(e);
+    let clauses_light = rest.iter().all(|c| match c {
+        BodyClause::Filter(f) => light(&f.expression),
+        BodyClause::Let(l) => light(&l.expression),
+        _ => false,
+    });
+    if !clauses_light
+        || !query.let_clauses.iter().all(|l| light(&l.expression))
+        || !query.post_limit_lets.iter().all(|l| light(&l.expression))
+        || !query
+            .sort_clause
+            .as_ref()
+            .is_none_or(|s| s.fields.iter().all(|(e, _)| light(e)))
+        || !query
+            .return_clause
+            .as_ref()
+            .is_none_or(|r| light(&r.expression))
+    {
+        return false;
+    }
+    let Ok(collection) = storage
+        .get_database(db_name)
+        .and_then(|db| db.get_collection(&for_clause.collection))
+    else {
+        return false;
+    };
+    collection
+        .get_shard_config()
+        .is_none_or(|c| c.num_shards == 0)
+        && collection.count() <= INLINE_SCAN_MAX_DOCS
 }
 
 /// Functions that scan a collection, call out over the network, or run a
@@ -380,8 +480,8 @@ pub async fn execute_query(
             let results = executor.execute(query)?;
             return Ok(ApiResponse::new(
                 ExecuteQueryResponse {
-                    result: results.clone(),
                     count: results.len(),
+                    result: results.into(),
                     has_more: false,
                     id: None,
                     cached: false,
@@ -410,7 +510,7 @@ pub async fn execute_query(
         // Bind variables are read from the executor, never copied into this
         // context: it is cloned once per row below, and a 3 MB `@rows` over
         // 20k rows was 60 GB — the server was OOM-killed.
-        let mut initial_bindings = std::collections::HashMap::new();
+        let mut initial_bindings = crate::sdbql::executor::types::Context::default();
 
         // Process LET clauses
         for let_clause in &query.let_clauses {
@@ -419,8 +519,7 @@ pub async fn execute_query(
             initial_bindings.insert(let_clause.variable.clone(), value);
         }
 
-        let mut rows: Vec<std::collections::HashMap<String, Value>> =
-            vec![initial_bindings.clone()];
+        let mut rows: Vec<crate::sdbql::executor::types::Context> = vec![initial_bindings.clone()];
         let mut mutation_count = 0;
 
         // Process body clauses in order
@@ -583,7 +682,8 @@ pub async fn execute_query(
                 result: vec![serde_json::json!({
                     "mutationCount": mutation_count,
                     "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", mutation_count)
-                })],
+                })]
+                .into(),
                 count: 1,
                 has_more: false,
                 id: None,
@@ -638,8 +738,8 @@ pub async fn execute_query(
             );
             return Ok(ApiResponse::new(
                 ExecuteQueryResponse {
-                    result: result.as_ref().clone(),
                     count: result.len(),
+                    result: QueryRows::Shared(result),
                     has_more: false,
                     id: None,
                     cached: true,
@@ -664,7 +764,7 @@ pub async fn execute_query(
                 Ok(_name) => {
                     return Ok(ApiResponse::new(
                         ExecuteQueryResponse {
-                            result: Vec::new(),
+                            result: Vec::new().into(),
                             count: 0,
                             has_more: false,
                             id: None,
@@ -700,105 +800,106 @@ pub async fn execute_query(
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
     let mutates = query.has_mutations();
-    let (query_result, execution_time_ms) = if is_long_running_query(query) {
-        let storage = state.storage.clone();
-        let bind_vars = req.bind_vars.clone();
-        let replication_log = state.replication_log.clone();
-        let shard_coordinator = state.shard_coordinator.clone();
-        let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
-        let query = (*query).clone();
-        let principal = principal_from_claims(&claims);
+    let (query_result, execution_time_ms) =
+        if is_long_running_query(query) && !is_small_local_scan(query, &state.storage, &db_name) {
+            let storage = state.storage.clone();
+            let bind_vars = req.bind_vars.clone();
+            let replication_log = state.replication_log.clone();
+            let shard_coordinator = state.shard_coordinator.clone();
+            let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
+            let query = (*query).clone();
+            let principal = principal_from_claims(&claims);
 
-        // Collections this query invalidates, resolved before the executor
-        // moves out of reach, so the timeout arm below can still drop them.
-        let invalidated: Vec<String> = if mutates {
-            mutated_collections(&query).into_iter().collect()
-        } else {
-            Vec::new()
-        };
-
-        // Apply timeout to prevent DoS from long-running queries
-        let mut task = tokio::task::spawn_blocking(move || {
-            let mut executor = if bind_vars.is_empty() {
-                QueryExecutor::with_database(&storage, db_name)
+            // Collections this query invalidates, resolved before the executor
+            // moves out of reach, so the timeout arm below can still drop them.
+            let invalidated: Vec<String> = if mutates {
+                mutated_collections(&query).into_iter().collect()
             } else {
-                QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                Vec::new()
+            };
+
+            // Apply timeout to prevent DoS from long-running queries
+            let mut task = tokio::task::spawn_blocking(move || {
+                let mut executor = if bind_vars.is_empty() {
+                    QueryExecutor::with_database(&storage, db_name)
+                } else {
+                    QueryExecutor::with_database_and_bind_vars(&storage, db_name, bind_vars)
+                }
+                .with_principal(principal)
+                .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
+
+                // Add replication service for mutation logging
+                if let Some(ref log) = replication_log {
+                    executor = executor.with_replication(log);
+                }
+
+                // Inject shard coordinator for scatter-gather (if not already a sub-query)
+                if !is_scatter_gather {
+                    if let Some(coord) = shard_coordinator {
+                        executor = executor.with_shard_coordinator(coord);
+                    }
+                }
+
+                let start = std::time::Instant::now();
+                let result = executor.execute_with_stats(&query)?;
+                let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
+                Ok::<_, DbError>((result, execution_time_ms))
+            });
+
+            // `&mut task` so the handle survives a timeout and can still be awaited.
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+                &mut task,
+            )
+            .await
+            {
+                Ok(join_result) => join_result
+                    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
+                Err(_) => {
+                    // A blocking task is not cancellable: dropping the handle does
+                    // not stop the executor, so a mutation that overruns still
+                    // commits (and still reaches the replication log). Drop the
+                    // cached rows now, and again once the write really lands, or
+                    // readers keep being served the pre-mutation result.
+                    if mutates {
+                        invalidate_collections(&invalidated);
+                        tokio::spawn(async move {
+                            let _ = task.await;
+                            invalidate_collections(&invalidated);
+                        });
+                    }
+                    return Err(DbError::BadRequest(format!(
+                        "Query execution timeout: exceeded {} seconds",
+                        QUERY_TIMEOUT_SECS
+                    )));
+                }
             }
-            .with_principal(principal)
+        } else {
+            let mut executor = if req.bind_vars.is_empty() {
+                QueryExecutor::with_database(&state.storage, db_name)
+            } else {
+                QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
+            }
+            .with_principal(principal_from_claims(&claims))
             .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
             // Add replication service for mutation logging
-            if let Some(ref log) = replication_log {
+            if let Some(ref log) = state.replication_log {
                 executor = executor.with_replication(log);
             }
 
             // Inject shard coordinator for scatter-gather (if not already a sub-query)
-            if !is_scatter_gather {
-                if let Some(coord) = shard_coordinator {
-                    executor = executor.with_shard_coordinator(coord);
+            if !is_scatter_gather_subquery(&headers, &claims) {
+                if let Some(coordinator) = state.shard_coordinator.clone() {
+                    executor = executor.with_shard_coordinator(coordinator);
                 }
             }
 
             let start = std::time::Instant::now();
-            let result = executor.execute_with_stats(&query)?;
+            let result = executor.execute_with_stats(query)?;
             let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-            Ok::<_, DbError>((result, execution_time_ms))
-        });
-
-        // `&mut task` so the handle survives a timeout and can still be awaited.
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
-            &mut task,
-        )
-        .await
-        {
-            Ok(join_result) => join_result
-                .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
-            Err(_) => {
-                // A blocking task is not cancellable: dropping the handle does
-                // not stop the executor, so a mutation that overruns still
-                // commits (and still reaches the replication log). Drop the
-                // cached rows now, and again once the write really lands, or
-                // readers keep being served the pre-mutation result.
-                if mutates {
-                    invalidate_collections(&invalidated);
-                    tokio::spawn(async move {
-                        let _ = task.await;
-                        invalidate_collections(&invalidated);
-                    });
-                }
-                return Err(DbError::BadRequest(format!(
-                    "Query execution timeout: exceeded {} seconds",
-                    QUERY_TIMEOUT_SECS
-                )));
-            }
-        }
-    } else {
-        let mut executor = if req.bind_vars.is_empty() {
-            QueryExecutor::with_database(&state.storage, db_name)
-        } else {
-            QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
-        }
-        .with_principal(principal_from_claims(&claims))
-        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
-
-        // Add replication service for mutation logging
-        if let Some(ref log) = state.replication_log {
-            executor = executor.with_replication(log);
-        }
-
-        // Inject shard coordinator for scatter-gather (if not already a sub-query)
-        if !is_scatter_gather_subquery(&headers, &claims) {
-            if let Some(coordinator) = state.shard_coordinator.clone() {
-                executor = executor.with_shard_coordinator(coordinator);
-            }
-        }
-
-        let start = std::time::Instant::now();
-        let result = executor.execute_with_stats(query)?;
-        let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-        (result, execution_time_ms)
-    };
+            (result, execution_time_ms)
+        };
 
     let total_count = query_result.results.len();
     let mutations = &query_result.mutations;
@@ -850,7 +951,7 @@ pub async fn execute_query(
 
     Ok(ApiResponse::new(
         ExecuteQueryResponse {
-            result: result_batch,
+            result: result_batch.into(),
             count: total_count,
             has_more,
             id: cursor_id,
@@ -940,7 +1041,7 @@ pub async fn get_next_batch(
         let count = batch.len();
         Ok(ApiResponse::new(
             ExecuteQueryResponse {
-                result: batch,
+                result: batch.into(),
                 count,
                 has_more,
                 id: if has_more { Some(cursor_id) } else { None },
@@ -1016,5 +1117,40 @@ mod long_running_tests {
         ] {
             assert!(is_long_running_query(&parse(q).unwrap()), "{q}");
         }
+    }
+
+    /// A lone FOR over a small local collection skips the blocking pool;
+    /// anything that could grow the work does not.
+    #[test]
+    fn small_local_scans_run_inline() {
+        use super::{is_small_local_scan, INLINE_SCAN_MAX_DOCS};
+        use crate::storage::StorageEngine;
+        let dir = tempfile::tempdir().unwrap();
+        let storage = StorageEngine::new(dir.path().to_str().unwrap()).unwrap();
+        storage.initialize().unwrap();
+        storage.create_database("d".into()).unwrap();
+        let db = storage.get_database("d").unwrap();
+        db.create_collection("small".into(), None).unwrap();
+        db.create_collection("big".into(), None).unwrap();
+        let small = db.get_collection("small").unwrap();
+        for i in 0..3 {
+            small.insert(serde_json::json!({"n": i})).unwrap();
+        }
+        let big = db.get_collection("big").unwrap();
+        for i in 0..=INLINE_SCAN_MAX_DOCS {
+            big.insert(serde_json::json!({"n": i})).unwrap();
+        }
+        let inline = |q: &str| is_small_local_scan(&parse(q).unwrap(), &storage, "d");
+
+        assert!(inline("FOR x IN small RETURN x"));
+        assert!(inline(
+            "FOR x IN small FILTER x.n > 1 SORT x.n LIMIT 2 RETURN {n: x.n}"
+        ));
+        assert!(!inline("FOR x IN big RETURN x"));
+        assert!(!inline("FOR x IN missing RETURN x"));
+        assert!(!inline("FOR x IN small FOR y IN small RETURN [x, y]"));
+        assert!(!inline("FOR x IN small RETURN (FOR y IN big RETURN y)"));
+        assert!(!inline("FOR x IN small UPDATE x WITH {m: 1} IN small"));
+        assert!(!inline("FOR x IN 1..3 RETURN x"));
     }
 }

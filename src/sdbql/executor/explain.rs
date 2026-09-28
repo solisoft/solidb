@@ -8,7 +8,6 @@
 //! Optimizer notes (folded expressions, the geo SORT rule) are reported as
 //! `optimizer: …` entries in `warnings`.
 
-use std::collections::HashMap;
 use std::time::Instant;
 
 use super::format_expression;
@@ -49,7 +48,7 @@ impl<'a> QueryExecutor<'a> {
         // First, evaluate all LET clauses
         let let_start = Instant::now();
         // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
-        let mut initial_bindings: Context = HashMap::new();
+        let mut initial_bindings = Context::default();
 
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();

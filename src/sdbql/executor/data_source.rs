@@ -157,6 +157,23 @@ impl<'a> QueryExecutor<'a> {
 
     /// Try to optimize columnar aggregation queries
     /// Pattern: FOR x IN columnar_collection COLLECT AGGREGATE sum = SUM(x.field) RETURN ...
+    /// Remember that the scan behind `for_clause` only needs `fields`.
+    pub(super) fn record_scan_projection(&self, for_clause: &ForClause, fields: Vec<String>) {
+        self.caches.scan_projections.lock().insert(
+            for_clause as *const ForClause as usize,
+            (for_clause.collection.clone(), fields.into()),
+        );
+    }
+
+    fn scan_projection_for(&self, for_clause: &ForClause) -> Option<std::sync::Arc<[String]>> {
+        self.caches
+            .scan_projections
+            .lock()
+            .get(&(for_clause as *const ForClause as usize))
+            .filter(|(collection, _)| collection == &for_clause.collection)
+            .map(|(_, fields)| fields.clone())
+    }
+
     pub(super) fn get_for_source_docs(
         &self,
         for_clause: &ForClause,
@@ -292,7 +309,11 @@ impl<'a> QueryExecutor<'a> {
         // a capped scan would under-fill them.
         if !filtered {
             let cap = self.max_intermediate_rows.saturating_add(1);
-            return Ok(collection.scan_values(Some(limit.map_or(cap, |n| n.min(cap)))));
+            let limit = Some(limit.map_or(cap, |n| n.min(cap)));
+            if let Some(fields) = self.scan_projection_for(for_clause) {
+                return Ok(collection.scan_values_projected(limit, &fields));
+            }
+            return Ok(collection.scan_values(limit));
         }
         // Filtered: the LIMIT applies to what survives the filters, so it
         // cannot be pushed into the scan.
@@ -443,7 +464,7 @@ impl<'a> QueryExecutor<'a> {
         let Some(expr) = &gate.expr else {
             return false;
         };
-        let mut row = Context::with_capacity(3);
+        let mut row = Context::with_capacity_and_hasher(3, Default::default());
         if gate.binding != "doc" {
             row.insert(gate.binding.clone(), doc.clone());
         }
@@ -471,7 +492,7 @@ impl<'a> QueryExecutor<'a> {
         collection: &crate::storage::Collection,
     ) -> DbResult<Vec<Value>> {
         let docs = self.scan_bounded(collection)?;
-        Ok(self.apply_row_policy(name, docs, &Context::new()))
+        Ok(self.apply_row_policy(name, docs, &Context::default()))
     }
 
     /// Point read through the row policy: `None` when the document is absent

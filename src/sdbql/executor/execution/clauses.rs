@@ -1407,7 +1407,7 @@ impl<'a> QueryExecutor<'a> {
 
                                 // Create result: right doc + array of matching left rows
                                 //  This mirrors LEFT JOIN behavior but from right perspective
-                                let mut new_ctx = std::collections::HashMap::new();
+                                let mut new_ctx = Context::default();
                                 new_ctx.insert(join_clause.variable.clone(), right_doc);
 
                                 // For RIGHT JOIN, we need a way to access left-side data
@@ -1473,7 +1473,7 @@ impl<'a> QueryExecutor<'a> {
                             // Phase 2: Add unmatched right rows (RIGHT JOIN part)
                             for (idx, right_doc) in all_right_docs.iter().enumerate() {
                                 if !matched_right_indices.contains(&idx) {
-                                    let mut new_ctx = std::collections::HashMap::new();
+                                    let mut new_ctx = Context::default();
                                     // Include left-side variable with null (no match)
                                     new_ctx.insert(left_variable_name.clone(), Value::Null);
                                     // Wrap right doc in array for consistency with Phase 1

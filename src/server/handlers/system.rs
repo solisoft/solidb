@@ -60,8 +60,33 @@ pub fn get_dir_size(path: impl AsRef<std::path::Path>) -> std::io::Result<u64> {
     Ok(size)
 }
 
+/// Shared server state, behind one `Arc`.
+///
+/// Every `from_fn_with_state` middleware and every `State` extractor clones
+/// the state, several times per request. When the fields were cloned one by
+/// one, that was ~26 reference counts incremented and decremented per clone,
+/// all on cache lines every core writes to: under 32 concurrent connections
+/// the clone and its drop were ~40% of the server's CPU on a 50-row
+/// `/cursor` query. One `Arc` makes a clone a single increment. Fields are
+/// read through `Deref`, so `state.storage` works as before.
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppState(Arc<AppStateInner>);
+
+impl AppState {
+    pub fn new(inner: AppStateInner) -> Self {
+        Self(Arc::new(inner))
+    }
+}
+
+impl std::ops::Deref for AppState {
+    type Target = AppStateInner;
+
+    fn deref(&self) -> &AppStateInner {
+        &self.0
+    }
+}
+
+pub struct AppStateInner {
     pub storage: Arc<StorageEngine>,
     pub cursor_store: CursorStore,
     // New Architecture Components

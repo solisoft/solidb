@@ -237,7 +237,7 @@ impl<'a> QueryExecutor<'a> {
         let collection = self.get_collection(cname)?;
         let hits = collection.fulltext_search(query, Some(vec![field.to_string()]), limit)?;
         let gate = self.row_policy_gate(cname);
-        let no_ctx = super::types::Context::new();
+        let no_ctx = super::types::Context::default();
         let mut out = Vec::with_capacity(hits.len());
         for h in hits {
             let doc = collection

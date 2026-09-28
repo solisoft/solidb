@@ -799,7 +799,7 @@ fn row_policy_allows(
     let executor = crate::sdbql::executor::QueryExecutor::with_database(storage, db_name)
         .with_principal(principal.clone())
         .with_timeout(std::time::Duration::from_secs(5));
-    let mut ctx = std::collections::HashMap::new();
+    let mut ctx = crate::sdbql::executor::types::Context::default();
     ctx.insert(collection.to_string(), doc.clone());
     ctx.insert("doc".to_string(), doc);
     ctx.insert(

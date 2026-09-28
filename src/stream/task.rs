@@ -335,13 +335,13 @@ impl StreamTask {
         let row_policy = self.source_row_policy();
 
         // Build contexts from (timestamped) buffer. For sliding we already pruned opportunistically.
-        let mut contexts: Vec<std::collections::HashMap<String, Value>> = Vec::new();
+        let mut contexts: Vec<crate::sdbql::executor::types::Context> = Vec::new();
 
         for (_ts, doc, _) in &self.buffer {
             match &row_policy {
                 Ok(None) => {}
                 Ok(Some(expr)) => {
-                    let mut row = std::collections::HashMap::new();
+                    let mut row = crate::sdbql::executor::types::Context::default();
                     row.insert(self.collection.clone(), doc.clone());
                     row.insert("doc".to_string(), doc.clone());
                     row.insert(
@@ -360,7 +360,7 @@ impl StreamTask {
             }
 
             let mut keep = true;
-            let mut ctx = std::collections::HashMap::new();
+            let mut ctx = crate::sdbql::executor::types::Context::default();
             ctx.insert(var_name.clone(), doc.clone());
 
             // Apply FILTERs. Treat errors as non-matching (exclude) to avoid polluting
@@ -389,7 +389,7 @@ impl StreamTask {
                     if collect.group_vars.is_empty() {
                         // Single aggregate row
                         let count = results.len();
-                        let mut agg = std::collections::HashMap::new();
+                        let mut agg = crate::sdbql::executor::types::Context::default();
                         agg.insert(
                             count_var.clone(),
                             Value::Number(serde_json::Number::from(count)),

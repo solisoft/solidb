@@ -376,7 +376,7 @@ pub async fn execute_transactional_sdbql(
     // Execute body clauses manually to intercept mutations
     // Bind variables are read from the executor, never copied into this
     // context, which is cloned once per row (see handlers/query.rs).
-    let mut initial_bindings = std::collections::HashMap::new();
+    let mut initial_bindings = crate::sdbql::executor::types::Context::default();
 
     // Process LET clauses
     for let_clause in &query.let_clauses {
@@ -388,7 +388,7 @@ pub async fn execute_transactional_sdbql(
     // Process body clauses to build row contexts (FOR, LET, FILTER)
     // Then apply mutations (INSERT/UPDATE/REMOVE) transactionally for each row
 
-    let mut rows: Vec<std::collections::HashMap<String, Value>> = vec![initial_bindings.clone()];
+    let mut rows: Vec<crate::sdbql::executor::types::Context> = vec![initial_bindings.clone()];
     let mut mutation_count = 0;
 
     // Process body clauses in order

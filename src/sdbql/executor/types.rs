@@ -4,8 +4,12 @@ use std::collections::HashMap;
 
 use super::super::ast::BinaryOperator;
 
-/// Execution context holding variable bindings
-pub type Context = HashMap<String, Value>;
+/// Execution context holding variable bindings.
+///
+/// Cloned and extended once per row, with a handful of short variable-name
+/// keys: SipHash (std's default) cost ~5% of an uncached 50-row scan.
+/// foldhash is seeded per process, so keys still do not hash predictably.
+pub type Context = HashMap<String, Value, foldhash::fast::RandomState>;
 
 /// Statistics about mutation operations performed during query execution
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

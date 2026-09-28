@@ -30,7 +30,7 @@ impl<'a> QueryExecutor<'a> {
             if !let_bindings.is_empty() {
                 return Ok(vec![let_bindings.clone()]);
             }
-            return Ok(vec![HashMap::new()]);
+            return Ok(vec![Context::default()]);
         }
 
         // Start with LET bindings as initial context
@@ -1047,7 +1047,10 @@ impl<'p> LambdaScope<'p> {
         let ctx = match lambda_free_names(body) {
             None => outer.clone(),
             Some(names) => {
-                let mut scope = Context::with_capacity(names.len() + params.len());
+                let mut scope = Context::with_capacity_and_hasher(
+                    names.len() + params.len(),
+                    Default::default(),
+                );
                 for n in names {
                     if params.contains(&n) || scope.contains_key(&n) {
                         continue;

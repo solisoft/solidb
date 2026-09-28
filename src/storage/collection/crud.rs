@@ -1,6 +1,8 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::serializer::{deserialize_doc, deserialize_doc_as_value, serialize_doc};
+use crate::storage::serializer::{
+    deserialize_doc, deserialize_doc_as_value, deserialize_doc_projected, serialize_doc,
+};
 use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -1038,8 +1040,12 @@ impl Collection {
         };
         let prefix = DOC_PREFIX.as_bytes();
 
-        // Scale readahead to limit: small reads get minimal readahead
-        let requested = limit.map(|n| n.saturating_add(offset));
+        // Scale readahead to what will actually be read: the limit, or the
+        // collection's size when that is smaller (the limit is often the
+        // 5M-row safety ceiling, which chose 256 KB for a 50-row collection).
+        let requested = limit
+            .map(|n| n.saturating_add(offset))
+            .map(|n| n.min(self.count()));
         let mut read_opts = ReadOptions::default();
         read_opts.set_prefix_same_as_start(true);
         let readahead = match requested {
@@ -1057,7 +1063,13 @@ impl Collection {
             IteratorMode::From(prefix, Direction::Forward),
         );
 
-        let capacity = limit.unwrap_or(128);
+        // `limit` is often a safety ceiling rather than an expected size: the
+        // executor passes `SOLIDB_MAX_INTERMEDIATE_ROWS + 1` (5,000,001) on
+        // every unbounded scan. Reserving that was 160 MB per query for a
+        // 50-row collection — faulted in, zeroed and handed back each time,
+        // which was most of the page-fault and TLB-shootdown cost of an
+        // uncached query. Reserve modestly and let the Vec grow.
+        let capacity = limit.map_or(128, |n| n.min(1024));
         let mut results = Vec::with_capacity(capacity);
         let mut skipped = 0usize;
 
@@ -1079,6 +1091,47 @@ impl Collection {
             }
         }
 
+        results
+    }
+
+    /// [`Self::scan_values`], decoding only `fields` of each document (system
+    /// fields included only when named). For a query that provably reads
+    /// nothing else — see `sdbql::executor::projection`.
+    pub fn scan_values_projected(&self, limit: Option<usize>, fields: &[String]) -> Vec<Value> {
+        if matches!(limit, Some(0)) {
+            return Vec::new();
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Vec::new();
+        };
+        let prefix = DOC_PREFIX.as_bytes();
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_prefix_same_as_start(true);
+        let readahead = match limit.map(|n| n.min(self.count())) {
+            Some(n) if n <= 10 => 0,
+            Some(n) if n <= 100 => 16 * 1024,
+            _ => 256 * 1024,
+        };
+        if readahead > 0 {
+            read_opts.set_readahead_size(readahead);
+        }
+        let iter = self.db.iterator_ks_opt(
+            &cf,
+            read_opts,
+            IteratorMode::From(prefix, Direction::Forward),
+        );
+        let mut results = Vec::with_capacity(limit.map_or(128, |n| n.min(1024)));
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if let Ok(val) = deserialize_doc_projected(&value, fields) {
+                results.push(val);
+                if limit.is_some_and(|n| results.len() >= n) {
+                    break;
+                }
+            }
+        }
         results
     }
 

@@ -29,8 +29,6 @@
 //! - Window function calls are left untouched: their extraction keys are
 //!   derived from the expression text.
 
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::QueryExecutor;
@@ -156,7 +154,7 @@ impl<'a> QueryExecutor<'a> {
     pub fn fold_constants(&self, query: &mut Query) -> usize {
         let mut folder = Folder {
             exec: self,
-            empty: HashMap::new(),
+            empty: super::types::Context::default(),
             folded: 0,
         };
         folder.query(query);

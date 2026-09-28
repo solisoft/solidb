@@ -168,11 +168,12 @@ impl<'a> QueryExecutor<'a> {
     }
 
     fn new_group(&self, collect: &CollectClause, key: Vec<Value>) -> DbResult<Group> {
-        let mut ctx = Context::with_capacity(
+        let mut ctx = Context::with_capacity_and_hasher(
             collect.group_vars.len()
                 + collect.aggregates.len()
                 + usize::from(collect.into_var.is_some())
                 + usize::from(collect.count_var.is_some()),
+            Default::default(),
         );
         for ((name, _), val) in collect.group_vars.iter().zip(&key) {
             ctx.insert(name.clone(), val.clone());

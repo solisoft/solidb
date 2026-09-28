@@ -4,7 +4,7 @@ use crate::sdbql::QueryExecutor;
 // Shared with the HTTP /cursor handler so both protocols cache, invalidate,
 // and decide what needs the blocking pool on exactly the same terms.
 use crate::server::handlers::query::{
-    invalidate_collections, is_long_running_query, mutated_collections,
+    invalidate_collections, is_long_running_query, is_small_local_scan, mutated_collections,
 };
 use crate::storage::query_cache;
 use std::collections::HashMap;
@@ -88,7 +88,7 @@ pub async fn handle_query(
     };
     if let Some(ref key) = cache_key {
         if let Some(hit) = query_cache::get_query_cache().get(key) {
-            return Response::ok(serde_json::json!(hit.as_ref().clone()));
+            return Response::ok_shared_rows(hit);
         }
     }
 
@@ -108,7 +108,7 @@ pub async fn handle_query(
     // single-document read, and this handler exists to close a CPU-per-request
     // gap, not to widen it. Everything that scans, loops, or mutates takes the
     // blocking pool under a timeout.
-    if !is_long_running_query(query) {
+    if !is_long_running_query(query) || is_small_local_scan(query, &storage, &database) {
         let mut executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database)
         } else {
