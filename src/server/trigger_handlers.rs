@@ -184,6 +184,10 @@ pub async fn create_trigger_handler(
         updated_at: now,
     };
 
+    if let Some(filter) = trigger.filter.as_deref().filter(|f| !f.trim().is_empty()) {
+        Trigger::parse_filter(filter)?;
+    }
+
     let doc_val = serde_json::to_value(&trigger)
         .map_err(|e| DbError::InternalError(format!("Failed to serialize trigger: {}", e)))?;
     triggers_coll.insert(doc_val)?;
@@ -253,6 +257,9 @@ pub async fn update_trigger_handler(
         trigger.enabled = enabled;
     }
     if req.filter.is_some() {
+        if let Some(filter) = req.filter.as_deref().filter(|f| !f.trim().is_empty()) {
+            Trigger::parse_filter(filter)?;
+        }
         trigger.filter = req.filter;
     }
 

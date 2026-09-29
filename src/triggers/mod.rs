@@ -67,7 +67,9 @@ pub struct Trigger {
     /// Whether the trigger is active
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    /// Optional SDBQL filter expression (not yet implemented)
+    /// Optional SDBQL expression over `doc` (the new document, or the deleted
+    /// one), `old` (the previous version, else null) and `event`. The trigger
+    /// fires only when it is truthy; an error counts as false.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
     /// Creation timestamp
@@ -124,6 +126,63 @@ impl Trigger {
     /// Check if this trigger should fire for a given event
     pub fn matches_event(&self, event: &TriggerEvent) -> bool {
         self.enabled && self.events.contains(event)
+    }
+
+    /// Parse a filter expression, rejecting anything that is not a single
+    /// expression (`RETURN` is prepended, so a clause cannot be smuggled in).
+    pub fn parse_filter(filter: &str) -> DbResult<crate::sdbql::Expression> {
+        let query = crate::sdbql::parse(&format!("RETURN ({})", filter))?;
+        let is_bare = query.let_clauses.is_empty()
+            && query.for_clauses.is_empty()
+            && query.join_clauses.is_empty()
+            && query.filter_clauses.is_empty()
+            && query.body_clauses.is_empty();
+        match query.return_clause {
+            Some(r) if is_bare => Ok(r.expression),
+            _ => Err(DbError::BadRequest(
+                "trigger filter must be a single SDBQL expression".to_string(),
+            )),
+        }
+    }
+
+    /// Whether the filter (if any) lets this change through.
+    pub fn filter_passes(
+        &self,
+        storage: &StorageEngine,
+        db_name: &str,
+        event: &TriggerEvent,
+        doc: &Document,
+        old_doc: Option<&JsonValue>,
+    ) -> bool {
+        let Some(filter) = self.filter.as_deref().filter(|f| !f.trim().is_empty()) else {
+            return true;
+        };
+        let result = Self::parse_filter(filter).and_then(|expr| {
+            let executor = crate::sdbql::QueryExecutor::with_database_and_bind_vars(
+                storage,
+                db_name.to_string(),
+                HashMap::new(),
+            )
+            .with_timeout(Duration::from_secs(1));
+            let mut ctx = crate::sdbql::executor::types::Context::default();
+            ctx.insert("doc".to_string(), doc.to_value());
+            ctx.insert(
+                "old".to_string(),
+                old_doc.cloned().unwrap_or(JsonValue::Null),
+            );
+            ctx.insert(
+                "event".to_string(),
+                JsonValue::String(event.as_str().to_string()),
+            );
+            executor.evaluate_filter_with_context(&expr, &ctx)
+        });
+        match result {
+            Ok(pass) => pass,
+            Err(e) => {
+                tracing::warn!("Trigger '{}' filter failed, not firing: {}", self.name, e);
+                false
+            }
+        }
     }
 }
 
@@ -287,6 +346,9 @@ impl TriggerManager {
             if !trigger.matches_event(&event) {
                 continue;
             }
+            if !trigger.filter_passes(&self.storage, db_name, &event, doc, old_doc) {
+                continue;
+            }
 
             // Create job for this trigger
             match self.create_trigger_job(db_name, &trigger, &event, doc, old_doc) {
@@ -444,6 +506,35 @@ mod tests {
         assert!(trigger.matches_event(&TriggerEvent::Insert));
         assert!(!trigger.matches_event(&TriggerEvent::Update));
         assert!(!trigger.matches_event(&TriggerEvent::Delete));
+    }
+
+    #[test]
+    fn test_trigger_filter() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let storage = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        storage.create_database("d".to_string()).unwrap();
+        let mut t = Trigger::new(
+            "t".to_string(),
+            "users".to_string(),
+            vec![TriggerEvent::Update],
+            "s.lua".to_string(),
+        );
+        let doc =
+            |age: i64| Document::with_key("users", "k".into(), serde_json::json!({"age": age}));
+        let old = serde_json::json!({"age": 1});
+        let passes = |t: &Trigger, d: &Document| {
+            t.filter_passes(&storage, "d", &TriggerEvent::Update, d, Some(&old))
+        };
+
+        assert!(passes(&t, &doc(1)), "no filter always passes");
+        t.filter = Some("doc.age > old.age".to_string());
+        assert!(passes(&t, &doc(5)));
+        assert!(!passes(&t, &doc(1)));
+        t.filter = Some("doc.age >".to_string());
+        assert!(!passes(&t, &doc(5)), "a broken filter fails closed");
+
+        assert!(Trigger::parse_filter("doc.x == 1").is_ok());
+        assert!(Trigger::parse_filter("1) FOR x IN y RETURN (x").is_err());
     }
 
     #[test]

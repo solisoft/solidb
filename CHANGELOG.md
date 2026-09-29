@@ -4,6 +4,11 @@
 
 ### Added
 
+* **Trigger `filter` is evaluated.** It was stored and ignored. It is an SDBQL
+  expression over `doc`, `old` and `event`; the trigger fires only when it is
+  truthy, and a filter that errors does not fire. Saving a trigger with a
+  filter that is not a single expression is rejected.
+
 * **Driver: columnar `filter` and `order_by` work.** `AggregateColumnar` and
   `QueryColumnar` rejected any filter and ignored `order_by`. `filter` is JSON:
   `{"column","op","value"}` or `{"and":[..]}` / `{"or":[..]}`; `order_by` is
