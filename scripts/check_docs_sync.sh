@@ -7,7 +7,8 @@
 # only drives `cargo release`, which knows nothing about doc/.
 #
 # Three invariants, all keyed off `version` in Cargo.toml:
-#   1. doc/app/views/home/index.html.slv carries a matching version pill.
+#   1. the version pill partial (doc/app/views/shared/_version_pill.html.slv)
+#      matches, and the landing page and docs layout render it.
 #   2. doc/app/views/docs/changelog.html.slv has a section for that version.
 #   3. CHANGELOG.md has a section for that version.
 #
@@ -39,14 +40,36 @@ echo "Cargo.toml version: v$VERSION"
 
 status=0
 
-# --- 1. version pill on the landing page ---------------------------------
-if grep -q "ver-pill\">v${VERSION}<" "$HOME_VIEW"; then
-    echo "  ok   version pill in $HOME_VIEW"
+# --- 1. the version pill ---------------------------------------------------
+# The pill is written once, in a partial that the landing page and the docs
+# layout both render. Before that each carried its own copy, and the layout was
+# missed by the release checklist: every docs page showed the previous version.
+PILL_PARTIAL="doc/app/views/shared/_version_pill.html.slv"
+if grep -q "ver-pill\">v${VERSION}<" "$PILL_PARTIAL"; then
+    echo "  ok   version pill in $PILL_PARTIAL"
 else
-    current="$(grep -o 'ver-pill">v[0-9.]*<' "$HOME_VIEW" | head -1 | sed 's/ver-pill">//;s/<//')"
-    echo "  FAIL $HOME_VIEW shows ${current:-nothing}, expected v$VERSION" >&2
+    current="$(grep -o 'ver-pill">v[0-9.]*<' "$PILL_PARTIAL" | head -1 | sed 's/ver-pill">//;s/<//')"
+    echo "  FAIL $PILL_PARTIAL shows ${current:-nothing}, expected v$VERSION" >&2
     status=1
 fi
+
+# No view may carry a literal pill of its own; it must render the partial.
+stray="$(grep -rl 'class="ver-pill"' doc/app/views | grep -v "^$PILL_PARTIAL$" || true)"
+if [ -n "$stray" ]; then
+    echo "  FAIL a version pill is hardcoded outside $PILL_PARTIAL (use partial(\"shared/version_pill\", {})):" >&2
+    echo "$stray" | sed 's/^/         /' >&2
+    status=1
+else
+    echo "  ok   no hardcoded version pill outside the partial"
+fi
+for view in doc/app/views/home/index.html.slv doc/app/views/layouts/docs.html.slv; do
+    if grep -q 'shared/version_pill' "$view"; then
+        echo "  ok   $view renders the pill partial"
+    else
+        echo "  FAIL $view does not render shared/version_pill" >&2
+        status=1
+    fi
+done
 
 # --- 2. a changelog section for this version ------------------------------
 # Matches the existing markup: <h2 ...>vX.Y.Z</h2>

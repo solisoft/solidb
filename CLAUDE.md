@@ -126,8 +126,10 @@ there too.
 When bumping the version, update all three of these in the same commit:
 
 1. `version` in `Cargo.toml` (and `Cargo.lock` — `cargo update -p solidb --offline`).
-2. The version pill in `doc/app/views/home/index.html.slv`
-   (`<span class="ver-pill">vX.Y.Z</span>`).
+2. The version pill, written once in
+   `doc/app/views/shared/_version_pill.html.slv` (`<span class="ver-pill">vX.Y.Z</span>`);
+   the landing page and the docs layout render it. `check_docs_sync.sh` fails if it
+   is stale or if a literal pill is added to another view.
 3. **A section for the new version in `doc/app/views/docs/changelog.html.slv`**,
    and move anything under *Unreleased* into it.
 

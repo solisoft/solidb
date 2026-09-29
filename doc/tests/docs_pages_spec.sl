@@ -9,6 +9,22 @@ describe("Docs pages") do
     expect(res_body(response).include?("v2.1.0")).to_equal(true)
   end
 
+  test("a docs page shows the same version as the landing page") do
+    marker = "ver-pill\">"
+    home_body = res_body(get("/"))
+    docs_body = res_body(get("/docs/offline-sync"))
+    expect(home_body.include?(marker)).to_equal(true)
+    expect(docs_body.include?(marker)).to_equal(true)
+
+    # split, not index arithmetic: length() counts bytes and index_of() characters,
+    # and these pages contain multibyte text before the pill.
+    home_version = home_body.split(marker)[1].split("<")[0]
+    docs_version = docs_body.split(marker)[1].split("<")[0]
+
+    expect(home_version.starts_with("v")).to_equal(true)
+    expect(docs_version).to_equal(home_version)
+  end
+
   test("the changelog has a section for the release") do
     response = get("/docs/changelog")
     expect(res_status(response)).to_equal(200)
