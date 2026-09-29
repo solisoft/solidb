@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.1.0](https://github.com/solisoft/solidb/compare/v2.0.5...v2.1.0) (2026-09-29)
+
 ### Added
 
 * **Role assignments can be limited to one database.** `POST
