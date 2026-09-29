@@ -14,6 +14,7 @@
 
 pub mod blob_replication;
 pub mod conflict;
+pub mod conflict_store;
 pub mod crdt;
 pub mod delta;
 pub mod log;

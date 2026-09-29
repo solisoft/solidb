@@ -4,6 +4,18 @@
 
 ### Added
 
+* **Offline sync detects and resolves conflicts.** `GET /_api/sync/conflicts`
+  and `POST /_api/sync/resolve` returned "not implemented" and `push` always
+  applied the last write. The server now records, per synced document, the
+  sync-log sequence and `_rev` of its last write and the device that made it. A
+  pushed change is held as a conflict, not applied, when the document changed
+  after the client's last-seen sequence — by another device's push, or by an
+  ordinary write — and is listed until resolved with `local`, `remote` or
+  `merged`. A device never conflicts with itself; a change with no vector, or
+  for a document never synced, is last-write-wins as before. Bookkeeping is in
+  `_sync_conflicts` / `_sync_versions` (not readable or writable by name) and
+  stays on the node that took the push.
+
 * **Queries that write can use every clause inside a transaction.** `POST
   …/transaction/{id}/query` used to refuse JOIN, graph traversals, COLLECT and
   windows in a query that writes. It now runs the ordinary executor with its

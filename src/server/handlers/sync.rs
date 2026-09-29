@@ -3,6 +3,7 @@ use crate::error::DbError;
 use crate::server::auth::Claims;
 use crate::storage::WriteActor;
 use crate::sync::{
+    conflict_store,
     protocol::Operation,
     session::{
         validate_device_id, ChangeOperation, SyncChange, SyncSession, SyncSessionManager,
@@ -657,6 +658,32 @@ fn apply_sync_change(
     Ok(())
 }
 
+/// Record an applied sync change in the replication log, under this node's id
+/// and clock (audit H9: never the client's device id or timestamp — peers key
+/// their dedupe and pull cursors on it). Returns the sequence it was given, or
+/// the current one when there is no log.
+fn log_sync_change(state: &AppState, change: &SyncChange) -> u64 {
+    let Some(ref log) = state.replication_log else {
+        return 0;
+    };
+    let operation = match change.operation {
+        ChangeOperation::Insert => Operation::Insert,
+        ChangeOperation::Update => Operation::Update,
+        ChangeOperation::Delete => Operation::Delete,
+    };
+    let data_bytes = change
+        .document_data
+        .as_ref()
+        .and_then(|d| serde_json::to_vec(d).ok());
+    log.append(LogEntry::new_op(
+        change.database.clone(),
+        change.collection.clone(),
+        operation,
+        change.document_key.clone(),
+        data_bytes,
+    ))
+}
+
 /// POST /_api/sync/push
 /// Push changes from client to server
 pub async fn push_changes(
@@ -710,7 +737,7 @@ pub async fn push_changes(
     let mut writable_dbs: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
 
-    let conflicts: Vec<serde_json::Value> = Vec::new();
+    let mut conflicts: Vec<serde_json::Value> = Vec::new();
     let mut accepted = 0;
     let mut rejected = 0;
 
@@ -730,6 +757,47 @@ pub async fn push_changes(
         if !writable {
             rejected += 1;
             continue;
+        }
+
+        // A concurrent edit is held for resolution instead of applied. The
+        // check only applies to documents this server has synced before and to
+        // changes that carry a vector; everything else is last-write-wins.
+        // See `sync::conflict_store`.
+        if let Ok(db) = state.storage.get_database(&change.database) {
+            match conflict_store::detect(&db, state.storage.node_id(), &session.device_id, change) {
+                Ok(Some(info)) => {
+                    match conflict_store::store_conflict(
+                        &db,
+                        &session_id,
+                        &claims.sub,
+                        &session.device_id,
+                        change,
+                        &info,
+                    ) {
+                        Ok(row) => {
+                            let can_read = crate::server::authz_middleware::enforce_raw(
+                                &permissions,
+                                crate::server::PermissionAction::Read,
+                                Some(&change.database),
+                                scoped,
+                                &claims.sub,
+                            );
+                            conflicts.push(conflict_store::client_view(&row, can_read));
+                        }
+                        Err(e) => {
+                            tracing::warn!("sync push: could not store a conflict: {}", e);
+                            rejected += 1;
+                        }
+                    }
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("sync push: conflict check failed: {}", e);
+                    rejected += 1;
+                    continue;
+                }
+            }
         }
 
         // Apply the change to storage.
@@ -759,34 +827,11 @@ pub async fn push_changes(
         }
         accepted += 1;
 
-        // Log to replication log if available
-        if let Some(ref log) = state.replication_log {
-            let operation = match change.operation {
-                ChangeOperation::Insert => Operation::Insert,
-                ChangeOperation::Update => Operation::Update,
-                ChangeOperation::Delete => Operation::Delete,
-            };
-
-            let data_bytes = change
-                .document_data
-                .as_ref()
-                .and_then(|d| serde_json::to_vec(d).ok());
-
-            // Audit H9: logged under this node's id (`new_op` leaves node_id
-            // empty and `append` fills it in), never the client's device_id.
-            // Peers key their per-origin dedupe and pull cursors on node_id,
-            // so a device named after a peer used to make them drop that
-            // peer's genuine entries. The timestamp is the server's for the
-            // same reason: the client's clock is not the replication clock.
-            let entry = LogEntry::new_op(
-                change.database.clone(),
-                change.collection.clone(),
-                operation,
-                change.document_key.clone(),
-                data_bytes,
-            );
-
-            let _ = log.append(entry);
+        let seq = log_sync_change(&state, change);
+        if let Ok(db) = state.storage.get_database(&change.database) {
+            if let Err(e) = conflict_store::record_write(&db, change, seq, &session.device_id) {
+                tracing::warn!("sync push: could not record the write: {}", e);
+            }
         }
     }
 
@@ -838,85 +883,197 @@ pub async fn acknowledge_changes(
     })))
 }
 
+/// Every open conflict of `session_id` across databases, with the database it
+/// lives in.
+fn session_conflicts(state: &AppState, session_id: &str) -> Vec<(String, Value)> {
+    let mut out = Vec::new();
+    for name in state.storage.list_databases() {
+        if let Ok(db) = state.storage.get_database(&name) {
+            for row in conflict_store::open_conflicts(&db, session_id) {
+                out.push((name.clone(), row));
+            }
+        }
+    }
+    out
+}
+
 /// GET /_api/sync/conflicts
 /// List unresolved conflicts for a session
+///
+/// A push that touches a document another device (or an ordinary write) changed
+/// after the pushing client's last pull is not applied: it is held here until
+/// [`resolve_conflict`] settles it. See `sync::conflict_store` for the rule.
 pub async fn list_conflicts(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Query(params): Query<ConflictsQuery>,
 ) -> Result<Json<serde_json::Value>, DbError> {
     let _session = owned_session(&state, &params.session_id, &claims).await?;
+    let permissions =
+        crate::server::AuthorizationService::get_effective_permissions(&claims, &state).await?;
+    let scoped = claims.scoped_databases.as_deref();
+    let allowed = |db: &str, action| {
+        crate::server::authz_middleware::enforce_raw(
+            &permissions,
+            action,
+            Some(db),
+            scoped,
+            &claims.sub,
+        )
+    };
 
-    // No conflict store exists. This endpoint used to return an empty list,
-    // which is indistinguishable from "there are no conflicts" — a client
-    // could not tell that nothing was ever recorded.
-    //
-    // Detecting conflicts needs a per-document version vector, and documents
-    // carry none (`storage::Document` has _key/_id/_rev/_created_at/_updated_at
-    // and nothing else). Until vectors are persisted, `push` resolves by
-    // last-write-wins and no conflict can be reported.
-    Err(DbError::OperationNotSupported(
-        "conflict listing is not implemented: documents do not carry version \
-         vectors, so concurrent writes cannot be detected. Pushes currently \
-         resolve last-write-wins."
-            .to_string(),
-    ))
+    let conflicts: Vec<Value> = session_conflicts(&state, &params.session_id)
+        .into_iter()
+        // Resolving writes to the database, so listing needs the same right.
+        .filter(|(db, _)| allowed(db, crate::server::PermissionAction::Write))
+        .map(|(db, row)| {
+            let can_read = allowed(&db, crate::server::PermissionAction::Read);
+            conflict_store::client_view(&row, can_read)
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "conflicts": conflicts,
+        "count": conflicts.len(),
+    })))
 }
 
 /// POST /_api/sync/resolve
 /// Resolve a conflict manually
+///
+/// `resolution` is `local` (keep the server's document, drop the client's
+/// change), `remote` (apply the client's change) or `merged` (store
+/// `merged_data` as the document). `database` and `collection` are optional and
+/// only needed when the same `document_key` is in conflict in more than one
+/// place.
 pub async fn resolve_conflict(
     State(state): State<AppState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, DbError> {
-    let session_id = req
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| DbError::BadRequest("session_id is required".to_string()))?
-        .to_string();
-
-    let document_key = req
-        .get("document_key")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| DbError::BadRequest("document_key is required".to_string()))?
-        .to_string();
-
-    let resolution = req
-        .get("resolution")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| DbError::BadRequest("resolution is required".to_string()))?
-        .to_string();
-
+    let text = |name: &str| req.get(name).and_then(|v| v.as_str()).map(str::to_string);
+    let session_id = text("session_id")
+        .ok_or_else(|| DbError::BadRequest("session_id is required".to_string()))?;
+    let document_key = text("document_key")
+        .ok_or_else(|| DbError::BadRequest("document_key is required".to_string()))?;
+    let resolution = text("resolution")
+        .ok_or_else(|| DbError::BadRequest("resolution is required".to_string()))?;
     let merged_data = req.get("merged_data").cloned();
 
     let _session = owned_session(&state, &session_id, &claims).await?;
 
-    // Validate resolution value
     if !matches!(resolution.as_str(), "local" | "remote" | "merged") {
         return Err(DbError::BadRequest(
             "resolution must be 'local', 'remote', or 'merged'".to_string(),
         ));
     }
-
-    if resolution == "merged" && merged_data.is_none() {
+    if resolution == "merged" && !merged_data.as_ref().is_some_and(Value::is_object) {
         return Err(DbError::BadRequest(
-            "merged_data is required when resolution is 'merged'".to_string(),
+            "merged_data (an object) is required when resolution is 'merged'".to_string(),
         ));
     }
 
-    // The request is well-formed, but there is nothing to resolve against:
-    // no conflict store exists, so no conflict was ever recorded for this key.
-    // This used to return {"success": true} without touching anything, which
-    // told a client its resolution had been applied when it had not.
-    //
-    // See `list_conflicts` for why detection is blocked on per-document
-    // version vectors.
-    Err(DbError::OperationNotSupported(format!(
-        "conflict resolution is not implemented: no conflict is recorded for \
-         document '{}'. Pushes currently resolve last-write-wins.",
-        document_key
-    )))
+    let (want_db, want_coll) = (text("database"), text("collection"));
+    let mut candidates: Vec<(String, Value)> = session_conflicts(&state, &session_id)
+        .into_iter()
+        .filter(|(db, row)| {
+            row.get("document_key").and_then(Value::as_str) == Some(document_key.as_str())
+                && want_db.as_deref().is_none_or(|d| d == db)
+                && want_coll
+                    .as_deref()
+                    .is_none_or(|c| row.get("collection").and_then(Value::as_str) == Some(c))
+        })
+        .collect();
+    let (db_name, row) = match candidates.len() {
+        0 => {
+            return Err(DbError::DocumentNotFound(format!(
+                "no open conflict for document '{}' in this session",
+                document_key
+            )))
+        }
+        1 => candidates.remove(0),
+        n => {
+            return Err(DbError::BadRequest(format!(
+                "{} conflicts match document '{}'; pass 'database' and 'collection'",
+                n, document_key
+            )))
+        }
+    };
+
+    let permissions =
+        crate::server::AuthorizationService::get_effective_permissions(&claims, &state).await?;
+    if !crate::server::authz_middleware::enforce_raw(
+        &permissions,
+        crate::server::PermissionAction::Write,
+        Some(&db_name),
+        claims.scoped_databases.as_deref(),
+        &claims.sub,
+    ) {
+        return Err(DbError::Forbidden(format!(
+            "Write permission on '{}' is required to resolve this conflict",
+            db_name
+        )));
+    }
+
+    let change: SyncChange = serde_json::from_value(row.get("change").cloned().unwrap_or_default())
+        .map_err(|e| DbError::InternalError(format!("stored conflict is unreadable: {}", e)))?;
+    let device = row
+        .get("device")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let conflict_id = row
+        .get("_key")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let actor = crate::server::handlers::query::write_actor_from_claims(Some(&claims));
+
+    // What to write, if anything.
+    let to_apply = match resolution.as_str() {
+        "local" => None,
+        "remote" => Some(change.clone()),
+        _ => Some(SyncChange {
+            operation: ChangeOperation::Update,
+            document_data: merged_data,
+            is_delta: false,
+            delta_patch: None,
+            ..change.clone()
+        }),
+    };
+    let db = state.storage.get_database(&db_name)?;
+    let seq = match &to_apply {
+        Some(applied) => {
+            apply_sync_change(&state, applied, actor, false)?;
+            let seq = log_sync_change(&state, applied);
+            conflict_store::record_write(&db, applied, seq, &device)?;
+            seq
+        }
+        None => {
+            // Keeping the server's copy: note that the client has now settled
+            // against everything up to here, so its next push is not a conflict.
+            let seq = state
+                .replication_log
+                .as_ref()
+                .map_or(0, |l| l.current_sequence());
+            let kept = SyncChange {
+                operation: ChangeOperation::Update,
+                ..change.clone()
+            };
+            // The document may be gone; there is then nothing to record.
+            let _ = conflict_store::record_write(&db, &kept, seq, &device);
+            seq
+        }
+    };
+    conflict_store::remove_conflict(&db, &conflict_id)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "document_key": document_key,
+        "resolution": resolution,
+        "conflict_id": conflict_id,
+        "sequence": seq,
+    })))
 }
 
 #[cfg(test)]

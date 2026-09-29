@@ -944,6 +944,32 @@ Change: name = "Alicia"</code></pre>
               </p>
             </div>
           </div>
+
+        <!-- Server behaviour -->
+        <div class="mb-8">
+          <h3 class="text-xl font-bold text-white mb-4">What the server does on push</h3>
+          <p class="text-gray-300 mb-4">
+            For every document it has synced, the server remembers the sync-log sequence and <code class="text-cyan-400">_rev</code> of its last write and which device made it. A pulled change carries the vector <code class="text-cyan-400">{node: sequence}</code>, so a client's vector records how far into the server's log it has seen. A pushed change is a <strong>conflict</strong> when the document changed after that point:
+          </p>
+          <ul class="list-disc pl-6 text-gray-300 space-y-1 mb-4">
+            <li>another device pushed to it and this client has not pulled that write, or</li>
+            <li>an ordinary write (API, query, script) changed it since the last sync and this client has not pulled that write.</li>
+          </ul>
+          <p class="text-gray-300 mb-4">
+            A conflicting change is <strong>not applied</strong>. It is returned in the push response under <code class="text-cyan-400">conflicts</code> and kept until resolved. A device never conflicts with its own earlier push. A change with no vector, or for a document the server has never synced, is last-write-wins as before.
+          </p>
+
+          <div class="overflow-x-auto rounded-lg border border-white/5 mb-4">
+            <table class="w-full text-left text-sm text-gray-400">
+              <thead class="bg-white/5 text-gray-200 font-medium"><tr><th class="px-4 py-3">Endpoint</th><th class="px-4 py-3">Purpose</th></tr></thead>
+              <tbody class="divide-y divide-white/5">
+                <tr><td class="px-4 py-3 font-mono text-green-400">GET /_api/sync/conflicts?session_id=…</td><td class="px-4 py-3">Open conflicts of the session: <code>id, database, collection, document_key, operation, local_vector, remote_vector, local_data, remote_data, detected_at</code>. <code>local_data</code> (the server's copy) is shown only to a caller with Read on the database, since pushing needs only Write.</td></tr>
+                <tr><td class="px-4 py-3 font-mono text-green-400">POST /_api/sync/resolve</td><td class="px-4 py-3">Body <code>{"session_id", "document_key", "resolution": "local"|"remote"|"merged", "merged_data"?, "database"?, "collection"?}</code>. <code>local</code> keeps the server&rsquo;s document, <code>remote</code> applies the client&rsquo;s change, <code>merged</code> stores <code>merged_data</code>. <code>database</code>/<code>collection</code> are needed only when the same key is in conflict in more than one place. Requires Write on the database; 404 when nothing is open for that key.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-sm text-gray-400">Conflicts are stored per database in <code>_sync_conflicts</code> and <code>_sync_versions</code>, which are not readable or writable by name. They live on the node that took the push and are not replicated. Automatic strategies (last-write-wins, merge) are not applied by the server: every conflict is held for an explicit resolution.</p>
+        </div>
         </div>
 
         <!-- Resolution Strategies -->

@@ -610,22 +610,6 @@ async fn pushed_delta_change_is_rejected() {
 // list_conflicts — GET /_api/sync/conflicts?session_id=...
 // ===========================================================================
 
-/// Conflict listing reports that it is unimplemented rather than returning an
-/// empty array. An empty array is indistinguishable from "no conflicts exist",
-/// so a client could not tell that nothing is ever recorded. Detection needs
-/// per-document version vectors, which storage does not carry.
-#[tokio::test]
-async fn list_conflicts_reports_unimplemented() {
-    let (_tmp, app, token) = create_app();
-    let session = register(&app, &token, baseline_register_payload()).await;
-    let session_id = session["session_id"].as_str().unwrap();
-
-    // session_id format is "device_id-uuid.hex" — URL-safe, no encoding needed.
-    let url = format!("/_api/sync/conflicts?session_id={}", session_id);
-    let resp = app.clone().oneshot(auth_get(&url, &token)).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
-}
-
 #[tokio::test]
 async fn list_conflicts_unknown_session_returns_400() {
     let (_tmp, app, token) = create_app();
@@ -640,55 +624,6 @@ async fn list_conflicts_unknown_session_returns_400() {
 // ===========================================================================
 // resolve_conflict — POST /_api/sync/resolve
 // ===========================================================================
-
-/// A well-formed resolution request reports that it is unimplemented rather
-/// than returning `{"success": true}`. There is no conflict store, so the old
-/// response told clients their resolution had been applied when nothing had
-/// been touched. Request validation still runs first — see the 400 tests below.
-#[tokio::test]
-async fn resolve_reports_unimplemented_for_valid_requests() {
-    let (_tmp, app, token) = create_app();
-    let session = register(&app, &token, baseline_register_payload()).await;
-    let session_id = session["session_id"].as_str().unwrap();
-
-    for resolution in ["local", "remote"] {
-        let resp = app
-            .clone()
-            .oneshot(json_post(
-                "/_api/sync/resolve",
-                &token,
-                json!({
-                    "session_id": session_id,
-                    "document_key": "doc1",
-                    "resolution": resolution,
-                }),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::NOT_IMPLEMENTED,
-            "resolution={resolution}"
-        );
-    }
-
-    // "merged" with its required data gets the same treatment.
-    let resp = app
-        .clone()
-        .oneshot(json_post(
-            "/_api/sync/resolve",
-            &token,
-            json!({
-                "session_id": session_id,
-                "document_key": "doc1",
-                "resolution": "merged",
-                "merged_data": {"v": 9},
-            }),
-        ))
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
-}
 
 #[tokio::test]
 async fn resolve_invalid_resolution_returns_400() {
@@ -804,6 +739,329 @@ async fn sync_routes_reject_missing_jwt() {
             "{} {} should be 401 without token",
             method,
             uri
+        );
+    }
+}
+
+// ===========================================================================
+// Conflict detection, listing and resolution
+// ===========================================================================
+
+/// A vector saying "I have seen this node's log up to `seq`" for `device`.
+fn vector(device: &str, counter: u64, seen_server: u64) -> Value {
+    let mut versions = serde_json::Map::new();
+    versions.insert(device.to_string(), json!(counter));
+    if seen_server > 0 {
+        versions.insert("test-node".to_string(), json!(seen_server));
+    }
+    json!({"versions": versions, "hlc_timestamp": 0, "hlc_counter": 0})
+}
+
+fn change_with(key: &str, data: Value, vector: Value) -> Value {
+    json!({
+        "database": "appdb",
+        "collection": "items",
+        "document_key": key,
+        "operation": "Update",
+        "document_data": data,
+        "parent_vectors": [],
+        "vector": vector,
+        "timestamp": 1,
+        "is_delta": false,
+        "delta_patch": null,
+    })
+}
+
+async fn session_for(app: &axum::Router, token: &str, device: &str) -> String {
+    let s = register(
+        app,
+        token,
+        json!({"device_id": device, "api_key": "sk_test_abc", "subscriptions": []}),
+    )
+    .await;
+    s["session_id"].as_str().unwrap().to_string()
+}
+
+async fn push(app: &axum::Router, token: &str, session: &str, change: Value) -> Value {
+    let resp = app
+        .clone()
+        .oneshot(json_post(
+            "/_api/sync/push",
+            token,
+            json!({"session_id": session, "client_vector": empty_version_vector(), "changes": [change]}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    body_json(resp).await
+}
+
+async fn conflicts(app: &axum::Router, token: &str, session: &str) -> Vec<Value> {
+    let url = format!("/_api/sync/conflicts?session_id={}", session);
+    let resp = app.clone().oneshot(auth_get(&url, token)).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    body_json(resp).await["conflicts"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+async fn resolve(app: &axum::Router, token: &str, body: Value) -> (StatusCode, Value) {
+    let resp = app
+        .clone()
+        .oneshot(json_post("/_api/sync/resolve", token, body))
+        .await
+        .unwrap();
+    let status = resp.status();
+    (status, body_json(resp).await)
+}
+
+async fn stored(app: &axum::Router, token: &str, key: &str) -> Value {
+    let resp = app
+        .clone()
+        .oneshot(auth_get(
+            &format!("/_api/database/appdb/document/items/{}", key),
+            token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    body_json(resp).await
+}
+
+#[tokio::test]
+async fn a_second_device_that_has_not_pulled_conflicts_and_can_be_resolved() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+    let b = session_for(&app, &token, "dev-B").await;
+
+    let first = push(
+        &app,
+        &token,
+        &a,
+        change_with("k1", json!({"v": "from-A"}), vector("dev-A", 1, 0)),
+    )
+    .await;
+    assert_eq!(first["accepted"], 1);
+    assert!(first["conflicts"].as_array().unwrap().is_empty());
+
+    // B never pulled A's write, so its edit is concurrent with it.
+    let second = push(
+        &app,
+        &token,
+        &b,
+        change_with("k1", json!({"v": "from-B"}), vector("dev-B", 1, 0)),
+    )
+    .await;
+    assert_eq!(second["accepted"], 0, "{}", second);
+    let held = second["conflicts"].as_array().unwrap();
+    assert_eq!(held.len(), 1, "{}", second);
+    assert_eq!(held[0]["document_key"], "k1");
+    assert_eq!(held[0]["remote_data"]["v"], "from-B");
+    assert_eq!(held[0]["local_data"]["v"], "from-A");
+    assert_eq!(
+        stored(&app, &token, "k1").await["v"],
+        "from-A",
+        "not applied"
+    );
+
+    // Listed for B's session only.
+    let listed = conflicts(&app, &token, &b).await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["id"], held[0]["id"]);
+    assert!(conflicts(&app, &token, &a).await.is_empty());
+
+    // Resolving with the client's change applies it and clears the conflict.
+    let (status, body) = resolve(
+        &app,
+        &token,
+        json!({"session_id": b, "document_key": "k1", "resolution": "remote"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", body);
+    assert_eq!(stored(&app, &token, "k1").await["v"], "from-B");
+    assert!(conflicts(&app, &token, &b).await.is_empty());
+
+    // Nothing is left to resolve.
+    let (status, _) = resolve(
+        &app,
+        &token,
+        json!({"session_id": b, "document_key": "k1", "resolution": "remote"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn keeping_the_server_copy_or_merging_are_both_honoured() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+    let b = session_for(&app, &token, "dev-B").await;
+
+    for key in ["keep", "merge"] {
+        push(
+            &app,
+            &token,
+            &a,
+            change_with(key, json!({"v": "A"}), vector("dev-A", 1, 0)),
+        )
+        .await;
+        push(
+            &app,
+            &token,
+            &b,
+            change_with(key, json!({"v": "B"}), vector("dev-B", 1, 0)),
+        )
+        .await;
+    }
+    assert_eq!(conflicts(&app, &token, &b).await.len(), 2);
+
+    let (status, _) = resolve(
+        &app,
+        &token,
+        json!({"session_id": b, "document_key": "keep", "resolution": "local"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stored(&app, &token, "keep").await["v"], "A");
+
+    let (status, _) = resolve(
+        &app,
+        &token,
+        json!({"session_id": b, "document_key": "merge", "resolution": "merged",
+               "merged_data": {"v": "A+B"}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stored(&app, &token, "merge").await["v"], "A+B");
+    assert!(conflicts(&app, &token, &b).await.is_empty());
+
+    // Having settled, B's next edit is not a conflict.
+    let next = push(
+        &app,
+        &token,
+        &b,
+        change_with("merge", json!({"v": "B2"}), vector("dev-B", 2, 0)),
+    )
+    .await;
+    assert_eq!(next["accepted"], 1, "{}", next);
+}
+
+#[tokio::test]
+async fn a_device_does_not_conflict_with_itself_and_a_client_that_pulled_does_not_either() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+    let b = session_for(&app, &token, "dev-B").await;
+
+    for n in 1..=3 {
+        let r = push(
+            &app,
+            &token,
+            &a,
+            change_with("k", json!({"n": n}), vector("dev-A", n, 0)),
+        )
+        .await;
+        assert_eq!(r["accepted"], 1, "push {} conflicted with itself: {}", n, r);
+    }
+
+    // B pulled up to a sequence far past A's write before editing.
+    let r = push(
+        &app,
+        &token,
+        &b,
+        change_with("k", json!({"n": 99}), vector("dev-B", 1, 1_000_000)),
+    )
+    .await;
+    assert_eq!(r["accepted"], 1, "{}", r);
+    assert_eq!(stored(&app, &token, "k").await["n"], 99);
+}
+
+#[tokio::test]
+async fn an_ordinary_write_after_a_sync_makes_the_next_push_conflict() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+
+    push(
+        &app,
+        &token,
+        &a,
+        change_with("k", json!({"v": "synced"}), vector("dev-A", 1, 0)),
+    )
+    .await;
+
+    // Someone edits the document through the normal API.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/_api/database/appdb/document/items/k")
+                .header(header::AUTHORIZATION, bearer(&token))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({"v": "server-edit"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Same device, but it has not seen that edit.
+    let r = push(
+        &app,
+        &token,
+        &a,
+        change_with("k", json!({"v": "stale"}), vector("dev-A", 2, 0)),
+    )
+    .await;
+    assert_eq!(r["conflicts"].as_array().unwrap().len(), 1, "{}", r);
+    assert_eq!(stored(&app, &token, "k").await["v"], "server-edit");
+
+    // A client that has pulled past it is fine.
+    let r = push(
+        &app,
+        &token,
+        &a,
+        change_with("k", json!({"v": "informed"}), vector("dev-A", 3, 1_000_000)),
+    )
+    .await;
+    assert_eq!(r["accepted"], 1, "{}", r);
+}
+
+#[tokio::test]
+async fn conflict_bookkeeping_is_not_reachable_by_name() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+    let b = session_for(&app, &token, "dev-B").await;
+    push(
+        &app,
+        &token,
+        &a,
+        change_with("k", json!({"v": 1}), vector("dev-A", 1, 0)),
+    )
+    .await;
+    push(
+        &app,
+        &token,
+        &b,
+        change_with("k", json!({"v": 2}), vector("dev-B", 1, 0)),
+    )
+    .await;
+
+    for coll in ["_sync_conflicts", "_sync_versions"] {
+        let resp = app
+            .clone()
+            .oneshot(json_post(
+                "/_api/database/appdb/cursor",
+                &token,
+                json!({"query": format!("FOR d IN {} RETURN d", coll)}),
+            ))
+            .await
+            .unwrap();
+        assert!(
+            resp.status().is_client_error(),
+            "{} readable by name: {}",
+            coll,
+            resp.status()
         );
     }
 }

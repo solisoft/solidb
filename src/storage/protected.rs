@@ -39,8 +39,20 @@ use crate::error::{DbError, DbResult};
 /// for the username it matches, and `load_permissions_from_storage` prefers a
 /// stored `_roles` definition over the built-in one. With only Write on
 /// `_system`, inserting one document into either made the caller an admin.
-pub const PROTECTED_COLLECTIONS: [&str; 5] =
-    ["_env", "_admins", "_api_keys", "_roles", "_user_roles"];
+///
+/// `_sync_versions` and `_sync_conflicts` hold offline-sync bookkeeping. A
+/// conflict row carries the change that will be applied when it is resolved,
+/// so a forged row would write into any collection the resolver can reach, and
+/// both hold copies of other users' documents.
+pub const PROTECTED_COLLECTIONS: [&str; 7] = [
+    "_env",
+    "_admins",
+    "_api_keys",
+    "_roles",
+    "_user_roles",
+    "_sync_versions",
+    "_sync_conflicts",
+];
 
 /// Collections that a caller-supplied name may read but never write.
 ///
