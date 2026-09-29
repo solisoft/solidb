@@ -1,0 +1,131 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 2.1.0 · Correctness</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">2.1.0 is a release about things SoliDB said it did and did not quite do. A driver transaction that committed on the spot. Two writes of the same unique value that both went through. A custom role that granted nothing. Sync conflict endpoints that answered “not implemented”. Each is fixed here, with the request that shows it, and a few features that fell out of fixing them: database-limited roles, writing queries with <code>COLLECT</code> inside a transaction, and <code>OPTIONS</code> on sharded collections.</p>
+  <p class="post-note">The transaction and role responses on this page were captured from a 2.1.0 build on a throwaway server. The sync section describes behaviour pinned by the test suite rather than a captured session, and says so where it matters.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#driver-tx">A driver transaction that was not one</a></li>
+    <li><a href="#tx-queries">Writing queries can use the whole language</a></li>
+    <li><a href="#unique">Two writes, one unique value</a></li>
+    <li><a href="#sync">Sync conflicts you can list and resolve</a></li>
+    <li><a href="#roles">Custom roles, and roles that stop at a database</a></li>
+    <li><a href="#sharded">Sharded collections, without the asterisks</a></li>
+    <li><a href="#smaller">Smaller fixes worth knowing</a></li>
+    <li><a href="#upgrading">Upgrading</a></li>
+  </ol>
+</nav>
+
+<section id="driver-tx"><h2>A driver transaction that was not one</h2>
+<p>The native driver has a <code>transaction_command</code> that wraps another command in an open transaction. Until 2.1.0 it checked that the transaction existed and then ran the inner command normally. An <code>insert</code> sent through it was committed at once, and <code>rollback_transaction</code> then had nothing to undo. Nothing failed, which is why it survived: the happy path (begin, insert, commit) looks identical either way.</p>
+<p>Now <code>insert</code>, <code>update</code> and <code>delete</code> are staged on the transaction and applied at commit, and a rollback discards them. A read-only <code>query</code> runs against committed data, as it does over HTTP. Anything else is refused with a <code>transaction_error</code> instead of quietly running outside the transaction. The dispatcher still authorizes the wrapper by the permission of the command inside it, so a Read-only session cannot stage a write; that is now a test rather than a property nobody had looked at.</p>
+</section>
+
+<section id="tx-queries"><h2>Writing queries can use the whole language</h2>
+<p>Over HTTP, <code>POST /_api/database/{db}/transaction/{id}/query</code> ran read-only queries on the normal executor but pushed anything that wrote through a small hand-written pipeline that understood <code>FOR</code>, <code>LET</code> and <code>FILTER</code>, and refused <code>JOIN</code>, <code>COLLECT</code>, graph traversals and windows. So a transaction could read with an aggregate but not write one.</p>
+<p>2.1.0 deletes that pipeline. The query runs on the ordinary executor with its writes redirected to the transaction, so every clause works, and <code>RETURN NEW</code> returns rows instead of <code>[]</code>. Here is a <code>COLLECT</code> that writes, inside a transaction, on a real server:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># orders holds {a:5}, {a:7}, {b:3}</span>
+curl -s -X POST $B/_api/database/v/transaction/$TX/query -d '{"query":
+  "FOR o IN orders COLLECT c = o.cust AGGREGATE s = SUM(o.amt)
+   INSERT {_key: c, total: s} INTO totals RETURN NEW.total"}'
+{"message":"2 operation(s) staged in transaction. Commit to apply changes.",
+ "mutationCount":2,"result":[12.0,3.0]}
+
+<span class="tok-com"># outside the transaction, before commit:</span>
+FOR t IN totals RETURN t      →  "result":[]
+
+<span class="tok-com"># after commit:</span>
+FOR t IN totals SORT t._key RETURN [t._key, t.total]
+                              →  "result":[["a",12.0],["b",3.0]]</pre></div>
+<p>Two limits remain, and both are refusals rather than surprises. <code>OPTIONS</code> (<code>overwriteMode</code>, <code>keepNull</code>, <code>mergeObjects</code>, <code>ignoreErrors</code>) and <code>REPLACE</code> need a read-modify-write that a staged operation cannot express, so a transactional query that uses them is rejected. And reads inside a transaction see committed data, not the transaction’s own staged writes; a uniqueness check done by reading first therefore proves nothing.</p>
+</section>
+
+<section id="unique"><h2>Two writes, one unique value</h2>
+<p>That last sentence hid a bug. Even without reading first, a unique index did not protect you inside a transaction. Every staged write was checked against <em>committed</em> data, and committed data does not contain the transaction’s earlier writes, so two inserts of the same email both passed and both committed. The old guidance in our own notes was “transactions do not check unique indexes”, which was accurate and is now wrong:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># users has a unique index on email</span>
+POST …/transaction/$TX/query   INSERT {_key:"u1", email:"a@x.io"} INTO users   →  staged
+POST …/transaction/$TX/query   INSERT {_key:"u2", email:"a@x.io"} INTO users   →  staged
+POST …/transaction/$TX/commit
+{"code":400,"type":"InvalidDocument",
+ "error":"Unique constraint violated: 'uniq_email:046140782e696f00' is claimed by both 'u1' and 'u2' in this transaction"}
+
+FOR u IN users RETURN u._key   →  "result":[]</pre></div>
+<p>Commit staging now remembers which staged document holds each unique value, releases it when that document is updated or deleted, and refuses a second claimant. The commit fails as a whole and writes nothing. One conservative edge remains: if a transaction deletes the document that holds a value and inserts another with the same value, the check against committed data still sees the original and refuses. Do those in two transactions.</p>
+</section>
+
+<section id="sync"><h2>Sync conflicts you can list and resolve</h2>
+<p><code>GET /_api/sync/conflicts</code> and <code>POST /_api/sync/resolve</code> have existed for a long time and answered “not implemented”, and <code>push</code> applied whatever arrived last. That was the honest answer, because detecting a conflict needs to know what the client had seen, and documents carry no version vector.</p>
+<p>2.1.0 gets there without changing how documents are stored. A pulled change arrives with a vector <code>{node: log_sequence}</code>, so a client’s vector already says how far into the server’s log it has read. For each document it has synced, the server now records the log sequence and <code>_rev</code> of its last write, and the device that made it. A pushed change is a conflict when the document changed after the client’s last-seen sequence:</p>
+<ul>
+<li>another device pushed to it and this client has not pulled that write; or</li>
+<li>an ordinary write (the API, a query, a script) changed it since the last sync and this client has not pulled that either.</li>
+</ul>
+<p>A conflicting change is <strong>not applied</strong>. It comes back under <code>conflicts</code> in the push response and is held until you settle it: <code>resolution: "local"</code> keeps the server’s document, <code>"remote"</code> applies the client’s change, <code>"merged"</code> stores the <code>merged_data</code> you send. After resolving, the same device’s next push is not a conflict.</p>
+<div class="post-table"><table><thead><tr><th>Case</th><th>Result</th></tr></thead><tbody>
+<tr><td>Device A pushes, device B (which never pulled) pushes the same document</td><td>B’s change is held; A’s stays</td></tr>
+<tr><td>Device B pulled past A’s write, then edits</td><td>Applied</td></tr>
+<tr><td>Device A pushes twice in a row</td><td>Applied both times; a device never conflicts with itself</td></tr>
+<tr><td>Someone edits through the API after A’s sync; A pushes without pulling</td><td>Held, even though it is the same device</td></tr>
+<tr><td>A change with no vector, or a document the server has never synced</td><td>Last write wins, as before</td></tr>
+</tbody></table></div>
+<p>Three details are about safety rather than convenience. Pushing needs Write on a database, not Read, so the listing shows the server’s copy of the document only to a caller who could have read it anyway. The bookkeeping lives in two collections, <code>_sync_conflicts</code> and <code>_sync_versions</code>, that are not readable or writable by name, because a conflict row carries the change that will be applied on resolution and a forged one would write into any collection the resolver can reach. And the bookkeeping stays on the node that took the push; it is not replicated.</p>
+<p>One decision worth flagging: the server does not pick a winner for you. There is no “last write wins” or “merge” strategy in the resolver; every conflict waits for an explicit answer. The Lua conflict resolver that once stood in for a custom strategy stays gone, for the reason it was removed.</p>
+<p>Delta pushes work too now. A change flagged <code>is_delta</code> carries an RFC 6902 patch that is applied atomically to the stored document; a patch for a document the server does not have, or one that does not apply, is refused and changes nothing. A patch cannot rename the document or forge <code>_id</code>, <code>_rev</code> or <code>_created_at</code>, and eight concurrent patches of one document lose none of their edits.</p>
+</section>
+
+<section id="roles"><h2>Custom roles, and roles that stop at a database</h2>
+<p>This one is a bug first. A role created with <code>POST /_api/auth/roles</code> was stored with its name in <code>_key</code>. When permissions were resolved, the stored role was deserialized from the document body, which does not include <code>_key</code>, so it failed to load and was skipped without a message. Only the three built-in roles, which are resolved from a fallback, ever had any effect. A user holding a custom role showed the role in <code>/_api/auth/me</code> and had no permissions at all. That is fixed for global and limited assignments alike.</p>
+<p>The feature that surfaced it is assigning a role to one database. <code>POST /_api/auth/users/{user}/roles</code> has always accepted a <code>database</code>, and until now it was refused, because nothing downstream could express the limit and honouring it as a global grant would have been the opposite of the request. Now the assignment grants the role’s actions on that database only: a global permission of the role is narrowed to it, and a permission the role already limits to another database is dropped. It never grants instance-level operations. Here is a user with the built-in <code>editor</code> role limited to database <code>v</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/auth/users/bob/roles   {"role":"editor","database":"v"}
+{"username":"bob","role":"editor","database":"v", …}                      [201]
+
+bob reads   v       →  200
+bob writes  v       →  200
+bob reads   other   →  403
+bob writes  other   →  403
+bob creates a database   →  403</pre></div>
+<p>A limited assignment travels through tokens and <code>/_api/auth/me</code> as <code>role@database</code>. It never equals a bare role name, so nothing that tests for <code>admin</code> can mistake <code>admin@v</code> for the global role; the price is that role names can no longer contain <code>@</code>. The database must exist when you assign, so a typo cannot silently grant nothing, and editing a role updates its limited assignments too. Rows written earlier with a <code>database</code> used to grant nothing; they now grant exactly what was asked, which is narrower than anything they could have granted before.</p>
+</section>
+
+<section id="sharded"><h2>Sharded collections, without the asterisks</h2>
+<p>Four things behaved differently on a sharded collection, and each was a quiet wrong answer rather than an error:</p>
+<ul>
+<li><strong>Mutations with <code>OPTIONS</code>, <code>REPLACE</code> or <code>OLD</code>/<code>NEW</code></strong> failed with “not supported on sharded collections yet”. They work now, written row by row through the shard coordinator. <code>REPLACE</code> is forwarded to the owning node with <code>replace=true</code>, and the node acknowledges it in an <code>x-replace-applied</code> header; a peer that predates it would merge and report success, so a forwarded <code>REPLACE</code> that is not acknowledged now fails instead.</li>
+<li><strong><code>FILTER doc._key == …</code> returned nothing.</strong> The key lookup ran against the logical collection, which holds no documents. Sharded collections now scan the shards for these lookups, which is correct if not yet as fast.</li>
+<li><strong><code>NEW</code> after an <code>UPDATE</code></strong> was the patch, not the merged document, when the shard was local.</li>
+<li><strong>A plain <code>INSERT</code> of an existing <code>_key</code></strong> overwrote the document. It returns a conflict, as on a single node.</li>
+</ul>
+<p>Documents read from a sharded collection also used to report the shard’s name in <code>_id</code> (<code>db:c_s1/key</code>). They report <code>c/key</code>.</p>
+</section>
+
+<section id="smaller"><h2>Smaller fixes worth knowing</h2>
+<div class="post-table"><table><thead><tr><th>Area</th><th>What changed</th></tr></thead><tbody>
+<tr><td>Resharding</td><td>It never asked remote nodes whether a migrated batch had arrived, and when verification found nothing it trusted the batch and deleted the local originals. Batches it cannot confirm are now kept for the next pass.</td></tr>
+<tr><td>Truncate</td><td>It left version history behind, so an <code>AS OF</code> read could resurrect the deleted documents, and left pending-embedding markers that kept the worker busy. Both are cleared.</td></tr>
+<tr><td>Vector quantization</td><td><code>quantize</code> saved the setting and returned zeroed stats without touching the index, and <code>dequantize</code> did nothing. Both act now and the response reports real sizes.</td></tr>
+<tr><td>Driver commands</td><td><code>prune_collection</code> (new <code>older_than</code>), <code>get_collection_sharding</code>, <code>repair_collection</code>, <code>geo_within</code> polygon search, <code>vector_search</code> with a <code>filter</code>, and columnar <code>filter</code> and <code>order_by</code> used to answer “not supported”. <code>create_columnar</code> always failed and no longer does. The added <code>older_than</code> field is optional on the wire, and a test decodes a client message without it.</td></tr>
+<tr><td>Triggers</td><td>The <code>filter</code> field was stored and ignored. It is an SDBQL expression over <code>doc</code>, <code>old</code> and <code>event</code>; the trigger fires only when it is truthy, and a filter that errors does not fire.</td></tr>
+<tr><td>Restore</td><td><code>solidb-restore</code> reads SQL dumps: <code>INSERT INTO t (cols) VALUES …</code> from mysqldump, pg_dump and sqlite. An insert with no column list is reported and skipped rather than guessed at.</td></tr>
+<tr><td>SSRF guard</td><td>DNS lookups time out after 5 seconds, at most 32 run at once, webhook delivery resolves once on the blocking pool, and the <code>OLLAMA_URL</code> verdict is cached for 30 seconds and warmed when the URL is written.</td></tr>
+<tr><td>Queries</td><td><code>FILTER doc._id == …</code> is a primary-key lookup. Sliding-window streams drop expired events when the window fires. Cluster heartbeats carry real CPU and memory, and nodes marked suspected or dead are logged.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="upgrading"><h2>Upgrading</h2>
+<p>Nothing needs a migration, and nothing in storage changes. Three behaviours can differ on the day you upgrade:</p>
+<ul>
+<li><strong>Custom roles start working.</strong> If you have users holding a role you created, they now receive its permissions, which is what you configured, and possibly more than they have been getting. Read <code>GET /_api/auth/roles</code> before you upgrade.</li>
+<li><strong>Existing database-limited assignments start granting.</strong> They granted nothing before; now they grant the role on that database.</li>
+<li><strong>Sync clients that send a vector can see conflicts.</strong> Clients that send none behave as before. If a client of yours ignores the <code>conflicts</code> array in the push response, its change is now held rather than applied when it is concurrent; wire up <code>GET /_api/sync/conflicts</code> before you rely on it.</li>
+</ul>
+<p>Upgrade every node of a cluster before running a <code>REPLACE</code> on a sharded collection. The full list, with the commit-level detail, is in the <a href="/docs/changelog">changelog</a>; the sync flow is in <a href="/docs/offline-sync">the offline sync guide</a>, and transactions in <a href="/docs/transactions">the transactions guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

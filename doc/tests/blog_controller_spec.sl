@@ -18,6 +18,7 @@ describe("BlogController", fn() {
 
   test("every listed post renders with its title", fn() {
     posts = {
+      "solidb-2-1-transactions-conflicts-roles": "A driver transaction that was not one",
       "solidb-2-0-shared-keyspace": "creating a collection no longer depends",
       "a-request-must-never-take-the-server-down": "20,200 rows",
       "faster-startup-many-collections": "What hundreds of collections cost",
@@ -37,8 +38,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(11)
-    newest = body.index_of("/blog/solidb-2-0-shared-keyspace")
+    expect(body.split("class=\"post-card\"").length()).to_equal(12)
+    newest = body.index_of("/blog/solidb-2-1-transactions-conflicts-roles")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })
@@ -61,5 +62,6 @@ describe("BlogController", fn() {
     expect(body.starts_with("<?xml")).to_equal(true)
     expect(body.include?("<feed xmlns=\"http://www.w3.org/2005/Atom\">")).to_equal(true)
     expect(body.include?("/blog/sdbql-1-3-new-functions</id>")).to_equal(true)
+    expect(body.include?("/blog/solidb-2-1-transactions-conflicts-roles</id>")).to_equal(true)
   })
 })

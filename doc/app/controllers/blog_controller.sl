@@ -63,6 +63,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-2-1-transactions-conflicts-roles",
+        "title": "SoliDB 2.1: transactions that mean it, sync conflicts you can see, roles that stop at a database",
+        "date": "2026-09-29",
+        "display_date": "September 29, 2026",
+        "summary": "A driver transaction that committed on the spot, two writes of one unique value "
+        + "that both passed, and a custom role that granted nothing: what 2.1.0 fixes, plus "
+        + "database-limited roles, sync conflict resolution and OPTIONS on sharded collections.",
+        "tags": ["Correctness", "Release 2.1.0"],
+        "read_minutes": 8
+      },
+      {
         "slug": "solidb-2-0-shared-keyspace",
         "title": "SoliDB 2.0: creating a collection no longer depends on how many you have",
         "date": "2026-09-28",
