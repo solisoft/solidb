@@ -86,15 +86,79 @@ fn check_tenant_llm_url(base_url: &str, allow_private: bool) -> Result<(), DbErr
         ));
     }
 
-    crate::server::ssrf::validate_public_url_target(&parsed).map_err(|e| {
+    // The lookup blocks, and this runs on whatever thread built the client.
+    // The URL changes far less often than it is used, so the verdict is kept
+    // briefly and the common path does no DNS at all.
+    let verdict = cached_verdict(base_url).unwrap_or_else(|| {
+        let v = crate::server::ssrf::validate_public_url_target(&parsed).map(|_| ());
+        store_verdict(base_url, v.clone());
+        v
+    });
+    verdict.map_err(|e| {
         DbError::BadRequest(format!(
             "OLLAMA_URL rejected (SSRF): {}. Set SOLIDB_ALLOW_PRIVATE_LLM_URL=1 \
              if this instance is meant to reach a private LLM endpoint.",
             e
         ))
-    })?;
+    })
+}
 
-    Ok(())
+/// Trim whitespace and trailing slashes, and default to `http://` (Ollama is
+/// plain HTTP locally). Shared with the write path so a warmed verdict is
+/// keyed on exactly what use-time validation looks up.
+pub fn normalize_ollama_url(raw: &str) -> String {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{}", trimmed)
+    }
+}
+
+/// How long a resolution verdict for a tenant LLM URL is reused. Failures are
+/// kept a shorter time, so fixing the record or the URL takes effect quickly.
+const VERDICT_TTL_OK: std::time::Duration = std::time::Duration::from_secs(30);
+const VERDICT_TTL_ERR: std::time::Duration = std::time::Duration::from_secs(5);
+const VERDICT_CACHE_MAX: usize = 256;
+
+type Verdict = Result<(), String>;
+
+fn verdicts(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, Verdict)>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, Verdict)>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+fn cached_verdict(url: &str) -> Option<Verdict> {
+    let cache = verdicts().lock().unwrap_or_else(|e| e.into_inner());
+    let (at, v) = cache.get(url)?;
+    let ttl = if v.is_ok() {
+        VERDICT_TTL_OK
+    } else {
+        VERDICT_TTL_ERR
+    };
+    (at.elapsed() < ttl).then(|| v.clone())
+}
+
+fn store_verdict(url: &str, v: Verdict) {
+    let mut cache = verdicts().lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= VERDICT_CACHE_MAX {
+        // Tenant-chosen keys: bound the map by dropping it, not growing it.
+        cache.clear();
+    }
+    cache.insert(url.to_string(), (std::time::Instant::now(), v));
+}
+
+/// Resolve a tenant LLM URL on the blocking pool and remember the verdict, so
+/// the first LLM call after `OLLAMA_URL` is written finds it ready. The result
+/// is deliberately not returned: use-time validation stays authoritative.
+pub async fn warm_tenant_llm_url(base_url: String) {
+    let _ = tokio::task::spawn_blocking(move || {
+        let _ = check_tenant_llm_url(&base_url, false);
+    })
+    .await;
 }
 
 /// Supported LLM providers
@@ -278,15 +342,7 @@ impl LLMClient {
                 let base_url = from_env
                     .clone()
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
-                // Trim whitespace and trailing slashes to avoid URL issues
-                let base_url = base_url.trim().trim_end_matches('/');
-                // Ensure URL has http:// scheme (Ollama is always HTTP locally)
-                let base_url =
-                    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-                        format!("http://{}", base_url)
-                    } else {
-                        base_url.to_string()
-                    };
+                let base_url = normalize_ollama_url(&base_url);
                 // SEC-177: only the tenant-supplied value is checked. The
                 // default above is the server's own choice, not input.
                 if from_env.is_some() {
@@ -1083,6 +1139,24 @@ impl LLMClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cached_verdict_skips_the_lookup() {
+        // `.invalid` never resolves, so passing proves no lookup happened.
+        let url = "http://verdict-cache-test.invalid:11434";
+        assert!(check_tenant_llm_url(url, false).is_err());
+        store_verdict(url, Ok(()));
+        assert!(check_tenant_llm_url(url, false).is_ok());
+        store_verdict(url, Err("nope".to_string()));
+        let e = check_tenant_llm_url(url, false).unwrap_err().to_string();
+        assert!(e.contains("nope"), "{}", e);
+    }
+
+    #[test]
+    fn ollama_urls_are_normalised_for_both_sites() {
+        assert_eq!(normalize_ollama_url(" host:11434/ "), "http://host:11434");
+        assert_eq!(normalize_ollama_url("https://h/"), "https://h");
+    }
 
     /// SEC-177's exploit URL, and the neighbourhood it lives in. A tenant with
     /// `Write` on one database sets `OLLAMA_URL`, then any LLM-backed path

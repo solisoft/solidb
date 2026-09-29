@@ -78,3 +78,14 @@ async call sites, so a lookup there still occupies the calling worker — for at
 most 5 s now, not until the OS resolver gives up. Removing it needs either the
 write-time verdict with a short-TTL cache, or an async `from_storage`
 (direction 3).
+
+## Update 2026-09-29 (later) — LLM path closed
+
+An async `from_storage` is not available: three of its call sites are inside
+the synchronous SDBQL executor (`evaluate.rs`, `graph_rag.rs`). Direction 3's
+first option was taken instead: the resolution verdict for a tenant `OLLAMA_URL`
+is cached (30 s for a pass, 5 s for a refusal, 256 entries), so the hot path
+does no DNS, and `PUT /env/OLLAMA_URL` warms it on the blocking pool so the first
+LLM request after a change finds it ready. Use-time validation stays
+authoritative; the cache only bounds how often it resolves. Nothing here remains
+open.

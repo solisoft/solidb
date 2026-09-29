@@ -4,6 +4,9 @@
 
 ### Added
 
+* **`FILTER doc._id == …` / `IN […]`** is served as a primary-key lookup
+  instead of a scan.
+
 * **Offline sync accepts delta changes.** `POST /_api/sync/push` used to refuse
   any change with `is_delta`. The `delta_patch` (RFC 6902) is now applied to the
   stored document atomically (`Collection::patch_document`); a patch for a
@@ -31,6 +34,9 @@
   `RepairCollection` now says it needs the HTTP API.
 
 ### Fixed
+
+* **LLM requests no longer resolve `OLLAMA_URL` on every call.** The SSRF
+  verdict is cached briefly and warmed when the URL is written.
 
 * **Cluster status `log_entries`** reported the current sequence number; it now
   reports the entries the sync log retains.

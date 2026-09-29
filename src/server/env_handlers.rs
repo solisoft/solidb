@@ -92,6 +92,15 @@ pub async fn set_env_var_handler(
 
     collection.insert_or_replace(doc)?;
 
+    // Pay for the DNS lookup here, off the runtime, rather than on the first
+    // LLM request that uses the new URL.
+    if key == "OLLAMA_URL" {
+        crate::server::llm_client::warm_tenant_llm_url(
+            crate::server::llm_client::normalize_ollama_url(&payload.value),
+        )
+        .await;
+    }
+
     Ok(Json(serde_json::json!({ "status": "ok", "key": key })))
 }
 
