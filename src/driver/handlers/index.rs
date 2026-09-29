@@ -295,18 +295,68 @@ pub fn handle_hybrid_search(
     }
 }
 
+/// Candidates fetched per requested row when a metadata filter is applied.
+const VECTOR_FILTER_OVERFETCH: usize = 4;
+
+pub struct VectorSearchConfig {
+    pub collection: String,
+    pub index_name: String,
+    pub vector: Vec<f32>,
+    pub limit: Option<i32>,
+    pub ef_search: Option<i32>,
+    pub filter: Option<String>,
+}
+
 pub fn handle_vector_search(
     handler: &DriverHandler,
     database: String,
-    collection: String,
-    index_name: String,
-    vector: Vec<f32>,
-    limit: Option<i32>,
-    ef_search: Option<i32>,
+    cfg: VectorSearchConfig,
 ) -> Response {
+    let VectorSearchConfig {
+        collection,
+        index_name,
+        vector,
+        limit,
+        ef_search,
+        filter,
+    } = cfg;
+    // `filter` is a JSON object of `field -> value` equalities.
+    let filter = match filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        None => None,
+        Some(f) => match serde_json::from_str::<serde_json::Value>(f) {
+            Ok(serde_json::Value::Object(m)) => Some(m),
+            _ => {
+                return Response::error(DriverError::InvalidCommand(
+                    "vector search filter must be a JSON object of field -> value".to_string(),
+                ))
+            }
+        },
+    };
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
-            // TODO: Implement filter support when Collection::vector_search supports it
+            if let Some(filter) = filter {
+                let k = limit.map(|l| l.max(0) as usize).unwrap_or(10);
+                return match coll.vector_search_filtered(
+                    &index_name,
+                    &vector,
+                    k,
+                    VECTOR_FILTER_OVERFETCH,
+                    ef_search.map(|v| v.max(0) as usize),
+                    &filter,
+                ) {
+                    Ok(rows) => Response::ok(serde_json::json!(rows
+                        .into_iter()
+                        .map(|(doc, score)| {
+                            serde_json::json!({
+                                "doc_key": doc.get("_key").cloned().unwrap_or_default(),
+                                "score": score,
+                                "document": doc,
+                            })
+                        })
+                        .collect::<Vec<_>>())),
+                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+                };
+            }
             match coll.vector_search(
                 &index_name,
                 &vector,
@@ -399,5 +449,61 @@ pub fn handle_delete_ttl_index(
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    #[test]
+    fn vector_search_filter_selects_matching_rows() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.create_vector_index(VectorIndexConfig::new(
+            "v".to_string(),
+            "emb".to_string(),
+            2,
+        ))
+        .unwrap();
+        for i in 0..20 {
+            let kind = if i % 2 == 0 { "a" } else { "b" };
+            coll.insert(
+                json!({"_key": format!("k{i}"), "kind": kind, "emb": [1.0, i as f32 * 0.01]}),
+            )
+            .unwrap();
+        }
+        let h = DriverHandler::new(engine, None);
+
+        let run = |filter: Option<&str>| {
+            handle_vector_search(
+                &h,
+                "d".into(),
+                VectorSearchConfig {
+                    collection: "c".into(),
+                    index_name: "v".into(),
+                    vector: vec![1.0, 0.0],
+                    limit: Some(5),
+                    ef_search: None,
+                    filter: filter.map(String::from),
+                },
+            )
+        };
+        let rows = |r: Response| match r {
+            Response::Ok { data: Some(d), .. } => d.as_array().unwrap().clone(),
+            other => panic!("{:?}", other),
+        };
+        let filtered = rows(run(Some(r#"{"kind":"b"}"#)));
+        assert_eq!(filtered.len(), 5);
+        assert!(filtered.iter().all(|r| r["document"]["kind"] == "b"));
+        assert_eq!(rows(run(None)).len(), 5);
+        assert!(matches!(run(Some("[1]")), Response::Error { .. }));
     }
 }

@@ -186,6 +186,51 @@ pub fn handle_recount_collection(
     }
 }
 
+pub fn handle_prune_collection(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    older_than: Option<String>,
+) -> Response {
+    let Some(older_than) = older_than else {
+        return Response::error(DriverError::InvalidCommand(
+            "PruneCollection requires older_than (RFC 3339)".to_string(),
+        ));
+    };
+    let ts = match chrono::DateTime::parse_from_rfc3339(&older_than) {
+        Ok(dt) if dt.timestamp_millis() >= 0 => dt.timestamp_millis() as u64,
+        _ => {
+            return Response::error(DriverError::InvalidCommand(
+                "older_than must be a non-negative RFC 3339 timestamp".to_string(),
+            ))
+        }
+    };
+    match handler.get_collection_for_write(&database, &collection) {
+        Ok(coll) => match coll.prune_older_than(ts) {
+            Ok(n) => {
+                crate::storage::query_cache::get_query_cache().invalidate_collection(&collection);
+                Response::ok_count(n)
+            }
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
+        Err(e) => Response::error(e),
+    }
+}
+
+pub fn handle_get_collection_sharding(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+) -> Response {
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => match coll.get_shard_config() {
+            Some(cfg) => Response::ok(serde_json::json!(cfg)),
+            None => Response::ok(serde_json::Value::Null),
+        },
+        Err(e) => Response::error(e),
+    }
+}
+
 /// Budget for an export reply's encoded documents, a little under the frame
 /// cap so the response envelope still fits. A reply over the frame cap fails
 /// to encode and drops the connection, so stop before building it.
@@ -466,5 +511,68 @@ pub fn handle_delete_columnar_index(
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageEngine;
+    use std::sync::Arc;
+
+    fn handler() -> (tempfile::TempDir, DriverHandler) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        engine
+            .get_database("d")
+            .unwrap()
+            .create_collection("c".to_string(), None)
+            .unwrap();
+        (tmp, DriverHandler::new(engine, None))
+    }
+
+    #[test]
+    fn prune_requires_a_valid_cutoff() {
+        let (_t, h) = handler();
+        for bad in [None, Some("yesterday".to_string())] {
+            let r = handle_prune_collection(&h, "d".into(), "c".into(), bad);
+            assert!(matches!(r, Response::Error { .. }), "{:?}", r);
+        }
+    }
+
+    #[test]
+    fn prune_deletes_only_older_documents() {
+        let (_t, h) = handler();
+        let coll = h.get_collection("d", "c").unwrap();
+        // Auto-generated keys are UUIDv7, the only ones prune can date.
+        coll.insert(serde_json::json!({"v": 1})).unwrap();
+        // A cutoff in the past removes nothing; one in the future removes all.
+        let r = handle_prune_collection(
+            &h,
+            "d".into(),
+            "c".into(),
+            Some("2000-01-01T00:00:00Z".into()),
+        );
+        assert!(matches!(r, Response::Ok { count: Some(0), .. }), "{:?}", r);
+        let r = handle_prune_collection(
+            &h,
+            "d".into(),
+            "c".into(),
+            Some("2999-01-01T00:00:00Z".into()),
+        );
+        assert!(matches!(r, Response::Ok { count: Some(1), .. }), "{:?}", r);
+    }
+
+    #[test]
+    fn sharding_of_unsharded_collection_is_null() {
+        let (_t, h) = handler();
+        let r = handle_get_collection_sharding(&h, "d".into(), "c".into());
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d.is_null())
+                || matches!(&r, Response::Ok { data: None, .. }),
+            "{:?}",
+            r
+        );
     }
 }

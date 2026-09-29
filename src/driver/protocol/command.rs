@@ -283,6 +283,11 @@ pub enum Command {
     PruneCollection {
         database: String,
         collection: String,
+        /// RFC 3339 cutoff: documents whose UUIDv7 key predates it are deleted
+        /// (auto-generated keys; other keys are left alone).
+        /// Required; optional on the wire so older clients still decode.
+        #[serde(default)]
+        older_than: Option<String>,
     },
     RecountCollection {
         database: String,

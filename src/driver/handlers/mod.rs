@@ -789,22 +789,27 @@ impl DriverHandler {
                 collection,
             } => database::handle_compact_collection(self, database, collection),
 
-            Command::PruneCollection { .. } => Response::error(DriverError::InvalidCommand(
-                "Prune not supported".to_string(),
-            )),
+            Command::PruneCollection {
+                database,
+                collection,
+                older_than,
+            } => database::handle_prune_collection(self, database, collection, older_than),
 
             Command::RecountCollection {
                 database,
                 collection,
             } => database::handle_recount_collection(self, database, collection),
 
-            Command::RepairCollection { .. } => Response::error(DriverError::InvalidCommand(
-                "Repair not supported".to_string(),
+            // Repair drives the shard coordinator, which a driver connection
+            // does not hold.
+            Command::RepairCollection { .. } => Response::error(DriverError::DatabaseError(
+                "Repair requires HTTP API".to_string(),
             )),
 
-            Command::GetCollectionSharding { .. } => Response::error(DriverError::InvalidCommand(
-                "Sharding not supported".to_string(),
-            )),
+            Command::GetCollectionSharding {
+                database,
+                collection,
+            } => database::handle_get_collection_sharding(self, database, collection),
 
             Command::ExportCollection {
                 database,
@@ -980,9 +985,18 @@ impl DriverHandler {
                 vector,
                 limit,
                 ef_search,
-                filter: _,
+                filter,
             } => index::handle_vector_search(
-                self, database, collection, index_name, vector, limit, ef_search,
+                self,
+                database,
+                index::VectorSearchConfig {
+                    collection,
+                    index_name,
+                    vector,
+                    limit,
+                    ef_search,
+                    filter,
+                },
             ),
 
             Command::QuantizeVectorIndex {
