@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **Driver: `TransactionCommand` was not transactional.** The inner command
+  ran outside the transaction, so a write committed at once and `Rollback`
+  undid nothing. `Insert`, `Update` and `Delete` are now staged on the
+  transaction and applied at commit; any other inner command is refused with
+  a `TransactionError`.
+
 ## [2.0.5](https://github.com/solisoft/solidb/compare/v2.0.4...v2.0.5) (2026-09-29)
 
 ### Performance
