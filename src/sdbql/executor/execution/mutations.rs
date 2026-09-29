@@ -14,6 +14,16 @@ use crate::sdbql::ast::{MutationOptions, OverwriteMode};
 use crate::storage::Collection;
 use crate::sync::protocol::Operation;
 
+/// A sharded collection as the per-row writes see it: every call goes through
+/// the coordinator, which routes to the owning node and does its own
+/// replication logging.
+pub(super) struct ShardedTarget {
+    pub coord: std::sync::Arc<crate::sharding::coordinator::ShardCoordinator>,
+    pub config: crate::sharding::coordinator::CollectionShardConfig,
+    pub database: String,
+    pub collection: String,
+}
+
 /// What one row's write produced: the stored document before and after.
 /// `None` where there is no such document (`OLD` of an insert, `NEW` of a
 /// remove or of an ignored insert).
@@ -124,7 +134,233 @@ fn replacement_body(document: Value, key: &str, statement: &str) -> DbResult<Val
     Ok(Value::Object(map))
 }
 
+/// The stored form of `existing` as a body to write back: `_key` kept, the
+/// server-managed attributes dropped.
+fn body_of(existing: &Value) -> Map<String, Value> {
+    let mut data = existing.as_object().cloned().unwrap_or_default();
+    for system in ["_id", "_rev", "_created_at", "_updated_at"] {
+        data.remove(system);
+    }
+    data
+}
+
 impl<'a> QueryExecutor<'a> {
+    /// Run a coordinator call from the synchronous executor thread.
+    fn on_shards<T: Send + 'static>(
+        &self,
+        op: &str,
+        fut: impl std::future::Future<Output = Result<T, DbError>> + Send + 'static,
+    ) -> DbResult<T> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        tokio::runtime::Handle::current().spawn(async move {
+            let _ = tx.send(fut.await);
+        });
+        super::clauses::recv_sharded(rx, op)
+    }
+
+    fn shard_get(&self, t: &ShardedTarget, key: &str) -> DbResult<Value> {
+        let (coord, db, coll, key) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            key.to_string(),
+        );
+        self.on_shards("get", async move { coord.get(&db, &coll, &key).await })
+    }
+
+    fn shard_replace(&self, t: &ShardedTarget, key: &str, body: Value) -> DbResult<Value> {
+        let (coord, db, coll, config, key) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            t.config.clone(),
+            key.to_string(),
+        );
+        self.on_shards("replace", async move {
+            coord.replace(&db, &coll, &config, &key, body).await
+        })
+    }
+
+    fn shard_update(&self, t: &ShardedTarget, key: &str, patch: Value) -> DbResult<Value> {
+        let (coord, db, coll, config, key) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            t.config.clone(),
+            key.to_string(),
+        );
+        self.on_shards("update", async move {
+            coord.update(&db, &coll, &config, &key, patch).await
+        })
+    }
+
+    fn shard_insert(&self, t: &ShardedTarget, document: Value) -> DbResult<Value> {
+        let (coord, db, coll, config) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            t.config.clone(),
+        );
+        self.on_shards("insert", async move {
+            coord.insert(&db, &coll, &config, document).await
+        })
+    }
+
+    /// [`Self::write_update_row`] on a sharded collection. The pre-image (for
+    /// `OLD`, REPLACE and custom merges) is read first, so a concurrent writer
+    /// of the same document between the read and the write can be lost — the
+    /// same caveat the single-node path documents.
+    pub(super) fn write_update_row_sharded(
+        &self,
+        t: &ShardedTarget,
+        key: &str,
+        changes: Value,
+        replace: bool,
+        options: &MutationOptions,
+        want_old: bool,
+    ) -> DbResult<RowWrite> {
+        let statement = if replace { "REPLACE" } else { "UPDATE" };
+        if !changes.is_object() {
+            return Err(DbError::InvalidDocument(format!(
+                "{}: changes must be an object",
+                statement
+            )));
+        }
+
+        let need_old = want_old || replace || options.needs_custom_merge();
+        let existing = if need_old {
+            Some(self.shard_get(t, key)?)
+        } else {
+            None
+        };
+
+        let new_value = if replace {
+            let body = replacement_body(changes, key, statement)?;
+            self.shard_replace(t, key, body)?
+        } else if options.needs_custom_merge() {
+            let mut data = body_of(existing.as_ref().unwrap_or(&Value::Null));
+            if let Value::Object(patch) = &changes {
+                merge_patch(
+                    &mut data,
+                    patch,
+                    options.keep_null.unwrap_or(true),
+                    options.merge_objects.unwrap_or(false),
+                    true,
+                );
+            }
+            data.insert("_key".to_string(), Value::String(key.to_string()));
+            self.shard_replace(t, key, Value::Object(data))?
+        } else {
+            self.shard_update(t, key, changes)?
+        };
+
+        Ok(RowWrite {
+            old: if want_old { existing } else { None },
+            new: Some(new_value),
+            updated: true,
+            skipped: false,
+        })
+    }
+
+    /// [`Self::write_remove_row`] on a sharded collection.
+    pub(super) fn write_remove_row_sharded(
+        &self,
+        t: &ShardedTarget,
+        key: &str,
+        want_old: bool,
+    ) -> DbResult<RowWrite> {
+        let old = if want_old {
+            Some(self.shard_get(t, key)?)
+        } else {
+            None
+        };
+        let (coord, db, coll, config, k) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            t.config.clone(),
+            key.to_string(),
+        );
+        self.on_shards("remove", async move {
+            coord.delete(&db, &coll, &config, &k).await
+        })?;
+        Ok(RowWrite {
+            old,
+            new: None,
+            updated: false,
+            skipped: false,
+        })
+    }
+
+    /// [`Self::write_insert_row`] on a sharded collection.
+    pub(super) fn write_insert_row_sharded(
+        &self,
+        t: &ShardedTarget,
+        document: Value,
+        options: &MutationOptions,
+        want_old: bool,
+    ) -> DbResult<RowWrite> {
+        let mode = options.overwrite_mode.unwrap_or(OverwriteMode::Conflict);
+        let key = document
+            .get("_key")
+            .and_then(|k| k.as_str())
+            .map(str::to_string);
+        let plain = |this: &Self, document: Value| -> DbResult<RowWrite> {
+            Ok(RowWrite {
+                old: None,
+                new: Some(this.shard_insert(t, document)?),
+                updated: false,
+                skipped: false,
+            })
+        };
+
+        let key = match (mode, key) {
+            (OverwriteMode::Conflict, _) | (_, None) => return plain(self, document),
+            (_, Some(key)) => key,
+        };
+
+        let existing = match self.shard_get(t, &key) {
+            Ok(doc) => doc,
+            Err(DbError::DocumentNotFound(_)) => {
+                // Absent now; a concurrent insert of the same key between the
+                // lookup and the write is treated as the key having existed.
+                match plain(self, document.clone()) {
+                    Err(DbError::ConflictError(_)) => self.shard_get(t, &key)?,
+                    other => return other,
+                }
+            }
+            Err(e) => return Err(e),
+        };
+
+        match mode {
+            OverwriteMode::Ignore => Ok(RowWrite {
+                old: want_old.then_some(existing),
+                new: None,
+                updated: false,
+                skipped: true,
+            }),
+            OverwriteMode::Replace => {
+                let body = replacement_body(document, &key, "INSERT")?;
+                Ok(RowWrite {
+                    old: want_old.then_some(existing),
+                    new: Some(self.shard_replace(t, &key, body)?),
+                    updated: true,
+                    skipped: false,
+                })
+            }
+            OverwriteMode::Update => {
+                let mut write =
+                    self.write_update_row_sharded(t, &key, document, false, options, false)?;
+                write.old = want_old.then_some(existing);
+                Ok(write)
+            }
+            OverwriteMode::Conflict => Err(DbError::ConflictError(format!(
+                "Document with _key '{}' already exists",
+                key
+            ))),
+        }
+    }
+
     /// UPDATE (merge) or REPLACE the document `key` with `changes`.
     ///
     /// The storage merge is shallow and keeps nulls; when OPTIONS ask for

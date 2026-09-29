@@ -701,6 +701,30 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // A shard stores its documents under the physical name (`c_s1/key`);
+        // callers know the collection as `c`.
+        let physical_prefix = format!("{}_s", collection_name);
+        for doc in &mut all_docs {
+            let Some(id) = doc.get("_id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some((coll_part, key)) = id.split_once('/') else {
+                continue;
+            };
+            // The stored name may carry the database (`db:c_s1`).
+            let coll_part = coll_part
+                .strip_prefix(db_name.as_str())
+                .and_then(|r| r.strip_prefix(':'))
+                .unwrap_or(coll_part);
+            let is_shard_of_this = coll_part
+                .strip_prefix(physical_prefix.as_str())
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            if is_shard_of_this {
+                let logical = format!("{}/{}", collection_name, key);
+                doc["_id"] = Value::String(logical);
+            }
+        }
+
         tracing::info!(
             "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} shards",
             collection_name,

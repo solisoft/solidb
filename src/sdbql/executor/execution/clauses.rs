@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use super::super::types::{Context, MutationStats};
 use super::super::{contains_window_functions, QueryExecutor};
-use super::mutations::{is_document_error, selector_key, RowWrite};
+use super::mutations::{is_document_error, selector_key, RowWrite, ShardedTarget};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
@@ -39,7 +39,7 @@ type TraversalFrame = (
 /// `recv()` there parks this thread forever if the spawned future stalls
 /// (unreachable shard, lock, fsync) — surfacing to callers as an idle, never
 /// answered request. `recv_timeout` turns that into a 504 instead.
-fn recv_sharded<T>(rx: std::sync::mpsc::Receiver<DbResult<T>>, op: &str) -> DbResult<T> {
+pub(super) fn recv_sharded<T>(rx: std::sync::mpsc::Receiver<DbResult<T>>, op: &str) -> DbResult<T> {
     recv_sharded_with(rx, op, std::time::Duration::from_secs(10))
 }
 
@@ -477,7 +477,50 @@ impl<'a> QueryExecutor<'a> {
                     {
                         if config.num_shards > 0 {
                             if per_row || insert_clause.binds_new || insert_clause.binds_old {
-                                return Err(sharded_unsupported("INSERT"));
+                                // OPTIONS / OLD / NEW need each row's outcome, which the
+                                // batch call does not report: write row by row.
+                                let target = ShardedTarget {
+                                    coord: coordinator.clone(),
+                                    config: config.clone(),
+                                    database: self
+                                        .database
+                                        .as_deref()
+                                        .unwrap_or("_system")
+                                        .to_string(),
+                                    collection: insert_clause.collection.clone(),
+                                };
+                                let input = std::mem::take(&mut rows);
+                                let mut kept = Vec::with_capacity(input.len());
+                                for mut ctx in input {
+                                    let doc_value = self.evaluate_expr_with_context(
+                                        &insert_clause.document,
+                                        &ctx,
+                                    )?;
+                                    match self.write_insert_row_sharded(
+                                        &target,
+                                        doc_value,
+                                        &insert_clause.options,
+                                        insert_clause.binds_old,
+                                    ) {
+                                        Ok(write) => {
+                                            count_write(&mut stats, &write);
+                                            bind_old_new(
+                                                &mut ctx,
+                                                insert_clause.binds_old,
+                                                insert_clause.binds_new,
+                                                write,
+                                            );
+                                            kept.push(ctx);
+                                        }
+                                        Err(e)
+                                            if insert_clause.options.ignore_errors
+                                                && is_document_error(&e) => {}
+                                        Err(e) => return Err(e),
+                                    }
+                                }
+                                rows = kept;
+                                i += 1;
+                                continue;
                             }
                             tracing::info!(
                                 "INSERT: Using ShardCoordinator BATCH for {} documents into {}",
@@ -658,11 +701,69 @@ impl<'a> QueryExecutor<'a> {
                     {
                         if config.num_shards > 0 {
                             if custom {
-                                return Err(sharded_unsupported(if update_clause.replace {
+                                let statement = if update_clause.replace {
                                     "REPLACE"
                                 } else {
                                     "UPDATE"
-                                }));
+                                };
+                                let target = ShardedTarget {
+                                    coord: coordinator.clone(),
+                                    config: config.clone(),
+                                    database: self
+                                        .database
+                                        .as_deref()
+                                        .unwrap_or("_system")
+                                        .to_string(),
+                                    collection: update_clause.collection.clone(),
+                                };
+                                let changes_is_selector =
+                                    update_clause.changes == update_clause.selector;
+                                let input = std::mem::take(&mut rows);
+                                let mut kept = Vec::with_capacity(input.len());
+                                for mut ctx in input {
+                                    let selector_value = self.evaluate_expr_with_context(
+                                        &update_clause.selector,
+                                        &ctx,
+                                    )?;
+                                    let changes_value = if changes_is_selector {
+                                        selector_value.clone()
+                                    } else {
+                                        self.evaluate_expr_with_context(
+                                            &update_clause.changes,
+                                            &ctx,
+                                        )?
+                                    };
+                                    let result =
+                                        selector_key(&selector_value, statement).and_then(|key| {
+                                            self.write_update_row_sharded(
+                                                &target,
+                                                &key,
+                                                changes_value,
+                                                update_clause.replace,
+                                                &update_clause.options,
+                                                update_clause.binds_old,
+                                            )
+                                        });
+                                    match result {
+                                        Ok(write) => {
+                                            count_write(&mut stats, &write);
+                                            bind_old_new(
+                                                &mut ctx,
+                                                update_clause.binds_old,
+                                                true,
+                                                write,
+                                            );
+                                            kept.push(ctx);
+                                        }
+                                        Err(e)
+                                            if update_clause.options.ignore_errors
+                                                && is_document_error(&e) => {}
+                                        Err(e) => return Err(e),
+                                    }
+                                }
+                                rows = kept;
+                                i += 1;
+                                continue;
                             }
                             tracing::debug!(
                                 "UPDATE: Delegating to ShardCoordinator for {}",
@@ -856,7 +957,51 @@ impl<'a> QueryExecutor<'a> {
                     {
                         if config.num_shards > 0 {
                             if custom {
-                                return Err(sharded_unsupported("REMOVE"));
+                                let target = ShardedTarget {
+                                    coord: coordinator.clone(),
+                                    config: config.clone(),
+                                    database: self
+                                        .database
+                                        .as_deref()
+                                        .unwrap_or("_system")
+                                        .to_string(),
+                                    collection: remove_clause.collection.clone(),
+                                };
+                                let input = std::mem::take(&mut rows);
+                                let mut kept = Vec::with_capacity(input.len());
+                                for mut ctx in input {
+                                    let selector_value = self.evaluate_expr_with_context(
+                                        &remove_clause.selector,
+                                        &ctx,
+                                    )?;
+                                    let result =
+                                        selector_key(&selector_value, "REMOVE").and_then(|key| {
+                                            self.write_remove_row_sharded(
+                                                &target,
+                                                &key,
+                                                remove_clause.binds_old,
+                                            )
+                                        });
+                                    match result {
+                                        Ok(write) => {
+                                            stats.documents_removed += 1;
+                                            bind_old_new(
+                                                &mut ctx,
+                                                remove_clause.binds_old,
+                                                false,
+                                                write,
+                                            );
+                                            kept.push(ctx);
+                                        }
+                                        Err(e)
+                                            if remove_clause.options.ignore_errors
+                                                && is_document_error(&e) => {}
+                                        Err(e) => return Err(e),
+                                    }
+                                }
+                                rows = kept;
+                                i += 1;
+                                continue;
                             }
                             tracing::debug!(
                                 "REMOVE: Delegating to ShardCoordinator for {}",
@@ -1517,15 +1662,6 @@ fn count_write(stats: &mut MutationStats, write: &RowWrite) {
     } else {
         stats.documents_inserted += 1;
     }
-}
-
-/// The sharded mutation paths go through the coordinator's batch calls,
-/// which report neither per-document results nor pre-images.
-fn sharded_unsupported(statement: &str) -> DbError {
-    DbError::OperationNotSupported(format!(
-        "{} with OPTIONS, REPLACE or RETURN OLD/NEW is not supported on sharded collections yet",
-        statement
-    ))
 }
 
 #[cfg(test)]

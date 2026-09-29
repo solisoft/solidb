@@ -431,6 +431,16 @@ impl<'a> QueryExecutor<'a> {
         ctx: &Context,
         limit: Option<usize>,
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        // A sharded collection's documents live in its physical shards; the
+        // logical collection holds none, so an index (or `_key`) lookup here
+        // would answer "no rows". Fall back to the scan, which reads the shards.
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return None;
+        }
+
         // 1. Composite path
         let eq_conditions = self.extract_equality_conditions(filter, var_name, ctx);
         if eq_conditions.len() >= 2 {

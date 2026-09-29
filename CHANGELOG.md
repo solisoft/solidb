@@ -4,6 +4,15 @@
 
 ### Added
 
+* **UPDATE, REPLACE, REMOVE and INSERT on sharded collections take `OPTIONS` and
+  bind `OLD` / `NEW`.** They failed with "not supported on sharded collections
+  yet". They now write row by row through the shard coordinator (a new
+  `replace` call, forwarded as `PUT …?replace=true`). Like the single-node
+  path, a read-then-write is not atomic against a concurrent writer of the same
+  document. A mixed-version cluster must upgrade every node before using
+  `REPLACE` on a sharded collection: an older peer ignores `replace=true` and
+  merges.
+
 * **`solidb-restore` reads SQL dumps.** `INSERT INTO t (cols) VALUES (...)`
   statements (mysqldump `--complete-insert`, pg_dump `--column-inserts`, sqlite
   `.dump`) become documents in a collection named after the table; other
@@ -41,6 +50,15 @@
   `POST …/repair`.
 
 ### Fixed
+
+* **`FILTER doc._key == …` (and any indexed lookup) on a sharded collection
+  returned nothing.** The lookup ran against the logical collection, which
+  holds no documents; sharded collections now use the scan, which reads the
+  shards.
+* **`NEW` after a sharded `UPDATE`** was the patch, not the merged document,
+  when the shard was local.
+* **Documents read from a sharded collection reported a physical `_id`**
+  (`db:c_s1/key`); it is now `c/key`.
 
 * **LLM requests no longer resolve `OLLAMA_URL` on every call.** The SSRF
   verdict is cached briefly and warmed when the URL is written.

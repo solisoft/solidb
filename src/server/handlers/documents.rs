@@ -788,6 +788,9 @@ pub async fn update_document(
 
     // Check for upsert query param
     let upsert = params.get("upsert").map(|v| v == "true").unwrap_or(false);
+    // `replace=true` swaps the whole document instead of merging into it
+    // (used to forward a sharded REPLACE to the node that owns the shard).
+    let replace = params.get("replace").map(|v| v == "true").unwrap_or(false);
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
@@ -829,19 +832,27 @@ pub async fn update_document(
         .map(|s| s.trim_matches('"').to_string());
 
     // Try update, or insert if upsert=true and document not found
-    let (doc, was_upsert) = match if_match {
-        Some(rev) => (collection.update_with_rev(&key, &rev, data.clone())?, false),
-        None => match collection.update(&key, data.clone()) {
-            Ok(doc) => (doc, false),
-            Err(DbError::DocumentNotFound(_)) if upsert => {
-                // Ensure _key is set for insert
-                if let Value::Object(ref mut obj) = data {
-                    obj.insert("_key".to_string(), Value::String(key.clone()));
+    let (doc, was_upsert) = if replace {
+        collection.get(&key)?;
+        if let Value::Object(ref mut obj) = data {
+            obj.insert("_key".to_string(), Value::String(key.clone()));
+        }
+        (collection.insert_or_replace(data.clone())?, false)
+    } else {
+        match if_match {
+            Some(rev) => (collection.update_with_rev(&key, &rev, data.clone())?, false),
+            None => match collection.update(&key, data.clone()) {
+                Ok(doc) => (doc, false),
+                Err(DbError::DocumentNotFound(_)) if upsert => {
+                    // Ensure _key is set for insert
+                    if let Value::Object(ref mut obj) = data {
+                        obj.insert("_key".to_string(), Value::String(key.clone()));
+                    }
+                    (collection.insert(data)?, true)
                 }
-                (collection.insert(data)?, true)
-            }
-            Err(e) => return Err(e),
-        },
+                Err(e) => return Err(e),
+            },
+        }
     };
 
     // Record to replication log ONLY for non-sharded collections

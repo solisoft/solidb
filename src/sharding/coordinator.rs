@@ -2850,10 +2850,10 @@ impl ShardCoordinator {
             let db = self.storage.get_database(database)?;
             let coll = db.get_collection(&physical_coll)?;
 
-            // Apply update locally
-            // Note: handlers.rs usually does "get then merge".
-            // `collection.update` does merge.
-            coll.update(key, document.clone())?;
+            // Apply update locally. `collection.update` merges, and the merged
+            // document is what the caller (and `NEW`) must see; a forwarded
+            // update already returns it.
+            let merged = coll.update(key, document.clone())?.to_value();
 
             if let Some(ref log) = self.replication_log {
                 let entry = LogEntry {
@@ -2870,7 +2870,7 @@ impl ShardCoordinator {
                 let _ = log.append(entry);
             }
 
-            Ok(document)
+            Ok(merged)
         } else {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
@@ -2907,6 +2907,131 @@ impl ShardCoordinator {
                     } else {
                         Err(crate::error::DbError::InternalError(format!(
                             "Remote update failed: {}",
+                            res.status()
+                        )))
+                    }
+                } else {
+                    Err(crate::error::DbError::InternalError(
+                        "Primary node unknown".to_string(),
+                    ))
+                }
+            } else {
+                Err(crate::error::DbError::InternalError(
+                    "Cluster manager missing".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Replace a document wholesale with shard coordination (the document
+    /// must exist). Like [`Self::update`] but without the merge.
+    pub async fn replace(
+        &self,
+        database: &str,
+        collection: &str,
+        config: &CollectionShardConfig,
+        key: &str,
+        document: serde_json::Value,
+    ) -> Result<serde_json::Value, crate::error::DbError> {
+        use crate::sharding::router::ShardRouter;
+
+        let shard_key_value = if config.shard_key == "_key" {
+            key.to_string()
+        } else {
+            // For update, we might not have the full doc content to extract shard key?
+            // If shard key is immutable, we can assume it matches current doc?
+            // But we don't have current doc.
+            // If shard key is NOT _key, update(key) is ambiguous if we don't know shard key.
+            // Assume _key for now.
+            key.to_string()
+        };
+
+        let shard_id = ShardRouter::route(&shard_key_value, config.num_shards);
+        let physical_coll = format!("{}_s{}", collection, shard_id);
+
+        let table = self.get_shard_table(database, collection).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard table not found".to_string())
+        })?;
+        let assignment = table.assignments.get(&shard_id).ok_or_else(|| {
+            crate::error::DbError::InternalError("Shard assignment not found".to_string())
+        })?;
+        let primary_node = &assignment.primary_node;
+
+        let local_id = if let Some(mgr) = &self.cluster_manager {
+            mgr.local_node_id()
+        } else {
+            "local".to_string()
+        };
+
+        if primary_node == &local_id || primary_node == "local" {
+            let db = self.storage.get_database(database)?;
+            let coll = db.get_collection(&physical_coll)?;
+
+            // REPLACE needs the document to exist; the body then replaces it
+            // wholesale (fields not in it are removed).
+            coll.get(key)?;
+            let mut body = document.clone();
+            if let Some(obj) = body.as_object_mut() {
+                obj.insert(
+                    "_key".to_string(),
+                    serde_json::Value::String(key.to_string()),
+                );
+            }
+            let merged = coll.insert_or_replace(body)?.to_value();
+
+            if let Some(ref log) = self.replication_log {
+                let entry = LogEntry {
+                    sequence: 0,
+                    node_id: "".to_string(),
+                    database: database.to_string(),
+                    collection: physical_coll.clone(),
+                    operation: Operation::Update,
+                    key: key.to_string(),
+                    data: serde_json::to_vec(&document).ok(),
+                    timestamp: chrono::Utc::now().timestamp_millis() as u64,
+                    origin_sequence: None,
+                };
+                let _ = log.append(entry);
+            }
+
+            Ok(merged)
+        } else {
+            // Forward
+            if let Some(mgr) = &self.cluster_manager {
+                if let Some(addr) = mgr.get_node_api_address(primary_node) {
+                    let client = get_http_client();
+                    let url = crate::cluster::http::peer_url(
+                        &addr,
+                        &format!(
+                            "/_api/database/{}/document/{}/{}",
+                            database, physical_coll, key
+                        ),
+                    );
+                    let secret = self.cluster_secret();
+
+                    let url = format!("{}?replace=true", url);
+                    let res = client
+                        .put(&url)
+                        .header("X-Shard-Direct", "true")
+                        .header("X-Cluster-Secret", secret)
+                        .json(&document)
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            crate::error::DbError::InternalError(format!(
+                                "Forwarding replace failed: {}",
+                                e
+                            ))
+                        })?;
+
+                    if res.status().is_success() {
+                        let val: serde_json::Value = res.json().await.map_err(|e| {
+                            crate::error::DbError::InternalError(format!("Invalid response: {}", e))
+                        })?;
+                        Ok(val)
+                    } else {
+                        Err(crate::error::DbError::InternalError(format!(
+                            "Remote replace failed: {}",
                             res.status()
                         )))
                     }
