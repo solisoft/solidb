@@ -575,4 +575,71 @@ mod tests {
             r
         );
     }
+
+    #[test]
+    fn columnar_filter_order_and_aggregate() {
+        let (_t, h) = handler();
+        let db = h.storage.get_database("d").unwrap();
+        db.create_columnar(
+            "t".to_string(),
+            vec![
+                serde_json::json!({"name": "region", "data_type": "string", "nullable": false}),
+                serde_json::json!({"name": "n", "data_type": "int64", "nullable": false}),
+            ],
+        )
+        .unwrap();
+        db.insert_columnar(
+            "t",
+            vec![
+                serde_json::json!({"region": "eu", "n": 1}),
+                serde_json::json!({"region": "eu", "n": 5}),
+                serde_json::json!({"region": "us", "n": 10}),
+            ],
+        )
+        .unwrap();
+
+        let rows = db
+            .query_columnar(
+                "t",
+                Some(vec!["region".into(), "n".into()]),
+                Some(r#"{"column":"n","op":">=","value":5}"#.into()),
+                Some("n DESC".into()),
+                None,
+            )
+            .unwrap();
+        let ns: Vec<_> = rows.iter().map(|r| r["n"].as_i64().unwrap()).collect();
+        assert_eq!(ns, vec![10, 5]);
+
+        let agg = |filter: Option<&str>, group: Option<Vec<String>>| {
+            db.aggregate_columnar(
+                "t",
+                vec![serde_json::json!({"column": "n", "op": "SUM"})],
+                group,
+                filter.map(String::from),
+            )
+        };
+        let eu = r#"{"and":[{"column":"region","op":"EQ","value":"eu"}]}"#;
+        assert_eq!(agg(Some(eu), None).unwrap()[0]["n_sum"], 6.0);
+        let grouped = agg(
+            Some(r#"{"column":"n","op":"<","value":10}"#),
+            Some(vec!["region".into()]),
+        )
+        .unwrap();
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0]["_agg"], 6.0);
+
+        assert!(agg(Some("not json"), None).is_err());
+        assert!(db
+            .aggregate_columnar("t", vec![serde_json::json!({"column": "n"})], None, None)
+            .is_err());
+        assert!(db
+            .query_columnar(
+                "t",
+                Some(vec!["n".into()]),
+                None,
+                Some("region".into()),
+                None
+            )
+            .is_err());
+    }
 }

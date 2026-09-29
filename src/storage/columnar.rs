@@ -148,6 +148,70 @@ pub enum ColumnFilter {
     Or(Vec<ColumnFilter>),
 }
 
+impl ColumnFilter {
+    /// Parse a filter from JSON: a leaf `{"column": c, "op": o, "value": v}`
+    /// (`op` one of EQ, NE, GT, GTE, LT, LTE, IN, or the symbols), or
+    /// `{"and": [..]}` / `{"or": [..]}` of filters.
+    pub fn from_json(v: &Value) -> DbResult<Self> {
+        Self::from_json_at(v, 0)
+    }
+
+    fn from_json_at(v: &Value, depth: usize) -> DbResult<Self> {
+        const MAX_DEPTH: usize = 16;
+        let bad = |m: &str| DbError::BadRequest(m.to_string());
+        if depth > MAX_DEPTH {
+            return Err(bad("filter is nested too deeply"));
+        }
+        let obj = v
+            .as_object()
+            .ok_or_else(|| bad("filter must be an object"))?;
+        for (key, make) in [
+            (
+                "and",
+                ColumnFilter::And as fn(Vec<ColumnFilter>) -> ColumnFilter,
+            ),
+            ("or", ColumnFilter::Or),
+        ] {
+            if let Some(items) = obj.get(key) {
+                let items = items
+                    .as_array()
+                    .ok_or_else(|| bad("and/or take an array of filters"))?;
+                return items
+                    .iter()
+                    .map(|i| Self::from_json_at(i, depth + 1))
+                    .collect::<DbResult<Vec<_>>>()
+                    .map(make);
+            }
+        }
+        let column = obj
+            .get("column")
+            .and_then(Value::as_str)
+            .ok_or_else(|| bad("filter needs a string 'column'"))?
+            .to_string();
+        let op = obj
+            .get("op")
+            .and_then(Value::as_str)
+            .ok_or_else(|| bad("filter needs a string 'op'"))?;
+        let value = obj.get("value").cloned().unwrap_or(Value::Null);
+        match op.to_uppercase().as_str() {
+            "EQ" | "=" | "==" => Ok(Self::Eq(column, value)),
+            "NE" | "!=" | "<>" => Ok(Self::Ne(column, value)),
+            "GT" | ">" => Ok(Self::Gt(column, value)),
+            "GTE" | ">=" => Ok(Self::Gte(column, value)),
+            "LT" | "<" => Ok(Self::Lt(column, value)),
+            "LTE" | "<=" => Ok(Self::Lte(column, value)),
+            "IN" => match value {
+                Value::Array(arr) => Ok(Self::In(column, arr)),
+                _ => Err(bad("IN operator requires an array value")),
+            },
+            other => Err(DbError::BadRequest(format!(
+                "Unknown filter operator: {}. Supported: EQ, NE, GT, GTE, LT, LTE, IN",
+                other
+            ))),
+        }
+    }
+}
+
 /// Statistics for a columnar collection
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnarStats {
@@ -943,8 +1007,54 @@ impl ColumnarCollection {
         agg_column: &str,
         op: AggregateOp,
     ) -> DbResult<Vec<Value>> {
-        // Get all row UUIDs
-        let all_uuids = self.list_row_uuids()?;
+        self.group_by_rows(group_columns, agg_column, op, None)
+    }
+
+    /// [`Self::group_by`] restricted to the rows matching `filter`.
+    pub fn group_by_where(
+        &self,
+        filter: &ColumnFilter,
+        group_columns: &[GroupByColumn],
+        agg_column: &str,
+        op: AggregateOp,
+    ) -> DbResult<Vec<Value>> {
+        let rows = self.filtered_row_uuids(filter)?;
+        self.group_by_rows(group_columns, agg_column, op, Some(rows))
+    }
+
+    /// [`Self::aggregate`] restricted to the rows matching `filter`.
+    pub fn aggregate_where(
+        &self,
+        filter: &ColumnFilter,
+        column: &str,
+        op: AggregateOp,
+    ) -> DbResult<Value> {
+        let rows = self.filtered_row_uuids(filter)?;
+        let values = self.read_column(column, Some(&rows))?;
+        Ok(self.compute_aggregate(&values, op))
+    }
+
+    fn filtered_row_uuids(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
+        let row_count = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .row_count;
+        let positions = self.apply_filter(filter, 0..row_count)?;
+        self.positions_to_uuids(&positions)
+    }
+
+    fn group_by_rows(
+        &self,
+        group_columns: &[GroupByColumn],
+        agg_column: &str,
+        op: AggregateOp,
+        rows: Option<Vec<String>>,
+    ) -> DbResult<Vec<Value>> {
+        let all_uuids = match rows {
+            Some(rows) => rows,
+            None => self.list_row_uuids()?,
+        };
 
         // Read group columns and aggregation column
         let mut group_data: HashMap<String, Vec<String>> = HashMap::new();

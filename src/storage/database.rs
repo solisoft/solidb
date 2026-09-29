@@ -468,6 +468,9 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| DbError::BadRequest(format!("Invalid column definition: {}", e)))?;
 
+        // The columns live in a collection of their own, which the HTTP
+        // handler creates first; without it `new` finds no keyspace.
+        self.create_collection(format!("_columnar_{}", name), None)?;
         ColumnarCollection::new(
             name,
             &self.name,
@@ -518,51 +521,52 @@ impl Database {
         filter: Option<String>,
     ) -> DbResult<Vec<Value>> {
         let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        let filter = parse_columnar_filter(filter)?;
 
-        // TODO: Full implementation of aggregation parsing
-        if filter.is_some() {
-            return Err(DbError::OperationNotSupported(
-                "Filtering in aggregation not yet supported via driver".to_string(),
-            ));
+        // Each entry is `{"column": c, "op": "SUM"|...}`. A malformed entry is
+        // an error: skipping it used to return a result that silently lacked
+        // the aggregation the caller asked for.
+        let mut specs = Vec::with_capacity(aggregations.len());
+        for agg in &aggregations {
+            let obj = agg.as_object().ok_or_else(|| {
+                DbError::BadRequest("each aggregation must be an object".to_string())
+            })?;
+            let (Some(col), Some(op_str)) = (
+                obj.get("column").and_then(|v| v.as_str()),
+                obj.get("op").and_then(|v| v.as_str()),
+            ) else {
+                return Err(DbError::BadRequest(
+                    "each aggregation needs string 'column' and 'op'".to_string(),
+                ));
+            };
+            let op = AggregateOp::from_str(op_str).ok_or_else(|| {
+                DbError::BadRequest(format!("unknown aggregate operation '{}'", op_str))
+            })?;
+            specs.push((col.to_string(), op_str.to_lowercase(), op));
         }
 
         if let Some(groups) = group_by {
-            // Only simple column grouping supported for now via this interface
             let group_cols: Vec<GroupByColumn> =
                 groups.into_iter().map(GroupByColumn::Simple).collect();
-
-            // Extract first aggregation (limited support)
-            if let Some(first_agg) = aggregations.first() {
-                if let Some(obj) = first_agg.as_object() {
-                    if let (Some(col), Some(op_str)) = (
-                        obj.get("column").and_then(|v| v.as_str()),
-                        obj.get("op").and_then(|v| v.as_str()),
-                    ) {
-                        if let Some(op) = AggregateOp::from_str(op_str) {
-                            return coll.group_by(&group_cols, col, op);
-                        }
-                    }
-                }
-            }
-            return Err(DbError::OperationNotSupported(
-                "Complex aggregation not supported".to_string(),
-            ));
+            // A grouped result is one row per group carrying a single `_agg`.
+            let [(col, _, op)] = specs.as_slice() else {
+                return Err(DbError::OperationNotSupported(
+                    "grouped aggregation takes exactly one aggregation".to_string(),
+                ));
+            };
+            return match &filter {
+                Some(f) => coll.group_by_where(f, &group_cols, col, *op),
+                None => coll.group_by(&group_cols, col, *op),
+            };
         }
 
-        // No group by
         let mut result = serde_json::Map::new();
-        for agg in aggregations {
-            if let Some(obj) = agg.as_object() {
-                if let (Some(col), Some(op_str)) = (
-                    obj.get("column").and_then(|v| v.as_str()),
-                    obj.get("op").and_then(|v| v.as_str()),
-                ) {
-                    if let Some(op) = AggregateOp::from_str(op_str) {
-                        let val = coll.aggregate(col, op)?;
-                        result.insert(format!("{}_{}", col, op_str.to_lowercase()), val);
-                    }
-                }
-            }
+        for (col, op_str, op) in specs {
+            let val = match &filter {
+                Some(f) => coll.aggregate_where(f, &col, op)?,
+                None => coll.aggregate(&col, op)?,
+            };
+            result.insert(format!("{}_{}", col, op_str), val);
         }
         Ok(vec![Value::Object(result)])
     }
@@ -572,31 +576,53 @@ impl Database {
         name: &str,
         columns: Option<Vec<String>>,
         filter: Option<String>,
-        _order_by: Option<String>,
+        order_by: Option<String>,
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
         let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
+        let filter = parse_columnar_filter(filter)?;
 
-        // Default to all columns if none specified? Or error?
-        // ColumnarCollection::read_columns expects columns.
-        // If columns is None, we could read all columns from metadata?
         let cols_to_read = if let Some(cols) = columns {
             cols
         } else {
             let meta = coll.metadata()?;
             meta.columns.into_iter().map(|c| c.name).collect()
         };
-
         let cols_refs: Vec<&str> = cols_to_read.iter().map(|s| s.as_str()).collect();
 
-        // Ignore filter string for now or error
-        if filter.is_some() {
-            return Err(DbError::OperationNotSupported(
-                "Filtering in query not yet supported via driver".to_string(),
-            ));
-        }
+        let mut results = match &filter {
+            Some(f) => coll.scan_filtered(f, &cols_refs)?,
+            None => coll.read_columns(&cols_refs, None)?,
+        };
 
-        let mut results = coll.read_columns(&cols_refs, None)?;
+        // `order_by` is "column" or "column ASC|DESC". The column must be one
+        // of the returned ones: it is sorted on the projected rows.
+        if let Some(order) = order_by.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
+            let mut parts = order.split_whitespace();
+            let column = parts.next().unwrap_or_default();
+            let desc = match parts.next().map(str::to_uppercase).as_deref() {
+                None | Some("ASC") => false,
+                Some("DESC") => true,
+                Some(_) => {
+                    return Err(DbError::BadRequest(
+                        "order_by direction must be ASC or DESC".to_string(),
+                    ))
+                }
+            };
+            if parts.next().is_some() || !cols_to_read.iter().any(|c| c == column) {
+                return Err(DbError::BadRequest(
+                    "order_by must be '<column> [ASC|DESC]' on a returned column".to_string(),
+                ));
+            }
+            results.sort_by(|a, b| {
+                let ord = compare_json(a.get(column), b.get(column));
+                if desc {
+                    ord.reverse()
+                } else {
+                    ord
+                }
+            });
+        }
 
         if let Some(l) = limit {
             if l > 0 {
@@ -648,6 +674,43 @@ impl Database {
     /// Get the database name
     pub fn db_name(&self) -> &str {
         &self.name
+    }
+}
+
+/// Parse the driver's columnar filter string (JSON; see
+/// [`crate::storage::columnar::ColumnFilter::from_json`]). Blank means none.
+fn parse_columnar_filter(
+    filter: Option<String>,
+) -> DbResult<Option<crate::storage::columnar::ColumnFilter>> {
+    let Some(text) = filter.as_deref().map(str::trim).filter(|f| !f.is_empty()) else {
+        return Ok(None);
+    };
+    let json: Value = serde_json::from_str(text)
+        .map_err(|e| DbError::BadRequest(format!("filter is not valid JSON: {}", e)))?;
+    crate::storage::columnar::ColumnFilter::from_json(&json).map(Some)
+}
+
+/// Total order over JSON scalars for `order_by`: null < bool < number <
+/// string; anything else compares equal.
+fn compare_json(a: Option<&Value>, b: Option<&Value>) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    fn rank(v: Option<&Value>) -> u8 {
+        match v {
+            None | Some(Value::Null) => 0,
+            Some(Value::Bool(_)) => 1,
+            Some(Value::Number(_)) => 2,
+            Some(Value::String(_)) => 3,
+            _ => 4,
+        }
+    }
+    match (a, b) {
+        (Some(Value::Bool(x)), Some(Value::Bool(y))) => x.cmp(y),
+        (Some(Value::Number(x)), Some(Value::Number(y))) => x
+            .as_f64()
+            .partial_cmp(&y.as_f64())
+            .unwrap_or(Ordering::Equal),
+        (Some(Value::String(x)), Some(Value::String(y))) => x.cmp(y),
+        _ => rank(a).cmp(&rank(b)),
     }
 }
 

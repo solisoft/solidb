@@ -4,6 +4,12 @@
 
 ### Added
 
+* **Driver: columnar `filter` and `order_by` work.** `AggregateColumnar` and
+  `QueryColumnar` rejected any filter and ignored `order_by`. `filter` is JSON:
+  `{"column","op","value"}` or `{"and":[..]}` / `{"or":[..]}`; `order_by` is
+  `"col [ASC|DESC]"` on a returned column. A malformed aggregation, or several
+  aggregations with `group_by`, is now an error instead of being dropped.
+
 * **Driver: `GeoWithin` (polygon search)** returns the documents whose indexed
   point lies inside a `(lat, lon)` ring (at most 10,000 vertices).
 
@@ -14,6 +20,9 @@
   `RepairCollection` now says it needs the HTTP API.
 
 ### Fixed
+
+* **Driver `CreateColumnar` always failed** ("Columnar CF not found"): it did
+  not create the backing collection the way the HTTP endpoint does.
 
 * **Vector index quantize/dequantize did nothing.** The collection methods
   saved the config and returned zeroed stats without touching the index, and
