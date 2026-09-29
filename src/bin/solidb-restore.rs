@@ -228,7 +228,7 @@ fn note_unroutable() {
 #[derive(Parser, Debug)]
 #[command(name = "solidb-restore")]
 #[command(
-    about = "Import SoliDB database or collection from dump (JSONL, JSON Array, CSV). SQL is not supported.",
+    about = "Import SoliDB database or collection from dump (JSONL, JSON Array, CSV, SQL INSERT statements).",
     long_about = None
 )]
 struct Args {
@@ -244,7 +244,7 @@ struct Args {
     #[arg(long, default_value = "http")]
     scheme: String,
 
-    /// Input file (JSONL, JSON Array, or CSV)
+    /// Input file (JSONL, JSON Array, CSV, or SQL INSERT statements)
     #[arg(short, long)]
     input: String,
 
@@ -460,10 +460,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
     } else if format == "sql" {
-        return Err(
-            "SQL restore is not implemented. Convert to JSONL or CSV and re-run solidb-restore."
-                .into(),
-        );
+        eprintln!("Restoring from SQL INSERT statements (other statements are skipped)...");
+        let mut splitter = SqlSplitter::default();
+        let mut pending: Vec<String> = Vec::new();
+        let mut line = String::new();
+        let mut at_eof = false;
+        while !at_eof {
+            line.clear();
+            at_eof = reader.read_line(&mut line)? == 0;
+            if at_eof {
+                splitter.finish(&mut pending);
+            } else {
+                splitter.feed(&line, &mut pending);
+            }
+            for stmt in pending.drain(..) {
+                let insert = match parse_sql_insert(&stmt) {
+                    Ok(Some(i)) => i,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        eprintln!("Skipping SQL statement: {}", e);
+                        total_failed += 1;
+                        continue;
+                    }
+                };
+                for row in insert.rows {
+                    let mut doc = serde_json::Map::with_capacity(row.len() + 1);
+                    for (col, val) in insert.columns.iter().zip(row) {
+                        doc.insert(col.clone(), val);
+                    }
+                    // The table names the collection unless --collection overrides it.
+                    doc.insert(
+                        "_collection".to_string(),
+                        Value::String(insert.table.clone()),
+                    );
+                    process_doc(
+                        Value::Object(doc),
+                        &args,
+                        &client,
+                        &base_url,
+                        &mut current_batch,
+                        &mut current_batch_size,
+                        &mut current_batch_meta,
+                        max_batch_count,
+                        max_batch_size,
+                        &mut initialized_collections,
+                        &mut total_imported,
+                        &mut total_failed,
+                    )
+                    .await?;
+                }
+            }
+        }
     } else if format == "json_array" {
         eprintln!("Warning: JSON Array format loads all data into memory. Not recommended for large restores.");
         let all_documents: Vec<Value> = serde_json::from_reader(reader)?;
@@ -1596,6 +1643,318 @@ async fn create_database_if_not_exists(
 
 use colored::*;
 
+// ==================== SQL INSERT import ====================
+//
+// Reads `INSERT INTO t (cols) VALUES (...), (...);` statements, as written by
+// `mysqldump --complete-insert`, `pg_dump --column-inserts` and sqlite's
+// `.dump`. Everything else in the file (DDL, SET, BEGIN, COPY...) is skipped.
+// An INSERT without a column list is refused: the names of the fields cannot
+// be guessed.
+
+/// Splits SQL text into statements on `;` outside quotes and comments.
+#[derive(Default)]
+struct SqlSplitter {
+    stmt: String,
+    quote: Option<char>,
+    escaped: bool,
+    block_comment: bool,
+}
+
+impl SqlSplitter {
+    /// Feed one line (with its newline); complete statements are pushed to `out`.
+    fn feed(&mut self, line: &str, out: &mut Vec<String>) {
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if self.block_comment {
+                if c == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    self.block_comment = false;
+                }
+                continue;
+            }
+            if let Some(q) = self.quote {
+                self.stmt.push(c);
+                if self.escaped {
+                    self.escaped = false;
+                } else if c == '\\' && q != '`' {
+                    self.escaped = true;
+                } else if c == q {
+                    self.quote = None;
+                }
+                continue;
+            }
+            match c {
+                '\'' | '"' | '`' => {
+                    self.quote = Some(c);
+                    self.stmt.push(c);
+                }
+                '-' if chars.peek() == Some(&'-') => {
+                    // Line comment: drop the rest of the line.
+                    return self.end_of_line();
+                }
+                '#' if self.stmt.trim().is_empty() => return self.end_of_line(),
+                '/' if chars.peek() == Some(&'*') => {
+                    chars.next();
+                    self.block_comment = true;
+                }
+                ';' => {
+                    let done = std::mem::take(&mut self.stmt);
+                    if !done.trim().is_empty() {
+                        out.push(done);
+                    }
+                }
+                _ => self.stmt.push(c),
+            }
+        }
+    }
+
+    fn end_of_line(&mut self) {
+        self.stmt.push('\n');
+    }
+
+    /// A last statement with no closing `;`.
+    fn finish(&mut self, out: &mut Vec<String>) {
+        let done = std::mem::take(&mut self.stmt);
+        if !done.trim().is_empty() {
+            out.push(done);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SqlInsert {
+    table: String,
+    columns: Vec<String>,
+    rows: Vec<Vec<Value>>,
+}
+
+struct SqlCursor<'a> {
+    s: &'a str,
+    pos: usize,
+}
+
+impl<'a> SqlCursor<'a> {
+    fn rest(&self) -> &'a str {
+        &self.s[self.pos..]
+    }
+    fn skip_ws(&mut self) {
+        let t = self.rest().trim_start();
+        self.pos = self.s.len() - t.len();
+    }
+    fn eat(&mut self, c: char) -> bool {
+        self.skip_ws();
+        if self.rest().starts_with(c) {
+            self.pos += c.len_utf8();
+            true
+        } else {
+            false
+        }
+    }
+    fn eat_keyword(&mut self, kw: &str) -> bool {
+        self.skip_ws();
+        let r = self.rest();
+        if r.len() >= kw.len()
+            && r.is_char_boundary(kw.len())
+            && r[..kw.len()].eq_ignore_ascii_case(kw)
+            && !r[kw.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            self.pos += kw.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// One identifier, quoted (`"x"`, `` `x` ``, `[x]`) or bare.
+    fn identifier(&mut self) -> Result<String, String> {
+        self.skip_ws();
+        let r = self.rest();
+        let (open, close) = match r.chars().next() {
+            Some('"') => ('"', '"'),
+            Some('`') => ('`', '`'),
+            Some('[') => ('[', ']'),
+            _ => {
+                let end = r
+                    .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+                    .unwrap_or(r.len());
+                if end == 0 {
+                    return Err(format!("expected an identifier near '{}'", preview(r)));
+                }
+                self.pos += end;
+                return Ok(r[..end].to_string());
+            }
+        };
+        let body = &r[open.len_utf8()..];
+        let end = body
+            .find(close)
+            .ok_or_else(|| "unterminated quoted identifier".to_string())?;
+        self.pos += open.len_utf8() + end + close.len_utf8();
+        Ok(body[..end].to_string())
+    }
+
+    /// `a`, `schema.a`, `"s"."a"` — the last part names the collection.
+    fn qualified_name(&mut self) -> Result<String, String> {
+        let mut name = self.identifier()?;
+        while self.rest().starts_with('.') {
+            self.pos += 1;
+            name = self.identifier()?;
+        }
+        Ok(name)
+    }
+
+    fn value(&mut self) -> Result<Value, String> {
+        self.skip_ws();
+        let r = self.rest();
+        // E'...' (PostgreSQL) and N'...' (SQL Server) prefixes.
+        let quoted_at = if r.len() > 1
+            && matches!(r.as_bytes()[0], b'E' | b'e' | b'N' | b'n')
+            && r.as_bytes()[1] == b'\''
+        {
+            Some(1)
+        } else if r.starts_with('\'') {
+            Some(0)
+        } else {
+            None
+        };
+        if let Some(off) = quoted_at {
+            return self.quoted_string(off);
+        }
+        let end = r
+            .find(|c: char| c == ',' || c == ')' || c.is_whitespace())
+            .unwrap_or(r.len());
+        let tok = &r[..end];
+        let v = if tok.eq_ignore_ascii_case("null") {
+            Value::Null
+        } else if tok.eq_ignore_ascii_case("true") {
+            Value::Bool(true)
+        } else if tok.eq_ignore_ascii_case("false") {
+            Value::Bool(false)
+        } else if let Ok(i) = tok.parse::<i64>() {
+            Value::from(i)
+        } else if let Some(n) = tok
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+        {
+            Value::Number(n)
+        } else {
+            return Err(format!("unsupported value '{}'", preview(tok)));
+        };
+        self.pos += end;
+        Ok(v)
+    }
+
+    fn quoted_string(&mut self, quote_at: usize) -> Result<Value, String> {
+        let body_start = self.pos + quote_at + 1;
+        let mut out = String::new();
+        let mut chars = self.s[body_start..].char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '\'' if matches!(chars.peek(), Some((_, '\''))) => {
+                    chars.next();
+                    out.push('\'');
+                }
+                '\'' => {
+                    self.pos = body_start + i + 1;
+                    return Ok(Value::String(out));
+                }
+                '\\' => match chars.next() {
+                    Some((_, 'n')) => out.push('\n'),
+                    Some((_, 'r')) => out.push('\r'),
+                    Some((_, 't')) => out.push('\t'),
+                    Some((_, '0')) => out.push('\0'),
+                    Some((_, 'b')) => out.push('\u{8}'),
+                    Some((_, 'Z')) => out.push('\u{1a}'),
+                    Some((_, other)) => out.push(other),
+                    None => break,
+                },
+                other => out.push(other),
+            }
+        }
+        Err("unterminated string".to_string())
+    }
+}
+
+fn preview(s: &str) -> String {
+    s.chars().take(24).collect()
+}
+
+/// Parse one statement; `Ok(None)` if it is not an INSERT.
+fn parse_sql_insert(stmt: &str) -> Result<Option<SqlInsert>, String> {
+    let mut c = SqlCursor { s: stmt, pos: 0 };
+    if !c.eat_keyword("insert") {
+        return Ok(None);
+    }
+    // MySQL: INSERT IGNORE / LOW_PRIORITY ...; SQLite: INSERT OR REPLACE.
+    while c.eat_keyword("ignore") || c.eat_keyword("low_priority") || c.eat_keyword("delayed") {}
+    if c.eat_keyword("or") {
+        c.identifier()?;
+    }
+    c.eat_keyword("into");
+    let table = c.qualified_name()?;
+
+    if !c.eat('(') {
+        return Err(format!(
+            "INSERT INTO {} has no column list; dump with --complete-insert \
+             (mysqldump) or --column-inserts (pg_dump)",
+            table
+        ));
+    }
+    let mut columns = Vec::new();
+    loop {
+        columns.push(c.identifier()?);
+        if c.eat(',') {
+            continue;
+        }
+        if c.eat(')') {
+            break;
+        }
+        return Err("malformed column list".to_string());
+    }
+
+    if !(c.eat_keyword("values") || c.eat_keyword("value")) {
+        return Err(format!("INSERT INTO {}: only VALUES is supported", table));
+    }
+    let mut rows = Vec::new();
+    loop {
+        if !c.eat('(') {
+            return Err("expected '(' before a row".to_string());
+        }
+        let mut row = Vec::with_capacity(columns.len());
+        loop {
+            row.push(c.value()?);
+            if c.eat(',') {
+                continue;
+            }
+            if c.eat(')') {
+                break;
+            }
+            return Err("malformed row".to_string());
+        }
+        if row.len() != columns.len() {
+            return Err(format!(
+                "row has {} values for {} columns",
+                row.len(),
+                columns.len()
+            ));
+        }
+        rows.push(row);
+        if !c.eat(',') {
+            break;
+        }
+    }
+    // ON CONFLICT / ON DUPLICATE KEY clauses and RETURNING are ignored: the
+    // restore's own conflict handling (--overwrite) applies.
+    Ok(Some(SqlInsert {
+        table,
+        columns,
+        rows,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1629,6 +1988,64 @@ mod tests {
         let mut a = args(None, None, false, false);
         a.exclude_collection = patterns.iter().map(|s| s.to_string()).collect();
         a
+    }
+
+    fn sql(text: &str) -> Vec<SqlInsert> {
+        let mut sp = SqlSplitter::default();
+        let mut stmts = Vec::new();
+        for line in text.split_inclusive('\n') {
+            sp.feed(line, &mut stmts);
+        }
+        sp.finish(&mut stmts);
+        stmts
+            .iter()
+            .filter_map(|s| parse_sql_insert(s).expect("parses"))
+            .collect()
+    }
+
+    #[test]
+    fn sql_inserts_become_rows_and_other_statements_are_skipped() {
+        let dump = r#"
+-- a comment; with a semicolon
+/*!40101 SET NAMES utf8 */;
+CREATE TABLE `users` (id int, name text);
+BEGIN;
+INSERT INTO `users` (`id`, `name`, `note`, `ok`, `score`) VALUES
+  (1, 'O''Brien; Jr.', NULL, TRUE, 1.5),
+  (2, 'line\nbreak', 'it\'s', false, -3);
+INSERT INTO public."events" ("id") VALUES (7);
+COMMIT;
+"#;
+        let inserts = sql(dump);
+        assert_eq!(inserts.len(), 2);
+        assert_eq!(inserts[0].table, "users");
+        assert_eq!(inserts[0].columns, ["id", "name", "note", "ok", "score"]);
+        assert_eq!(
+            inserts[0].rows[0],
+            [
+                json!(1),
+                json!("O'Brien; Jr."),
+                Value::Null,
+                json!(true),
+                json!(1.5)
+            ]
+        );
+        assert_eq!(inserts[0].rows[1][1], json!("line\nbreak"));
+        assert_eq!(inserts[0].rows[1][2], json!("it's"));
+        assert_eq!(inserts[0].rows[1][4], json!(-3));
+        assert_eq!(inserts[1].table, "events");
+    }
+
+    #[test]
+    fn sql_insert_problems_are_reported_not_guessed() {
+        let err = |s: &str| parse_sql_insert(s).unwrap_err();
+        assert!(err("INSERT INTO t VALUES (1)").contains("no column list"));
+        assert!(err("INSERT INTO t (a, b) VALUES (1)").contains("1 values for 2 columns"));
+        assert!(err("INSERT INTO t (a) VALUES (now())").contains("unsupported value"));
+        assert!(err("INSERT INTO t (a) VALUES ('open").contains("unterminated"));
+        assert!(parse_sql_insert("CREATE TABLE t (a int)")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

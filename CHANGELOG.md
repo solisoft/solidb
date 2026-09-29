@@ -4,6 +4,12 @@
 
 ### Added
 
+* **`solidb-restore` reads SQL dumps.** `INSERT INTO t (cols) VALUES (...)`
+  statements (mysqldump `--complete-insert`, pg_dump `--column-inserts`, sqlite
+  `.dump`) become documents in a collection named after the table; other
+  statements are skipped. An INSERT without a column list, or a value it cannot
+  read (a function call, a hex literal), is reported and skipped, not guessed.
+
 * **`FILTER doc._id == …` / `IN […]`** is served as a primary-key lookup
   instead of a scan.
 
