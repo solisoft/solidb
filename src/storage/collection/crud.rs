@@ -1148,6 +1148,66 @@ impl Collection {
         results
     }
 
+    /// Rows for `shape`, written straight from the stored bytes (see
+    /// [`crate::storage::raw_rows`]): documents `offset..offset + limit` in
+    /// key order, as the concatenated MessagePack of each row. `check` runs
+    /// every 4,096 rows with the count so far (the executor's row and time
+    /// budget). `Ok(None)` when a document cannot be copied this way; the
+    /// caller then runs the query the ordinary way.
+    pub fn scan_raw(
+        &self,
+        offset: usize,
+        limit: Option<usize>,
+        shape: &crate::storage::raw_rows::RawShape,
+        mut check: impl FnMut(usize) -> DbResult<()>,
+    ) -> DbResult<Option<(usize, Vec<u8>)>> {
+        let mut out = Vec::new();
+        if matches!(limit, Some(0)) {
+            return Ok(Some((0, out)));
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(Some((0, out)));
+        };
+        let prefix = DOC_PREFIX.as_bytes();
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_prefix_same_as_start(true);
+        let readahead = match limit.map(|n| n.saturating_add(offset).min(self.count())) {
+            Some(n) if n <= 10 => 0,
+            Some(n) if n <= 100 => 16 * 1024,
+            _ => 256 * 1024,
+        };
+        if readahead > 0 {
+            read_opts.set_readahead_size(readahead);
+        }
+        let iter = self.db.iterator_ks_opt(
+            &cf,
+            read_opts,
+            IteratorMode::From(prefix, Direction::Forward),
+        );
+        let mut skipped = 0usize;
+        let mut rows = 0usize;
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            if crate::storage::raw_rows::write_row(&value, shape, &mut out).is_none() {
+                return Ok(None);
+            }
+            rows += 1;
+            if rows.is_multiple_of(4096) {
+                check(rows)?;
+            }
+            if limit.is_some_and(|n| rows >= n) {
+                break;
+            }
+        }
+        Ok(Some((rows, out)))
+    }
+
     // ==================== Counters ====================
 
     /// Recalculate document count from storage

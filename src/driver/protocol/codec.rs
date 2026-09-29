@@ -26,8 +26,20 @@ pub fn encode_response(resp: &Response) -> Result<Vec<u8>, DriverError> {
     // copy of what can be a large result set.
     let mut buf = Vec::with_capacity(256);
     buf.extend_from_slice(&[0u8; 4]);
-    rmp_serde::encode::write_named(&mut buf, resp)
-        .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
+    if let Response::RawRows { data } = resp {
+        // `{"status": "ok", "data": <rows>}`, written around the rows'
+        // bytes: what `Ok { data }` serializes to (tested in `response`).
+        buf.reserve(data.0.len() + 16);
+        let header = rmp::encode::write_map_len(&mut buf, 2)
+            .and_then(|_| rmp::encode::write_str(&mut buf, "status"))
+            .and_then(|_| rmp::encode::write_str(&mut buf, "ok"))
+            .and_then(|_| rmp::encode::write_str(&mut buf, "data"));
+        header.map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
+        buf.extend_from_slice(&data.0);
+    } else {
+        rmp_serde::encode::write_named(&mut buf, resp)
+            .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;
+    }
 
     let payload_len = buf.len() - 4;
     if payload_len > MAX_MESSAGE_SIZE {

@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::keyspace::KsId;
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use hex;
@@ -59,6 +60,16 @@ struct DirtyVecEntry {
     vec_dirty: Arc<AtomicBool>,
     vec_last_persist: Arc<AtomicU64>,
 }
+
+/// Shard configuration per shared keyspace. Read by every query that scans
+/// the collection (twice for a driver query: once to pick inline execution,
+/// once by the scan), written only by [`Collection::set_shard_config`] —
+/// which updates this — and kept by `truncate`. Keyed by keyspace id, which
+/// is never reused, so a recreated collection starts uncached. Legacy
+/// (per-CF) collections are not cached: their id is a reusable name.
+static SHARD_CONFIGS: Lazy<
+    DashMap<KsId, Option<crate::sharding::coordinator::CollectionShardConfig>>,
+> = Lazy::new(DashMap::new);
 
 static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, crate::storage::keyspace::KsId), DirtyVecEntry>> =
     Lazy::new(DashMap::new);
@@ -450,6 +461,9 @@ impl Collection {
         self.db
             .put_ks(&cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
+        if matches!(self.ks.id(), KsId::Shared(_)) {
+            SHARD_CONFIGS.insert(self.ks.id().clone(), Some(config.clone()));
+        }
 
         tracing::info!(
             "[SHARD_CONFIG] Saved config for {}: {:?}",
@@ -462,13 +476,23 @@ impl Collection {
 
     /// Get sharding configuration for this collection (None if not sharded)
     pub fn get_shard_config(&self) -> Option<crate::sharding::coordinator::CollectionShardConfig> {
+        let cached = matches!(self.ks.id(), KsId::Shared(_));
+        if cached {
+            if let Some(config) = SHARD_CONFIGS.get(self.ks.id()) {
+                return config.clone();
+            }
+        }
         let cf = self.ks.handle(&self.db)?;
-
-        self.db
+        let config: Option<crate::sharding::coordinator::CollectionShardConfig> = self
+            .db
             .get_ks(&cf, SHARD_CONFIG_KEY.as_bytes())
             .ok()
             .flatten()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        if cached {
+            SHARD_CONFIGS.insert(self.ks.id().clone(), config.clone());
+        }
+        config
     }
 
     /// Save shard table to storage (persisting assignments)

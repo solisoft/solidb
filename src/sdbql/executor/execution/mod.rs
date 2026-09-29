@@ -17,6 +17,7 @@ mod graph;
 mod graph_rag;
 mod mutations;
 mod paths;
+mod raw_scan;
 mod return_moves;
 mod streaming;
 mod subquery;

@@ -31,6 +31,24 @@ pub enum Response {
     Rows {
         data: SharedRows,
     },
+    /// An `Ok` whose rows are already an encoded MessagePack array, copied
+    /// from storage (`sdbql` raw scan). `encode_response` writes it around
+    /// the bytes; the `Serialize` below only runs inside a `Batch`.
+    #[serde(rename = "ok", skip_deserializing)]
+    RawRows {
+        data: RawRows,
+    },
+}
+
+/// A MessagePack array of rows, already encoded.
+#[derive(Debug, Clone)]
+pub struct RawRows(pub Vec<u8>);
+
+impl Serialize for RawRows {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let value: Value = rmp_serde::from_slice(&self.0).map_err(serde::ser::Error::custom)?;
+        value.serialize(serializer)
+    }
 }
 
 /// Query rows shared with the query cache; serializes as an array.
@@ -56,6 +74,13 @@ impl Response {
     pub fn ok_shared_rows(rows: std::sync::Arc<Vec<Value>>) -> Self {
         Response::Rows {
             data: SharedRows(rows),
+        }
+    }
+
+    /// Rows already encoded as a MessagePack array.
+    pub fn raw_rows(rows: Vec<u8>) -> Self {
+        Response::RawRows {
+            data: RawRows(rows),
         }
     }
 
@@ -110,5 +135,25 @@ mod tests {
         let owned = encode_response(&Response::ok(Value::Array(rows.clone()))).unwrap();
         let shared = encode_response(&Response::ok_shared_rows(std::sync::Arc::new(rows))).unwrap();
         assert_eq!(owned, shared);
+    }
+
+    /// Pre-encoded rows produce the same bytes as `Ok { data }`, both
+    /// through `encode_response` and through the generic serializer (Batch).
+    #[test]
+    fn raw_rows_encode_like_ok_data() {
+        let rows = serde_json::json!([
+            {"id": 1, "title": "Post title 1", "views": 7},
+            {"id": 2, "title": "é", "views": 14},
+        ]);
+        let owned = encode_response(&Response::ok(rows.clone())).unwrap();
+        let raw = rmp_serde::to_vec_named(&rows).unwrap();
+        assert_eq!(
+            encode_response(&Response::raw_rows(raw.clone())).unwrap(),
+            owned
+        );
+        assert_eq!(
+            rmp_serde::to_vec_named(&Response::raw_rows(raw)).unwrap(),
+            owned[4..].to_vec()
+        );
     }
 }

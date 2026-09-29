@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **Simple driver reads skip decoding altogether.** `FOR v IN c [LIMIT …]
+  RETURN v`, `RETURN v.f` and `RETURN {k: v.f, …}` over a plain collection,
+  with the query cache off, now copy the stored MessagePack bytes of each
+  document straight into the response instead of decoding every value and
+  encoding it again (the bytes are the same; tests check it). A 50-row query
+  went from 43.5 to 26 µs of SoliDB CPU; through a Soli application's `/db`
+  page, from 74 to 43.5 µs, and the page from 54k to 65k requests/s.
+* Stored document headers are read without bincode's serde path, and a
+  collection's shard configuration is cached instead of read on every query.
+
+### Fixed
+
+* **JavaScript client: responses larger than ~64 KB were corrupted.** When
+  a response arrived in three or more socket reads, a chunk smaller than the
+  data already buffered was copied past the end of the buffer and lost; the
+  client failed to decode and the connection hung on the next request.
+
 ## [2.0.4](https://github.com/solisoft/solidb/compare/v2.0.3...v2.0.4) (2026-09-29)
 
 ### Performance

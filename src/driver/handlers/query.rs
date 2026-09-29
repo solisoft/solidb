@@ -32,6 +32,12 @@ const QUERY_TIMEOUT_SECS: u64 = 30;
 /// slow at queries" and was really "one handler caches and the other does not".
 /// `cache` — when false, skip the result-cache lookup and store (HTTP
 /// `/cursor` `cache: false`). Prepared-statement caching still applies.
+/// A query's rows: copied from storage already encoded, or evaluated.
+enum Rows {
+    Raw(Vec<u8>),
+    Values(Vec<serde_json::Value>),
+}
+
 pub async fn handle_query(
     handler: &DriverHandler,
     database: String,
@@ -119,6 +125,15 @@ pub async fn handle_query(
         if let Some(ref log) = replication {
             executor = executor.with_replication(log);
         }
+        // Rows copied straight from storage when the query allows it (and
+        // nothing is to be cached: the cache holds decoded rows).
+        if cache_key.is_none() && !mutates {
+            match executor.execute_raw_msgpack(query) {
+                Ok(Some(rows)) => return Response::raw_rows(rows),
+                Ok(None) => {}
+                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
+            }
+        }
         return match executor.execute(query) {
             Ok(results) => {
                 if let Some(key) = cache_key {
@@ -143,6 +158,7 @@ pub async fn handle_query(
     // /cursor handler: the executor is synchronous CPU work and must not pin
     // the async runtime thread or run without an upper time bound.
     let exec_query = (*query).clone();
+    let try_raw = cache_key.is_none() && !mutates;
     let mut task = tokio::task::spawn_blocking(move || {
         let mut executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database)
@@ -155,7 +171,12 @@ pub async fn handle_query(
         if let Some(ref log) = replication {
             executor = executor.with_replication(log);
         }
-        executor.execute(&exec_query)
+        if try_raw {
+            if let Some(rows) = executor.execute_raw_msgpack(&exec_query)? {
+                return Ok(Rows::Raw(rows));
+            }
+        }
+        executor.execute(&exec_query).map(Rows::Values)
     });
 
     // `&mut task` so the handle survives a timeout and can still be observed.
@@ -166,7 +187,8 @@ pub async fn handle_query(
     .await
     {
         Ok(join_result) => match join_result {
-            Ok(Ok(results)) => {
+            Ok(Ok(Rows::Raw(rows))) => Response::raw_rows(rows),
+            Ok(Ok(Rows::Values(results))) => {
                 if let Some(key) = cache_key {
                     if results.len() <= query_cache::MAX_CACHED_ROWS {
                         query_cache::get_query_cache().put_if_current(

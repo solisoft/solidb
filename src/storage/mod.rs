@@ -23,6 +23,7 @@ pub mod keyspace_migration;
 pub mod pending_drops;
 pub mod protected;
 pub mod query_cache;
+pub mod raw_rows;
 pub mod schema;
 pub mod semantic_query_cache;
 pub mod serializer;

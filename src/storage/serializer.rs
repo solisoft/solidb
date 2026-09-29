@@ -68,36 +68,70 @@ impl DocumentWithVersion {
 }
 
 // Static field names to avoid repeated heap allocations
-const KEY_FIELD: &str = "_key";
-const ID_FIELD: &str = "_id";
-const REV_FIELD: &str = "_rev";
-const CREATED_AT_FIELD: &str = "_created_at";
-const UPDATED_AT_FIELD: &str = "_updated_at";
+pub(crate) const KEY_FIELD: &str = "_key";
+pub(crate) const ID_FIELD: &str = "_id";
+pub(crate) const REV_FIELD: &str = "_rev";
+pub(crate) const CREATED_AT_FIELD: &str = "_created_at";
+pub(crate) const UPDATED_AT_FIELD: &str = "_updated_at";
 
 /// [`DocumentWithVersion`] as stored, borrowed from the RocksDB value. Bincode
 /// is positional, so the fields mirror that struct's order; the timestamps
 /// are the strings chrono's `Serialize` wrote.
-#[derive(Deserialize)]
 ///
 /// The five system strings are read as raw bytes (bincode writes a string and
 /// a byte slice identically, length then bytes) and validated only when a
 /// caller uses them: a projected read that returns none of them used to
 /// UTF-8-check all five per document, ~4% of an uncached 50-row read.
-struct StoredDocRef<'a> {
+#[derive(Deserialize)]
+pub(crate) struct StoredDocRef<'a> {
     #[allow(dead_code)]
     version: u8,
     #[serde(with = "serde_bytes")]
-    key: &'a [u8],
+    pub(crate) key: &'a [u8],
     #[serde(with = "serde_bytes")]
-    id: &'a [u8],
+    pub(crate) id: &'a [u8],
     #[serde(with = "serde_bytes")]
-    rev: &'a [u8],
+    pub(crate) rev: &'a [u8],
     #[serde(with = "serde_bytes")]
-    created_at: &'a [u8],
+    pub(crate) created_at: &'a [u8],
     #[serde(with = "serde_bytes")]
-    updated_at: &'a [u8],
+    pub(crate) updated_at: &'a [u8],
+    /// The document's fields, MessagePack.
     #[serde(with = "serde_bytes")]
-    data: &'a [u8],
+    pub(crate) data: &'a [u8],
+}
+
+impl<'a> StoredDocRef<'a> {
+    /// The header of a current-format (v2) stored document; `None` for any
+    /// other format.
+    ///
+    /// Read by hand: bincode 1's default encoding is a `u8`, then each string
+    /// or byte field as a little-endian `u64` length and its bytes, and going
+    /// through serde for six slices cost more than the copy it feeds on a raw
+    /// scan. `StoredDocRef` derives `Deserialize` for the same layout, and a
+    /// test holds the two to the same result.
+    pub(crate) fn parse(bytes: &'a [u8]) -> Option<Self> {
+        fn field<'b>(cur: &mut &'b [u8]) -> Option<&'b [u8]> {
+            let len = u64::from_le_bytes(cur.get(..8)?.try_into().ok()?);
+            let end = 8usize.checked_add(usize::try_from(len).ok()?)?;
+            let value = cur.get(8..end)?;
+            *cur = &cur[end..];
+            Some(value)
+        }
+        let (&DOC_FORMAT_VERSION, rest) = bytes.split_first()? else {
+            return None;
+        };
+        let (&version, mut cur) = rest.split_first()?;
+        Some(Self {
+            version,
+            key: field(&mut cur)?,
+            id: field(&mut cur)?,
+            rev: field(&mut cur)?,
+            created_at: field(&mut cur)?,
+            updated_at: field(&mut cur)?,
+            data: field(&mut cur)?,
+        })
+    }
 }
 
 impl StoredDocRef<'_> {
@@ -128,7 +162,7 @@ impl StoredDocRef<'_> {
 /// for a UTC offset the two differ only in the suffix, `Z` against `+00:00`.
 /// Parsing and re-formatting two dates per document was ~6% of an uncached
 /// 50-row scan. Anything else still goes through chrono.
-fn stored_timestamp_to_rfc3339(stored: &str) -> String {
+pub(crate) fn stored_timestamp_to_rfc3339(stored: &str) -> String {
     if let Some(base) = stored.strip_suffix('Z') {
         let mut out = String::with_capacity(base.len() + 6);
         out.push_str(base);
@@ -598,5 +632,29 @@ mod tests {
             assert_eq!(obj[f], full[f], "{f}");
         }
         assert!(obj.get("absent").is_none());
+    }
+
+    /// The hand-written header reader agrees with bincode's.
+    #[test]
+    fn stored_header_parse_matches_bincode() {
+        for data in [
+            json!({}),
+            json!({"a": [1, {"b": "é"}]}),
+            create_test_doc().data,
+        ] {
+            let bytes = serialize_doc(&Document::with_key("c", "k".repeat(300), data)).unwrap();
+            let manual = StoredDocRef::parse(&bytes).unwrap();
+            let serde: StoredDocRef = bincode::deserialize(&bytes[1..]).unwrap();
+            assert_eq!(
+                (manual.version, manual.key, manual.id, manual.rev),
+                (serde.version, serde.key, serde.id, serde.rev)
+            );
+            assert_eq!(
+                (manual.created_at, manual.updated_at, manual.data),
+                (serde.created_at, serde.updated_at, serde.data)
+            );
+        }
+        assert!(StoredDocRef::parse(&[DOC_FORMAT_VERSION, 2, 0xff, 0xff]).is_none());
+        assert!(StoredDocRef::parse(b"{}").is_none());
     }
 }

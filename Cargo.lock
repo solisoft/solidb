@@ -4464,6 +4464,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest 0.13.2",
+ "rmp",
  "rmp-serde",
  "rpassword",
  "rust-rocksdb",

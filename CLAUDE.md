@@ -326,6 +326,20 @@ size of its key range (flushed data only; memtable and SST count read 0).
 `solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
 `solidb_cf_ops_total` now counts only legacy column-family drops.
 
+### Raw rows: driver reads that never decode (2.0.5)
+
+`FOR v IN c [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a plain local
+collection, sent over the driver with the query cache off, is answered by
+copying the stored MessagePack bytes into the response
+(`sdbql/executor/execution/raw_scan.rs` plans it, `storage/raw_rows.rs` writes
+the rows, `Response::RawRows` carries them). The output must stay
+byte-identical to decoding and re-encoding, which tests check — so a change to
+the stored document format (`serializer.rs`: `StoredDocRef` is read by hand)
+or to what `Document::to_value` returns (system fields, timestamp form) has to
+be made in `raw_rows` too. Anything the planner does not recognise, and any
+guard it cannot clear (row policy, search view, columnar, sharded, row
+ceiling), falls back to the ordinary executor.
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a
