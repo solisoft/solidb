@@ -32,6 +32,9 @@
 
 ### Fixed
 
+* **Cluster status `log_entries`** reported the current sequence number; it now
+  reports the entries the sync log retains.
+
 * **The SSRF guard's DNS lookup is bounded.** A resolver that never answered
   blocked the calling thread for as long as the OS allowed. Lookups now time
   out after 5 s, at most 32 run at once, and webhook delivery resolves the
@@ -66,8 +69,9 @@
 * **Driver: `TransactionCommand` was not transactional.** The inner command
   ran outside the transaction, so a write committed at once and `Rollback`
   undid nothing. `Insert`, `Update` and `Delete` are now staged on the
-  transaction and applied at commit; any other inner command is refused with
-  a `TransactionError`.
+  transaction and applied at commit. A read-only `Query` runs against committed
+  data, as it does over HTTP; a query that writes, and any other inner
+  command, is refused with a `TransactionError`.
 
 ## [2.0.5](https://github.com/solisoft/solidb/compare/v2.0.4...v2.0.5) (2026-09-29)
 

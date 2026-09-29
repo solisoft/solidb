@@ -354,7 +354,16 @@ pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterSt
         };
 
         let (current_seq, count) = if let Some(log) = &state.replication_log {
-            (log.current_sequence(), log.current_sequence())
+            {
+                // Retained entries: sequences are contiguous from the oldest
+                // unpruned one. Counting keys would walk the whole log on
+                // every poll of this endpoint.
+                let current = log.current_sequence();
+                let retained = log
+                    .oldest_sequence()
+                    .map_or(0, |oldest| current.saturating_sub(oldest) + 1);
+                (current, retained)
+            }
         } else {
             (0, 0)
         };
@@ -380,7 +389,6 @@ pub fn generate_cluster_status(state: &AppState, sysinfo: &SysInfo) -> ClusterSt
             node_id: manager.local_node_id(),
             status,
             replication_port,
-            // TODO: We need to put actual logic based on sequence
             current_sequence: current_seq,
             log_entries: count as usize,
             peers,

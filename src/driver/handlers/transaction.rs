@@ -151,8 +151,34 @@ pub async fn handle_transaction_command(
             &collection,
             |coll, tx, wal, locks| coll.delete_tx(tx, wal, locks, &key).map(|_| None),
         ),
+        // A read-only query runs as it does over HTTP: against committed
+        // data, so it does not see this transaction's staged writes.
+        // A mutating one cannot be staged (the executor applies its writes
+        // directly), so it is refused instead of committing early.
+        Command::Query {
+            database,
+            sdbql,
+            bind_vars,
+            cache,
+        } => match crate::sdbql::parse(&sdbql) {
+            Ok(q) if q.has_mutations() => Response::error(DriverError::TransactionError(
+                "a query that writes cannot run inside a transaction; use Insert, Update and Delete"
+                    .to_string(),
+            )),
+            Ok(_) => {
+                Box::pin(handler.execute_command(Command::Query {
+                    database,
+                    sdbql,
+                    bind_vars,
+                    cache,
+                }))
+                .await
+            }
+            Err(e) => Response::error(DriverError::DatabaseError(format!("Parse error: {}", e))),
+        },
         _ => Response::error(DriverError::TransactionError(
-            "only Insert, Update and Delete can run inside a transaction".to_string(),
+            "only Insert, Update, Delete and read-only Query can run inside a transaction"
+                .to_string(),
         )),
     }
 }
@@ -281,6 +307,34 @@ mod tests {
         assert_eq!(history.len(), 2, "{:?}", history);
         assert_eq!(history[0]["value"]["v"], json!(2));
         assert_eq!(history[1]["value"]["v"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn query_in_transaction_reads_but_never_writes() {
+        let (_t, mut h) = handler();
+        // `Query` is dispatched through `execute_command`, which insists on a
+        // session; the staged writes are authorized by the wrapper instead.
+        h.authenticated_db = Some("d".to_string());
+        h.session_permissions
+            .insert(crate::server::Permission::global_admin());
+        let query = |sdbql: &str| {
+            Box::new(Command::Query {
+                database: "d".to_string(),
+                sdbql: sdbql.to_string(),
+                bind_vars: None,
+                cache: false,
+            })
+        };
+        let tx = begin(&mut h);
+        let r = handle_transaction_command(&mut h, tx.clone(), query("FOR x IN c RETURN x")).await;
+        // Either `Ok` or the raw-rows fast path; what matters is it ran.
+        assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+
+        let r = handle_transaction_command(&mut h, tx.clone(), query("INSERT {_key: 'q'} INTO c"))
+            .await;
+        assert!(matches!(r, Response::Error { .. }), "{:?}", r);
+        handle_commit_transaction(&mut h, tx);
+        assert!(!exists(&h, "q"), "a refused query must not have written");
     }
 
     #[tokio::test]
