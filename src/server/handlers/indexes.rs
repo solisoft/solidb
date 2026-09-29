@@ -744,7 +744,7 @@ pub async fn quantize_vector_index(
 
     Ok(Json(QuantizeVectorIndexResponse {
         name: index_name,
-        vectors_quantized: 0, // Not provided by stats yet, TODO
+        vectors_quantized: stats.vectors_quantized,
         memory_before: stats.original_size,
         memory_after: stats.compressed_size,
         compression_ratio: stats.compression_ratio,

@@ -12,6 +12,14 @@
 
 ### Fixed
 
+* **Vector index quantize/dequantize did nothing.** The collection methods
+  saved the config and returned zeroed stats without touching the index, and
+  dequantize was a no-op. They now quantize and restore the index, and the
+  HTTP response reports `vectors_quantized` and real sizes.
+* **Cluster heartbeats carried `cpu_usage_percent: 0` and `memory_used_mb: 0`.**
+  They now report the process's CPU and resident memory. Nodes marked
+  suspected or dead are logged.
+
 * **Driver: `TransactionCommand` was not transactional.** The inner command
   ran outside the transaction, so a write committed at once and `Rollback`
   undid nothing. `Insert`, `Update` and `Delete` are now staged on the

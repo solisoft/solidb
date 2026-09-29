@@ -56,13 +56,21 @@ impl HealthMonitor {
 
             if elapsed > self.config.failure_threshold {
                 if member.status != NodeStatus::Dead {
-                    // TODO: Log warning
+                    tracing::warn!(
+                        "Cluster node {} marked dead: no heartbeat for {:?}",
+                        member.node.id,
+                        elapsed
+                    );
                     self.state.mark_status(&member.node.id, NodeStatus::Dead);
                 }
             } else if elapsed > self.config.suspicion_threshold
                 && member.status == NodeStatus::Active
             {
-                // TODO: Log warning
+                tracing::warn!(
+                    "Cluster node {} suspected: no heartbeat for {:?}",
+                    member.node.id,
+                    elapsed
+                );
                 self.state
                     .mark_status(&member.node.id, NodeStatus::Suspected);
             }

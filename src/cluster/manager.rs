@@ -168,6 +168,9 @@ impl ClusterManager {
             // Per-collection gate so a heartbeat only re-reads RocksDB for
             // collections that actually moved. See `stats_gate`.
             let gate: StatsGate<CollectionUsage> = StatsGate::new(HEARTBEAT_FULL_REFRESH);
+            // Kept across ticks: a process's CPU share is the change between
+            // two refreshes, so a fresh `System` each time would read 0.
+            let mut sys = sysinfo::System::new();
 
             loop {
                 interval.tick().await;
@@ -246,14 +249,16 @@ impl ClusterManager {
 
                     gate.retain(&live);
 
+                    let sysinfo = crate::server::handlers::cluster::collect_sysinfo(&mut sys);
+
                     Some(NodeBasicStats {
                         total_chunk_count,
                         total_file_count,
                         storage_bytes,
                         total_memtable_size,
                         total_live_size,
-                        cpu_usage_percent: 0.0, // TODO: Add sysinfo if needed
-                        memory_used_mb: 0,      // TODO: Add sysinfo if needed
+                        cpu_usage_percent: sysinfo.cpu_usage_percent,
+                        memory_used_mb: sysinfo.memory_used_bytes / (1024 * 1024),
                     })
                 } else {
                     None

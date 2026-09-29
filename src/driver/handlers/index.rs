@@ -506,4 +506,34 @@ mod tests {
         assert_eq!(rows(run(None)).len(), 5);
         assert!(matches!(run(Some("[1]")), Response::Error { .. }));
     }
+
+    #[test]
+    fn quantize_shrinks_the_index_and_dequantize_restores_it() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.create_vector_index(VectorIndexConfig::new("v".into(), "emb".into(), 4))
+            .unwrap();
+        for i in 0..10 {
+            coll.insert(json!({"emb": [1.0, i as f32, 0.5, 0.25]}))
+                .unwrap();
+        }
+        let stats = coll
+            .quantize_vector_index("v", crate::storage::index::VectorQuantization::Scalar)
+            .unwrap();
+        assert_eq!(stats.vectors_quantized, 10);
+        assert_eq!(stats.original_size, 4 * stats.compressed_size);
+        assert!(coll.get_vector_index("v").unwrap().is_quantized());
+        assert_eq!(
+            coll.vector_search("v", &[1.0, 3.0, 0.5, 0.25], 3, None)
+                .unwrap()
+                .len(),
+            3
+        );
+        coll.dequantize_vector_index("v").unwrap();
+        assert!(!coll.get_vector_index("v").unwrap().is_quantized());
+    }
 }

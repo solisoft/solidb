@@ -13,6 +13,9 @@ use serde_json::Value;
 pub struct QuantizationStats {
     #[serde(rename = "type")]
     pub type_: VectorQuantization,
+    /// Vectors held in quantized form.
+    #[serde(default)]
+    pub vectors_quantized: usize,
     pub original_size: usize,
     pub compressed_size: usize,
     pub compression_ratio: f32,
@@ -332,35 +335,60 @@ impl Collection {
         name: &str,
         quantization: VectorQuantization,
     ) -> DbResult<QuantizationStats> {
-        let _index = self.get_vector_index(name)?;
+        let index = self.get_vector_index(name)?;
 
-        // index.quantize(quantization.clone())?; // Assuming method exists
-
-        // Update config
-        let mut configs = self.get_all_vector_index_configs();
-        if let Some(config) = configs.iter_mut().find(|c| c.name == name) {
-            config.quantization = quantization;
-
-            // Save config
-            let db = &self.db;
-            let cf = self.ks.handle(&self.db).unwrap();
-            let config_bytes = serde_json::to_vec(config)?;
-            db.put_ks(&cf, Self::vec_meta_key(name), &config_bytes)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        // Only scalar quantization exists; `None` would be a no-op that
+        // reported success.
+        if quantization != VectorQuantization::Scalar {
+            return Err(DbError::InvalidDocument(
+                "quantization must be 'scalar'; use dequantize to remove it".to_string(),
+            ));
         }
-
+        index.quantize()?;
+        self.set_vector_index_quantization(name, quantization)?;
         self.persist_vector_indexes()?;
 
-        Ok(QuantizationStats {
-            type_: quantization,
-            original_size: 0,
-            compressed_size: 0,
-            compression_ratio: 0.0,
+        Ok(match index.quantization_stats() {
+            Some(s) => QuantizationStats {
+                type_: quantization,
+                vectors_quantized: s.vector_count,
+                original_size: s.full_memory_bytes,
+                compressed_size: s.memory_bytes,
+                compression_ratio: s.compression_ratio,
+            },
+            // An empty index has nothing to quantize yet.
+            None => QuantizationStats {
+                type_: quantization,
+                vectors_quantized: 0,
+                original_size: 0,
+                compressed_size: 0,
+                compression_ratio: 1.0,
+            },
         })
     }
 
-    /// Dequantize a vector index
-    pub fn dequantize_vector_index(&self, _name: &str) -> DbResult<()> {
+    /// Dequantize a vector index, returning to full-precision search.
+    pub fn dequantize_vector_index(&self, name: &str) -> DbResult<()> {
+        let index = self.get_vector_index(name)?;
+        index.dequantize();
+        self.set_vector_index_quantization(name, VectorQuantization::None)?;
+        self.persist_vector_indexes()
+    }
+
+    fn set_vector_index_quantization(
+        &self,
+        name: &str,
+        quantization: VectorQuantization,
+    ) -> DbResult<()> {
+        let mut configs = self.get_all_vector_index_configs();
+        if let Some(config) = configs.iter_mut().find(|c| c.name == name) {
+            config.quantization = quantization;
+            let cf = self.ks.live(&self.db, &self.name)?;
+            let config_bytes = serde_json::to_vec(config)?;
+            self.db
+                .put_ks(&cf, Self::vec_meta_key(name), &config_bytes)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
         Ok(())
     }
 
