@@ -146,6 +146,9 @@
                         <tr><td class="px-4 py-2 font-mono text-green-400">create_collection</td><td class="px-4 py-2">Create collection</td><td class="px-4 py-2 font-mono">database, name, collection_type</td></tr>
                         <tr><td class="px-4 py-2 font-mono text-green-400">delete_collection</td><td class="px-4 py-2">Delete collection</td><td class="px-4 py-2 font-mono">database, name</td></tr>
                         <tr><td class="px-4 py-2 font-mono text-green-400">collection_stats</td><td class="px-4 py-2">Get collection stats</td><td class="px-4 py-2 font-mono">database, name</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">prune_collection</td><td class="px-4 py-2">Delete documents whose UUIDv7 (auto-generated) key predates a cutoff; other keys are left alone. Returns the count.</td><td class="px-4 py-2 font-mono">database, collection, older_than (RFC 3339)</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">get_collection_sharding</td><td class="px-4 py-2">Shard configuration, or <code>null</code> if the collection is not sharded</td><td class="px-4 py-2 font-mono">database, collection</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">repair_collection</td><td class="px-4 py-2">Remove misplaced documents left by a failed migration (drives the shard coordinator; errors if the server has none)</td><td class="px-4 py-2 font-mono">database, collection</td></tr>
                   </tbody>
               </table>
           </div>
@@ -183,9 +186,25 @@
                       <tr><td class="px-4 py-2 font-mono text-green-400">begin_transaction</td><td class="px-4 py-2">Start transaction</td><td class="px-4 py-2 font-mono">database, isolation_level</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">commit_transaction</td><td class="px-4 py-2">Commit transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">rollback_transaction</td><td class="px-4 py-2">Rollback transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">transaction_command</td><td class="px-4 py-2">Run <code>insert</code>, <code>update</code>, <code>delete</code> or a read-only <code>query</code> inside a transaction</td><td class="px-4 py-2 font-mono">tx_id, command</td></tr>
                   </tbody>
               </table>
           </div>
+          <p class="text-sm text-gray-400 mb-8">Writes sent through <code>transaction_command</code> are staged and applied at <code>commit_transaction</code>; <code>rollback_transaction</code> discards them. A read-only query runs against committed data. A query that writes, or any other command, is refused with <code>transaction_error</code>.</p>
+
+          <h3 class="text-lg font-bold text-white mb-4">Search &amp; Columnar Operations</h3>
+          <div class="overflow-x-auto mb-8">
+              <table class="min-w-full text-sm text-left text-gray-400">
+                  <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
+                  <tbody class="divide-y divide-gray-700">
+                      <tr><td class="px-4 py-2 font-mono text-green-400">geo_within</td><td class="px-4 py-2">Documents whose indexed point lies inside a polygon (a ring of <code>(lat, lon)</code> vertices, at most 10,000)</td><td class="px-4 py-2 font-mono">database, collection, field, polygon</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">vector_search</td><td class="px-4 py-2">Nearest neighbours. <code>filter</code> is a JSON object of <code>field: value</code> equalities; with it each result is <code>{doc_key, score, document}</code></td><td class="px-4 py-2 font-mono">database, collection, index_name, vector, limit, ef_search, filter</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">query_columnar</td><td class="px-4 py-2">Read columns. <code>order_by</code> is <code>"column [ASC|DESC]"</code> on a returned column</td><td class="px-4 py-2 font-mono">database, collection, columns, filter, order_by, limit</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">aggregate_columnar</td><td class="px-4 py-2">Aggregate columns. With <code>group_by</code>, exactly one aggregation</td><td class="px-4 py-2 font-mono">database, collection, aggregations, group_by, filter</td></tr>
+                  </tbody>
+              </table>
+          </div>
+          <p class="text-sm text-gray-400 mb-8">A columnar <code>filter</code> is JSON: a leaf <code>{"column": "n", "op": ">=", "value": 5}</code> (ops: <code>EQ NE GT GTE LT LTE IN</code> or the symbols) or <code>{"and": [...]}</code> / <code>{"or": [...]}</code> of filters. A malformed aggregation is an error rather than being skipped.</p>
 
           <h3 class="text-lg font-bold text-white mb-4">Bulk Operations</h3>
           <div class="overflow-x-auto mb-8">

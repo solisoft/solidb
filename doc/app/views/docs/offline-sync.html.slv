@@ -252,7 +252,7 @@
               <i class="fas fa-compress-alt text-blue-400 mr-3"></i>
               <h4 class="text-white font-semibold">Delta Sync</h4>
             </div>
-            <p class="text-sm text-gray-400">Only changed fields are transmitted. Bandwidth-efficient sync for mobile and low-bandwidth environments.</p>
+            <p class="text-sm text-gray-400">Only changed fields are transmitted. Bandwidth-efficient sync for mobile and low-bandwidth environments. A pushed change with <code>is_delta</code> carries an RFC 6902 patch in <code>delta_patch</code>, applied atomically to the stored document; a patch for a document the server does not have, or one that does not apply, is refused and changes nothing (push the full document instead).</p>
           </div>
 
           <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">

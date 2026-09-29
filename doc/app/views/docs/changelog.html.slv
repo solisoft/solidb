@@ -9,6 +9,30 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Driver transactions are transactional</strong> &mdash; <code>TransactionCommand</code> ran the inner command outside the transaction, so a write committed at once and <code>Rollback</code> undid nothing. <code>insert</code>, <code>update</code> and <code>delete</code> are now staged and applied at commit; a read-only <code>query</code> runs against committed data; anything else is refused.</li>
+        <li><strong class="text-white">Writing queries can use every clause in a transaction</strong> &mdash; <code>POST …/transaction/{id}/query</code> refused JOIN, graph traversals, COLLECT and windows in a query that writes. It now runs the ordinary executor with its writes staged on the transaction, and returns the query&rsquo;s rows. <code>OPTIONS</code> and <code>REPLACE</code> are still refused there.</li>
+        <li><strong class="text-white">Sharded collections take <code>OPTIONS</code>, <code>REPLACE</code> and <code>OLD</code>/<code>NEW</code></strong> &mdash; They failed with &ldquo;not supported on sharded collections yet&rdquo;. Also fixed on sharded collections: <code>FILTER doc._key == …</code> and indexed lookups returned nothing, <code>NEW</code> after a local <code>UPDATE</code> was the patch rather than the merged document, and <code>_id</code> reported the physical shard.</li>
+        <li><strong class="text-white">Driver commands that returned &ldquo;not supported&rdquo; work</strong> &mdash; <code>prune_collection</code> (new <code>older_than</code>), <code>get_collection_sharding</code>, <code>repair_collection</code>, <code>geo_within</code> polygon search, <code>vector_search</code> with <code>filter</code>, and columnar <code>filter</code> / <code>order_by</code>. <code>create_columnar</code> always failed and no longer does; a malformed columnar aggregation is an error instead of being skipped.</li>
+        <li><strong class="text-white">Vector quantize and dequantize do something</strong> &mdash; They saved the config and returned zeroed stats without touching the index. The index is now quantized and restored, and the response reports real sizes and <code>vectors_quantized</code>.</li>
+        <li><strong class="text-white">Resharding no longer deletes what it could not confirm</strong> &mdash; Remote nodes were never asked whether a migrated batch arrived, and when verification found nothing the batch was trusted and the source deleted. Batches that cannot be confirmed are now kept for the next pass.</li>
+        <li><strong class="text-white">Truncate clears version history and pending-embed markers</strong> &mdash; An <code>AS OF</code> read could resurrect documents from a truncated collection.</li>
+        <li><strong class="text-white">Trigger <code>filter</code> is evaluated</strong> &mdash; An SDBQL expression over <code>doc</code>, <code>old</code> and <code>event</code>; the trigger fires only when it is truthy.</li>
+        <li><strong class="text-white">Offline sync accepts delta changes</strong> &mdash; <code>POST /_api/sync/push</code> applies an RFC 6902 <code>delta_patch</code> atomically to the stored document.</li>
+        <li><strong class="text-white"><code>solidb-restore</code> reads SQL dumps</strong> &mdash; <code>INSERT INTO t (cols) VALUES …</code> statements from mysqldump, pg_dump and sqlite become documents in a collection named after the table.</li>
+        <li><strong class="text-white">SSRF guard lookups are bounded</strong> &mdash; DNS lookups time out after 5&nbsp;s, at most 32 run at once, webhook delivery resolves the host once on the blocking pool, and the <code>OLLAMA_URL</code> verdict is cached briefly and warmed when the URL is written.</li>
+        <li><strong class="text-white">Smaller</strong> &mdash; <code>FILTER doc._id == …</code> / <code>IN […]</code> is a primary-key lookup; sliding-window streams drop expired events when the window fires; cluster heartbeats report real CPU and memory and node failures are logged; cluster status <code>log_entries</code> is the retained count; <code>AS OF</code> documentation now says batch and transactional writes are versioned (they already were).</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.0.5 -->
   <section id="v2-0-5" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

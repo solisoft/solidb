@@ -634,7 +634,7 @@ end
                 <tbody class="divide-y divide-white/5">
                   <tr>
                     <td class="px-4 py-3 font-mono text-purple-300">-i, --input</td>
-                    <td class="px-4 py-3">Input JSONL file (required)</td>
+                    <td class="px-4 py-3">Input file (required): JSONL, a JSON array, CSV, or SQL <code>INSERT</code> statements (a <code>.sql</code> file, or one starting with <code>INSERT</code>)</td>
                     <td class="px-4 py-3">-</td>
                   </tr>
                   <tr>
@@ -674,6 +674,11 @@ end
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div class="mb-8 bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
+               <i class="fas fa-database text-blue-400 mt-1 mr-3"></i>
+               <p class="text-sm text-gray-300"><strong>SQL dumps.</strong> <code>INSERT INTO t (cols) VALUES (...), (...);</code> statements (<code>mysqldump --complete-insert</code>, <code>pg_dump --column-inserts</code>, sqlite <code>.dump</code>) become documents in a collection named after the table (override with <code>--collection</code>). Other statements are skipped. An <code>INSERT</code> with no column list, or a value that is not a literal (a function call, a hex literal), is reported and skipped, not guessed.</p>
             </div>
 
             <h3 class="text-lg font-bold text-white mb-4">Examples</h3>

@@ -153,7 +153,13 @@
             </div>
           </div>
         </div>
-      </section>
+        <div class="px-8 pb-8">
+            <h3 class="text-lg font-bold text-white mb-3">Writes</h3>
+            <p class="text-sm text-gray-300 mb-3"><code>INSERT</code>, <code>UPDATE</code>, <code>REPLACE</code> and <code>REMOVE</code> work on sharded collections, including <code>OPTIONS</code> and <code>OLD</code>/<code>NEW</code>. Plain statements are batched per shard; ones that need each row's outcome are written row by row through the coordinator. <code>NEW</code> is always the stored (merged) document.</p>
+            <p class="text-sm text-gray-400 mb-3">A read-then-write (<code>REPLACE</code>, <code>OLD</code>, <code>keepNull</code>/<code>mergeObjects</code>) is not atomic against a concurrent writer of the same document. <code>REPLACE</code> is forwarded to the owning node as <code>PUT …?replace=true</code>, so upgrade every node before using it on a mixed-version cluster.</p>
+            <p class="text-sm text-gray-400">Filters on <code>_key</code>, <code>_id</code> and indexed fields scan the shards (indexes are not used on the logical collection), and <code>_id</code> reports the logical collection (<code>c/key</code>), not the shard.</p>
+          </div>
+        </section>
 
       <!-- Configuration Section -->
       <section id="configuration" class="scroll-mt-24">

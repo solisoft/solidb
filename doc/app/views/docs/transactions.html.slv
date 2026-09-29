@@ -207,6 +207,14 @@
               Transactional SDBQL queries act as "staged" operations. If the query contains <code>INSERT</code>, <code>UPDATE</code>, or <code>REMOVE</code>, the changes are not visible to other clients until you call <code>COMMIT</code>.
             </p>
           </div>
+          <div class="mt-4 p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-lg flex items-start">
+            <i class="fas fa-circle-info text-cyan-400 mt-1 mr-3"></i>
+            <div class="text-sm text-gray-300 space-y-2">
+              <p>A query that writes runs on the ordinary executor with its writes staged on the transaction, so <code>JOIN</code>, <code>COLLECT</code>, graph traversals, windows, <code>SORT</code>/<code>LIMIT</code> and <code>RETURN</code> (including <code>NEW</code> and <code>OLD</code>) all work. The response carries the query's rows in <code>result</code> and the number of staged writes in <code>mutationCount</code>.</p>
+              <p>Reads inside a transaction see committed data, not the transaction's own staged writes. <code>OPTIONS</code> (<code>overwriteMode</code>, <code>keepNull</code>, <code>mergeObjects</code>, <code>ignoreErrors</code>) and <code>REPLACE</code> are refused inside a transaction.</p>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -442,11 +450,11 @@
           <ul class="space-y-4 text-gray-300">
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>
-              <span><strong>Graph Traversals:</strong> Multi-hop graph queries are not yet supported inside transactions.</span>
+              <span><strong>OPTIONS and REPLACE:</strong> A transactional query cannot use <code>OPTIONS</code> or <code>REPLACE</code>; use plain <code>INSERT</code>, <code>UPDATE</code>, <code>REMOVE</code> or <code>UPSERT</code>.</span>
             </li>
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>
-              <span><strong>Aggregations:</strong> The <code>COLLECT</code> statement is currently read-only and cannot be used in a transactional mutation query.</span>
+              <span><strong>Read-your-writes:</strong> Queries inside a transaction read committed data. A document inserted earlier in the same transaction is not visible to a later query in it.</span>
             </li>
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>

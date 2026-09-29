@@ -161,6 +161,11 @@
                     <td class="p-4 font-mono">boolean</td>
                     <td class="p-4">Whether the trigger is active</td>
                   </tr>
+                  <tr>
+                    <td class="p-4 text-amber-400 font-mono">filter</td>
+                    <td class="p-4 font-mono">string</td>
+                    <td class="p-4">Optional SDBQL expression over <code>doc</code> (the new, or deleted, document), <code>old</code> (the previous version, else <code>null</code>) and <code>event</code>. The trigger fires only when it is truthy, e.g. <code>doc.total &gt; 100 AND doc.total != old.total</code>. A filter that raises an error does not fire. A filter that is not a single expression is rejected when the trigger is saved.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
