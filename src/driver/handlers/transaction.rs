@@ -258,6 +258,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn committed_transaction_records_version_history() {
+        let (_t, mut h) = handler();
+        h.get_collection("d", "c")
+            .unwrap()
+            .enable_versioning()
+            .unwrap();
+        let tx = begin(&mut h);
+        handle_transaction_command(&mut h, tx.clone(), insert("k3")).await;
+        let upd = Box::new(Command::Update {
+            database: "d".to_string(),
+            collection: "c".to_string(),
+            key: "k3".to_string(),
+            document: json!({"v": 2}),
+            merge: true,
+        });
+        handle_transaction_command(&mut h, tx.clone(), upd).await;
+        handle_commit_transaction(&mut h, tx);
+
+        let coll = h.get_collection("d", "c").unwrap();
+        let history = coll.doc_history("k3");
+        assert_eq!(history.len(), 2, "{:?}", history);
+        assert_eq!(history[0]["value"]["v"], json!(2));
+        assert_eq!(history[1]["value"]["v"], json!(1));
+    }
+
+    #[tokio::test]
     async fn unsupported_inner_command_is_refused() {
         let (_t, mut h) = handler();
         let tx = begin(&mut h);

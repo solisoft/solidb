@@ -589,14 +589,14 @@ It retrieves via `GRAPH_RAG`, applies the configured rerank (when a `text_query`
 
 ### Time-Travel (Document Versioning)
 
-Enable versioning per collection (`Collection::enable_versioning`, or `SOLIDB_MAX_VERSIONS` to cap retained versions, default 100). Each single-document insert/update/delete then records an immutable version in the same atomic write.
+Enable versioning per collection (`Collection::enable_versioning`, or `SOLIDB_MAX_VERSIONS` to cap retained versions, default 100). Each insert/update/delete then records an immutable version in the same atomic write — single-document writes, `insert_batch` / `upsert_batch` / `update_batch`, and committed transactions alike.
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
 | `DOC_AS_OF(coll, key, ts)` | The document as of `ts` (epoch millis or RFC3339), or `null` if it did not exist. | `DOC_AS_OF("orders", "o1", "2026-07-01T00:00:00Z")` |
 | `DOC_HISTORY(coll, key)` | Full version history, newest first: `[{ ts, deleted, value }, ...]`. | `DOC_HISTORY("orders", "o1")` |
 
-Scope: `AS OF` answers primary-key reads over versioned single-document writes. Bulk (`insert_batch`) and transactional writes are not yet versioned, and secondary indexes are current-version only.
+Scope: `AS OF` answers primary-key reads and history listing. Secondary indexes are current-version only, so a historical read is never index-accelerated.
 
 ### Semantic Response Cache
 

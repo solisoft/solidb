@@ -9,7 +9,7 @@
 //!
 //! Scope: single-document `insert`/`update`/`delete`, `insert_batch` /
 //! `upsert_batch`, and transactional write batches record history.
-//! and secondary indexes are current-version only — `AS OF` answers
+//! Secondary indexes are current-version only — `AS OF` answers
 //! primary-key reads (`DOC_AS_OF`) and history listing (`DOC_HISTORY`), not
 //! index-accelerated historical queries. History is capped per document
 //! (`SOLIDB_MAX_VERSIONS`, default 100).

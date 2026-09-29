@@ -216,7 +216,7 @@
             </h2>
           </div>
           <div class="p-8 space-y-6">
-            <p class="text-gray-300">Enable versioning on a collection and every single-document insert/update/delete records an immutable version in the same atomic write. Read the past with two SDBQL functions:</p>
+            <p class="text-gray-300">Enable versioning on a collection and every insert, update and delete &mdash; single-document, batch or committed in a transaction &mdash; records an immutable version in the same atomic write. Read the past with two SDBQL functions:</p>
             <div class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden">
               <div class="p-4 bg-white/5 border-b border-white/5"><span class="text-amber-400 font-bold text-sm">Turning it on</span></div>
               <div class="p-4 space-y-3">
