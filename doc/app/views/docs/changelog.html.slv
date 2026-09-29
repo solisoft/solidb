@@ -9,6 +9,21 @@
     </p>
   </div>
 
+  <!-- 2.0.5 -->
+  <section id="v2-0-5" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.0.5</h2>
+      <span class="text-sm font-medium text-gray-400">September 29, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Simple driver reads skip decoding altogether</strong> &mdash; <code>FOR v IN c [LIMIT &hellip;] RETURN v</code>, <code>RETURN v.f</code> and <code>RETURN {k: v.f, &hellip;}</code> over a plain collection, with the query cache off, copy each document&rsquo;s stored MessagePack bytes straight into the response instead of decoding every value and encoding it again (the bytes sent are the same). SoliDB CPU for a 50-row read went from 43.5 to 26&nbsp;&micro;s. On the framework benchmark&rsquo;s server (Ryzen 9 9950X, SoliDB on 4 reserved cores), a Soli <code>/db</code> page without the query cache went from 137,900 to 237,300 requests/s, p99 1.7 &rarr; 1.2&nbsp;ms, against 190,600 for Kemal + PostgreSQL in the same session.</li>
+        <li><strong class="text-white">Cheaper metadata on every query</strong> &mdash; stored document headers are read without bincode&rsquo;s serde path, and a collection&rsquo;s shard configuration is cached instead of read from disk twice per query.</li>
+        <li><strong class="text-white">Fixed: JavaScript client and responses over ~64&nbsp;KB</strong> &mdash; a response arriving in three or more socket reads lost data, failed to decode and left the connection hanging; larger results now arrive intact (tested to 20,000 rows, 5.8&nbsp;MB).</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.0.4 -->
   <section id="v2-0-4" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

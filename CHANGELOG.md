@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.0.5](https://github.com/solisoft/solidb/compare/v2.0.4...v2.0.5) (2026-09-29)
+
 ### Performance
 
 * **Simple driver reads skip decoding altogether.** `FOR v IN c [LIMIT …]
@@ -9,8 +11,10 @@
   with the query cache off, now copy the stored MessagePack bytes of each
   document straight into the response instead of decoding every value and
   encoding it again (the bytes are the same; tests check it). A 50-row query
-  went from 43.5 to 26 µs of SoliDB CPU; through a Soli application's `/db`
-  page, from 74 to 43.5 µs, and the page from 54k to 65k requests/s.
+  went from 43.5 to 26 µs of SoliDB CPU. On the framework benchmark's server
+  (Ryzen 9 9950X, SoliDB on 4 reserved cores), a Soli `/db` page with the query
+  cache off went from 137,900 to 237,300 requests/s (+72%), p99 1.7 → 1.2 ms,
+  against 190,600 for Kemal + PostgreSQL measured in the same session.
 * Stored document headers are read without bincode's serde path, and a
   collection's shard configuration is cached instead of read on every query.
 
