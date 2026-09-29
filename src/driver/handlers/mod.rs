@@ -939,9 +939,12 @@ impl DriverHandler {
                 },
             ),
 
-            Command::GeoWithin { .. } => Response::error(DriverError::InvalidCommand(
-                "Geo polygon search not supported".to_string(),
-            )),
+            Command::GeoWithin {
+                database,
+                collection,
+                field,
+                polygon,
+            } => index::handle_geo_within(self, database, collection, field, polygon),
 
             // ==================== Vector Index Operations ====================
             Command::CreateVectorIndex {

@@ -4,6 +4,9 @@
 
 ### Added
 
+* **Driver: `GeoWithin` (polygon search)** returns the documents whose indexed
+  point lies inside a `(lat, lon)` ring (at most 10,000 vertices).
+
 * **Driver: `PruneCollection`, `GetCollectionSharding` and filtered
   `VectorSearch` work.** They returned "not supported". `PruneCollection`
   takes a new optional `older_than` (RFC 3339, required in practice);

@@ -182,6 +182,46 @@ pub fn handle_geo_near(
     }
 }
 
+/// Most vertices a polygon may carry; the ring is tested against every
+/// indexed point, so its size is client-controlled work.
+const GEO_POLYGON_MAX_VERTICES: usize = 10_000;
+
+pub fn handle_geo_within(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    field: String,
+    polygon: Vec<(f64, f64)>,
+) -> Response {
+    if polygon.len() > GEO_POLYGON_MAX_VERTICES {
+        return Response::error(DriverError::InvalidCommand(format!(
+            "polygon has {} vertices; the limit is {}",
+            polygon.len(),
+            GEO_POLYGON_MAX_VERTICES
+        )));
+    }
+    if polygon
+        .iter()
+        .any(|(a, b)| !a.is_finite() || !b.is_finite())
+    {
+        return Response::error(DriverError::InvalidCommand(
+            "polygon coordinates must be finite".to_string(),
+        ));
+    }
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => match coll.geo_within_polygon(&field, &polygon) {
+            Some(docs) => Response::ok(serde_json::json!(docs
+                .into_iter()
+                .map(|d| d.to_value())
+                .collect::<Vec<_>>())),
+            None => Response::error(DriverError::DatabaseError(
+                "Geo index not found".to_string(),
+            )),
+        },
+        Err(e) => Response::error(e),
+    }
+}
+
 // ==================== Vector Index Operations ====================
 
 pub fn handle_create_vector_index(
@@ -535,5 +575,38 @@ mod tests {
         );
         coll.dequantize_vector_index("v").unwrap();
         assert!(!coll.get_vector_index("v").unwrap().is_quantized());
+    }
+
+    #[test]
+    fn geo_within_returns_points_inside_the_polygon() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.create_geo_index("g".to_string(), "loc".to_string())
+            .unwrap();
+        for (k, lat, lon) in [("in", 1.0, 1.0), ("out", 5.0, 5.0), ("edge_out", -1.0, 1.0)] {
+            coll.insert(json!({"_key": k, "loc": {"lat": lat, "lon": lon}}))
+                .unwrap();
+        }
+        let h = DriverHandler::new(engine, None);
+        let square = vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0), (2.0, 0.0)];
+        let r = handle_geo_within(&h, "d".into(), "c".into(), "loc".into(), square);
+        match r {
+            Response::Ok { data: Some(d), .. } => {
+                let keys: Vec<_> = d
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x["_key"].clone())
+                    .collect();
+                assert_eq!(keys, vec![json!("in")]);
+            }
+            other => panic!("{:?}", other),
+        }
+        let r = handle_geo_within(&h, "d".into(), "c".into(), "nope".into(), vec![]);
+        assert!(matches!(r, Response::Error { .. }));
     }
 }

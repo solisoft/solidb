@@ -1,6 +1,8 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::geo::{haversine_distance, GeoIndex, GeoIndexStats, GeoPoint};
+use crate::storage::geo::{
+    haversine_distance, point_in_polygon, GeoIndex, GeoIndexStats, GeoPoint,
+};
 use serde_json::Value;
 
 impl Collection {
@@ -277,6 +279,47 @@ impl Collection {
             true
         })?;
         Some(self.fetch_in_order(matches))
+    }
+
+    /// Find documents whose indexed point lies inside `polygon`, a ring of
+    /// `(lat, lon)` vertices (implicitly closed), in document-key order.
+    /// `None` when the field has no geo index.
+    pub fn geo_within_polygon(&self, field: &str, polygon: &[(f64, f64)]) -> Option<Vec<Document>> {
+        // Reject the ring before touching the index: a polygon with fewer than
+        // three vertices contains nothing.
+        if polygon.len() < 3 {
+            self.geo_index_scan(field, |_, _| false)?;
+            return Some(Vec::new());
+        }
+        let (mut min_lat, mut max_lat) = (f64::MAX, f64::MIN);
+        let (mut min_lon, mut max_lon) = (f64::MAX, f64::MIN);
+        for &(lat, lon) in polygon {
+            min_lat = min_lat.min(lat);
+            max_lat = max_lat.max(lat);
+            min_lon = min_lon.min(lon);
+            max_lon = max_lon.max(lon);
+        }
+        let mut matches = Vec::new();
+        self.geo_index_scan(field, |doc_key, point_val| {
+            if let Some(p) = GeoPoint::from_value(point_val) {
+                // The bounding box is a cheap reject before the ray cast.
+                if p.lat >= min_lat
+                    && p.lat <= max_lat
+                    && p.lon >= min_lon
+                    && p.lon <= max_lon
+                    && point_in_polygon(p.lat, p.lon, polygon)
+                {
+                    matches.push((doc_key.to_string(), ()));
+                }
+            }
+            true
+        })?;
+        Some(
+            self.fetch_in_order(matches)
+                .into_iter()
+                .map(|(doc, _)| doc)
+                .collect(),
+        )
     }
 }
 
