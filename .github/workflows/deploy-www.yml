@@ -188,16 +188,21 @@ jobs:
         if: steps.cfg.outputs.configured == 'true'
         run: |
           set -euo pipefail
-          ssh "$USER@$HOST" "test -f '$SITES_DIR/$SITE_DIR/app.infos' && test -f '$SITES_DIR/$SITE_DIR/.env'" \
-            || { echo "$SITES_DIR/$SITE_DIR must hold app.infos and .env" >&2; exit 1; }
+          missing="$(ssh "$USER@$HOST" "cd '$SITES_DIR/$SITE_DIR' 2>/dev/null || { echo '(the directory itself)'; exit 0; }; for f in app.infos .env; do test -f \"\$f\" || echo \"\$f\"; done")"
+          if [ -n "$missing" ]; then
+            echo "$SITES_DIR/$SITE_DIR must hold app.infos and .env; missing:" >&2
+            echo "$missing" | sed 's/^/  /' >&2
+            exit 1
+          fi
 
       # --delete-delay: what leaves the repository leaves the server. The
       # exclusions protect what belongs to the server — the secrets (.env) and
       # the proxy's own files (app.infos, restart.txt) — plus node_modules,
       # which is a build input here and the server has no use for.
       #
-      # app.infos is tracked in this repository but still excluded: it carries
-      # the port range and worker count the proxy is running with, and
+      # app.infos is not tracked in this repository (unlike ../lang/www) and
+      # lives only on the server: it carries the port range and worker count
+      # the proxy is running with, and
       # overwriting a live proxy's configuration mid-deploy is the riskier
       # direction. Change it on the server when it needs to change.
       #
