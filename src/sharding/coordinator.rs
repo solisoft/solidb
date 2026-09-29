@@ -48,6 +48,10 @@ struct CoordinatorBatchSender<'a> {
 
 #[async_trait::async_trait]
 impl<'a> BatchSender for CoordinatorBatchSender<'a> {
+    fn cluster_manager(&self) -> Option<&Arc<ClusterManager>> {
+        self.coordinator.cluster_manager.as_ref()
+    }
+
     async fn send_batch(
         &self,
         db_name: &str,

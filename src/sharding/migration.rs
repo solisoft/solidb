@@ -32,6 +32,13 @@ pub trait BatchSender: Send + Sync {
     async fn should_pause_resharding(&self) -> bool {
         false
     }
+
+    /// The cluster this sender talks to, used to confirm that documents
+    /// landed on remote nodes before the local copy is deleted. `None` for a
+    /// sender with no remote side.
+    fn cluster_manager(&self) -> Option<&std::sync::Arc<crate::cluster::manager::ClusterManager>> {
+        None
+    }
 }
 
 /// Verify that migrated documents are accessible at their new locations
@@ -482,7 +489,6 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
                         }
 
                         // Verify migrated documents are accessible before deleting from source
-                        // Note: cluster_manager not available here, so remote verification falls back to trusting batch
                         let verified_keys = verify_migrated_documents(
                             storage,
                             db_name,
@@ -491,7 +497,7 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
                             &config,
                             current_assignments,
                             my_node_id,
-                            None,
+                            sender.cluster_manager(),
                         )
                         .await;
 
@@ -500,30 +506,16 @@ pub async fn reshard_collection_with_journal<S: BatchSender>(
                             // Perfect verification - all documents confirmed
                             verified_keys
                         } else if verified_keys.is_empty() {
-                            // No verification possible - likely test environment or network issues
-                            // Check if we're dealing with remote shards
-                            let has_remote_operations = successful_keys.iter().any(|key| {
-                                let shard_id = ShardRouter::route(key, new_shards);
-                                current_assignments
-                                    .get(&shard_id)
-                                    .map(|a| a.primary_node != my_node_id)
-                                    .unwrap_or(false)
-                            });
-
-                            if has_remote_operations {
-                                // Remote operations - trust the batch sender for now
-                                // TODO: Implement proper remote verification
-                                tracing::warn!("RESHARD: Remote verification not available, trusting batch operations");
-                                successful_keys.clone()
-                            } else {
-                                // Local-only operations - verification should work
-                                tracing::error!(
-                                "RESHARD: Local verification failed completely - skipping batch"
+                            // Nothing could be confirmed at its new home (a remote
+                            // node down or refusing). The local copy is the only
+                            // one we know exists, so keep it and let the next
+                            // reshard pass retry.
+                            tracing::error!(
+                                "RESHARD: Verification failed completely - keeping source documents"
                             );
-                                failed_count += successful_keys.len();
-                                consecutive_failures += 1;
-                                continue;
-                            }
+                            failed_count += successful_keys.len();
+                            consecutive_failures += 1;
+                            continue;
                         } else {
                             // Partial verification - some documents verified, others not
                             let unverified_count = successful_keys.len() - verified_keys.len();

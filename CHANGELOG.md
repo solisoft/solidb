@@ -26,6 +26,15 @@
 
 ### Fixed
 
+* **Resharding no longer deletes local documents it could not confirm.** It
+  never asked remote nodes whether a migrated batch had arrived (the cluster
+  manager was not passed to the verifier), and when verification found
+  nothing it trusted the batch and deleted the source anyway. Remote
+  documents are now confirmed via `_verify`, and a batch that cannot be
+  confirmed is kept for the next pass.
+* **Sliding-window streams** drop events older than the window when the window
+  fires, not only when a new event arrives.
+
 * **Driver `CreateColumnar` always failed** ("Columnar CF not found"): it did
   not create the backing collection the way the HTTP endpoint does.
 

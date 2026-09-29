@@ -63,6 +63,10 @@ struct RebalanceBatchSender<'a> {
 
 #[async_trait::async_trait]
 impl<'a> BatchSender for RebalanceBatchSender<'a> {
+    fn cluster_manager(&self) -> Option<&Arc<ClusterManager>> {
+        self.cluster_manager.as_ref()
+    }
+
     async fn send_batch(
         &self,
         db_name: &str,

@@ -181,6 +181,12 @@ impl StreamTask {
                 // Window timer
                 _ = tokio::time::sleep(wait_duration) => {
                     if Utc::now() >= self.next_window_end {
+                        // A sliding window keeps only the last `window_duration`
+                        // of events. Pruning on arrival is not enough: with no
+                        // new events, expired ones would still be aggregated.
+                        if matches!(self.window_type, WindowType::Sliding) {
+                            self.prune_older_than(Utc::now() - self.window_duration);
+                        }
                         if !self.buffer.is_empty() {
                             if let Err(e) = self.process_window().await {
                                 tracing::error!("Stream {}: Processing error: {}", self.name, e);
@@ -194,12 +200,6 @@ impl StreamTask {
                             Utc::now(),
                             self.window_duration,
                         );
-
-                        // For sliding window, we might need different logic (keeping history)
-                        if matches!(self.window_type, WindowType::Sliding) {
-                            // TODO: Sliding window retention policy
-                            // For now simplest is clearing buffer like Tumbling (incorrect behavior but placeholder)
-                        }
                     }
                 }
             }
