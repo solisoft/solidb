@@ -1,0 +1,19 @@
+# soli-proxy manifest for the docs site on the production server.
+#
+# The deploy-www workflow uploads this to <sites_dir>/<site_dir>/app.infos only
+# when the server has none; it never overwrites one, so once seeded, change it
+# on the server. It is kept out of doc/ because the local dev proxy serves doc/
+# through a symlink (proxy/sites/solidb.solisoft.net) and would read it there.
+#
+# Same shape as ../lang/www/app.infos, which runs on the same server and shares
+# its port range; the proxy picks free ports inside it. /up rather than /health:
+# /up is Soli's readiness probe, and the one the workflow checks.
+name = "solidb.solisoft.net"
+domain = "solidb.solisoft.net"
+start_script = "soli serve . --port $PORT --workers $WORKERS"
+workers = 2
+stop_script = ""
+health_check = "/up"
+graceful_timeout = 30
+port_range_start = 20000
+port_range_end = 30000

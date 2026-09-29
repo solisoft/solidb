@@ -9,8 +9,9 @@
 #   3. soli-proxy deploy: starts the idle slot, waits for it, moves traffic
 #      across, then stops the old one.
 #
-# The site directory must already exist on the server with its own app.infos
-# and .env. This workflow creates nothing and touches no other folder.
+# The site directory must already exist on the server with its own .env. Its
+# app.infos is seeded from deploy/www/app.infos when absent and never
+# overwritten. Nothing else is created, and no other folder is touched.
 name: deploy www
 
 on:
@@ -21,6 +22,7 @@ on:
     # site through a blue-green switch for no reason.
     paths:
       - 'doc/**'
+      - 'deploy/www/**'
       - '.github/workflows/deploy-www.yml'
   workflow_dispatch:
 
@@ -165,7 +167,7 @@ jobs:
             echo "             DEPLOY_APP (solidb.solisoft.net)"
             echo ""
             echo "The site directory must already exist on the server with its"
-            echo "own app.infos and .env; this workflow creates neither."
+            echo "own .env; app.infos is seeded from deploy/www/ if absent."
             exit 0
           fi
           case "$DOMAIN" in *.*) ;; *) echo "DEPLOY_DOMAIN must contain a dot: $DOMAIN" >&2; exit 1 ;; esac
@@ -184,10 +186,19 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # app.infos has a template in deploy/www/ and is seeded from it when the
+      # server has none — never overwritten, since the live one is the proxy's
+      # configuration. .env is never seeded: it is the place for secrets.
       - name: The site exists on the server
         if: steps.cfg.outputs.configured == 'true'
         run: |
           set -euo pipefail
+          ssh "$USER@$HOST" "test -d '$SITES_DIR/$SITE_DIR'" \
+            || { echo "$SITES_DIR/$SITE_DIR does not exist" >&2; exit 1; }
+          if ! ssh "$USER@$HOST" "test -f '$SITES_DIR/$SITE_DIR/app.infos'"; then
+            echo "Seeding app.infos from deploy/www/app.infos"
+            ssh "$USER@$HOST" "set -o noclobber; cat > '$SITES_DIR/$SITE_DIR/app.infos'" < deploy/www/app.infos
+          fi
           missing="$(ssh "$USER@$HOST" "cd '$SITES_DIR/$SITE_DIR' 2>/dev/null || { echo '(the directory itself)'; exit 0; }; for f in app.infos .env; do test -f \"\$f\" || echo \"\$f\"; done")"
           if [ -n "$missing" ]; then
             echo "$SITES_DIR/$SITE_DIR must hold app.infos and .env; missing:" >&2
@@ -200,8 +211,8 @@ jobs:
       # the proxy's own files (app.infos, restart.txt) — plus node_modules,
       # which is a build input here and the server has no use for.
       #
-      # app.infos is not tracked in this repository (unlike ../lang/www) and
-      # lives only on the server: it carries the port range and worker count
+      # app.infos is excluded too (its seed template is deploy/www/app.infos,
+      # outside doc/): the live one carries the port range and worker count
       # the proxy is running with, and
       # overwriting a live proxy's configuration mid-deploy is the riskier
       # direction. Change it on the server when it needs to change.
