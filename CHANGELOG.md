@@ -26,6 +26,12 @@
 
 ### Fixed
 
+* **Truncate left version history and pending-embed markers behind.** After
+  truncating a versioned collection, an `AS OF` read still returned the
+  deleted documents; markers for documents that no longer existed kept the
+  embedding worker busy. Both are now removed and the pending gauge is
+  decremented.
+
 * **Resharding no longer deletes local documents it could not confirm.** It
   never asked remote nodes whether a migrated batch had arrived (the cluster
   manager was not passed to the verifier), and when verification found

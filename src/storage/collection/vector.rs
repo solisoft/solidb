@@ -653,3 +653,26 @@ pub(crate) fn release_pending_embed(n: u64) {
         |cur| Some(cur.saturating_sub(n)),
     );
 }
+
+#[cfg(test)]
+mod truncate_tests {
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+
+    #[test]
+    fn truncate_removes_pending_embed_markers() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.insert(json!({"_key": "a"})).unwrap();
+
+        coll.mark_embed_pending("v", "a");
+        assert_eq!(coll.count_embed_pending(), 1, "control: marker written");
+
+        coll.truncate().unwrap();
+        assert_eq!(coll.count_embed_pending(), 0);
+    }
+}

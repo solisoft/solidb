@@ -195,3 +195,28 @@ fn test_truncate_clears_ttl_expiry_entries() {
     sessions.truncate().unwrap();
     assert_eq!(sessions.cleanup_all_expired_documents().unwrap(), 0);
 }
+
+#[test]
+fn test_truncate_clears_version_history() {
+    let (engine, _tmp) = create_test_db();
+    let db_names = engine.list_databases();
+    let db = engine.get_database(&db_names[0]).unwrap();
+
+    db.create_collection("notes".to_string(), None).unwrap();
+    let notes = db.get_collection("notes").unwrap();
+    notes.enable_versioning().unwrap();
+
+    notes.insert(json!({ "_key": "n1", "v": 1 })).unwrap();
+    let before_truncate = u64::MAX;
+    assert!(
+        notes.get_as_of("n1", before_truncate).unwrap().is_some(),
+        "control: history is readable before the truncate"
+    );
+
+    notes.truncate().unwrap();
+
+    // The collection is empty, so a time-travel read must not bring the
+    // document back.
+    assert_eq!(notes.count(), 0);
+    assert!(notes.get_as_of("n1", before_truncate).unwrap().is_none());
+}

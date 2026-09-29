@@ -1310,7 +1310,7 @@ impl Collection {
         // shard config all survive the truncate. `doc:` additionally covers the
         // legacy nested `doc:ttl_exp:` expiry-index entries; `ttl_exp;` sorts
         // before `ttl_meta:`, so TTL index definitions survive too.
-        let data_ranges: [(&[u8], &[u8]); 10] = [
+        let data_ranges: [(&[u8], &[u8]); 12] = [
             (b"doc:", b"doc;"),         // documents + legacy TTL expiry entries
             (b"ttl_exp:", b"ttl_exp;"), // TTL expiry entries
             (b"idx:", b"idx;"),         // persistent / hash index entries
@@ -1321,7 +1321,16 @@ impl Collection {
             (b"blo_tmp:", b"blo_tmp;"), // resumable-upload temp chunks
             (b"blo_idx:", b"blo_idx;"), // blob bloom-filter index
             (b"cfo_idx:", b"cfo_idx;"), // cuckoo-filter index
+            // History of documents that no longer exist has no subject, and
+            // would let an `AS OF` read resurrect them.
+            (b"docv:", b"docv;"),
+            // Markers for documents that are gone can never complete.
+            (b"embed_pending:", b"embed_pending;"),
         ];
+
+        // The pending-embed gauge is process-wide; the markers are about to be
+        // range-deleted, so take them off it while they can still be counted.
+        super::vector::release_pending_embed(self.count_embed_pending() as u64);
 
         let mut batch = WriteBatch::default();
         for (start, end) in data_ranges {
