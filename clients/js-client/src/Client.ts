@@ -139,17 +139,13 @@ export class Client {
 
     private handleData(chunk: Buffer, conn: PooledConnection) {
         const newLength = conn.buffer.length + chunk.length;
-        if (conn.buffer.length === 0) {
-            conn.buffer = Buffer.allocUnsafe(newLength);
-            chunk.copy(conn.buffer);
-        } else if (conn.buffer.length >= chunk.length) {
-            chunk.copy(conn.buffer, conn.buffer.length);
-        } else {
-            const newBuffer = Buffer.allocUnsafe(newLength);
-            conn.buffer.copy(newBuffer);
-            chunk.copy(newBuffer, conn.buffer.length);
-            conn.buffer = newBuffer;
-        }
+        // Append the chunk. The previous version copied it past the end of
+        // the existing buffer whenever the chunk was the smaller of the two,
+        // which writes nothing: any response spanning three or more socket
+        // reads (from ~64 KB) lost data, failed to decode, and left the
+        // connection waiting forever.
+        conn.buffer =
+            conn.buffer.length === 0 ? chunk : Buffer.concat([conn.buffer, chunk], newLength);
 
         let offset = 0;
         while (true) {
