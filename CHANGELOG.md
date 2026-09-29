@@ -4,6 +4,13 @@
 
 ### Added
 
+* **Queries that write can use every clause inside a transaction.** `POST
+  …/transaction/{id}/query` used to refuse JOIN, graph traversals, COLLECT and
+  windows in a query that writes. It now runs the ordinary executor with its
+  writes staged on the transaction, so those clauses, `SORT`/`LIMIT` and
+  `RETURN` (including `NEW`/`OLD`) work, and `result` carries the query's rows.
+  `OPTIONS` and `REPLACE` are still refused inside a transaction.
+
 * **UPDATE, REPLACE, REMOVE and INSERT on sharded collections take `OPTIONS` and
   bind `OLD` / `NEW`.** They failed with "not supported on sharded collections
   yet". They now write row by row through the shard coordinator (a new

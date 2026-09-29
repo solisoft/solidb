@@ -283,28 +283,21 @@ pub async fn execute_transactional_sdbql(
     axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
     Json(req): Json<ExecuteSdbqlTransactionalRequest>,
 ) -> Result<Json<Value>, DbError> {
-    use crate::sdbql::ast::BodyClause;
     use crate::sdbql::{parse, QueryExecutor};
+
+    let query = parse(&req.query)?;
 
     // The authz middleware only required Read for the /query suffix; upgrade
     // to Write when the transactional query mutates.
-    {
-        let parsed = parse(&req.query)?;
-        if parsed.has_mutations() {
-            crate::server::authz_middleware::enforce(
-                &claims,
-                &state,
-                crate::server::authorization::PermissionAction::Write,
-                Some(&db_name),
-            )
-            .await?;
-        }
+    if query.has_mutations() {
+        crate::server::authz_middleware::enforce(
+            &claims,
+            &state,
+            crate::server::authorization::PermissionAction::Write,
+            Some(&db_name),
+        )
+        .await?;
     }
-
-    // Who is writing, for the protection tiers the mutation clauses enforce
-    // below (SEC-180). Always the caller — the collection names come from the
-    // query text, which arrived over the wire.
-    let write_actor = crate::server::handlers::query::write_actor_from_claims(Some(&claims));
 
     // Parse transaction ID
     let tx_id_value: u64 = tx_id_str
@@ -314,56 +307,16 @@ pub async fn execute_transactional_sdbql(
         .map_err(|_| DbError::InvalidDocument("Invalid transaction ID".to_string()))?;
     let tx_id = TransactionId::from_u64(tx_id_value);
 
-    // Get transaction manager
     let tx_manager = state.storage.transaction_manager()?;
-
-    // Get transaction
     let tx_arc = tx_manager.get(tx_id)?;
-    let mut tx = tx_arc.write().unwrap();
-    let wal = tx_manager.wal().clone();
-    let lock_manager = tx_manager.lock_manager().clone();
 
-    // Parse SDBQL query
-    let query = parse(&req.query)?;
-
-    // For transactional SDBQL, we need to intercept mutations (INSERT/UPDATE/REMOVE)
-    // and execute them transactionally. For now, we support queries with a single mutation operation.
-
-    // Check if query contains mutation operations
-    let mut has_insert = false;
-    let mut has_update = false;
-    let mut has_remove = false;
-
-    for clause in &query.body_clauses {
-        match clause {
-            BodyClause::Insert(_) => has_insert = true,
-            BodyClause::Update(_) => has_update = true,
-            BodyClause::Remove(_) => has_remove = true,
-            BodyClause::Join(_) => {}   // JOIN is read-only
-            BodyClause::Window(_) => {} // Window does not mutate
-            BodyClause::Search(_) => {} // SEARCH is a filter
-            _ => {}
-        }
-    }
-
-    if !has_insert && !has_update && !has_remove {
-        // No mutations - just execute normally (read operations)
-        let executor = QueryExecutor::with_database_and_bind_vars(
-            &state.storage,
-            db_name.clone(),
-            req.bind_vars.clone(),
-        )
-        .with_principal(crate::server::handlers::query::principal_from_claims(
-            &claims,
-        ))
-        .with_timeout(std::time::Duration::from_secs(30));
-        let results = executor.execute(&query)?;
-        return Ok(Json(serde_json::json!({"result": results})));
-    }
-
-    // For mutation operations, we need to handle them specially
-    // Create executor and execute to get the data to mutate
-    let executor = QueryExecutor::with_database_and_bind_vars(
+    // The query runs on the ordinary executor, so every clause it supports
+    // (JOIN, COLLECT, graph traversals, windows, SORT/LIMIT, RETURN...) works
+    // here too. Its writes are staged on the transaction instead of applied,
+    // and land at commit. Collections are resolved through the executor's
+    // write getter under the caller's principal, so the database scoping
+    // (SEC-179) and the three protection tiers (SEC-180) apply as for /cursor.
+    let mut executor = QueryExecutor::with_database_and_bind_vars(
         &state.storage,
         db_name.clone(),
         req.bind_vars.clone(),
@@ -372,265 +325,25 @@ pub async fn execute_transactional_sdbql(
         &claims,
     ))
     .with_timeout(std::time::Duration::from_secs(30));
-
-    // Execute body clauses manually to intercept mutations
-    // Bind variables are read from the executor, never copied into this
-    // context, which is cloned once per row (see handlers/query.rs).
-    let mut initial_bindings = crate::sdbql::executor::types::Context::default();
-
-    // Process LET clauses
-    for let_clause in &query.let_clauses {
-        let value =
-            executor.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
-        initial_bindings.insert(let_clause.variable.clone(), value);
+    let mutates = query.has_mutations();
+    if mutates {
+        executor = executor.with_transaction(crate::sdbql::executor::TxWriter {
+            tx: tx_arc,
+            wal: tx_manager.wal().clone(),
+            locks: tx_manager.lock_manager().clone(),
+        });
     }
 
-    // Process body clauses to build row contexts (FOR, LET, FILTER)
-    // Then apply mutations (INSERT/UPDATE/REMOVE) transactionally for each row
+    let outcome = executor.execute_with_stats(&query)?;
 
-    let mut rows: Vec<crate::sdbql::executor::types::Context> = vec![initial_bindings.clone()];
-    let mut mutation_count = 0;
-
-    // Process body clauses in order
-    for clause in &query.body_clauses {
-        match clause {
-            BodyClause::For(for_clause) => {
-                // Build new rows by iterating over the source
-                let mut new_rows = Vec::new();
-                for ctx in &rows {
-                    // Get documents from the FOR source
-                    let docs = if let Some(ref expr) = for_clause.source_expression {
-                        // Expression-based source (e.g., range, array)
-                        let value = executor.evaluate_expr_with_context(expr, ctx)?;
-                        match value {
-                            Value::Array(arr) => arr,
-                            other => vec![other],
-                        }
-                    } else {
-                        // Collection source
-                        let source_name = for_clause
-                            .source_variable
-                            .as_ref()
-                            .unwrap_or(&for_clause.collection);
-
-                        // Check if it's a variable in context first
-                        if let Some(value) = ctx.get(source_name) {
-                            match value {
-                                Value::Array(arr) => arr.clone(),
-                                other => vec![other.clone()],
-                            }
-                        } else {
-                            // It's a collection - scan it
-                            let full_coll_name = format!("{}:{}", db_name, for_clause.collection);
-                            let collection = state.storage.get_collection(&full_coll_name)?;
-                            collection.scan_values(executor.scan_cap())
-                        }
-                    };
-
-                    // Create new context for each document
-                    for doc in docs {
-                        let mut new_ctx = ctx.clone();
-                        new_ctx.insert(for_clause.variable.clone(), doc);
-                        new_rows.push(new_ctx);
-                    }
-                    // This hand-rolled pipeline had no ceiling at all.
-                    executor.check_budget(new_rows.len())?;
-                }
-                rows = new_rows;
-            }
-            BodyClause::Let(let_clause) => {
-                // Evaluate LET expression for each row
-                for ctx in &mut rows {
-                    let value = executor.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                    ctx.insert(let_clause.variable.clone(), value);
-                }
-            }
-            BodyClause::Filter(filter_clause) | BodyClause::Search(filter_clause) => {
-                // Filter rows based on condition
-                rows.retain(|ctx| {
-                    executor
-                        .evaluate_filter_with_context(&filter_clause.expression, ctx)
-                        .unwrap_or(false)
-                });
-            }
-            BodyClause::Insert(insert_clause) => {
-                // Get collection
-                // SEC-180: the write getter on the *bare* name, so
-                // `check_write_access` sees what it expects and all three
-                // protection tiers apply. `get_collection` would only have
-                // rejected the five credential collections, leaving `_scripts`
-                // and the rest of the write-protected tier reachable.
-                let collection = collection_for_write_in_database(
-                    &state,
-                    &db_name,
-                    &insert_clause.collection,
-                    write_actor,
-                )?;
-
-                // Insert for each row context
-                for ctx in &rows {
-                    let doc_value =
-                        executor.evaluate_expr_with_context(&insert_clause.document, ctx)?;
-                    collection.insert_tx(&mut tx, &wal, &lock_manager, doc_value)?;
-                    mutation_count += 1;
-                }
-            }
-            BodyClause::Update(update_clause) => {
-                // Get collection
-                // SEC-180: the write getter on the *bare* name, so
-                // `check_write_access` sees what it expects and all three
-                // protection tiers apply. `get_collection` would only have
-                // rejected the five credential collections, leaving `_scripts`
-                // and the rest of the write-protected tier reachable.
-                let collection = collection_for_write_in_database(
-                    &state,
-                    &db_name,
-                    &update_clause.collection,
-                    write_actor,
-                )?;
-
-                // Update for each row context
-                for ctx in &rows {
-                    let selector_value =
-                        executor.evaluate_expr_with_context(&update_clause.selector, ctx)?;
-                    let key = match &selector_value {
-                        Value::String(s) => s.clone(),
-                        Value::Object(obj) => obj
-                            .get("_key")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .ok_or_else(|| {
-                                DbError::ExecutionError(
-                                    "UPDATE: selector object must have a _key field".to_string(),
-                                )
-                            })?,
-                        _ => return Err(DbError::ExecutionError(
-                            "UPDATE: selector must be a string key or an object with _key field"
-                                .to_string(),
-                        )),
-                    };
-
-                    let changes_value =
-                        executor.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                    collection.update_tx(&mut tx, &wal, &lock_manager, &key, changes_value)?;
-                    mutation_count += 1;
-                }
-            }
-            BodyClause::Remove(remove_clause) => {
-                // Get collection
-                // SEC-180: the write getter on the *bare* name, so
-                // `check_write_access` sees what it expects and all three
-                // protection tiers apply. `get_collection` would only have
-                // rejected the five credential collections, leaving `_scripts`
-                // and the rest of the write-protected tier reachable.
-                let collection = collection_for_write_in_database(
-                    &state,
-                    &db_name,
-                    &remove_clause.collection,
-                    write_actor,
-                )?;
-
-                // Remove for each row context
-                for ctx in &rows {
-                    let selector_value =
-                        executor.evaluate_expr_with_context(&remove_clause.selector, ctx)?;
-                    let key = match &selector_value {
-                        Value::String(s) => s.clone(),
-                        Value::Object(obj) => obj
-                            .get("_key")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .ok_or_else(|| {
-                                DbError::ExecutionError(
-                                    "REMOVE: selector object must have a _key field".to_string(),
-                                )
-                            })?,
-                        _ => return Err(DbError::ExecutionError(
-                            "REMOVE: selector must be a string key or an object with _key field"
-                                .to_string(),
-                        )),
-                    };
-
-                    collection.delete_tx(&mut tx, &wal, &lock_manager, &key)?;
-                    mutation_count += 1;
-                }
-            }
-            BodyClause::Upsert(upsert_clause) => {
-                // SEC-180: the write getter on the *bare* name, so
-                // `check_write_access` sees what it expects and all three
-                // protection tiers apply. `get_collection` would only have
-                // rejected the five credential collections, leaving `_scripts`
-                // and the rest of the write-protected tier reachable.
-                let collection = collection_for_write_in_database(
-                    &state,
-                    &db_name,
-                    &upsert_clause.collection,
-                    write_actor,
-                )?;
-
-                for ctx in &rows {
-                    let search_value =
-                        executor.evaluate_expr_with_context(&upsert_clause.search, ctx)?;
-
-                    let mut found_doc_key: Option<String> = None;
-                    // Simple key lookup logic
-                    if let Some(s) = search_value.as_str() {
-                        if collection.get(s).is_ok() {
-                            found_doc_key = Some(s.to_string());
-                        }
-                    } else if let Some(obj) = search_value.as_object() {
-                        if let Some(k) = obj.get("_key").or_else(|| obj.get("_id")) {
-                            if let Some(ks) = k.as_str() {
-                                if collection.get(ks).is_ok() {
-                                    found_doc_key = Some(ks.to_string());
-                                }
-                            }
-                        }
-                    }
-
-                    if let Some(key) = found_doc_key {
-                        let update_value =
-                            executor.evaluate_expr_with_context(&upsert_clause.update, ctx)?;
-                        collection.update_tx(&mut tx, &wal, &lock_manager, &key, update_value)?;
-                    } else {
-                        let insert_value =
-                            executor.evaluate_expr_with_context(&upsert_clause.insert, ctx)?;
-                        collection.insert_tx(&mut tx, &wal, &lock_manager, insert_value)?;
-                    }
-                    mutation_count += 1;
-                }
-            }
-            // JOIN clause - not yet supported in transactions (read-only for now)
-            BodyClause::Join(_) => {
-                return Err(DbError::ExecutionError(
-                    "JOIN operations not yet supported in transactions".to_string(),
-                ));
-            }
-            // Graph traversal clauses - not yet supported in transactions
-            BodyClause::GraphTraversal(_) | BodyClause::ShortestPath(_) => {
-                return Err(DbError::ExecutionError(
-                    "Graph traversals not yet supported in transactions".to_string(),
-                ));
-            }
-            // COLLECT clause - not yet supported in transactions
-            BodyClause::Collect(_) => {
-                return Err(DbError::ExecutionError(
-                    "COLLECT aggregation not yet supported in transactions".to_string(),
-                ));
-            }
-            BodyClause::Window(_) => {
-                return Err(DbError::ExecutionError(
-                    "Window operations are not supported in transactions".to_string(),
-                ));
-            }
-        }
+    if !mutates {
+        return Ok(Json(serde_json::json!({"result": outcome.results})));
     }
-
-    // Return success (mutations are staged in transaction)
+    let staged = outcome.mutations.total();
     Ok(Json(serde_json::json!({
-        "result": [],
-        "mutationCount": mutation_count,
-        "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", mutation_count)
+        "result": outcome.results,
+        "mutationCount": staged,
+        "message": format!("{} operation(s) staged in transaction. Commit to apply changes.", staged)
     })))
 }
 

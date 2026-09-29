@@ -14,6 +14,20 @@ use crate::sdbql::ast::{MutationOptions, OverwriteMode};
 use crate::storage::Collection;
 use crate::sync::protocol::Operation;
 
+/// One staged write, borrowed from the row being processed.
+enum TxOp<'a> {
+    Insert(Value),
+    Update {
+        key: &'a str,
+        changes: Value,
+        want_old: bool,
+    },
+    Remove {
+        key: &'a str,
+        want_old: bool,
+    },
+}
+
 /// A sharded collection as the per-row writes see it: every call goes through
 /// the coordinator, which routes to the owning node and does its own
 /// replication logging.
@@ -144,7 +158,70 @@ fn body_of(existing: &Value) -> Map<String, Value> {
     data
 }
 
+/// OPTIONS, REPLACE and overwrite modes need a read-modify-write that a
+/// transaction's staged operations cannot express yet.
+fn tx_unsupported(what: &str) -> DbError {
+    DbError::OperationNotSupported(format!("{} is not supported inside a transaction", what))
+}
+
 impl<'a> QueryExecutor<'a> {
+    /// Stage one row's write on the transaction instead of applying it.
+    /// Nothing is logged for replication: the commit does that.
+    fn write_row_tx(
+        &self,
+        tw: &super::super::TxWriter,
+        collection: &Collection,
+        op: TxOp,
+    ) -> DbResult<RowWrite> {
+        let mut tx = tw
+            .tx
+            .write()
+            .map_err(|_| DbError::InternalError("Transaction lock poisoned".to_string()))?;
+        match op {
+            TxOp::Insert(document) => {
+                let doc = collection.insert_tx(&mut tx, &tw.wal, &tw.locks, document)?;
+                Ok(RowWrite {
+                    old: None,
+                    new: Some(doc.into_value()),
+                    updated: false,
+                    skipped: false,
+                })
+            }
+            TxOp::Update {
+                key,
+                changes,
+                want_old,
+            } => {
+                let old = if want_old {
+                    Some(collection.get(key)?.into_value())
+                } else {
+                    None
+                };
+                let doc = collection.update_tx(&mut tx, &tw.wal, &tw.locks, key, changes)?;
+                Ok(RowWrite {
+                    old,
+                    new: Some(doc.into_value()),
+                    updated: true,
+                    skipped: false,
+                })
+            }
+            TxOp::Remove { key, want_old } => {
+                let old = if want_old {
+                    Some(collection.get(key)?.into_value())
+                } else {
+                    None
+                };
+                collection.delete_tx(&mut tx, &tw.wal, &tw.locks, key)?;
+                Ok(RowWrite {
+                    old,
+                    new: None,
+                    updated: false,
+                    skipped: false,
+                })
+            }
+        }
+    }
+
     /// Run a coordinator call from the synchronous executor thread.
     fn on_shards<T: Send + 'static>(
         &self,
@@ -386,6 +463,24 @@ impl<'a> QueryExecutor<'a> {
             )));
         }
 
+        if let Some(tw) = &self.tx_writer {
+            if replace || *options != MutationOptions::default() {
+                return Err(tx_unsupported(&format!(
+                    "{} with REPLACE or OPTIONS",
+                    statement
+                )));
+            }
+            return self.write_row_tx(
+                tw,
+                collection,
+                TxOp::Update {
+                    key,
+                    changes,
+                    want_old,
+                },
+            );
+        }
+
         let (old, doc) = if replace {
             // REPLACE requires the document to exist.
             let existing = collection.get(key)?;
@@ -435,6 +530,9 @@ impl<'a> QueryExecutor<'a> {
         key: &str,
         want_old: bool,
     ) -> DbResult<RowWrite> {
+        if let Some(tw) = &self.tx_writer {
+            return self.write_row_tx(tw, collection, TxOp::Remove { key, want_old });
+        }
         let old = if want_old {
             Some(collection.get(key)?.into_value())
         } else {
@@ -459,6 +557,12 @@ impl<'a> QueryExecutor<'a> {
         options: &MutationOptions,
         want_old: bool,
     ) -> DbResult<RowWrite> {
+        if let Some(tw) = &self.tx_writer {
+            if *options != MutationOptions::default() {
+                return Err(tx_unsupported("INSERT with OPTIONS"));
+            }
+            return self.write_row_tx(tw, collection, TxOp::Insert(document));
+        }
         let mode = options.overwrite_mode.unwrap_or(OverwriteMode::Conflict);
         let key = document
             .get("_key")

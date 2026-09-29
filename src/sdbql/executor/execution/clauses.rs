@@ -469,7 +469,8 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Insert(insert_clause) => {
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&insert_clause.collection)?;
-                    let per_row = insert_clause.options != MutationOptions::default();
+                    let per_row = insert_clause.options != MutationOptions::default()
+                        || self.tx_writer.is_some();
 
                     // SHARDING SUPPORT - Use batch insert for performance
                     if let (Some(config), Some(coordinator)) =
@@ -693,7 +694,8 @@ impl<'a> QueryExecutor<'a> {
                     let collection = self.get_collection_for_write(&update_clause.collection)?;
                     let custom = update_clause.replace
                         || update_clause.options != MutationOptions::default()
-                        || update_clause.binds_old;
+                        || update_clause.binds_old
+                        || self.tx_writer.is_some();
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =
@@ -949,7 +951,8 @@ impl<'a> QueryExecutor<'a> {
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&remove_clause.collection)?;
                     let custom = remove_clause.options != MutationOptions::default()
-                        || remove_clause.binds_old;
+                        || remove_clause.binds_old
+                        || self.tx_writer.is_some();
 
                     // SHARDING SUPPORT
                     if let (Some(config), Some(coordinator)) =

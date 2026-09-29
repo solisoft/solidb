@@ -20,6 +20,11 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         initial_bindings: &Context,
     ) -> DbResult<Option<(Vec<Value>, usize)>> {
+        // The bulk path writes straight to the collection; a transaction
+        // stages every write.
+        if self.tx_writer.is_some() {
+            return Ok(None);
+        }
         // Check pattern: exactly 2 body clauses (FOR + INSERT), no sort/limit/filter
         if query.body_clauses.len() != 2
             || query.sort_clause.is_some()

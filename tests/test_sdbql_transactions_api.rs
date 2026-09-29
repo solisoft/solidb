@@ -316,3 +316,167 @@ async fn test_sdbql_transaction_rollback() {
     let result = json["result"].as_array().unwrap();
     assert_eq!(result.len(), 0, "Data should be gone after rollback");
 }
+
+// ---------------------------------------------------------------------------
+// Mutating queries with clauses the old hand-rolled pipeline refused (COLLECT,
+// window, ...) run on the ordinary executor, staged on the transaction.
+// ---------------------------------------------------------------------------
+
+async fn call(
+    app: &axum::Router,
+    token: &str,
+    method: &str,
+    uri: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_header(token))
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+async fn tx_test_setup(app: &axum::Router, token: &str) -> String {
+    call(app, token, "POST", "/_api/database", json!({"name": "txq"})).await;
+    for c in ["orders", "totals"] {
+        call(
+            app,
+            token,
+            "POST",
+            "/_api/database/txq/collection",
+            json!({"name": c}),
+        )
+        .await;
+    }
+    let (status, _) = call(
+        app,
+        token,
+        "POST",
+        "/_api/database/txq/cursor",
+        json!({"query": "FOR r IN [{c:'a',n:5},{c:'a',n:7},{c:'b',n:3}] INSERT {cust: r.c, amt: r.n} INTO orders"}),
+    )
+    .await;
+    assert!(status.is_success(), "seeding failed: {}", status);
+    let (_, begin) = call(
+        app,
+        token,
+        "POST",
+        "/_api/database/txq/transaction/begin",
+        json!({"isolation": "read_committed"}),
+    )
+    .await;
+    begin["id"].as_str().unwrap().to_string()
+}
+
+async fn count(app: &axum::Router, token: &str, coll: &str) -> usize {
+    let (_, j) = call(
+        app,
+        token,
+        "POST",
+        "/_api/database/txq/cursor",
+        json!({"query": format!("FOR d IN {} RETURN d", coll)}),
+    )
+    .await;
+    j["result"].as_array().map(|a| a.len()).unwrap_or(0)
+}
+
+#[tokio::test]
+async fn collect_then_insert_is_staged_and_committed() {
+    let (app, _tmp, token) = create_test_app();
+    let tx = tx_test_setup(&app, &token).await;
+
+    let (status, out) = call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txq/transaction/{}/query", tx),
+        json!({"query": "FOR o IN orders COLLECT c = o.cust AGGREGATE s = SUM(o.amt) INSERT {_key: c, total: s} INTO totals RETURN NEW.total"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", out);
+    assert_eq!(out["mutationCount"], 2, "{}", out);
+    let mut totals: Vec<i64> = out["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap() as i64)
+        .collect();
+    totals.sort();
+    assert_eq!(totals, vec![3, 12]);
+
+    assert_eq!(
+        count(&app, &token, "totals").await,
+        0,
+        "staged, not applied"
+    );
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txq/transaction/{}/commit", tx),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count(&app, &token, "totals").await, 2);
+}
+
+#[tokio::test]
+async fn rolled_back_query_writes_nothing_and_options_are_refused() {
+    let (app, _tmp, token) = create_test_app();
+    let tx = tx_test_setup(&app, &token).await;
+    let uri = format!("/_api/database/txq/transaction/{}/query", tx);
+
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &uri,
+        json!({"query": "FOR o IN orders UPDATE o WITH {seen: true} IN orders"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // OPTIONS need a read-modify-write a staged operation cannot express.
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &uri,
+        json!({"query": "INSERT {_key: 'x'} INTO totals OPTIONS {overwriteMode: 'replace'}"}),
+    )
+    .await;
+    assert_ne!(status, StatusCode::OK);
+
+    call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txq/transaction/{}/rollback", tx),
+        json!({}),
+    )
+    .await;
+    let (_, j) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txq/cursor",
+        json!({"query": "FOR o IN orders FILTER o.seen == true RETURN o"}),
+    )
+    .await;
+    assert_eq!(j["result"].as_array().unwrap().len(), 0);
+}

@@ -66,6 +66,9 @@ pub struct QueryExecutor<'a> {
     pub(super) replication: Option<&'a SyncLog>,
     pub(super) shard_coordinator: Option<std::sync::Arc<ShardCoordinator>>,
     pub(super) principal: Option<QueryPrincipal>,
+    /// When set, the query's INSERT / UPDATE / REMOVE / UPSERT are staged on
+    /// this transaction instead of being applied (they land at commit).
+    pub(super) tx_writer: Option<std::sync::Arc<TxWriter>>,
     /// Wall-clock point after which the query gives up.
     ///
     /// The HTTP and driver layers wrap execution in `tokio::time::timeout`,
@@ -79,6 +82,13 @@ pub struct QueryExecutor<'a> {
     pub(super) max_intermediate_rows: usize,
     /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
     caches: ExecCaches,
+}
+
+/// A transaction a query stages its writes on.
+pub struct TxWriter {
+    pub tx: std::sync::Arc<std::sync::RwLock<crate::transaction::Transaction>>,
+    pub wal: std::sync::Arc<crate::transaction::wal::WalWriter>,
+    pub locks: std::sync::Arc<crate::transaction::lock_manager::LockManager>,
 }
 
 /// A recorded scan projection: the `FOR` clause's collection name, and the
@@ -138,6 +148,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             shard_coordinator: None,
+            tx_writer: None,
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
@@ -153,6 +164,7 @@ impl<'a> QueryExecutor<'a> {
             database: None,
             replication: None,
             shard_coordinator: None,
+            tx_writer: None,
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
@@ -168,6 +180,7 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             shard_coordinator: None,
+            tx_writer: None,
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
@@ -187,6 +200,7 @@ impl<'a> QueryExecutor<'a> {
             database: Some(database),
             replication: None,
             shard_coordinator: None,
+            tx_writer: None,
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
@@ -201,6 +215,13 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Set shard coordinator for scatter-gather queries on sharded collections
+    /// Stage this query's writes on `tx` rather than applying them. Reads still
+    /// see committed data only.
+    pub fn with_transaction(mut self, tx: TxWriter) -> Self {
+        self.tx_writer = Some(std::sync::Arc::new(tx));
+        self
+    }
+
     pub fn with_shard_coordinator(mut self, coordinator: std::sync::Arc<ShardCoordinator>) -> Self {
         self.shard_coordinator = Some(coordinator);
         self
