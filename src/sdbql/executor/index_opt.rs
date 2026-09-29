@@ -683,7 +683,11 @@ impl<'a> QueryExecutor<'a> {
     ) -> Option<Vec<crate::storage::Document>> {
         // Fast-path: `_key` is the primary key, served by a direct RocksDB get()
         // instead of a full prefix scan + in-memory filter.
-        // TODO(_id fast-path): handle `doc._id == "coll/key"` similarly.
+        // `_id` is `"<collection>/<key>"`, so `_id == x` / `_id IN [..]` is a
+        // primary-key lookup on the part after the collection prefix.
+        if condition.field == "_id" {
+            return self.id_fast_path(collection, condition);
+        }
         if condition.field == "_key" {
             return self.key_fast_path(collection, condition);
         }
@@ -805,6 +809,42 @@ impl<'a> QueryExecutor<'a> {
     /// Returns `Some(Vec)` for equality (treated as an indexed lookup so the
     /// scan path is skipped) and `None` for non-equality ops so range filters
     /// fall through to the scan path.
+    fn id_fast_path(
+        &self,
+        collection: &Collection,
+        condition: &IndexableCondition,
+    ) -> Option<Vec<crate::storage::Document>> {
+        // Ask `Document` for the prefix rather than assuming its format: the
+        // stored collection name can carry the database.
+        let probe =
+            crate::storage::Document::with_key(&collection.name, "\u{0}".into(), Value::Null);
+        let prefix = probe.id.strip_suffix('\u{0}')?.to_string();
+        let to_key = |v: &Value| {
+            v.as_str()?
+                .strip_prefix(prefix.as_str())
+                .map(str::to_string)
+        };
+
+        let keys = match (&condition.op, &condition.value) {
+            // An `_id` of another collection, or a non-string, matches nothing.
+            (BinaryOperator::Equal, v) => {
+                Value::Array(to_key(v).map(Value::String).into_iter().collect())
+            }
+            (BinaryOperator::In, Value::Array(ids)) => {
+                Value::Array(ids.iter().filter_map(to_key).map(Value::String).collect())
+            }
+            _ => return None,
+        };
+        self.key_fast_path(
+            collection,
+            &IndexableCondition {
+                field: "_key".to_string(),
+                op: BinaryOperator::In,
+                value: keys,
+            },
+        )
+    }
+
     fn key_fast_path(
         &self,
         collection: &Collection,
