@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [2.0.4](https://github.com/solisoft/solidb/compare/v2.0.3...v2.0.4) (2026-09-29)
+
+### Performance
+
+* **Uncached reads cost ~26% less CPU, key lookups ~27% less.** Over the
+  native driver, SoliDB CPU per request: a 50-row query with the cache off
+  59.5 → 44 µs; a `get` by `_key` on 800,000 documents 16.3 → 11.9 µs.
+* `RETURN` moves fields out of the rows it consumes instead of cloning them
+  (`RETURN doc.x`, `RETURN {a: doc.a, b: doc.b}`); a projected document that
+  holds exactly the requested fields is returned as is.
+* Driver connections read each command with one `recv` instead of two, and
+  encode responses without an intermediate copy.
+* A document's system fields are UTF-8-checked only when a query uses them.
+* A driver `get` decodes straight to the returned value, without parsing and
+  re-formatting the timestamps.
+
 ## [2.0.3](https://github.com/solisoft/solidb/compare/v2.0.2...v2.0.3) (2026-09-28)
 
 ### Performance
