@@ -4,6 +4,15 @@
 
 ### Added
 
+* **Role assignments can be limited to one database.** `POST
+  /_api/auth/users/{user}/roles` with a `database` was refused (and rows that
+  already carried one granted nothing). It now grants the role's actions on
+  that database only — a global permission is narrowed to it, one the role
+  already limits to another database is dropped — and never instance-level
+  operations. The database must exist. A limited assignment appears as
+  `role@database` in a user's roles; role names can no longer contain `@`.
+  Editing the role updates its limited assignments too.
+
 * **Offline sync detects and resolves conflicts.** `GET /_api/sync/conflicts`
   and `POST /_api/sync/resolve` returned "not implemented" and `push` always
   applied the last write. The server now records, per synced document, the
@@ -69,6 +78,12 @@
   `POST …/repair`.
 
 ### Fixed
+
+* **A custom role granted no permissions at all.** A role stored through
+  `POST /_api/auth/roles` failed to load when permissions were resolved (its
+  name lives in `_key`, which the document body omits), so only the built-in
+  roles ever took effect — for global assignments as well. Custom roles now
+  resolve.
 
 * **`FILTER doc._key == …` (and any indexed lookup) on a sharded collection
   returned nothing.** The lookup ran against the logical collection, which

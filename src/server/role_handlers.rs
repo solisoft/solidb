@@ -207,6 +207,14 @@ pub async fn create_role(
     // Check admin permission
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
+    // '@' separates a role from the database of a limited assignment
+    // (`role@database`), so a role name cannot contain one.
+    if req.name.contains('@') {
+        return Err(DbError::BadRequest(
+            "Role names cannot contain '@'".to_string(),
+        ));
+    }
+
     // Validate role name
     if req.name.starts_with("admin")
         || req.name.starts_with("editor")
@@ -482,20 +490,14 @@ pub async fn assign_role(
     // Check admin permission
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
-    // Per-database role scoping is not enforced anywhere: `get_user_roles`
-    // returns bare role names, and `Claims.roles` carries no database. So
-    // `{"role": "admin", "database": "tenantA"}` was accepted and granted
-    // admin on *every* database, `_system` included — the opposite of what
-    // the caller asked for. Refuse it rather than silently widening it.
-    // Database-scoped access is available today through an API key's
-    // `scoped_databases`, which the authorization layer does enforce.
-    if req.database.is_some() {
-        return Err(DbError::BadRequest(
-            "Per-database role assignment is not supported: a role grants its \
-             permissions on every database. Use an API key with \
-             `scoped_databases` to limit a principal to one database."
-                .to_string(),
-        ));
+    // A limited assignment grants the role's actions on that one database
+    // (see `AuthorizationService::resolve_scoped_permissions`). The database has
+    // to exist, so a typo cannot silently grant nothing.
+    if let Some(ref database) = req.database {
+        state
+            .storage
+            .get_database(database)
+            .map_err(|_| DbError::BadRequest(format!("Database '{}' does not exist", database)))?;
     }
 
     let db = state.storage.get_database("_system")?;

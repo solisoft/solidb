@@ -1035,27 +1035,21 @@ impl AuthService {
                 if user_role.username != username {
                     continue;
                 }
-                // A row carrying a `database` asked for a role limited to that
-                // database. Nothing downstream can express that limit —
-                // `Claims.roles` is a bare list of role names — so returning
-                // the role here granted it on *every* database, including
-                // `_system`. Skipping the row is the honest reading: the
-                // assignment grants nothing rather than everything.
-                // `assign_role` now refuses to create these; this handles rows
-                // written before that, and rows arriving by replication.
-                if let Some(ref scoped_db) = user_role.database {
-                    tracing::warn!(
-                        target: "audit",
-                        user = username,
-                        role = %user_role.role,
-                        database = %scoped_db,
-                        "ignoring database-scoped role assignment: per-database \
-                         role scoping is not enforced, so honouring it would \
-                         grant the role globally"
-                    );
-                    continue;
+                // A row carrying a `database` is a role limited to that
+                // database. It travels as `role@database`, which the
+                // authorization layer resolves to the role's actions on that
+                // database only (`AuthorizationService::split_scoped_role`); it
+                // never equals a bare role name, so nothing that tests for
+                // `admin` mistakes it for the global role.
+                match user_role.database {
+                    Some(database) => {
+                        roles.push(crate::server::AuthorizationService::scoped_role_name(
+                            &user_role.role,
+                            &database,
+                        ))
+                    }
+                    None => roles.push(user_role.role),
                 }
-                roles.push(user_role.role);
             }
         }
 

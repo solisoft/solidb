@@ -550,7 +550,7 @@
                       <tr>
                         <td class="p-3 text-fuchsia-400 font-mono">database</td>
                         <td class="p-3 font-mono">string</td>
-                        <td class="p-3">Limit role to a specific database. Omit or set to null for global assignment.</td>
+                        <td class="p-3">Limit the assignment to one database (which must exist): the user gets the role&rsquo;s actions on that database only &mdash; a global permission of the role is narrowed to it, a permission the role already limits to another database is dropped. It never grants instance-level operations. Omit or set to null for a global assignment. Tokens and <code>/_api/auth/me</code> list a limited assignment as <code>role@database</code>, so role names cannot contain <code>@</code>.</td>
                         <td class="p-3">No</td>
                       </tr>
                     </tbody>

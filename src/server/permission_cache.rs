@@ -145,7 +145,13 @@ impl PermissionCache {
     /// Called when a role's permissions change
     pub fn invalidate_role(&self, role_name: &str) {
         let mut entries = self.entries.write().unwrap();
-        entries.retain(|_, entry| !entry.roles.iter().any(|r| r == role_name));
+        // A limited assignment is cached as `role@database`; it is still this role.
+        entries.retain(|_, entry| {
+            !entry
+                .roles
+                .iter()
+                .any(|r| crate::server::AuthorizationService::split_scoped_role(r).0 == role_name)
+        });
     }
 
     /// Invalidate all cache entries

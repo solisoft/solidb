@@ -249,6 +249,56 @@ impl AuthorizationService {
     }
 
     /// Resolve permissions from roles
+    /// A role assignment limited to one database reaches the authorization
+    /// layer as `role@database` in `Claims.roles` (see
+    /// `AuthService::get_user_roles`). Role names cannot contain `@`, so the
+    /// first one splits it.
+    pub fn split_scoped_role(name: &str) -> (&str, Option<&str>) {
+        match name.split_once('@') {
+            Some((role, database)) => (role, Some(database)),
+            None => (name, None),
+        }
+    }
+
+    /// The name under which an assignment of `role` limited to `database`
+    /// travels in `Claims.roles`.
+    pub fn scoped_role_name(role: &str, database: &str) -> String {
+        format!("{}@{}", role, database)
+    }
+
+    /// Permissions of `roles`, each paired with the database the assignment is
+    /// limited to (`None` = everywhere).
+    ///
+    /// A limited assignment grants the role's actions on that database only:
+    /// a global permission is narrowed to it, a permission the role already
+    /// limits to another database is dropped. Nothing here can widen a grant.
+    pub fn resolve_scoped_permissions(roles: &[(Role, Option<String>)]) -> HashSet<Permission> {
+        let mut permissions = HashSet::new();
+        for (role, limit) in roles {
+            for perm in &role.permissions {
+                match limit {
+                    None => {
+                        permissions.insert(perm.clone());
+                    }
+                    Some(db) => match perm.database.as_deref() {
+                        None => {
+                            permissions.insert(Permission {
+                                action: perm.action.clone(),
+                                scope: PermissionScope::Database,
+                                database: Some(db.clone()),
+                            });
+                        }
+                        Some(d) if d == db => {
+                            permissions.insert(perm.clone());
+                        }
+                        Some(_) => {}
+                    },
+                }
+            }
+        }
+        permissions
+    }
+
     pub fn resolve_permissions(roles: &[Role]) -> HashSet<Permission> {
         let mut permissions = HashSet::new();
         for role in roles {
@@ -292,30 +342,32 @@ impl AuthorizationService {
         // A missing `_system`/`_roles` collection is not an error: the cache
         // still resolves builtin roles, and unknown role names simply grant
         // nothing.
-        let mut roles = Vec::new();
+        let mut roles: Vec<(Role, Option<String>)> = Vec::new();
         let roles_coll = state
             .storage
             .get_database("_system")
             .ok()
             .and_then(|db| db.system_collection(ROLES_COLLECTION).ok());
 
-        for role_name in &role_names {
+        for assigned in &role_names {
+            let (role_name, limit) = Self::split_scoped_role(assigned);
+            let limit = limit.map(String::from);
             // Try cache first
             if let Some(role) = state.permission_cache.get_role(role_name) {
-                roles.push(role);
+                roles.push((role, limit));
             } else if let Some(ref coll) = roles_coll {
                 // Load from DB
                 if let Ok(doc) = coll.get(role_name) {
-                    if let Ok(role) = serde_json::from_value::<Role>(doc.data) {
+                    if let Ok(role) = serde_json::from_value::<Role>(doc.to_value()) {
                         state.permission_cache.set_role(role.clone());
-                        roles.push(role);
+                        roles.push((role, limit));
                     }
                 }
             }
         }
 
         // Resolve permissions
-        let permissions = Self::resolve_permissions(&roles);
+        let permissions = Self::resolve_scoped_permissions(&roles);
 
         // Cache the result
         let cached = CachedPermissions::new(
@@ -336,28 +388,30 @@ impl AuthorizationService {
         storage: &crate::storage::StorageEngine,
         role_names: &[String],
     ) -> HashSet<Permission> {
-        let mut roles = Vec::new();
+        let mut roles: Vec<(Role, Option<String>)> = Vec::new();
         let roles_coll = storage
             .get_database("_system")
             .ok()
             .and_then(|db| db.system_collection(ROLES_COLLECTION).ok());
 
-        for role_name in role_names {
+        for assigned in role_names {
+            let (role_name, limit) = Self::split_scoped_role(assigned);
+            let limit = limit.map(String::from);
             let stored = roles_coll
                 .as_ref()
                 .and_then(|coll| coll.get(role_name).ok())
-                .and_then(|doc| serde_json::from_value::<Role>(doc.data).ok());
+                .and_then(|doc| serde_json::from_value::<Role>(doc.to_value()).ok());
             if let Some(role) = stored {
-                roles.push(role);
+                roles.push((role, limit));
             } else if let Some(builtin) = Role::builtin_roles()
                 .into_iter()
-                .find(|r| &r.name == role_name)
+                .find(|r| r.name == role_name)
             {
-                roles.push(builtin);
+                roles.push((builtin, limit));
             }
         }
 
-        Self::resolve_permissions(&roles)
+        Self::resolve_scoped_permissions(&roles)
     }
 
     /// Check if a user (from Claims) has permission for an action
