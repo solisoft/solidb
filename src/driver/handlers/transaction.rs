@@ -338,6 +338,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unique_indexes_are_enforced_inside_a_transaction() {
+        let (_t, mut h) = handler();
+        h.get_collection("d", "c")
+            .unwrap()
+            .create_index(
+                "uniq".to_string(),
+                vec!["email".to_string()],
+                crate::storage::index::IndexType::Persistent,
+                true,
+            )
+            .unwrap();
+        let with_email = |key: &str| {
+            Box::new(Command::Insert {
+                database: "d".to_string(),
+                collection: "c".to_string(),
+                key: Some(key.to_string()),
+                document: json!({"email": "same@example.com"}),
+            })
+        };
+        let tx = begin(&mut h);
+        handle_transaction_command(&mut h, tx.clone(), with_email("u1")).await;
+        let second = handle_transaction_command(&mut h, tx.clone(), with_email("u2")).await;
+        let commit = handle_commit_transaction(&mut h, tx);
+
+        // Either the second insert or the commit must refuse it, and never
+        // both documents may land.
+        let refused =
+            matches!(second, Response::Error { .. }) || matches!(commit, Response::Error { .. });
+        assert!(refused, "second={:?} commit={:?}", second, commit);
+        assert!(
+            !(exists(&h, "u1") && exists(&h, "u2")),
+            "duplicate unique value stored"
+        );
+    }
+
+    #[tokio::test]
     async fn unsupported_inner_command_is_refused() {
         let (_t, mut h) = handler();
         let tx = begin(&mut h);

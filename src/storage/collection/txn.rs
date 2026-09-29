@@ -9,6 +9,50 @@ use serde_json::Value;
 use std::collections::HashMap;
 use uuid;
 
+/// Which staged document holds each unique value, so a transaction cannot
+/// stage two documents with the same one.
+#[derive(Default)]
+struct UniqueClaims {
+    /// `<index>:<encoded values>` -> the document key that holds it.
+    owner: HashMap<String, String>,
+    /// The tokens each document key currently holds, to release on change.
+    held: HashMap<String, Vec<String>>,
+}
+
+impl UniqueClaims {
+    /// `key` now holds the unique values of `value` (and no longer those of its
+    /// previous version). Fails if another staged document already holds one.
+    fn claim(&mut self, coll: &Collection, key: &str, value: &Value) -> DbResult<()> {
+        let tokens = coll.unique_tokens(value);
+        for token in &tokens {
+            if let Some(owner) = self.owner.get(token) {
+                if owner != key {
+                    return Err(DbError::InvalidDocument(format!(
+                        "Unique constraint violated: '{}' is claimed by both '{}' and '{}' in this transaction",
+                        token, owner, key
+                    )));
+                }
+            }
+        }
+        self.release(key);
+        for token in &tokens {
+            self.owner.insert(token.clone(), key.to_string());
+        }
+        self.held.insert(key.to_string(), tokens);
+        Ok(())
+    }
+
+    fn release(&mut self, key: &str) {
+        if let Some(tokens) = self.held.remove(key) {
+            for token in tokens {
+                if self.owner.get(&token).is_some_and(|o| o == key) {
+                    self.owner.remove(&token);
+                }
+            }
+        }
+    }
+}
+
 impl Collection {
     // ==================== Transactional Operations ====================
 
@@ -224,6 +268,10 @@ impl Collection {
         // operation on the same key is checked against the first one's result
         // rather than against disk.
         let mut pending: HashMap<String, Option<Value>> = HashMap::new();
+        // Unique values claimed by the operations staged so far. Each write is
+        // checked against disk, which does not yet hold this transaction's
+        // earlier writes, so two inserts of one value both passed.
+        let mut unique_claims = UniqueClaims::default();
         let mut staged = StagedTransaction::default();
 
         for op in operations {
@@ -239,6 +287,7 @@ impl Collection {
                     let doc = Self::txn_document(&self.name, key, data);
                     let value = doc.to_value();
                     self.check_unique_constraints(key, &value)?;
+                    unique_claims.claim(self, key, &value)?;
                     let doc_bytes = serialize_doc(&doc)?;
                     batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
@@ -281,6 +330,7 @@ impl Collection {
                     let doc = Self::txn_document(&self.name, key, new_data);
                     let value = doc.to_value();
                     self.check_unique_constraints(key, &value)?;
+                    unique_claims.claim(self, key, &value)?;
                     let doc_bytes = serialize_doc(&doc)?;
                     batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
@@ -329,6 +379,7 @@ impl Collection {
                 }
                 Operation::Delete { key, old_data, .. } => {
                     let current = self.txn_expect_unchanged(&pending, key, old_data)?;
+                    unique_claims.release(key);
 
                     batch.delete_ks(&cf, Self::doc_key(key));
                     if versioned {

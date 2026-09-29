@@ -79,6 +79,11 @@
 
 ### Fixed
 
+* **Two writes of the same unique value in one transaction both committed.**
+  Each staged write was checked against committed data only, so a second
+  insert (or update) of a unique value already claimed earlier in the same
+  transaction went through. Commit now refuses it and writes nothing.
+
 * **A custom role granted no permissions at all.** A role stored through
   `POST /_api/auth/roles` failed to load when permissions were resolved (its
   name lives in `_key`, which the document body omits), so only the built-in
