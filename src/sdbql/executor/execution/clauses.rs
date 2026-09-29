@@ -537,6 +537,34 @@ impl<'a> QueryExecutor<'a> {
                                 documents.push(doc_value);
                             }
 
+                            // The batch call upserts, so a duplicate `_key` would
+                            // silently overwrite. Documents that name their key go
+                            // through the conflict-checking insert, as on a
+                            // single node.
+                            if documents.iter().any(|d| d.get("_key").is_some()) {
+                                let target = ShardedTarget {
+                                    coord: coordinator.clone(),
+                                    config: config.clone(),
+                                    database: self
+                                        .database
+                                        .as_deref()
+                                        .unwrap_or("_system")
+                                        .to_string(),
+                                    collection: insert_clause.collection.clone(),
+                                };
+                                for document in documents {
+                                    self.write_insert_row_sharded(
+                                        &target,
+                                        document,
+                                        &MutationOptions::default(),
+                                        false,
+                                    )?;
+                                    stats.documents_inserted += 1;
+                                }
+                                i += 1;
+                                continue;
+                            }
+
                             // Use batch insert via coordinator (groups by shard internally)
                             let handle = tokio::runtime::Handle::current();
                             let db_name = self.database.as_deref().unwrap_or("_system").to_string();

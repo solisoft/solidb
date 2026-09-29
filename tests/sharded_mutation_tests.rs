@@ -186,3 +186,21 @@ async fn key_filters_find_documents_in_shards() {
         assert_eq!(run(&f, q).await.unwrap(), vec![json!(5)], "{}", q);
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn plain_insert_of_an_existing_key_conflicts() {
+    let f = fixture().await;
+    seed(&f).await;
+    assert!(run(&f, r#"INSERT {_key: "k5", n: 99} INTO c"#)
+        .await
+        .is_err());
+    // Nothing was overwritten, and keyless inserts still batch.
+    assert_eq!(
+        run(&f, r#"FOR d IN c FILTER d._key == "k5" RETURN d.n"#)
+            .await
+            .unwrap(),
+        vec![json!(5)]
+    );
+    run(&f, "FOR i IN 1..4 INSERT {n: i} INTO c").await.unwrap();
+    assert_eq!(run(&f, "FOR d IN c RETURN 1").await.unwrap().len(), 10);
+}
