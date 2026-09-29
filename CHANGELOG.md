@@ -31,7 +31,8 @@
   `VectorSearch` work.** They returned "not supported". `PruneCollection`
   takes a new optional `older_than` (RFC 3339, required in practice);
   `VectorSearch.filter` is a JSON object of `field: value` equalities.
-  `RepairCollection` now says it needs the HTTP API.
+  `RepairCollection` drives the server's shard coordinator, like
+  `POST …/repair`.
 
 ### Fixed
 

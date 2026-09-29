@@ -29,6 +29,8 @@ pub struct DriverHandler {
     pub(crate) replication: Option<Arc<crate::sync::log::SyncLog>>,
     /// Active transactions for this connection
     pub(crate) transactions: HashMap<String, TransactionId>,
+    /// Present on a running server; commands that drive shard movement need it.
+    pub(crate) shard_coordinator: Option<Arc<crate::sharding::coordinator::ShardCoordinator>>,
     /// Authenticated database (None = not authenticated)
     pub(crate) authenticated_db: Option<String>,
     /// Principal identity (username or API key id) for audit logs
@@ -100,6 +102,15 @@ impl DriverHandler {
         }
     }
 
+    /// Give this handler the server's shard coordinator.
+    pub fn with_shard_coordinator(
+        mut self,
+        coordinator: Option<Arc<crate::sharding::coordinator::ShardCoordinator>>,
+    ) -> Self {
+        self.shard_coordinator = coordinator;
+        self
+    }
+
     /// Create a new handler
     pub fn new(
         storage: Arc<StorageEngine>,
@@ -109,6 +120,7 @@ impl DriverHandler {
             storage,
             replication,
             transactions: HashMap::new(),
+            shard_coordinator: None,
             authenticated_db: None,
             session_subject: String::new(),
             session_permissions: std::collections::HashSet::new(),
@@ -800,11 +812,10 @@ impl DriverHandler {
                 collection,
             } => database::handle_recount_collection(self, database, collection),
 
-            // Repair drives the shard coordinator, which a driver connection
-            // does not hold.
-            Command::RepairCollection { .. } => Response::error(DriverError::DatabaseError(
-                "Repair requires HTTP API".to_string(),
-            )),
+            Command::RepairCollection {
+                database,
+                collection,
+            } => database::handle_repair_collection(self, database, collection).await,
 
             Command::GetCollectionSharding {
                 database,
@@ -1213,6 +1224,7 @@ pub type DriverConn = Box<dyn DriverConnTrait>;
 pub fn spawn_driver_handler(
     storage: Arc<StorageEngine>,
     replication: Option<Arc<crate::sync::log::SyncLog>>,
+    shard_coordinator: Option<Arc<crate::sharding::coordinator::ShardCoordinator>>,
 ) -> tokio::sync::mpsc::Sender<(DriverConn, String)> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(DriverConn, String)>(100);
 
@@ -1220,8 +1232,10 @@ pub fn spawn_driver_handler(
         while let Some((mut stream, addr)) = rx.recv().await {
             let storage = storage.clone();
             let replication = replication.clone();
+            let shard_coordinator = shard_coordinator.clone();
             tokio::spawn(async move {
-                let mut handler = DriverHandler::new(storage, replication);
+                let mut handler = DriverHandler::new(storage, replication)
+                    .with_shard_coordinator(shard_coordinator);
                 handler.handle_connection(&mut *stream, addr).await;
             });
         }

@@ -217,6 +217,22 @@ pub fn handle_prune_collection(
     }
 }
 
+pub async fn handle_repair_collection(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+) -> Response {
+    let Some(coordinator) = handler.shard_coordinator.clone() else {
+        return Response::error(DriverError::DatabaseError(
+            "Shard coordinator not available".to_string(),
+        ));
+    };
+    match coordinator.repair_collection(&database, &collection).await {
+        Ok(report) => Response::ok(serde_json::json!({ "status": "repaired", "report": report })),
+        Err(e) => Response::error(DriverError::DatabaseError(e)),
+    }
+}
+
 pub fn handle_get_collection_sharding(
     handler: &DriverHandler,
     database: String,
@@ -562,6 +578,17 @@ mod tests {
             Some("2999-01-01T00:00:00Z".into()),
         );
         assert!(matches!(r, Response::Ok { count: Some(1), .. }), "{:?}", r);
+    }
+
+    #[tokio::test]
+    async fn repair_needs_a_coordinator() {
+        let (_t, h) = handler();
+        let r = handle_repair_collection(&h, "d".into(), "c".into()).await;
+        assert!(
+            matches!(&r, Response::Error { error } if error.to_string().contains("coordinator")),
+            "{:?}",
+            r
+        );
     }
 
     #[test]
