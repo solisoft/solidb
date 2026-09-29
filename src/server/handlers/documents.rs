@@ -774,6 +774,19 @@ pub async fn get_document(
     Ok(ApiResponse::new(doc.to_value(), &headers))
 }
 
+/// Update replies say whether the write was a wholesale replace, so a node
+/// forwarding a sharded REPLACE can tell a peer that applied it from an older
+/// one that ignored `replace=true` and merged instead.
+fn update_reply(
+    document: Value,
+    replaced: bool,
+) -> ([(&'static str, &'static str); 1], Json<Value>) {
+    (
+        [("x-replace-applied", if replaced { "true" } else { "false" })],
+        Json(document),
+    )
+}
+
 pub async fn update_document(
     State(state): State<AppState>,
     claims: Option<axum::Extension<crate::server::auth::Claims>>,
@@ -781,7 +794,7 @@ pub async fn update_document(
     headers: HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
     Json(mut data): Json<Value>,
-) -> Result<Json<Value>, DbError> {
+) -> Result<([(&'static str, &'static str); 1], Json<Value>), DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database
         .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
@@ -803,7 +816,7 @@ pub async fn update_document(
         let lock_manager = tx_manager.lock_manager().clone();
 
         let doc = collection.update_tx(&mut tx, &wal, &lock_manager, &key, data)?;
-        return Ok(Json(doc.to_value()));
+        return Ok(update_reply(doc.to_value(), false));
     }
 
     // Check for sharding
@@ -816,7 +829,7 @@ pub async fn update_document(
                     let doc = coordinator
                         .update(&db_name, &coll_name, &shard_config, &key, data)
                         .await?;
-                    return Ok(Json(doc));
+                    return Ok(update_reply(doc, false));
                 }
             }
         }
@@ -899,7 +912,7 @@ pub async fn update_document(
         );
     }
 
-    Ok(Json(doc.to_value()))
+    Ok(update_reply(doc.to_value(), replace))
 }
 
 pub async fn delete_document(

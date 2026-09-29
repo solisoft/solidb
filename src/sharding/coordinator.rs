@@ -3025,6 +3025,19 @@ impl ShardCoordinator {
                         })?;
 
                     if res.status().is_success() {
+                        // A peer that predates `replace=true` merges and answers
+                        // success; only one that replaced says so.
+                        let applied = res
+                            .headers()
+                            .get("x-replace-applied")
+                            .is_some_and(|v| v == "true");
+                        if !applied {
+                            return Err(crate::error::DbError::OperationNotSupported(format!(
+                                "node {} did not apply the replace (it predates it); \
+                                 upgrade every node before using REPLACE on a sharded collection",
+                                primary_node
+                            )));
+                        }
                         let val: serde_json::Value = res.json().await.map_err(|e| {
                             crate::error::DbError::InternalError(format!("Invalid response: {}", e))
                         })?;

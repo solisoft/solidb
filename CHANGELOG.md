@@ -37,9 +37,9 @@
   yet". They now write row by row through the shard coordinator (a new
   `replace` call, forwarded as `PUT …?replace=true`). Like the single-node
   path, a read-then-write is not atomic against a concurrent writer of the same
-  document. A mixed-version cluster must upgrade every node before using
-  `REPLACE` on a sharded collection: an older peer ignores `replace=true` and
-  merges.
+  document. A node that predates `replace=true` would merge and answer
+  success, so the reply carries `x-replace-applied` and a `REPLACE` forwarded to a
+  peer without it fails with an error instead; upgrade every node first.
 
 * **`solidb-restore` reads SQL dumps.** `INSERT INTO t (cols) VALUES (...)`
   statements (mysqldump `--complete-insert`, pg_dump `--column-inserts`, sqlite
