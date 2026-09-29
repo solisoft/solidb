@@ -4,6 +4,12 @@
 
 ### Added
 
+* **Offline sync accepts delta changes.** `POST /_api/sync/push` used to refuse
+  any change with `is_delta`. The `delta_patch` (RFC 6902) is now applied to the
+  stored document atomically (`Collection::patch_document`); a patch for a
+  document the server does not have, or one that does not apply, is refused and
+  changes nothing.
+
 * **Trigger `filter` is evaluated.** It was stored and ignored. It is an SDBQL
   expression over `doc`, `old` and `event`; the trigger fires only when it is
   truthy, and a filter that errors does not fire. Saving a trigger with a

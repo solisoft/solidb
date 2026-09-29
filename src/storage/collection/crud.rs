@@ -311,6 +311,45 @@ impl Collection {
         })
     }
 
+    /// Apply an RFC 6902 patch to the stored document and replace it with the
+    /// result, read and written under the key's lock so two concurrent patches
+    /// cannot lose one another's changes. The patch sees the document as a
+    /// client does (system fields included); the write keeps `_created_at` and
+    /// renews `_rev` and `_updated_at`. `DocumentNotFound` if there is no base.
+    pub fn patch_document(
+        &self,
+        key: &str,
+        patch: &crate::sync::delta::JsonPatch,
+    ) -> DbResult<Document> {
+        if self.collection_type.read().as_str() == "timeseries" {
+            return Err(DbError::OperationNotSupported(
+                "Update operations are not allowed on timeseries collections".to_string(),
+            ));
+        }
+        self.with_key_locked(key, || {
+            let old_doc = self.get(key)?;
+            let old_value = old_doc.to_value();
+
+            let mut patched = old_value.clone();
+            crate::sync::delta::apply_patch(&mut patched, patch)
+                .map_err(|e| DbError::BadRequest(format!("patch does not apply: {:?}", e)))?;
+
+            let mut doc = Document::with_key(&self.name, key.to_string(), patched);
+            doc.created_at = old_doc.created_at;
+            let new_value = doc.to_value();
+
+            if self.collection_type.read().as_str() == "edge" {
+                self.validate_edge_document(&new_value)?;
+            }
+            if let Some(validator) = self.get_cached_schema_validator()? {
+                validator.validate(&new_value).map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
+            }
+            self.write_update_locked(key, old_value, doc, new_value)
+        })
+    }
+
     // ---------- update ----------
 
     /// Update a document with atomic document + index writes

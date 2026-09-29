@@ -551,18 +551,18 @@ pub async fn pull_changes(
 /// when `can_create_database` says the caller holds the instance-level Admin
 /// that `POST /_api/database` requires.
 ///
-/// Delta changes are rejected rather than silently dropped: `SyncChange`
-/// carries `is_delta`/`delta_patch`, but no patch application exists anywhere
-/// in the codebase yet, so accepting one would lose the write.
+/// A delta change carries an RFC 6902 patch in `delta_patch`, applied to the
+/// stored document. It needs a base: a patch for a document the server does
+/// not have is refused, and the client should push the full document.
 fn apply_sync_change(
     state: &AppState,
     change: &SyncChange,
     actor: WriteActor,
     can_create_database: bool,
 ) -> Result<(), DbError> {
-    if change.is_delta {
-        return Err(DbError::OperationNotSupported(
-            "delta sync changes are not supported; push the full document".to_string(),
+    if change.is_delta && change.operation == ChangeOperation::Delete {
+        return Err(DbError::BadRequest(
+            "a delete cannot be a delta".to_string(),
         ));
     }
 
@@ -617,6 +617,23 @@ fn apply_sync_change(
     };
 
     match change.operation {
+        ChangeOperation::Insert | ChangeOperation::Update if change.is_delta => {
+            let patch: crate::sync::delta::JsonPatch = change
+                .delta_patch
+                .clone()
+                .ok_or_else(|| {
+                    DbError::BadRequest(format!(
+                        "delta change for '{}' has no delta_patch",
+                        change.document_key
+                    ))
+                })
+                .and_then(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        DbError::BadRequest(format!("delta_patch is not a JSON Patch: {}", e))
+                    })
+                })?;
+            collection.patch_document(&change.document_key, &patch)?;
+        }
         ChangeOperation::Insert | ChangeOperation::Update => {
             let data = change.document_data.clone().ok_or_else(|| {
                 DbError::BadRequest(format!(
