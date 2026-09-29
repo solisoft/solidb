@@ -44,7 +44,9 @@ pub(crate) fn host_is_dev_tld(url: &str) -> bool {
     host.ends_with(".test") || host.ends_with(".localhost") || host.ends_with(".local")
 }
 
-pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
+/// Everything about a webhook URL that can be checked without the network:
+/// length, scheme, embedded credentials.
+fn parse_webhook_url(url: &str) -> Result<reqwest::Url, crate::error::DbError> {
     if url.is_empty() {
         return Err(crate::error::DbError::BadRequest(
             "Webhook URL cannot be empty".to_string(),
@@ -71,7 +73,25 @@ pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
             "Webhook URL must not embed credentials".to_string(),
         ));
     }
+    Ok(parsed)
+}
+
+pub fn validate_webhook_url(url: &str) -> Result<(), crate::error::DbError> {
+    let parsed = parse_webhook_url(url)?;
     validate_webhook_target(&parsed).map(|_| ())
+}
+
+/// [`validate_webhook_target`] for async callers: resolving the host blocks,
+/// so it runs on the blocking pool rather than a runtime worker.
+async fn validate_webhook_target_async(
+    parsed: &reqwest::Url,
+) -> Result<Option<crate::server::ssrf::ValidatedTarget>, crate::error::DbError> {
+    let parsed = parsed.clone();
+    tokio::task::spawn_blocking(move || validate_webhook_target(&parsed))
+        .await
+        .map_err(|e| {
+            crate::error::DbError::InternalError(format!("Webhook validation task failed: {}", e))
+        })?
 }
 
 /// [`validate_webhook_url`] returning the address that was checked, so the
@@ -654,11 +674,10 @@ impl QueueWorker {
         job: &Job,
     ) -> Result<(), crate::error::DbError> {
         let url = job.webhook_url.as_deref().unwrap_or("");
-        validate_webhook_url(url)?;
-        let parsed = reqwest::Url::parse(url).map_err(|e| {
-            crate::error::DbError::BadRequest(format!("Invalid webhook URL: {}", e))
-        })?;
-        let target = validate_webhook_target(&parsed)?;
+        // One resolution, off the runtime: the URL checks and the target
+        // check used to run back to back, resolving the name twice on a worker.
+        let parsed = parse_webhook_url(url)?;
+        let target = validate_webhook_target_async(&parsed).await?;
 
         // Use the permissive client only for development-reserved TLDs.
         // Everything else stays on the strict client with full TLS checks.

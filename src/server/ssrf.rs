@@ -156,6 +156,60 @@ fn check_hostname(host_lower: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// How long a DNS lookup may take before the guard gives up. The OS resolver
+/// can take far longer (tens of seconds across retries), on a thread that
+/// something is waiting on.
+const DNS_LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Lookups that may be in flight at once. A lookup that outlives its timeout
+/// keeps its thread until the OS resolver gives up, so this bounds how many
+/// such threads a stream of unresolvable names can pile up.
+const DNS_MAX_IN_FLIGHT: usize = 32;
+
+static DNS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Resolve `host` with a deadline. The lookup itself is blocking, so it runs
+/// on its own thread and the caller waits on a channel.
+fn resolve_bounded(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    use std::sync::atomic::Ordering;
+    if DNS_IN_FLIGHT.fetch_add(1, Ordering::AcqRel) >= DNS_MAX_IN_FLIGHT {
+        DNS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+        return Err(format!("DNS resolver busy, not resolving {}", host));
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let name = host.to_string();
+    let spawned = std::thread::Builder::new()
+        .name("ssrf-dns".into())
+        .spawn(move || {
+            let r = std::net::ToSocketAddrs::to_socket_addrs(&(name.as_str(), port))
+                .map(|a| a.collect::<Vec<_>>())
+                .map_err(|e| e.to_string());
+            DNS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+            let _ = tx.send(r);
+        });
+    if let Err(e) = spawned {
+        DNS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+        return Err(format!("could not start DNS lookup for {}: {}", host, e));
+    }
+    match rx.recv_timeout(DNS_LOOKUP_TIMEOUT) {
+        Ok(Ok(addrs)) => Ok(addrs),
+        Ok(Err(e)) => Err(format!("DNS resolution failed for {}: {}", host, e)),
+        Err(_) => Err(format!(
+            "DNS resolution for {} timed out after {:?}",
+            host, DNS_LOOKUP_TIMEOUT
+        )),
+    }
+}
+
+/// [`validate_public_url_target`] for async callers: the lookup blocks, so it
+/// runs on the blocking pool instead of a runtime worker.
+pub async fn validate_public_url_target_async(url: &url::Url) -> Result<ValidatedTarget, String> {
+    let url = url.clone();
+    tokio::task::spawn_blocking(move || validate_public_url_target(&url))
+        .await
+        .map_err(|e| format!("DNS validation task failed: {}", e))?
+}
+
 /// Reject private/metadata hosts, and return the validated address so the
 /// caller can pin its connection to it.
 ///
@@ -185,10 +239,7 @@ pub fn validate_public_url_target(url: &url::Url) -> Result<ValidatedTarget, Str
             let host_lower = domain.to_lowercase();
             check_hostname(&host_lower)?;
 
-            let addrs: Vec<SocketAddr> =
-                std::net::ToSocketAddrs::to_socket_addrs(&(host_lower.as_str(), port))
-                    .map_err(|e| format!("DNS resolution failed for {}: {}", host_lower, e))?
-                    .collect();
+            let addrs = resolve_bounded(&host_lower, port)?;
 
             if addrs.is_empty() {
                 return Err(format!("no addresses resolved for {}", host_lower));
@@ -238,6 +289,15 @@ mod tests {
         ] {
             assert!(check(u).is_err(), "should be rejected: {}", u);
         }
+    }
+
+    #[tokio::test]
+    async fn async_entry_point_applies_the_same_rules() {
+        let bad = url::Url::parse("http://127.0.0.1/").unwrap();
+        assert!(validate_public_url_target_async(&bad).await.is_err());
+        let ok = url::Url::parse("http://93.184.216.34/").unwrap();
+        let t = validate_public_url_target_async(&ok).await.unwrap();
+        assert_eq!(t.addr.port(), 80);
     }
 
     #[test]

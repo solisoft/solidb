@@ -26,6 +26,11 @@
 
 ### Fixed
 
+* **The SSRF guard's DNS lookup is bounded.** A resolver that never answered
+  blocked the calling thread for as long as the OS allowed. Lookups now time
+  out after 5 s, at most 32 run at once, and webhook delivery resolves the
+  host once, on the blocking pool, instead of twice on a runtime worker.
+
 * **Truncate left version history and pending-embed markers behind.** After
   truncating a versioned collection, an `AS OF` read still returned the
   deleted documents; markers for documents that no longer existed kept the

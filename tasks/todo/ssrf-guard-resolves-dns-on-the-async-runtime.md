@@ -60,3 +60,21 @@ this shape since the guard was written.
 
 - [SEC-177](../done/SEC-177-ssrf-via-tenant-writable-ollama-url.md) — added the
   second call site.
+
+## Update 2026-09-29 — bounded, webhook path off the runtime
+
+Done:
+
+- Every lookup now has a 5 s deadline and at most 32 are in flight
+  (`ssrf::resolve_bounded`); past that the guard fails closed ("resolver busy")
+  rather than piling up threads behind an unresponsive resolver. Fix direction 4.
+- `ssrf::validate_public_url_target_async` runs the lookup on the blocking pool,
+  and `execute_webhook` uses it. It also resolved the name twice (once in
+  `validate_webhook_url`, once in `validate_webhook_target`); it is now once.
+  Directions 1 and 2.
+
+Still open: the LLM path. `LLMClient::from_storage` is synchronous with nine
+async call sites, so a lookup there still occupies the calling worker — for at
+most 5 s now, not until the OS resolver gives up. Removing it needs either the
+write-time verdict with a short-TTL cache, or an async `from_storage`
+(direction 3).
