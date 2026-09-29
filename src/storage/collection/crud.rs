@@ -52,6 +52,19 @@ impl Collection {
         Ok(doc)
     }
 
+    /// [`Self::get`] as the API value (`Document::to_value`), decoded straight
+    /// from the stored bytes: no `Document`, and no timestamp parse and
+    /// re-format. For callers that only return the document.
+    pub fn get_value(&self, key: &str) -> DbResult<Value> {
+        let cf = self.live_cf()?;
+        let bytes = self
+            .db
+            .get_pinned_ks(&cf, Self::doc_key(key))
+            .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
+            .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
+        deserialize_doc_as_value(&bytes)
+    }
+
     /// Get multiple documents by keys
     pub fn get_many(&self, keys: &[String]) -> Vec<Document> {
         keys.iter().filter_map(|k| self.get(k).ok()).collect()

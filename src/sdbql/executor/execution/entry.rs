@@ -613,13 +613,20 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Apply RETURN projection (if present)
+        // Apply RETURN projection (if present). The rows are consumed here, so
+        // a RETURN that only reads top-level fields takes them instead of
+        // cloning them (see `return_moves`).
         let results = if let Some(ref return_clause) = query.return_clause {
-            let results: DbResult<Vec<Value>> = rows
-                .iter()
-                .map(|ctx| self.evaluate_expr_with_context(&return_clause.expression, ctx))
-                .collect();
-            results?
+            let moves = super::return_moves::FieldMoves::of(&return_clause.expression);
+            let mut results = Vec::with_capacity(rows.len());
+            for mut ctx in rows {
+                let moved = moves.as_ref().and_then(|m| m.take(&mut ctx));
+                results.push(match moved {
+                    Some(value) => value,
+                    None => self.evaluate_expr_with_context(&return_clause.expression, &ctx)?,
+                });
+            }
+            results
         } else {
             // No RETURN clause - return empty array (mutations don't need to return anything)
             vec![]

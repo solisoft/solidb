@@ -191,12 +191,17 @@ impl DriverHandler {
     ///
     /// Generic over the stream so the protocol runs identically over plain
     /// TCP and over a TLS-terminated connection.
-    pub async fn handle_connection<S>(&mut self, mut stream: S, addr: String)
+    pub async fn handle_connection<S>(&mut self, stream: S, addr: String)
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
         tracing::info!("Driver connection from {}", addr);
         self.peer_ip = peer_ip_of(&addr);
+
+        // Each command is a 4-byte length then its payload. Read unbuffered,
+        // that was two `recv` syscalls per command (the first for 4 bytes);
+        // buffered, one usually brings both. Writes pass straight through.
+        let mut stream = tokio::io::BufReader::with_capacity(16 * 1024, stream);
 
         // The magic header has already been consumed by the multiplexer
         // Start processing commands immediately

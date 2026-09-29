@@ -21,8 +21,8 @@ pub fn handle_get(
     key: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.get(&key) {
-            Ok(doc) => Response::ok(doc.to_value()),
+        Ok(coll) => match coll.get_value(&key) {
+            Ok(value) => Response::ok(value),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),

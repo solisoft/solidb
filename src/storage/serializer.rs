@@ -78,16 +78,46 @@ const UPDATED_AT_FIELD: &str = "_updated_at";
 /// is positional, so the fields mirror that struct's order; the timestamps
 /// are the strings chrono's `Serialize` wrote.
 #[derive(Deserialize)]
+///
+/// The five system strings are read as raw bytes (bincode writes a string and
+/// a byte slice identically, length then bytes) and validated only when a
+/// caller uses them: a projected read that returns none of them used to
+/// UTF-8-check all five per document, ~4% of an uncached 50-row read.
 struct StoredDocRef<'a> {
     #[allow(dead_code)]
     version: u8,
-    key: &'a str,
-    id: &'a str,
-    rev: &'a str,
-    created_at: &'a str,
-    updated_at: &'a str,
+    #[serde(with = "serde_bytes")]
+    key: &'a [u8],
+    #[serde(with = "serde_bytes")]
+    id: &'a [u8],
+    #[serde(with = "serde_bytes")]
+    rev: &'a [u8],
+    #[serde(with = "serde_bytes")]
+    created_at: &'a [u8],
+    #[serde(with = "serde_bytes")]
+    updated_at: &'a [u8],
     #[serde(with = "serde_bytes")]
     data: &'a [u8],
+}
+
+impl StoredDocRef<'_> {
+    /// A system field's API value, or `None` if its bytes are not UTF-8
+    /// (the caller then takes the checked decode, which reports it).
+    fn system_field(&self, name: &str) -> Option<Option<serde_json::Value>> {
+        let text = |b: &[u8]| std::str::from_utf8(b).ok().map(str::to_owned);
+        let stamp = |b: &[u8]| std::str::from_utf8(b).ok().map(stored_timestamp_to_rfc3339);
+        Some(Some(
+            match name {
+                KEY_FIELD => text(self.key)?,
+                ID_FIELD => text(self.id)?,
+                REV_FIELD => text(self.rev)?,
+                CREATED_AT_FIELD => stamp(self.created_at)?,
+                UPDATED_AT_FIELD => stamp(self.updated_at)?,
+                _ => return Some(None),
+            }
+            .into(),
+        ))
+    }
 }
 
 /// The API form of a stored timestamp, `DateTime::to_rfc3339`, without
@@ -182,18 +212,19 @@ pub fn deserialize_doc_projected(bytes: &[u8], fields: &[String]) -> DbResult<se
             {
                 // System fields last, overriding a same-named data field, as
                 // the full decode does.
+                let mut valid = true;
                 for field in fields {
-                    let value = match field.as_str() {
-                        KEY_FIELD => stored.key.into(),
-                        ID_FIELD => stored.id.into(),
-                        REV_FIELD => stored.rev.into(),
-                        CREATED_AT_FIELD => stored_timestamp_to_rfc3339(stored.created_at).into(),
-                        UPDATED_AT_FIELD => stored_timestamp_to_rfc3339(stored.updated_at).into(),
-                        _ => continue,
-                    };
-                    map.insert(field.clone(), value);
+                    match stored.system_field(field) {
+                        Some(Some(value)) => {
+                            map.insert(field.clone(), value);
+                        }
+                        Some(None) => {}
+                        None => valid = false,
+                    }
                 }
-                return Ok(serde_json::Value::Object(map));
+                if valid {
+                    return Ok(serde_json::Value::Object(map));
+                }
             }
         }
     }
@@ -221,18 +252,24 @@ pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
                 let data: serde_json::Value =
                     rmp_serde::from_slice(stored.data).unwrap_or_default();
                 if let serde_json::Value::Object(mut map) = data {
-                    map.insert(KEY_FIELD.to_owned(), stored.key.into());
-                    map.insert(ID_FIELD.to_owned(), stored.id.into());
-                    map.insert(REV_FIELD.to_owned(), stored.rev.into());
-                    map.insert(
-                        CREATED_AT_FIELD.to_owned(),
-                        stored_timestamp_to_rfc3339(stored.created_at).into(),
-                    );
-                    map.insert(
-                        UPDATED_AT_FIELD.to_owned(),
-                        stored_timestamp_to_rfc3339(stored.updated_at).into(),
-                    );
-                    return Ok(serde_json::Value::Object(map));
+                    let mut valid = true;
+                    for name in [
+                        KEY_FIELD,
+                        ID_FIELD,
+                        REV_FIELD,
+                        CREATED_AT_FIELD,
+                        UPDATED_AT_FIELD,
+                    ] {
+                        match stored.system_field(name) {
+                            Some(Some(value)) => {
+                                map.insert(name.to_owned(), value);
+                            }
+                            _ => valid = false,
+                        }
+                    }
+                    if valid {
+                        return Ok(serde_json::Value::Object(map));
+                    }
                 }
             }
             let dwv: DocumentWithVersion = bincode::deserialize(&bytes[1..])
