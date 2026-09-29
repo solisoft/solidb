@@ -191,3 +191,13 @@ reclaim compaction. A durable regression beyond ~2x kills the approach.
 Found while chasing `soli test` 10s timeouts. The lang test runner no
 longer drops databases per run (it truncates), so this is latency hygiene
 for interactive drops and `SOLI_TEST_FRESH_DB=1`, not a test-suite blocker.
+
+## Update 2026-09-29 — closed by 2.0 keyspaces
+
+The shared-CF direction above shipped in 2.0 (`storage/keyspace.rs`,
+`docs/storage-format.md`): every collection lives under an 8-byte prefix in
+one column family, creating one is a `_meta` write, dropping one is a registry
+delete plus one `DeleteRange`, and dropping a database is one `DeleteRange`
+over its id range. None of them touch the column-family map or rewrite the
+OPTIONS file. Only collections that failed migration stay 1.x column families,
+and they are served as before. Nothing here remains open.
