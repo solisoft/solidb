@@ -762,3 +762,136 @@ fn test_command_graph_rag_roundtrip() {
         _ => panic!("Expected GraphRag command"),
     }
 }
+
+// ============================================================================
+// Wire compatibility of the commands that became functional in 2.1.0
+// ============================================================================
+
+/// What a client would put on the wire: the named-map form, without the length prefix.
+fn wire(value: serde_json::Value) -> Vec<u8> {
+    rmp_serde::to_vec_named(&value).expect("encode")
+}
+
+#[test]
+fn prune_from_a_client_that_predates_older_than_still_decodes() {
+    let legacy = wire(json!({
+        "cmd": "prune_collection",
+        "database": "d",
+        "collection": "c",
+    }));
+    match decode_message::<Command>(&legacy).expect("legacy prune must decode") {
+        Command::PruneCollection {
+            database,
+            collection,
+            older_than,
+        } => {
+            assert_eq!((database.as_str(), collection.as_str()), ("d", "c"));
+            assert_eq!(
+                older_than, None,
+                "absent means None, which the server rejects"
+            );
+        }
+        other => panic!("decoded as {:?}", other),
+    }
+}
+
+#[test]
+fn prune_older_than_survives_a_round_trip() {
+    let cmd = Command::PruneCollection {
+        database: "d".to_string(),
+        collection: "c".to_string(),
+        older_than: Some("2026-01-01T00:00:00Z".to_string()),
+    };
+    let framed = encode_command(&cmd).unwrap();
+    match decode_message::<Command>(&framed[4..]).unwrap() {
+        Command::PruneCollection { older_than, .. } => {
+            assert_eq!(older_than.as_deref(), Some("2026-01-01T00:00:00Z"))
+        }
+        other => panic!("decoded as {:?}", other),
+    }
+}
+
+#[test]
+fn vector_search_without_a_filter_decodes_and_with_one_keeps_it() {
+    let without = wire(json!({
+        "cmd": "vector_search", "database": "d", "collection": "c",
+        "index_name": "v", "vector": [1.0, 2.0], "limit": 3, "ef_search": null,
+    }));
+    match decode_message::<Command>(&without).unwrap() {
+        Command::VectorSearch { filter, limit, .. } => {
+            assert_eq!(filter, None);
+            assert_eq!(limit, Some(3));
+        }
+        other => panic!("decoded as {:?}", other),
+    }
+
+    let with = wire(json!({
+        "cmd": "vector_search", "database": "d", "collection": "c",
+        "index_name": "v", "vector": [1.0], "filter": "{\"kind\":\"a\"}",
+    }));
+    match decode_message::<Command>(&with).unwrap() {
+        Command::VectorSearch { filter, .. } => {
+            assert_eq!(filter.as_deref(), Some("{\"kind\":\"a\"}"))
+        }
+        other => panic!("decoded as {:?}", other),
+    }
+}
+
+#[test]
+fn geo_within_and_a_wrapped_transaction_command_round_trip() {
+    let geo = Command::GeoWithin {
+        database: "d".to_string(),
+        collection: "c".to_string(),
+        field: "loc".to_string(),
+        polygon: vec![(0.0, 0.0), (0.0, 2.0), (2.0, 2.0)],
+    };
+    match decode_message::<Command>(&encode_command(&geo).unwrap()[4..]).unwrap() {
+        Command::GeoWithin { polygon, .. } => assert_eq!(polygon.len(), 3),
+        other => panic!("decoded as {:?}", other),
+    }
+
+    let wrapped = Command::TransactionCommand {
+        tx_id: "tx:7".to_string(),
+        command: Box::new(Command::Delete {
+            database: "d".to_string(),
+            collection: "c".to_string(),
+            key: "k".to_string(),
+        }),
+    };
+    match decode_message::<Command>(&encode_command(&wrapped).unwrap()[4..]).unwrap() {
+        Command::TransactionCommand { tx_id, command } => {
+            assert_eq!(tx_id, "tx:7");
+            assert!(matches!(*command, Command::Delete { .. }));
+        }
+        other => panic!("decoded as {:?}", other),
+    }
+}
+
+#[test]
+fn a_wrapped_command_needs_the_permission_of_the_command_inside_it() {
+    // The dispatcher authorizes the wrapper; if it did not inherit the inner
+    // command's requirement, a Read-only session could stage writes.
+    let inner_write = Command::Insert {
+        database: "d".to_string(),
+        collection: "c".to_string(),
+        key: None,
+        document: json!({}),
+    };
+    let wrapped = Command::TransactionCommand {
+        tx_id: "tx:1".to_string(),
+        command: Box::new(Command::Insert {
+            database: "d".to_string(),
+            collection: "c".to_string(),
+            key: None,
+            document: json!({}),
+        }),
+    };
+    let required = format!("{:?}", wrapped.required_action());
+    assert_eq!(required, format!("{:?}", inner_write.required_action()));
+    assert!(
+        required.contains("Write"),
+        "a staged write must need Write, got {}",
+        required
+    );
+    assert_eq!(wrapped.database(), inner_write.database());
+}

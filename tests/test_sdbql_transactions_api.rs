@@ -452,7 +452,7 @@ async fn rolled_back_query_writes_nothing_and_options_are_refused() {
     assert_eq!(status, StatusCode::OK);
 
     // OPTIONS need a read-modify-write a staged operation cannot express.
-    let (status, _) = call(
+    let (status, refused) = call(
         &app,
         &token,
         "POST",
@@ -460,7 +460,17 @@ async fn rolled_back_query_writes_nothing_and_options_are_refused() {
         json!({"query": "INSERT {_key: 'x'} INTO totals OPTIONS {overwriteMode: 'replace'}"}),
     )
     .await;
-    assert_ne!(status, StatusCode::OK);
+    assert!(
+        status.is_client_error() || status == StatusCode::NOT_IMPLEMENTED,
+        "expected a refusal, got {} {}",
+        status,
+        refused
+    );
+    assert!(
+        refused.to_string().contains("transaction"),
+        "the refusal should say why: {}",
+        refused
+    );
 
     call(
         &app,

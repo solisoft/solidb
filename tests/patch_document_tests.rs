@@ -69,3 +69,54 @@ fn patch_without_a_base_document_is_not_found() {
         Err(solidb::DbError::DocumentNotFound(_))
     ));
 }
+
+#[test]
+fn a_patch_cannot_rename_the_document_or_forge_server_fields() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let coll = engine.get_collection("docs").unwrap();
+    let before = coll.insert(json!({"_key": "a", "n": 1})).unwrap();
+
+    let after = coll
+        .patch_document(
+            "a",
+            &patch(json!([
+                {"op": "replace", "path": "/_key", "value": "hijacked"},
+                {"op": "replace", "path": "/_id", "value": "other/a"},
+                {"op": "replace", "path": "/_created_at", "value": "1999-01-01T00:00:00Z"},
+                {"op": "add", "path": "/n2", "value": 2}
+            ])),
+        )
+        .unwrap();
+
+    let v = after.to_value();
+    assert_eq!(v["_key"], "a", "the key is the document's identity");
+    assert_ne!(v["_id"], "other/a");
+    assert_eq!(after.created_at, before.created_at);
+    assert_eq!(v["n2"], 2, "the legitimate part of the patch still applies");
+    assert!(coll.get("hijacked").is_err());
+}
+
+#[test]
+fn concurrent_patches_of_one_document_lose_no_update() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let coll = engine.get_collection("docs").unwrap();
+    coll.insert(json!({"_key": "a"})).unwrap();
+
+    let threads = 8;
+    std::thread::scope(|scope| {
+        for t in 0..threads {
+            let coll = coll.clone();
+            scope.spawn(move || {
+                let p = patch(json!([{"op": "add", "path": format!("/f{}", t), "value": t}]));
+                coll.patch_document("a", &p).unwrap();
+            });
+        }
+    });
+
+    let v = coll.get("a").unwrap().to_value();
+    for t in 0..threads {
+        assert_eq!(v[format!("f{}", t)], t, "patch {} was lost: {}", t, v);
+    }
+}
