@@ -32,7 +32,9 @@
   windows in a query that writes. It now runs the ordinary executor with its
   writes staged on the transaction, so those clauses, `SORT`/`LIMIT` and
   `RETURN` (including `NEW`/`OLD`) work, and `result` carries the query's rows.
-  `OPTIONS` and `REPLACE` are still refused inside a transaction.
+  `OPTIONS` and `REPLACE` are still refused inside a transaction, and so are
+  streams, materialized views and state-changing functions, which would apply
+  at once and survive a rollback.
 
 * **UPDATE, REPLACE, REMOVE and INSERT on sharded collections take `OPTIONS` and
   bind `OLD` / `NEW`.** They failed with "not supported on sharded collections
@@ -61,7 +63,8 @@
 * **Trigger `filter` is evaluated.** It was stored and ignored. It is an SDBQL
   expression over `doc`, `old` and `event`; the trigger fires only when it is
   truthy, and a filter that errors does not fire. Saving a trigger with a
-  filter that is not a single expression is rejected.
+  filter that is not a single expression, or that writes, is rejected, and a
+  filter runs with read-only permissions.
 
 * **Driver: columnar `filter` and `order_by` work.** `AggregateColumnar` and
   `QueryColumnar` rejected any filter and ignored `order_by`. `filter` is JSON:
@@ -80,6 +83,27 @@
   `POST …/repair`.
 
 ### Fixed
+
+* **Driver role commands granted nothing.** `CreateRole` stored permission
+  strings that did not read back as a role, and `AssignRole` stored a row
+  without `assigned_by`, which did not parse. Both now share the HTTP API's
+  checks and storage. Driver permissions are `"read"` (everywhere) or
+  `"write:tenant_a"` (one database). `DeleteRole` protected `developer` instead
+  of the built-in `editor`.
+* **`If-Match` on a sharded collection is refused** instead of being dropped;
+  the coordinator cannot compare-and-swap, so a concurrent write was silently
+  overwritten. `PUT …?replace=true` honours `If-Match` on other collections.
+* **Updates to a collection sharded by a field other than `_key`** were routed
+  by `_key` and missed the document. They now find its shard; changing the
+  shard-key value is refused.
+* **A 409 or 404 from another shard node** came back as an internal error, so
+  `OPTIONS {ignoreErrors: true}` did not skip it.
+* **`solidb-restore` read backslashes as escapes in PostgreSQL and SQLite
+  dumps**, where they are literal: a value ending in `\` swallowed every later
+  statement. Only MySQL dumps (detected, or `--sql-dialect mysql`) and `E'…'`
+  strings escape now.
+* **Two storage engines in one process shared shard configurations** (the cache
+  was keyed by keyspace id alone). Affects tests and tools, not a single server.
 
 * **Two writes of the same unique value in one transaction both committed.**
   Each staged write was checked against committed data only, so a second

@@ -450,7 +450,11 @@
           <ul class="space-y-4 text-gray-300">
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>
-              <span><strong>OPTIONS and REPLACE:</strong> A transactional query cannot use <code>OPTIONS</code> or <code>REPLACE</code>; use plain <code>INSERT</code>, <code>UPDATE</code>, <code>REMOVE</code> or <code>UPSERT</code>.</span>
+              <span><strong>OPTIONS and REPLACE:</strong> A transactional query cannot use <code>OPTIONS</code> or <code>REPLACE</code>; use plain <code>INSERT</code>, <code>UPDATE</code>, <code>REMOVE</code> or <code>UPSERT</code>. <code>PUT …?replace=true</code> with an <code>X-Transaction-ID</code> is refused for the same reason.</span>
+            </li>
+            <li class="flex items-start">
+              <span class="text-red-400 mr-3">•</span>
+              <span><strong>Writes that cannot be staged:</strong> streams, materialized views (<code>CREATE</code>/<code>REFRESH MATERIALIZED VIEW</code>) and state-changing functions such as <code>CREATE_VIEW</code> or <code>ROW_POLICY(c, p)</code> write directly and would survive a rollback, so a transactional query that contains one is refused.</span>
             </li>
             <li class="flex items-start">
               <span class="text-red-400 mr-3">•</span>

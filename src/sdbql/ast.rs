@@ -134,6 +134,30 @@ impl Query {
         self.expressions().any(expression_mutates)
     }
 
+    /// True when the query writes in a way a transaction cannot stage.
+    ///
+    /// Inside a transaction the executor stages `INSERT` / `UPDATE` / `REMOVE`
+    /// / `UPSERT` (at any depth: subqueries, CTEs and set operations run on the
+    /// same executor). Stream and materialized-view statements, and the
+    /// state-changing builtins (catalog functions, `ROW_POLICY(c, p)`, …),
+    /// write directly whatever executor runs them, so a rollback could not
+    /// undo them.
+    pub fn has_unstageable_writes(&self) -> bool {
+        self.create_stream_clause.is_some()
+            || self.create_materialized_view_clause.is_some()
+            || self.refresh_materialized_view_clause.is_some()
+            || self
+                .set_operations
+                .iter()
+                .any(|op| op.query.has_unstageable_writes())
+            || self.with_clause.as_ref().is_some_and(|with| {
+                with.ctes
+                    .iter()
+                    .any(|cte| cte.query.has_unstageable_writes())
+            })
+            || self.expressions().any(expression_has_unstageable_writes)
+    }
+
     /// Every expression this query block owns directly.
     ///
     /// Not recursive into nested `Query` values — [`expression_mutates`]
@@ -375,6 +399,22 @@ pub fn expression_mutates(expr: &Expression) -> bool {
                 || projection.as_deref().is_some_and(expression_mutates)
         }
         Expression::Variable(_) | Expression::BindVariable(_) | Expression::Literal(_) => false,
+    }
+}
+
+/// See [`Query::has_unstageable_writes`].
+fn expression_has_unstageable_writes(expr: &Expression) -> bool {
+    match expr {
+        Expression::Subquery(q) => q.has_unstageable_writes(),
+        Expression::FunctionCall { name, args } if function_call_mutates(name, args) => true,
+        Expression::WindowFunctionCall { function, .. } if is_mutating_function(function) => true,
+        other => {
+            let mut found = false;
+            other.for_each_child(&mut |child| {
+                found = found || expression_has_unstageable_writes(child);
+            });
+            found
+        }
     }
 }
 
@@ -1213,6 +1253,29 @@ pub enum UnaryOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unstageable_writes_are_found_at_any_depth() {
+        let q = |text: &str| crate::sdbql::parse(text).expect(text);
+        for staged in [
+            "INSERT {a: 1} INTO c",
+            "FOR d IN c UPDATE d WITH {x: 1} IN c",
+            "LET n = (FOR i IN 1..2 INSERT {i} INTO c RETURN 1) RETURN n",
+            "FOR o IN c COLLECT k = o.k INSERT {k} INTO t",
+        ] {
+            assert!(!q(staged).has_unstageable_writes(), "{}", staged);
+        }
+        for direct in [
+            "CREATE MATERIALIZED VIEW v AS FOR d IN c RETURN d",
+            "REFRESH MATERIALIZED VIEW v",
+            r#"RETURN CREATE_VIEW("v", {collection: "c"})"#,
+            r#"RETURN (FOR i IN 1..1 RETURN DROP_GRAPH("g"))"#,
+            r#"FOR d IN c FILTER ROW_POLICY("c", "true") RETURN d"#,
+            r#"RETURN CALL("CREATE_GRAPH", "g", {})"#,
+        ] {
+            assert!(q(direct).has_unstageable_writes(), "{}", direct);
+        }
+    }
     use serde_json::json;
 
     #[test]

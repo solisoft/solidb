@@ -490,3 +490,47 @@ async fn rolled_back_query_writes_nothing_and_options_are_refused() {
     .await;
     assert_eq!(j["result"].as_array().unwrap().len(), 0);
 }
+
+#[tokio::test]
+async fn writes_a_transaction_cannot_stage_are_refused_and_leave_nothing() {
+    let (app, _tmp, token) = create_test_app();
+    let tx = tx_test_setup(&app, &token).await;
+    let uri = format!("/_api/database/txq/transaction/{}/query", tx);
+
+    for query in [
+        "CREATE MATERIALIZED VIEW big_orders AS FOR o IN orders FILTER o.amt > 4 RETURN o",
+        r#"RETURN CREATE_VIEW("orders_v", {collection: "orders"})"#,
+    ] {
+        let (status, body) = call(&app, &token, "POST", &uri, json!({"query": query})).await;
+        assert!(
+            status.is_client_error() || status == StatusCode::NOT_IMPLEMENTED,
+            "{} -> {} {}",
+            query,
+            status,
+            body
+        );
+    }
+    call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txq/transaction/{}/rollback", tx),
+        json!({}),
+    )
+    .await;
+
+    // Nothing was written behind the transaction's back.
+    let (_, j) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txq/cursor",
+        json!({"query": "FOR v IN big_orders RETURN v"}),
+    )
+    .await;
+    assert!(
+        j["result"].as_array().is_none_or(|r| r.is_empty()),
+        "the view was created: {}",
+        j
+    );
+}

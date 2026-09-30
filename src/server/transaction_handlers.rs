@@ -326,6 +326,15 @@ pub async fn execute_transactional_sdbql(
     ))
     .with_timeout(std::time::Duration::from_secs(30));
     let mutates = query.has_mutations();
+    // Only document writes can be staged; anything else would apply at once
+    // and survive a rollback.
+    if query.has_unstageable_writes() {
+        return Err(DbError::OperationNotSupported(
+            "streams, materialized views and state-changing functions cannot run \
+             inside a transaction; they would apply immediately and survive a rollback"
+                .to_string(),
+        ));
+    }
     if mutates {
         executor = executor.with_transaction(crate::sdbql::executor::TxWriter {
             tx: tx_arc,
