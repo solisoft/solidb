@@ -96,25 +96,24 @@ pub async fn handle_create_role(
     name: String,
     permissions: Vec<String>,
 ) -> Response {
-    match handler.storage.get_database("_system") {
-        Ok(db) => {
-            let roles_coll = match db.get_or_create_system_collection("_roles") {
-                Ok(c) => c,
-                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
-            };
-
-            let role_doc = serde_json::json!({
-                "_key": name,
-                "name": name,
-                "permissions": permissions,
-                "created_at": chrono::Utc::now().to_rfc3339(),
-            });
-
-            match roles_coll.insert(role_doc) {
-                Ok(doc) => Response::ok(doc.to_value()),
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
+    // The same checks and stored shape as `POST /_api/auth/roles`. This used
+    // to store the permission strings as they came, which no longer read back
+    // as a role: a role created here granted nothing.
+    let result = permissions
+        .iter()
+        .map(|p| crate::server::role_handlers::parse_permission_string(p))
+        .collect::<Result<Vec<_>, _>>()
+        .and_then(|perms| {
+            crate::server::role_handlers::store_new_role(
+                &handler.storage,
+                handler.replication.as_deref(),
+                &name,
+                None,
+                perms,
+            )
+        });
+    match result {
+        Ok(role) => Response::ok(serde_json::json!(role)),
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
@@ -141,9 +140,19 @@ pub async fn handle_update_role(
         Ok(db) => match db.system_collection("_roles") {
             Ok(coll) => match coll.get(&name) {
                 Ok(existing) => {
+                    let parsed = match permissions
+                        .iter()
+                        .map(|p| crate::server::role_handlers::parse_permission_string(p))
+                        .collect::<Result<Vec<_>, _>>()
+                    {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return Response::error(DriverError::DatabaseError(e.to_string()))
+                        }
+                    };
                     let mut merged = existing.data.clone();
                     if let Some(obj) = merged.as_object_mut() {
-                        obj.insert("permissions".to_string(), serde_json::json!(permissions));
+                        obj.insert("permissions".to_string(), serde_json::json!(parsed));
                         obj.insert(
                             "updated_at".to_string(),
                             serde_json::json!(chrono::Utc::now().to_rfc3339()),
@@ -163,8 +172,12 @@ pub async fn handle_update_role(
 }
 
 pub async fn handle_delete_role(handler: &DriverHandler, name: String) -> Response {
-    // Prevent deleting built-in roles
-    if name == "admin" || name == "developer" || name == "viewer" {
+    // The built-in roles (the list said "developer", which is not one, and
+    // left "editor" deletable).
+    if crate::server::authorization::Role::builtin_roles()
+        .iter()
+        .any(|r| r.name == name)
+    {
         return Response::error(DriverError::DatabaseError(
             "Cannot delete built-in role".to_string(),
         ));
@@ -302,28 +315,19 @@ pub async fn handle_assign_role(
     role: String,
     database: Option<String>,
 ) -> Response {
-    match handler.storage.get_database("_system") {
-        Ok(db) => {
-            let user_roles_coll = match db.get_or_create_system_collection("_user_roles") {
-                Ok(c) => c,
-                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
-            };
-
-            let role_doc = serde_json::json!({
-                "username": username,
-                "role": role,
-                "database": database,
-                "assigned_at": chrono::Utc::now().to_rfc3339(),
-            });
-
-            match user_roles_coll.insert(role_doc) {
-                Ok(doc) => {
-                    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
-                    Response::ok(doc.to_value())
-                }
-                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
+    // The same checks and stored shape as `POST /_api/auth/users/{u}/roles`.
+    // This used to insert a row without `assigned_by`, which does not parse as
+    // an assignment, so it granted nothing; and it checked neither the role,
+    // the user nor the database.
+    match crate::server::role_handlers::store_role_assignment(
+        &handler.storage,
+        handler.replication.as_deref(),
+        &username,
+        &role,
+        database,
+        &handler.session_subject,
+    ) {
+        Ok(assignment) => Response::ok(serde_json::json!(assignment)),
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
@@ -470,5 +474,96 @@ pub async fn handle_delete_api_key(handler: &DriverHandler, key_id: String) -> R
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::protocol::Response;
+    use crate::server::authorization::{AuthorizationService, PermissionAction};
+    use crate::storage::StorageEngine;
+    use std::sync::Arc;
+
+    fn handler() -> (tempfile::TempDir, DriverHandler) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.initialize().unwrap();
+        for db in ["tenant_a", "tenant_b"] {
+            engine.create_database(db.to_string()).unwrap();
+        }
+        let system = engine.get_database("_system").unwrap();
+        system
+            .get_or_create_system_collection("_admins")
+            .unwrap()
+            .insert(serde_json::json!({"_key": "carol", "password_hash": "x"}))
+            .unwrap();
+        let mut h = DriverHandler::new(engine, None);
+        h.session_subject = "root".to_string();
+        (tmp, h)
+    }
+
+    fn is_err(r: &Response) -> bool {
+        matches!(r, Response::Error { .. })
+    }
+
+    fn can(h: &DriverHandler, action: PermissionAction, db: &str) -> bool {
+        let roles = crate::server::auth::AuthService::get_user_roles(&h.storage, "carol")
+            .unwrap_or_default();
+        let perms = AuthorizationService::load_permissions_from_storage(&h.storage, &roles);
+        AuthorizationService::check_permission_raw(&perms, action, Some(db), None).is_ok()
+    }
+
+    #[tokio::test]
+    async fn a_role_created_and_assigned_over_the_driver_grants_its_permissions() {
+        let (_t, h) = handler();
+        let r = handle_create_role(
+            &h,
+            "reporter".into(),
+            vec!["write:tenant_a".into(), "read".into()],
+        )
+        .await;
+        assert!(!is_err(&r), "{:?}", r);
+        let r = handle_assign_role(&h, "carol".into(), "reporter".into(), None).await;
+        assert!(!is_err(&r), "{:?}", r);
+
+        assert!(can(&h, PermissionAction::Write, "tenant_a"));
+        assert!(can(&h, PermissionAction::Read, "tenant_b"));
+        assert!(!can(&h, PermissionAction::Write, "tenant_b"));
+    }
+
+    #[tokio::test]
+    async fn a_limited_driver_assignment_stops_at_its_database() {
+        let (_t, h) = handler();
+        let r =
+            handle_assign_role(&h, "carol".into(), "editor".into(), Some("tenant_a".into())).await;
+        assert!(!is_err(&r), "{:?}", r);
+        assert!(can(&h, PermissionAction::Write, "tenant_a"));
+        assert!(!can(&h, PermissionAction::Read, "tenant_b"));
+    }
+
+    #[tokio::test]
+    async fn the_driver_refuses_what_the_http_api_refuses() {
+        let (_t, h) = handler();
+        // '@' would be read back as a limited assignment of another role.
+        assert!(is_err(
+            &handle_create_role(&h, "ops@prod".into(), vec!["read".into()]).await
+        ));
+        assert!(is_err(
+            &handle_create_role(&h, "adminish".into(), vec!["read".into()]).await
+        ));
+        assert!(is_err(
+            &handle_create_role(&h, "x".into(), vec!["fly".into()]).await
+        ));
+        assert!(is_err(
+            &handle_assign_role(&h, "carol".into(), "editor".into(), Some("typo_db".into())).await
+        ));
+        assert!(is_err(
+            &handle_assign_role(&h, "carol".into(), "no_such_role".into(), None).await
+        ));
+        assert!(is_err(
+            &handle_assign_role(&h, "nobody".into(), "editor".into(), None).await
+        ));
+        assert!(is_err(&handle_delete_role(&h, "editor".into()).await));
     }
 }

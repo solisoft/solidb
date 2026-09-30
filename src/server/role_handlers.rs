@@ -198,6 +198,179 @@ pub async fn list_roles(
     Ok(Json(roles.iter().map(RoleResponse::from).collect()))
 }
 
+/// Refuse a name a custom role cannot take. Shared by the HTTP API and the
+/// driver, which used to accept anything.
+pub fn validate_role_name(name: &str) -> Result<(), DbError> {
+    // '@' separates a role from the database of a limited assignment
+    // (`role@database`), so a role name cannot contain one.
+    if name.contains('@') {
+        return Err(DbError::BadRequest(
+            "Role names cannot contain '@'".to_string(),
+        ));
+    }
+    if name.starts_with("admin") || name.starts_with("editor") || name.starts_with("viewer") {
+        return Err(DbError::BadRequest(
+            "Cannot create role with reserved name prefix (admin, editor, viewer)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// A permission in the driver's string form: `"read"`, `"write"`, `"admin"`
+/// for every database, or `"read:tenant_a"` for one.
+pub fn parse_permission_string(text: &str) -> Result<Permission, DbError> {
+    let (action, database) = match text.split_once(':') {
+        Some((action, database)) if !database.is_empty() => (action, Some(database.to_string())),
+        Some(_) => {
+            return Err(DbError::BadRequest(format!(
+                "Invalid permission '{}': expected 'action' or 'action:database'",
+                text
+            )))
+        }
+        None => (text, None),
+    };
+    PermissionInput {
+        action: action.to_string(),
+        scope: if database.is_some() {
+            "database"
+        } else {
+            "global"
+        }
+        .to_string(),
+        database,
+    }
+    .to_permission()
+}
+
+fn log_system_write(
+    replication_log: Option<&crate::sync::log::SyncLog>,
+    collection: &str,
+    operation: Operation,
+    key: &str,
+    doc: Option<&serde_json::Value>,
+) {
+    if let Some(log) = replication_log {
+        log.append(LogEntry {
+            sequence: 0,
+            node_id: "".to_string(),
+            database: "_system".to_string(),
+            collection: collection.to_string(),
+            operation,
+            key: key.to_string(),
+            data: doc.and_then(|d| serde_json::to_vec(d).ok()),
+            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            origin_sequence: None,
+        });
+    }
+}
+
+/// Store a new custom role, in the shape permission resolution reads back.
+/// The caller has checked that the principal may do this.
+pub fn store_new_role(
+    storage: &crate::storage::StorageEngine,
+    replication_log: Option<&crate::sync::log::SyncLog>,
+    name: &str,
+    description: Option<String>,
+    permissions: Vec<Permission>,
+) -> Result<Role, DbError> {
+    validate_role_name(name)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let role = Role {
+        name: name.to_string(),
+        description,
+        permissions,
+        is_builtin: false,
+        created_at: now.clone(),
+        updated_at: Some(now),
+    };
+    let db = storage.get_database("_system")?;
+    let collection = db.get_or_create_system_collection(ROLES_COLLECTION)?;
+    if collection.get(name).is_ok() {
+        return Err(DbError::ConflictError(format!(
+            "Role '{}' already exists",
+            name
+        )));
+    }
+    let doc_value = serde_json::to_value(&role)?;
+    collection.insert(doc_value.clone())?;
+    log_system_write(
+        replication_log,
+        ROLES_COLLECTION,
+        Operation::Insert,
+        name,
+        Some(&doc_value),
+    );
+    Ok(role)
+}
+
+/// Assign `role` to `username`, optionally limited to `database`, after the
+/// same checks the HTTP API makes: the role, the user and the database exist,
+/// and the assignment is not a duplicate. Caches that hold the user's roles
+/// are dropped. The caller has checked that the principal may do this.
+pub fn store_role_assignment(
+    storage: &crate::storage::StorageEngine,
+    replication_log: Option<&crate::sync::log::SyncLog>,
+    username: &str,
+    role: &str,
+    database: Option<String>,
+    assigned_by: &str,
+) -> Result<UserRole, DbError> {
+    // A limited assignment grants the role's actions on that one database
+    // (see `AuthorizationService::resolve_scoped_permissions`). The database has
+    // to exist, so a typo cannot silently grant nothing.
+    if let Some(ref name) = database {
+        storage
+            .get_database(name)
+            .map_err(|_| DbError::BadRequest(format!("Database '{}' does not exist", name)))?;
+    }
+    let db = storage.get_database("_system")?;
+    let is_builtin = Role::builtin_roles().iter().any(|r| r.name == role);
+    let stored = db
+        .system_collection(ROLES_COLLECTION)
+        .is_ok_and(|c| c.get(role).is_ok());
+    if !is_builtin && !stored {
+        return Err(DbError::RoleNotFound(role.to_string()));
+    }
+    if db.system_collection(ADMIN_COLL)?.get(username).is_err() {
+        return Err(DbError::DocumentNotFound(format!(
+            "User '{}' not found",
+            username
+        )));
+    }
+    let user_roles_coll = db.get_or_create_system_collection(USER_ROLES_COLLECTION)?;
+    let duplicate = user_roles_coll.scan(None).into_iter().any(|doc| {
+        serde_json::from_value::<UserRole>(doc.to_value())
+            .is_ok_and(|ur| ur.username == username && ur.role == role && ur.database == database)
+    });
+    if duplicate {
+        return Err(DbError::ConflictError(format!(
+            "Role '{}' already assigned to user '{}'",
+            role, username
+        )));
+    }
+
+    let user_role = UserRole {
+        id: uuid::Uuid::new_v4().to_string(),
+        username: username.to_string(),
+        role: role.to_string(),
+        database,
+        assigned_at: chrono::Utc::now().to_rfc3339(),
+        assigned_by: assigned_by.to_string(),
+    };
+    let doc_value = serde_json::to_value(&user_role)?;
+    user_roles_coll.insert(doc_value.clone())?;
+    log_system_write(
+        replication_log,
+        USER_ROLES_COLLECTION,
+        Operation::Insert,
+        &user_role.id,
+        Some(&doc_value),
+    );
+    crate::server::auth::AuthService::invalidate_user_roles_cache(username);
+    crate::server::auth::invalidate_basic_auth_cache_for_user(username);
+    Ok(user_role)
+}
+
 /// Create a new custom role
 pub async fn create_role(
     State(state): State<AppState>,
@@ -207,68 +380,15 @@ pub async fn create_role(
     // Check admin permission
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
-    // '@' separates a role from the database of a limited assignment
-    // (`role@database`), so a role name cannot contain one.
-    if req.name.contains('@') {
-        return Err(DbError::BadRequest(
-            "Role names cannot contain '@'".to_string(),
-        ));
-    }
-
-    // Validate role name
-    if req.name.starts_with("admin")
-        || req.name.starts_with("editor")
-        || req.name.starts_with("viewer")
-    {
-        return Err(DbError::BadRequest(
-            "Cannot create role with reserved name prefix (admin, editor, viewer)".to_string(),
-        ));
-    }
-
-    // Parse permissions
     let permissions: Result<Vec<Permission>, _> =
         req.permissions.iter().map(|p| p.to_permission()).collect();
-    let permissions = permissions?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-    let role = Role {
-        name: req.name.clone(),
-        description: req.description.clone(),
-        permissions,
-        is_builtin: false,
-        created_at: now.clone(),
-        updated_at: Some(now),
-    };
-
-    let db = state.storage.get_database("_system")?;
-    let collection = db.system_collection(ROLES_COLLECTION)?;
-
-    // Check if role already exists
-    if collection.get(&req.name).is_ok() {
-        return Err(DbError::ConflictError(format!(
-            "Role '{}' already exists",
-            req.name
-        )));
-    }
-
-    let doc_value = serde_json::to_value(&role)?;
-    collection.insert(doc_value.clone())?;
-
-    // Record for replication
-    if let Some(ref log) = state.replication_log {
-        let entry = LogEntry {
-            sequence: 0,
-            node_id: "".to_string(),
-            database: "_system".to_string(),
-            collection: ROLES_COLLECTION.to_string(),
-            operation: Operation::Insert,
-            key: req.name.clone(),
-            data: serde_json::to_vec(&doc_value).ok(),
-            timestamp: chrono::Utc::now().timestamp_millis() as u64,
-            origin_sequence: None,
-        };
-        log.append(entry);
-    }
+    let role = store_new_role(
+        &state.storage,
+        state.replication_log.as_deref(),
+        &req.name,
+        req.description.clone(),
+        permissions?,
+    )?;
 
     // Invalidate permission cache
     state.permission_cache.clear();
@@ -490,92 +610,15 @@ pub async fn assign_role(
     // Check admin permission
     AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
 
-    // A limited assignment grants the role's actions on that one database
-    // (see `AuthorizationService::resolve_scoped_permissions`). The database has
-    // to exist, so a typo cannot silently grant nothing.
-    if let Some(ref database) = req.database {
-        state
-            .storage
-            .get_database(database)
-            .map_err(|_| DbError::BadRequest(format!("Database '{}' does not exist", database)))?;
-    }
-
-    let db = state.storage.get_database("_system")?;
-
-    // Verify role exists
-    let roles_coll = db.system_collection(ROLES_COLLECTION)?;
-    if roles_coll.get(&req.role).is_err() {
-        return Err(DbError::RoleNotFound(req.role.clone()));
-    }
-
-    // Verify user exists
-    let admins_coll = db.system_collection(ADMIN_COLL)?;
-    if admins_coll.get(&username).is_err() {
-        return Err(DbError::DocumentNotFound(format!(
-            "User '{}' not found",
-            username
-        )));
-    }
-
-    // Check if assignment already exists
-    let user_roles_coll = db.system_collection(USER_ROLES_COLLECTION)?;
-    let existing: Vec<UserRole> = user_roles_coll
-        .scan(None)
-        .into_iter()
-        .filter_map(|doc| {
-            let mut data = doc.data.clone();
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert(
-                    "_key".to_string(),
-                    serde_json::Value::String(doc.key.clone()),
-                );
-            }
-            serde_json::from_value::<UserRole>(data).ok()
-        })
-        .filter(|ur| ur.username == username && ur.role == req.role && ur.database == req.database)
-        .collect();
-
-    if !existing.is_empty() {
-        return Err(DbError::ConflictError(format!(
-            "Role '{}' already assigned to user '{}'",
-            req.role, username
-        )));
-    }
-
-    let now = chrono::Utc::now().to_rfc3339();
-    let id = uuid::Uuid::new_v4().to_string();
-    let user_role = UserRole {
-        id: id.clone(),
-        username: username.clone(),
-        role: req.role.clone(),
-        database: req.database.clone(),
-        assigned_at: now,
-        assigned_by: claims.sub.clone(),
-    };
-
-    let doc_value = serde_json::to_value(&user_role)?;
-    user_roles_coll.insert(doc_value.clone())?;
-
-    // Record for replication
-    if let Some(ref log) = state.replication_log {
-        let entry = LogEntry {
-            sequence: 0,
-            node_id: "".to_string(),
-            database: "_system".to_string(),
-            collection: USER_ROLES_COLLECTION.to_string(),
-            operation: Operation::Insert,
-            key: id,
-            data: serde_json::to_vec(&doc_value).ok(),
-            timestamp: chrono::Utc::now().timestamp_millis() as u64,
-            origin_sequence: None,
-        };
-        log.append(entry);
-    }
-
-    // Invalidate cache for this user
+    let user_role = store_role_assignment(
+        &state.storage,
+        state.replication_log.as_deref(),
+        &username,
+        &req.role,
+        req.database.clone(),
+        &claims.sub,
+    )?;
     state.permission_cache.invalidate(&username);
-    crate::server::auth::AuthService::invalidate_user_roles_cache(&username);
-    crate::server::auth::invalidate_basic_auth_cache_for_user(&username);
 
     Ok((
         StatusCode::CREATED,
