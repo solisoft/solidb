@@ -3,20 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= title %></title>
-<% description = "The SoliDB documentation — SDBQL, the HTTP API, Lua scripting, graphs, " +
-    "vectors, time-series and clustering, with runnable examples in every official client." %>
+<% meta = docs_meta(current_page, title) %>
+<% page_title = meta["title"] %>
+<% description = meta["description"] %>
 <% share_image = site_url(public_path("images/og-docs.png")) %>
 <% page_url = site_url(current_path() ?? "/docs") %>
+  <title><%= page_title %></title>
   <meta name="description" content="<%= description %>">
-  <meta name="theme-color" content="#090c0b">
   <link rel="canonical" href="<%= page_url %>">
 
-  <!-- Social share card — regenerate the image with ./tools/og/build.sh -->
-  <meta property="og:type" content="article">
+  <!-- Social share card — regenerate the image with ./tools/og/build.sh.
+       Title and description are per page: docs_meta() in app/helpers/docs_helper.sl. -->
+  <meta property="og:type" content="<%= current_page == "index" ? "website" : "article" %>">
   <meta property="og:site_name" content="SoliDB">
+  <meta property="og:locale" content="en_US">
   <meta property="og:url" content="<%= page_url %>">
-  <meta property="og:title" content="<%= title %>">
+  <meta property="og:title" content="<%= page_title %>">
   <meta property="og:description" content="<%= description %>">
   <meta property="og:image" content="<%= share_image %>">
   <meta property="og:image:type" content="image/png">
@@ -24,17 +26,12 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="The SoliDB documentation — the logo beside a terminal running an SDBQL query and printing its JSON result.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="<%= title %>">
+  <meta name="twitter:title" content="<%= page_title %>">
   <meta name="twitter:description" content="<%= description %>">
+  <meta name="twitter:image:alt" content="The SoliDB documentation — the logo beside a terminal running an SDBQL query and printing its JSON result.">
   <meta name="twitter:image" content="<%= share_image %>">
-
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23f5a623'/><text x='16' y='23' font-family='Space Grotesk,Inter,sans-serif' font-size='20' font-weight='700' fill='%231a1205' text-anchor='middle'>S</text></svg>">
-
+  <%- partial("shared/theme_head", {}) %>
   <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Font Awesome (icons used throughout the ported docs) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -74,6 +71,7 @@
         <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">
           <i class="fab fa-github"></i> GitHub
         </a>
+        <%- partial("shared/theme_toggle", {}) %>
       </div>
     </div>
   </header>
@@ -96,10 +94,10 @@
   </div>
 
   <!-- search modal -->
-  <div id="docs-search-modal" class="hidden" style="position:fixed; inset:0; z-index:200; display:none; align-items:flex-start; justify-content:center; padding-top:14vh; background:rgba(0,0,0,0.6); backdrop-filter:blur(3px);">
-    <div style="width:100%; max-width:600px; background:var(--ink-850); border:1px solid var(--line-strong); border-radius:14px; overflow:hidden; box-shadow:0 40px 90px -30px rgba(0,0,0,0.9);">
+  <div id="docs-search-modal" class="hidden" style="position:fixed; inset:0; z-index:200; display:none; align-items:flex-start; justify-content:center; padding-top:14vh; background:var(--scrim);">
+    <div style="width:100%; max-width:600px; background:var(--ink-850); border:1px solid var(--line-strong); border-radius:4px; overflow:hidden; box-shadow:var(--shadow-pop);">
       <div style="display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line);">
-        <i class="fas fa-search" style="color:var(--amber);"></i>
+        <i class="fas fa-search" style="color:var(--paper-faint);"></i>
         <input type="text" id="docs-search-input" placeholder="Search pages, SDBQL syntax &amp; functions…" autocomplete="off"
                style="flex:1; background:transparent; border:0; outline:none; color:var(--paper); font-size:14px; font-family:var(--font-sans);">
         <kbd style="font-family:var(--font-mono); font-size:10px; padding:2px 6px; border:1px solid var(--line); border-radius:4px; color:var(--paper-faint);">ESC</kbd>

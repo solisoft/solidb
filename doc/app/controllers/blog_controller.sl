@@ -6,12 +6,15 @@
 class BlogController < Controller
   # GET /blog
   def index
+    posts = this.posts()
     render(
       "blog/index",
       {
         "title": "Blog — SoliDB",
-        "description": "Release notes and deep dives from the SoliDB team.",
-        "posts": this.posts(),
+        # Names the newest post, so a shared link to /blog shows what is new.
+        "description": "Release notes and engineering deep dives from the SoliDB team. "
+        + "Latest: #{posts[0]["title"]}",
+        "posts": posts,
         "layout": "blog"
       }
     )
@@ -29,6 +32,9 @@ class BlogController < Controller
         "title": "#{post["title"]} — SoliDB Blog",
         "description": post["summary"],
         "post": post,
+        # The layout's share tags read the post as `article`: in a view, an
+        # unset `post` is not nil but the router's post() function.
+        "article": post,
         "layout": "blog"
       }
     )

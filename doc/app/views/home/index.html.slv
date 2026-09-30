@@ -1,446 +1,334 @@
-<%# SoliDB landing page — "phosphor console" design. All styling lives in
-    app/assets/css/application.css (semantic classes, hand-authored) so this
-    template stays readable. No user content here, so nothing needs escaping. %>
+<%# SoliDB landing page — "receipts, not adjectives". Every figure on this page
+    is copied from a release post and links to it; where a post says a number
+    is one run, a shell-loop wall-clock time, or was never measured, the page
+    says so too. When you add a row, add its source link, or leave the row out.
+    Styling lives in app/assets/css/application.css (LANDING section). No user
+    content here, so nothing needs escaping. %>
 
-<!-- ============================ NAV ============================ -->
 <header class="nav">
   <div class="wrap nav-inner">
-    <a class="brand" href="/" aria-label="SoliDB home">
-      <span class="mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse>
-          <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"></path>
-          <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"></path>
-        </svg>
-      </span>
-      SoliDB
-    </a>
+    <a class="brand" href="/" aria-label="SoliDB home">SoliDB <%- partial("shared/version_pill", {}) %></a>
 
     <nav class="nav-links" aria-label="Primary">
-      <a href="#models">Data models</a>
-      <a href="#features">Features</a>
-      <a href="#query">Query language</a>
-      <a href="#clients">Clients</a>
+      <a href="#measurements">Measurements</a>
+      <a href="#limits">Limits</a>
       <a href="/docs">Docs</a>
       <a href="/blog">Blog</a>
+      <a href="/docs/changelog">Changelog</a>
     </nav>
 
     <div class="nav-right">
-      <%- partial("shared/version_pill", {}) %>
-      <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.66-.22.66-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10 10 0 0 0 22 12c0-5.52-4.48-10-10-10z"></path></svg>
-        GitHub
-      </a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">GitHub</a>
+      <%- partial("shared/theme_toggle", {}) %>
     </div>
   </div>
 </header>
+
+<main>
 
 <!-- ============================ HERO ============================ -->
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow">Multi-model database · Written in Rust</span>
-
-      <h1 class="h1">
-        Documents, graphs, vectors&nbsp;&amp; time-series.
-        <span class="accent">One engine.</span>
-      </h1>
-
-      <p class="lede">
-        SoliDB stores every shape your data takes and answers all of them with a single
-        query language. Add live subscriptions, hybrid vector search, replication and
-        sharding — from one self-contained binary.
+      <h1>SoliDB is a multi-model database in a single Rust binary.</h1>
+      <p class="hero-lede">
+        Documents, graphs, vectors, time-series, geo and blobs share one RocksDB
+        store and one query language, SDBQL. The figures on this page were measured
+        while building it. Each one names the release it shipped in and links to the
+        post that shows how it was taken.
       </p>
-
       <div class="hero-cta">
-        <a class="btn btn-primary" href="#start">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
-          Get started
-        </a>
-        <a class="btn btn-ghost" href="https://github.com/solisoft/solidb">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.1 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.3l6.1-.7z"></path></svg>
-          Star on GitHub
-        </a>
+        <a class="btn btn-primary" href="/docs/getting-started">Read the getting-started guide</a>
+        <a class="btn-link" href="/docs/changelog">What changed in the latest release</a>
       </div>
-
-      <div class="hero-meta">
-        <span><i class="dot"></i> RocksDB persistence</span>
-        <span><i class="dot"></i> ACID transactions</span>
-        <span><i class="dot"></i> O'Saasy License</span>
-      </div>
+      <p class="hero-meta">O'Saasy License · Rust and RocksDB · HTTP, WebSocket and a MessagePack driver</p>
     </div>
 
-    <!-- signature: SDBQL query console -->
-    <div>
-      <div class="console" role="img" aria-label="An SDBQL query and its JSON result">
-        <div class="console-bar">
-          <span class="tl" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="title">solidb · shell</span>
-          <span class="lang">SDBQL</span>
-        </div>
-        <div class="console-body">
-          <pre><div class="reveal d1"><span class="prompt">sdb❯ </span><span class="tok-kw">FOR</span> u <span class="tok-kw">IN</span> users</div><div class="reveal d2">       <span class="tok-kw">FILTER</span> u.plan <span class="tok-punc">==</span> <span class="tok-str">"pro"</span> <span class="tok-kw">AND</span> u.active</div><div class="reveal d3">       <span class="tok-kw">SORT</span> u.created <span class="tok-kw">DESC</span></div><div class="reveal d4">       <span class="tok-kw">LIMIT</span> <span class="tok-num">3</span></div><div class="reveal d5">       <span class="tok-kw">RETURN</span> <span class="tok-punc">{</span> name: u.name, seats: u.seats <span class="tok-punc">}</span><span class="cursor" aria-hidden="true"></span></div></pre>
-        </div>
-        <div class="console-result reveal d7">
-          <div class="rlabel"><span class="ok">OK</span> 3 rows</div>
-          <pre>[
-  { <span class="tok-punc">"name":</span> <span class="tok-str">"Aria Chen"</span>,   <span class="tok-punc">"seats":</span> <span class="tok-num">24</span> },
-  { <span class="tok-punc">"name":</span> <span class="tok-str">"Devon Okoro"</span>, <span class="tok-punc">"seats":</span> <span class="tok-num">12</span> },
-  { <span class="tok-punc">"name":</span> <span class="tok-str">"Mira Solano"</span>,  <span class="tok-punc">"seats":</span>  <span class="tok-num">8</span> }
-]</pre>
-        </div>
-      </div>
-      <p class="hero-cap">One engine answers documents, graphs, vectors and time-series.</p>
-    </div>
+    <figure class="capture">
+      <div class="capture-title">A transaction that should fail, failing.</div>
+      <pre><span class="dim"># users has a unique index on email</span>
+POST …/transaction/$TX/query
+  INSERT {_key:"u1", email:"a@x.io"} INTO users   <span class="dim">→ staged</span>
+POST …/transaction/$TX/query
+  INSERT {_key:"u2", email:"a@x.io"} INTO users   <span class="dim">→ staged</span>
+POST …/transaction/$TX/commit
+<span class="hit">{"code":400,"type":"InvalidDocument",
+ "error":"Unique constraint violated:
+   'uniq_email:046140782e696f00' is claimed
+   by both 'u1' and 'u2' in this transaction"}</span>
+
+FOR u IN users RETURN u._key   <span class="dim">→ "result":[]</span></pre>
+      <figcaption>
+        Captured from a 2.1.0 build on a throwaway server. Before 2.1.0 both inserts
+        passed and both committed. The commit now fails as a whole and writes nothing.
+        Source: <a href="/blog/solidb-2-1-transactions-conflicts-roles#unique">/blog/solidb-2-1-transactions-conflicts-roles</a>
+      </figcaption>
+    </figure>
   </div>
 </section>
 
-<!-- ======================= MULTI-MODEL BAND ======================= -->
-<section class="section" id="models">
+<!-- ======================== MEASUREMENTS ======================== -->
+<section class="sec" id="measurements">
   <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">Seven models, one store</span>
-      <h2 class="section-title">Stop bolting a new database onto every feature.</h2>
-      <p class="section-sub">
-        A document store, a graph engine, a vector index and a time-series
-        layer usually mean four systems to run and keep in sync. SoliDB puts
-        them behind one storage engine and one query language.
+    <div class="sec-head">
+      <h2>Measured, with the method attached.</h2>
+      <p>
+        Every row is copied from a release post. Where the post says a figure is a
+        single run, a wall-clock time from a shell loop, or was not measured at all,
+        this table says so too. The two bars in a row share one scale.
       </p>
     </div>
 
-    <div class="models">
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v4h4"></path><path d="M9 12h6M9 16h6"></path></svg></span>
-        <h4>Document</h4>
-        <p>Schemaless JSON with secondary indexes.</p>
+    <div class="ledger-cols" aria-hidden="true">
+      <span>Operation</span><span>Before → after</span><span>Release</span><span>Measured in</span>
+    </div>
+    <div class="ledger">
+      <div class="ledger-row">
+        <div class="ledger-op">
+          <h3>Create 10 collections</h3>
+          <p>On a copy of a 1,144-collection instance, 7.4 GB. Each create used to rewrite and fsync RocksDB's whole OPTIONS file.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="ver">1.3</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,952 ms</span></div>
+          <div class="bar-row after"><span class="ver">2.0</span><span class="bar-track"><span class="bar-fill" style="width:2.7%"></span></span><span class="val">53 ms</span></div>
+        </div>
+        <div class="ledger-meta">
+          <span class="ledger-rel"><span class="cell-label">Release </span>2.0.0</span>
+          <a class="source" href="/blog/solidb-2-0-shared-keyspace">/blog/solidb-2-0-shared-keyspace</a>
+        </div>
       </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"></circle><circle cx="18" cy="7" r="2.4"></circle><circle cx="12" cy="18" r="2.4"></circle><path d="M8 7.2 15.6 8M7 8l4 8M17 9l-4.5 7.2"></path></svg></span>
-        <h4>Graph</h4>
-        <p>Traversals &amp; shortest-path over edges.</p>
+
+      <div class="ledger-row">
+        <div class="ledger-op">
+          <h3>10 inserts that auto-create their collection</h3>
+          <p>Same instance. Wall-clock HTTP calls from a shell loop: compare the rows, do not quote them as latency.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="ver">1.3</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,918 ms</span></div>
+          <div class="bar-row after"><span class="ver">2.0</span><span class="bar-track"><span class="bar-fill" style="width:2.9%"></span></span><span class="val">56 ms</span></div>
+        </div>
+        <div class="ledger-meta">
+          <span class="ledger-rel"><span class="cell-label">Release </span>2.0.0</span>
+          <a class="source" href="/blog/solidb-2-0-shared-keyspace">/blog/solidb-2-0-shared-keyspace</a>
+        </div>
       </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.4"></circle><path d="M12 3v3.5M12 17.5V21M3 12h3.5M17.5 12H21M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"></path></svg></span>
-        <h4>Vector</h4>
-        <p>Nearest-neighbor similarity for embeddings.</p>
+
+      <div class="ledger-row">
+        <div class="ledger-op">
+          <h3>Peak memory, 4,000-row UPSERT</h3>
+          <p>Rows sent as one 500 KB bind variable, which was copied into every row's context. Before the fix it hit the 30 s timeout; after, it finished in 70 ms.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="ver">1.2.2</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">15.9 GB</span></div>
+          <div class="bar-row after"><span class="ver">1.2.3</span><span class="bar-track"><span class="bar-fill" style="width:1.1%"></span></span><span class="val">178 MB</span></div>
+        </div>
+        <div class="ledger-meta">
+          <span class="ledger-rel"><span class="cell-label">Release </span>1.2.3</span>
+          <a class="source" href="/blog/a-request-must-never-take-the-server-down">/blog/a-request-must-never-take-the-server-down</a>
+        </div>
       </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-5 3 3 4-7 4 6 3-4"></path><path d="M3 21h18"></path></svg></span>
-        <h4>Time-series</h4>
-        <p>TIME_BUCKET rollups &amp; live windows.</p>
+
+      <div class="ledger-row">
+        <div class="ledger-op">
+          <h3>Peak RSS, 400,000 documents into 200 collections</h3>
+          <p>613-collection checkpoint, prod profile, one run per variant. RocksDB's allocations moved from glibc arenas to jemalloc.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="ver">1.0</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,881 MB</span></div>
+          <div class="bar-row after"><span class="ver">1.1</span><span class="bar-track"><span class="bar-fill" style="width:72%"></span></span><span class="val">1,356 MB</span></div>
+        </div>
+        <div class="ledger-meta">
+          <span class="ledger-rel"><span class="cell-label">Release </span>1.1.0</span>
+          <a class="source" href="/blog/where-the-memory-goes">/blog/where-the-memory-goes</a>
+        </div>
       </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="9" width="4" height="11"></rect><rect x="10" y="4" width="4" height="16"></rect><rect x="16" y="12" width="4" height="8"></rect></svg></span>
-        <h4>Columnar</h4>
-        <p>LZ4-compressed columns for analytics.</p>
-      </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.3 7-11a7 7 0 0 0-14 0c0 4.7 7 11 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg></span>
-        <h4>Geo</h4>
-        <p>Spatial indexes &amp; distance queries.</p>
-      </div>
-      <div class="model">
-        <span class="glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z"></path><path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7"></path><path d="M9 13.5h.01M9 17h.01"></path></svg></span>
-        <h4>Blob</h4>
-        <p>Native binary storage with transforms.</p>
+
+      <div class="ledger-row">
+        <div class="ledger-op">
+          <h3>Server start, about 920 collections</h3>
+          <p>Two full sweeps of every collection ran at each start. After a clean shutdown they are skipped. The new start time was not measured, so none is shown.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="ver">1.1</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">22.5–33.0 s</span></div>
+          <div class="bar-row unmeasured"><span class="ver">1.2</span><span class="bar-track"></span><span class="val">not measured</span></div>
+        </div>
+        <div class="ledger-meta">
+          <span class="ledger-rel"><span class="cell-label">Release </span>1.2.0</span>
+          <a class="source" href="/blog/faster-startup-many-collections">/blog/faster-startup-many-collections</a>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========================= FEATURE GRID ========================= -->
-<section class="section" id="features">
+<!-- ======================== ONE QUERY SHAPE ======================== -->
+<section class="sec" id="query">
   <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">What ships in the box</span>
-      <h2 class="section-title">A production database, not a toy.</h2>
-      <p class="section-sub">
-        Everything you'd otherwise assemble from a cache, a search cluster, a
-        job runner and a message bus — built in and consistent.
+    <div class="sec-head">
+      <h2>The same query shape for every model.</h2>
+      <p>
+        <code class="mono">FOR … RETURN</code> walks a graph, ranks vectors and buckets a
+        time series. The query text is shown without invented output: run it against
+        your own data with the <a class="text-link" href="/docs/sdbql">SDBQL reference</a>.
       </p>
     </div>
 
-    <div class="features">
-      <article class="feature">
-        <span class="fnum">01</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 9l3 3-3 3M13 15h4"></path></svg></span>
-        <h3>SDBQL query language</h3>
-        <p>An ArangoDB-inspired language with FOR / FILTER / SORT, joins, upserts, common table expressions and prepared-statement caching.</p>
-        <div class="ftags"><span class="ftag">JOIN</span><span class="ftag">COLLECT</span><span class="ftag">WITH</span><span class="ftag">60+ functions</span></div>
-      </article>
-
-      <article class="feature">
-        <span class="fnum">02</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M8 12a4 4 0 0 1 4-4M8 12a4 4 0 0 0 4 4"></path><circle cx="12" cy="12" r="1.4" fill="currentColor"></circle></svg></span>
-        <h3>Live queries</h3>
-        <p>Subscribe to a query over a WebSocket and receive changes the moment they land. Build dashboards and collaborative UIs without a polling loop.</p>
-        <div class="ftags"><span class="ftag">WebSocket</span><span class="ftag">subscriptions</span><span class="ftag">real-time</span></div>
-      </article>
-
-      <article class="feature">
-        <span class="fnum">03</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"></path><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"></path></svg></span>
-        <h3>Vector &amp; hybrid search</h3>
-        <p>Store embeddings in a vector index and blend semantic similarity with fulltext relevance in a single HYBRID_SEARCH call.</p>
-        <div class="ftags"><span class="ftag">VECTOR_SIMILARITY</span><span class="ftag">HYBRID_SEARCH</span><span class="ftag">RRF fusion</span></div>
-      </article>
-
-      <article class="feature">
-        <span class="fnum">04</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"></circle><circle cx="5" cy="18" r="2"></circle><circle cx="19" cy="18" r="2"></circle><path d="M12 7v4M12 11 6 16M12 11l6 5"></path></svg></span>
-        <h3>Distributed by design</h3>
-        <p>Peer-to-peer replication, horizontal sharding with auto-rebalancing, and two-phase commit for ACID guarantees across nodes.</p>
-        <div class="ftags"><span class="ftag">replication</span><span class="ftag">sharding</span><span class="ftag">2PC</span><span class="ftag">HLC</span></div>
-      </article>
-
-      <article class="feature">
-        <span class="fnum">05</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 16v4M4.9 6.3l2.1 2.1M17 15.6l2.1 2.1M4.9 17.7l2.1-2.1M17 8.4l2.1-2.1"></path></svg></span>
-        <h3>Scripting &amp; background jobs</h3>
-        <p>Embed Lua 5.4 for custom API endpoints, and run cron schedules and priority job queues with retries — right beside your data.</p>
-        <div class="ftags"><span class="ftag">Lua 5.4</span><span class="ftag">cron</span><span class="ftag">queues</span></div>
-      </article>
-
-      <article class="feature">
-        <span class="fnum">06</span>
-        <span class="ficon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-3 7.4-7 9-4-1.6-7-4.8-7-9V6z"></path><path d="M9.5 12l1.8 1.8L15 10"></path></svg></span>
-        <h3>Observability &amp; security</h3>
-        <p>OpenTelemetry tracing, Prometheus metrics and replication-lag monitoring, with JWT auth, API keys and a built-in web dashboard.</p>
-        <div class="ftags"><span class="ftag">OpenTelemetry</span><span class="ftag">Prometheus</span><span class="ftag">JWT</span></div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ======================= SDBQL SHOWCASE ======================= -->
-<section class="section" id="query">
-  <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">One language, every model</span>
-      <h2 class="section-title">Write the query. SoliDB picks the index.</h2>
-      <p class="section-sub">
-        The same FOR … RETURN shape walks a graph, ranks vectors, or rolls up a
-        time series. Pick a tab.
-      </p>
-    </div>
-
-    <div class="showcase tabset">
-      <input class="tab-input" type="radio" name="sdbql" id="tab-1" checked>
-      <input class="tab-input" type="radio" name="sdbql" id="tab-2">
-      <input class="tab-input" type="radio" name="sdbql" id="tab-3">
-      <input class="tab-input" type="radio" name="sdbql" id="tab-4">
-
-      <div class="tab-labels" role="tablist">
-        <label class="tab-label" for="tab-1">
-          <span class="tk">01 / GRAPH</span>
-          <span class="tt">Graph traversal</span>
-          <span class="td">Walk edges one to N hops out.</span>
-        </label>
-        <label class="tab-label" for="tab-2">
-          <span class="tk">02 / VECTOR</span>
-          <span class="tt">Similarity search</span>
-          <span class="td">Rank documents by embedding distance.</span>
-        </label>
-        <label class="tab-label" for="tab-3">
-          <span class="tk">03 / HYBRID</span>
-          <span class="tt">Hybrid search</span>
-          <span class="td">Fuse vectors with fulltext relevance.</span>
-        </label>
-        <label class="tab-label" for="tab-4">
-          <span class="tk">04 / TIME-SERIES</span>
-          <span class="tt">Time buckets</span>
-          <span class="td">Aggregate events into intervals.</span>
-        </label>
+    <div class="shapes">
+      <div class="shape">
+        <div class="shape-head"><b>Graph</b><span>1 to 2 hops out</span></div>
+        <pre class="well"><b>FOR</b> v, e <b>IN</b> 1..2 <b>OUTBOUND</b> 'people/alice' follows
+  <b>FILTER</b> e.since &gt; 2020
+  <b>RETURN</b> { person: v.name, since: e.since }</pre>
       </div>
-
-      <div class="tab-panels">
-        <div class="tab-panel panel-1">
-          <div class="code-card">
-            <div class="cc-bar"><span class="dotk"></span> traversal.sdbql</div>
-            <pre><span class="tok-com"># People Alice follows, up to two hops out</span>
-<span class="tok-kw">FOR</span> v, e <span class="tok-kw">IN</span> <span class="tok-num">1</span>..<span class="tok-num">2</span> <span class="tok-kw">OUTBOUND</span> <span class="tok-str">'people/alice'</span> follows
-  <span class="tok-kw">FILTER</span> e.since <span class="tok-punc">></span> <span class="tok-num">2020</span>
-  <span class="tok-kw">RETURN</span> <span class="tok-punc">{</span> person: v.name, since: e.since <span class="tok-punc">}</span></pre>
-            <p class="cc-note">Edges are first-class: bind the vertex <code>v</code> and the edge <code>e</code>, filter on either, and let the traversal fan out breadth-first.</p>
-          </div>
-        </div>
-
-        <div class="tab-panel panel-2">
-          <div class="code-card">
-            <div class="cc-bar"><span class="dotk"></span> similarity.sdbql</div>
-            <pre><span class="tok-com"># Closest articles to a query embedding</span>
-<span class="tok-kw">FOR</span> doc <span class="tok-kw">IN</span> articles
-  <span class="tok-kw">LET</span> sim <span class="tok-punc">=</span> <span class="tok-fn">VECTOR_SIMILARITY</span><span class="tok-punc">(</span>doc.embedding, <span class="tok-str">@vec</span><span class="tok-punc">)</span>
-  <span class="tok-kw">FILTER</span> sim <span class="tok-punc">></span> <span class="tok-num">0.8</span>
-  <span class="tok-kw">SORT</span> sim <span class="tok-kw">DESC</span>
-  <span class="tok-kw">LIMIT</span> <span class="tok-num">10</span>
-  <span class="tok-kw">RETURN</span> <span class="tok-punc">{</span> title: doc.title, score: sim <span class="tok-punc">}</span></pre>
-            <p class="cc-note">Bind your query vector as <code>@vec</code>. A dedicated vector index keeps nearest-neighbor lookups fast as the collection grows.</p>
-          </div>
-        </div>
-
-        <div class="tab-panel panel-3">
-          <div class="code-card">
-            <div class="cc-bar"><span class="dotk"></span> hybrid.sdbql</div>
-            <pre><span class="tok-com"># Semantic + keyword, fused into one ranking</span>
-<span class="tok-kw">LET</span> results <span class="tok-punc">=</span> <span class="tok-fn">HYBRID_SEARCH</span><span class="tok-punc">(</span>
-  <span class="tok-str">"articles"</span>, <span class="tok-str">"embedding_idx"</span>, <span class="tok-str">"content"</span>,
-  <span class="tok-str">@vec</span>, <span class="tok-str">"machine learning"</span>,
-  <span class="tok-punc">{</span> vector_weight: <span class="tok-num">0.8</span>, text_weight: <span class="tok-num">0.2</span>, limit: <span class="tok-num">5</span> <span class="tok-punc">}</span>
-<span class="tok-punc">)</span>
-<span class="tok-kw">FOR</span> result <span class="tok-kw">IN</span> results
-  <span class="tok-kw">RETURN</span> result</pre>
-            <p class="cc-note">One call over a vector index and a fulltext field. Tune the blend with weights, or switch to <code>fusion: "rrf"</code> for reciprocal-rank fusion.</p>
-          </div>
-        </div>
-
-        <div class="tab-panel panel-4">
-          <div class="code-card">
-            <div class="cc-bar"><span class="dotk"></span> timeseries.sdbql</div>
-            <pre><span class="tok-com"># Requests per hour, newest last</span>
-<span class="tok-kw">FOR</span> e <span class="tok-kw">IN</span> events
-  <span class="tok-kw">COLLECT</span> bucket <span class="tok-punc">=</span> <span class="tok-fn">TIME_BUCKET</span><span class="tok-punc">(</span>e.ts, <span class="tok-str">'1h'</span><span class="tok-punc">)</span>
-  <span class="tok-kw">AGGREGATE</span> hits <span class="tok-punc">=</span> <span class="tok-fn">COUNT</span><span class="tok-punc">(</span><span class="tok-num">1</span><span class="tok-punc">)</span>
-  <span class="tok-kw">SORT</span> bucket <span class="tok-kw">ASC</span>
-  <span class="tok-kw">RETURN</span> <span class="tok-punc">{</span> bucket, hits <span class="tok-punc">}</span></pre>
-            <p class="cc-note">Group timestamps into fixed intervals — <code>'1s'</code>, <code>'1m'</code>, <code>'1h'</code>, <code>'1d'</code> — and aggregate inline. Promote it to a <code>CREATE STREAM</code> for continuous rollups.</p>
-          </div>
-        </div>
+      <div class="shape">
+        <div class="shape-head"><b>Vector</b><span>bind the query embedding as @vec</span></div>
+        <pre class="well"><b>FOR</b> doc <b>IN</b> articles
+  <b>LET</b> sim = VECTOR_SIMILARITY(doc.embedding, @vec)
+  <b>FILTER</b> sim &gt; 0.8
+  <b>SORT</b> sim <b>DESC</b> <b>LIMIT</b> 10
+  <b>RETURN</b> { title: doc.title, score: sim }</pre>
+      </div>
+      <div class="shape">
+        <div class="shape-head"><b>Hybrid</b><span>vector index + fulltext field, one call</span></div>
+        <pre class="well"><b>FOR</b> r <b>IN</b> HYBRID_SEARCH("articles", "embedding_idx",
+    "content", @vec, "machine learning",
+    { vector_weight: 0.8, text_weight: 0.2, limit: 5 })
+  <b>RETURN</b> r</pre>
+      </div>
+      <div class="shape">
+        <div class="shape-head"><b>Time-series</b><span>requests per hour</span></div>
+        <pre class="well"><b>FOR</b> e <b>IN</b> events
+  <b>COLLECT</b> bucket = TIME_BUCKET(e.ts, '1h')
+  <b>AGGREGATE</b> hits = COUNT(1)
+  <b>SORT</b> bucket <b>ASC</b>
+  <b>RETURN</b> { bucket, hits }</pre>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============================ STATS ============================ -->
-<section class="section">
+<!-- ============================ LIMITS ============================ -->
+<section class="sec sec-band" id="limits">
   <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">By the numbers</span>
-      <h2 class="section-title">Small footprint, wide surface.</h2>
+    <div class="sec-head">
+      <h2>What it will not do for you.</h2>
+      <p>Written down here so you find them before production does. Each one is also in the docs.</p>
     </div>
-    <div class="stats">
-      <div class="stat"><div class="n"><em>7</em></div><div class="l">native data models</div></div>
-      <div class="stat"><div class="n"><em>60</em>+</div><div class="l">SDBQL functions</div></div>
-      <div class="stat"><div class="n"><em>8</em></div><div class="l">official client SDKs</div></div>
-      <div class="stat"><div class="n"><em>1</em></div><div class="l">self-contained binary</div></div>
+
+    <div class="limits">
+      <div class="limit">
+        <h3>A checkpoint is not an off-site backup.</h3>
+        <p><code>POST /_api/backup</code> hard-links SST files on the same volume. It protects against a bad write or a dropped collection, not against losing the disk. On a cluster it covers the local node only. Copy it elsewhere.</p>
+      </div>
+      <div class="limit">
+        <h3>Replication is eventually consistent.</h3>
+        <p>Nodes replicate master to master, and writes queue for a node that is offline. Until the queue drains, two nodes can disagree about the same document.</p>
+      </div>
+      <div class="limit">
+        <h3>Every query has a ceiling.</h3>
+        <p>An HTTP query runs under a 30-second deadline and may materialise at most 5,000,000 intermediate rows (<code>SOLIDB_MAX_INTERMEDIATE_ROWS</code>). A query that needs more fails; the server keeps running.</p>
+      </div>
+      <div class="limit">
+        <h3>No job queue for your application.</h3>
+        <p>SoliDB schedules its own work: trigger dispatch, embedding generation, view refresh. Your background jobs and cron belong in your application framework.</p>
+      </div>
+      <div class="limit">
+        <h3>One unique-index edge case remains.</h3>
+        <p>Deleting the document that holds a unique value and inserting another with the same value, in one transaction, is refused. Do those in two transactions.</p>
+      </div>
+      <div class="limit">
+        <h3>The 2.0 storage migration is one-way.</h3>
+        <p>A 1.x binary cannot open a data directory once its collections have moved. Take a checkpoint first, and have free disk of 1.2 × your largest collection plus 1 GiB.</p>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ============================ CLIENTS ============================ -->
-<section class="section" id="clients">
+<!-- =========================== RELEASES =========================== -->
+<section class="sec" id="releases">
   <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">Talk to it from anywhere</span>
-      <h2 class="section-title">Native clients for the languages you already ship.</h2>
-      <p class="section-sub">
-        A MessagePack binary protocol for high-throughput clients, plus a plain
-        HTTP + JSON API when you just want <code>curl</code>.
-      </p>
+    <div class="sec-head">
+      <h2>Recent releases, and what each one fixed.</h2>
+      <p>Each release has a post that starts from the bug, not the feature. The full list is in the <a class="text-link" href="/docs/changelog">changelog</a>.</p>
     </div>
-    <div class="clients">
-      <span class="client"><i class="cd"></i> Rust</span>
-      <span class="client"><i class="cd"></i> Node.js</span>
-      <span class="client"><i class="cd"></i> JavaScript</span>
-      <span class="client"><i class="cd"></i> Python</span>
-      <span class="client"><i class="cd"></i> Go</span>
-      <span class="client"><i class="cd"></i> PHP</span>
-      <span class="client"><i class="cd"></i> Ruby</span>
-      <span class="client"><i class="cd"></i> Elixir</span>
+
+    <div class="releases">
+      <a class="release" href="/blog/solidb-2-1-transactions-conflicts-roles">
+        <span class="release-ver">2.1.0</span>
+        <span class="release-title">Things it said it did, and did not quite do</span>
+        <span class="release-sum">A driver transaction that committed on the spot, two writes of one unique value that both went through, a custom role that granted nothing.</span>
+      </a>
+      <a class="release" href="/blog/solidb-2-0-shared-keyspace">
+        <span class="release-ver">2.0.0</span>
+        <span class="release-title">One column family for every collection</span>
+        <span class="release-sum">Creating a collection cost 0.2 s on a large instance, because each one rewrote a 6.3 MB OPTIONS file. It now costs a few milliseconds at any size.</span>
+      </a>
+      <a class="release" href="/blog/a-request-must-never-take-the-server-down">
+        <span class="release-ver">1.2.3</span>
+        <span class="release-title">A request must never take the server down</span>
+        <span class="release-sum">An ordinary bulk import copied a 3 MB bind variable into each of 20,200 rows, and the kernel killed the server at about 61 GB.</span>
+      </a>
+      <a class="release" href="/blog/faster-startup-many-collections">
+        <span class="release-ver">1.2.0</span>
+        <span class="release-title">Faster startup with many collections</span>
+        <span class="release-sum">A clean-shutdown marker lets a restart trust persisted counts instead of sweeping every collection twice.</span>
+      </a>
+      <a class="release" href="/blog/where-the-memory-goes">
+        <span class="release-ver">1.1.0</span>
+        <span class="release-title">Where the memory goes</span>
+        <span class="release-sum">A 613-collection instance died at 21.7 GB RSS and nothing could say why. jemalloc now serves RocksDB too, and /metrics reports memory per component.</span>
+      </a>
+      <a class="release" href="/blog/backups-checkpoints-vs-dumps">
+        <span class="release-ver">0.33.0</span>
+        <span class="release-title">Backups: checkpoints versus dumps</span>
+        <span class="release-sum">A physical checkpoint of the whole instance in about the time it takes to flush, next to the portable per-database dump.</span>
+      </a>
     </div>
   </div>
 </section>
 
 <!-- ========================= QUICK START ========================= -->
-<section class="section" id="start">
-  <div class="wrap qs-grid">
+<section class="sec" id="start">
+  <div class="wrap qs">
     <div>
-      <span class="eyebrow">Quick start</span>
-      <h2 class="section-title">Running in one command.</h2>
-      <p class="section-sub">
-        Build from source and start the server — it comes up with the HTTP API
-        and the web dashboard on port 6745. A random admin password is printed
-        to the logs on first boot.
+      <h2>Build it and run it.</h2>
+      <p>
+        RocksDB is compiled from source, so the first build needs a C++ toolchain and
+        takes a while. The server listens on port 6745 and prints a random admin
+        password to its log on first boot.
       </p>
-      <div class="hero-cta">
-        <a class="btn btn-primary" href="/docs">
-          Read the docs
-        </a>
-        <a class="btn btn-ghost" href="https://github.com/solisoft/solidb">
-          View source
-        </a>
-      </div>
+      <p class="small">
+        Client libraries: Rust, Go, Python, JavaScript (Node and browser), PHP, Ruby,
+        Elixir, Laravel Eloquent, and a mobile SDK. Or plain HTTP and <code>curl</code>.
+        <a class="text-link" href="/docs/clients">Clients in the docs</a>.
+      </p>
     </div>
+    <pre class="shell"><span class="dim"># Debian / Ubuntu build dependencies</span>
+$ apt-get install build-essential clang libclang-dev \
+    pkg-config libssl-dev libzstd-dev
 
-    <div class="term" aria-label="Terminal: build and run SoliDB">
-      <div class="tbar"><i></i><i></i><i></i><span>bash</span></div>
-      <pre><span class="c"># clone &amp; install</span>
-<span class="p">$</span> <span class="cmd">git clone https://github.com/solisoft/solidb</span>
-<span class="p">$</span> <span class="cmd">cd solidb &amp;&amp; cargo install --path .</span>
-
-<span class="c"># start the server</span>
-<span class="p">$</span> <span class="cmd">solidb</span>
-<span class="out">  ✓ listening on http://localhost:6745</span>
-<span class="out">  ✓ dashboard ready — admin password in logs</span></pre>
-    </div>
+$ git clone https://github.com/solisoft/solidb
+$ cd solidb &amp;&amp; cargo install --path .
+$ solidb --port 6745 --data-dir ./data</pre>
   </div>
 </section>
 
-<!-- ========================= FINAL CTA ========================= -->
-<section class="finale">
-  <div class="wrap">
-    <span class="eyebrow" style="justify-content:center; display:flex;">Give your data one home</span>
-    <h2>The database that keeps up with your features.</h2>
-    <p>Documents to graphs, embeddings to events — model it once, query it one way, and skip the glue between four systems.</p>
-    <div class="hero-cta">
-      <a class="btn btn-primary" href="#start">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
-        Get started
-      </a>
-      <a class="btn btn-ghost" href="/docs">Browse the docs</a>
-    </div>
-  </div>
-</section>
+</main>
 
 <!-- ============================ FOOTER ============================ -->
 <footer class="foot">
-  <div class="wrap">
-    <div class="foot-top">
-      <div>
-        <a class="brand" href="/" aria-label="SoliDB home">
-          <span class="mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <ellipse cx="12" cy="6" rx="7.5" ry="3"></ellipse>
-              <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6"></path>
-              <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6"></path>
-            </svg>
-          </span>
-          SoliDB
-        </a>
-        <p class="foot-tag">A lightweight, high-performance multi-model database with live query and blob support, written in Rust.</p>
-      </div>
-
-      <div class="foot-cols">
-        <div class="foot-col">
-          <h5>Product</h5>
-          <a href="/docs">Documentation</a>
-          <a href="/blog">Blog</a>
-          <a href="#query">SDBQL</a>
-          <a href="#clients">Clients</a>
-          <a href="#start">Quick start</a>
-        </div>
-        <div class="foot-col">
-          <h5>Project</h5>
-          <a href="https://github.com/solisoft/solidb">GitHub</a>
-          <a href="https://github.com/solisoft/solidb/releases">Releases</a>
-          <a href="https://github.com/solisoft/solidb/blob/main/LICENCE.md">License</a>
-        </div>
-      </div>
+  <div class="wrap foot-row">
+    <div class="foot-brand">
+      <a class="brand" href="/">SoliDB</a>
+      <span>SoliSoft · O'Saasy License</span>
     </div>
-
-    <div class="foot-bottom">
-      <span>© SoliSoft · O'Saasy License</span>
-      <span>Built with Rust &amp; RocksDB</span>
-    </div>
+    <span class="foot-note">Figures on this page last checked against v2.1.0</span>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/docs">Docs</a>
+      <a href="/blog">Blog</a>
+      <a href="/blog/feed.xml">Atom feed</a>
+      <a href="https://github.com/solisoft/solidb">GitHub</a>
+      <a href="https://github.com/solisoft/solidb/releases">Releases</a>
+    </nav>
   </div>
 </footer>

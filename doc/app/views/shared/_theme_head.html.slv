@@ -1,0 +1,27 @@
+<%# Shared <head> lines for every layout: colour scheme, the theme boot script,
+    favicon and fonts. The script runs before first paint so a reader who chose
+    a theme never sees the other one flash. With no saved choice, CSS follows
+    prefers-color-scheme (see the token blocks in app/assets/css/application.css). %>
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
+    <script>
+      (function () {
+        var root = document.documentElement;
+        try {
+          var saved = localStorage.getItem("solidb-theme");
+          if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+        } catch (e) {}
+        window.solidbToggleTheme = function () {
+          var current = root.getAttribute("data-theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          var next = current === "dark" ? "light" : "dark";
+          root.setAttribute("data-theme", next);
+          try { localStorage.setItem("solidb-theme", next); } catch (e) {}
+        };
+      })();
+    </script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='3' fill='%231a1915'/><text x='16' y='24' font-family='Georgia,serif' font-size='22' fill='%23f4f1ea' text-anchor='middle'>S</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400&display=swap" rel="stylesheet">
