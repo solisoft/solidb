@@ -217,7 +217,7 @@ end</code></pre>
         <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
         <div class="bg-gray-950 rounded-2xl p-6 font-mono text-sm border border-white/5 shadow-2xl relative overflow-hidden">
           <div class="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-          <pre class="relative z-10"><code class="language-javascript"><%= [[import React, { useEffect, useState } from 'react';
+          <pre class="relative z-10"><code class="language-javascript"><%= """import React, { useEffect, useState } from 'react';
 import { View, Text, Button } from 'react-native';
 import { SoliDBClient, SoliDBProvider } from '@solidb/react-native';
 
@@ -269,7 +269,7 @@ function TodoApp() {
       {/* Your UI components */}
     </View>
   );
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
 
@@ -277,7 +277,7 @@ function TodoApp() {
       <section id="connection" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Connection Management</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// Configure connection
+          <pre><code class="language-javascript"><%= """// Configure connection
 const client = new SoliDBClient({
   host: 'localhost',
   port: 6745,
@@ -314,7 +314,7 @@ client.on('disconnected', () => {
 
 client.on('error', (error) => {
   console.error('Connection error:', error);
-});]] %></code></pre>
+});""" %></code></pre>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -354,7 +354,7 @@ client.on('error', (error) => {
       <section id="collections" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Collection Operations</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// List collections in a database
+          <pre><code class="language-javascript"><%= """// List collections in a database
 const collections = await client.listCollections();
 // => ['users', 'orders', 'products']
 
@@ -371,7 +371,7 @@ await client.deleteCollection('old_collection');
 
 // Get collection statistics
 const stats = await client.collectionStats('users');
-console.log('Document count:', stats.document_count);]] %></code></pre>
+console.log('Document count:', stats.document_count);""" %></code></pre>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -396,7 +396,7 @@ console.log('Document count:', stats.document_count);]] %></code></pre>
       <section id="documents" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Document Operations (CRUD)</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// SAVE - Create or update a document
+          <pre><code class="language-javascript"><%= """// SAVE - Create or update a document
 const doc = await client.save('users', {
   name: 'Alice',
   email: 'alice@example.com',
@@ -424,7 +424,7 @@ const { docs, total } = await client.list('users', {
   limit: 50,
   offset: 0
 });
-console.log(`Showing ${docs.length} of ${total} documents`);]] %></code></pre>
+console.log(`Showing ${docs.length} of ${total} documents`);""" %></code></pre>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -449,7 +449,7 @@ console.log(`Showing ${docs.length} of ${total} documents`);]] %></code></pre>
       <section id="queries" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">SDBQL Queries</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// Simple query
+          <pre><code class="language-javascript"><%= """// Simple query
 const users = await client.query('FOR u IN users RETURN u');
 
 // Query with bind variables (recommended for security)
@@ -478,7 +478,7 @@ const orders = await client.query(
   `FOR o IN orders
    FOR u IN users FILTER u._key == o.user_id
    RETURN { order: o, user: u.name }`
-);]] %></code></pre>
+);""" %></code></pre>
         </div>
       </section>
 
@@ -486,7 +486,7 @@ const orders = await client.query(
       <section id="sync" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Live Sync & Subscriptions</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// Subscribe to live query updates
+          <pre><code class="language-javascript"><%= """// Subscribe to live query updates
 const subscription = client.sync.subscribe(
   "FOR u IN users FILTER u.status == 'online' RETURN u",
   {
@@ -526,7 +526,7 @@ useEffect(() => {
 await client.sync.pull();
 
 // Push local changes immediately
-await client.sync.push();]] %></code></pre>
+await client.sync.push();""" %></code></pre>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
@@ -565,7 +565,7 @@ await client.sync.push();]] %></code></pre>
           Manage sync state and control synchronization manually. Perfect for showing sync status in your UI.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import { useSync } from '@solidb/react-native';
+          <pre><code class="language-javascript"><%= """import { useSync } from '@solidb/react-native';
 
 function SyncStatus() {
   const { 
@@ -606,7 +606,7 @@ function SyncStatus() {
       )}
     </View>
   );
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
 
@@ -617,7 +617,7 @@ function SyncStatus() {
           Reactive hook for individual documents with automatic updates when the document changes.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import { useDocument } from '@solidb/react-native';
+          <pre><code class="language-javascript"><%= """import { useDocument } from '@solidb/react-native';
 
 function UserProfile({ userId }) {
   const {
@@ -657,7 +657,7 @@ function UserProfile({ userId }) {
       />
     </View>
   );
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
 
@@ -668,7 +668,7 @@ function UserProfile({ userId }) {
           Execute SDBQL queries with reactive updates. Automatically re-fetches when dependencies change.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import { useQuery } from '@solidb/react-native';
+          <pre><code class="language-javascript"><%= """import { useQuery } from '@solidb/react-native';
 
 function UserList({ minAge, status }) {
   const {
@@ -715,7 +715,7 @@ function UserList({ minAge, status }) {
       }
     />
   );
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
 
@@ -726,7 +726,7 @@ function UserList({ minAge, status }) {
           High-level hook for collection operations with built-in pagination and real-time updates.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import { useCollection } from '@solidb/react-native';
+          <pre><code class="language-javascript"><%= """import { useCollection } from '@solidb/react-native';
 
 function TodoList() {
   const {
@@ -792,7 +792,7 @@ function TodoList() {
       />
     </View>
   );
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
     </div>
@@ -815,7 +815,7 @@ function TodoList() {
           SoliDB React Native provides automatic offline-first capabilities using AsyncStorage. All operations work seamlessly offline and sync when connectivity is restored.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[// Enable offline-first mode in configuration
+          <pre><code class="language-javascript"><%= """// Enable offline-first mode in configuration
 const client = new SoliDBClient({
   host: 'api.example.com',
   port: 6745,
@@ -859,7 +859,7 @@ client.on('sync:complete', (result) => {
 
 client.on('sync:error', (error) => {
   console.error('Sync failed:', error);
-});]] %></code></pre>
+});""" %></code></pre>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
           <div class="bg-gray-800/30 border border-white/5 rounded-xl p-4">
@@ -918,7 +918,7 @@ client.on('sync:error', (error) => {
           A fully functional offline-first Todo app using hooks, real-time sync, and optimistic updates.
         </p>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import React, { useState, useCallback } from 'react';
+          <pre><code class="language-javascript"><%= """import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -1172,7 +1172,7 @@ const styles = StyleSheet.create({
   deleteButton: {
     fontSize: 20,
   },
-});]] %></code></pre>
+});""" %></code></pre>
         </div>
       </section>
 
@@ -1180,7 +1180,7 @@ const styles = StyleSheet.create({
       <section id="typescript" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">TypeScript Support</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-typescript"><%= [[import { 
+          <pre><code class="language-typescript"><%= """import { 
   SoliDBClient, 
   SoliDBClientConfig,
   Document,
@@ -1246,7 +1246,7 @@ async function typedOperations() {
   
   const user = await client.get<User>('users', 'user-123');
   console.log(user.email);  // Fully typed
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
 
@@ -1254,7 +1254,7 @@ async function typedOperations() {
       <section id="error-handling" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Error Handling</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-javascript"><%= [[import { SoliDBError } from '@solidb/react-native';
+          <pre><code class="language-javascript"><%= """import { SoliDBError } from '@solidb/react-native';
 
 try {
   await client.connect();
@@ -1301,7 +1301,7 @@ function UserComponent({ userId }) {
   }
 
   return null;
-}]] %></code></pre>
+}""" %></code></pre>
         </div>
       </section>
     </div>
