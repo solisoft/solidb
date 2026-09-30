@@ -70,35 +70,35 @@
 :root {
     color-scheme: light;
 
-    --bg:        #f4f1ea;   /* paper */
-    --surface:   #fbf9f4;   /* cards */
-    --surface-2: #efebe2;   /* hover */
-    --sunken:    #eae5da;   /* code wells, bands */
+    --bg:        #e9e3d6;   /* paper */
+    --surface:   #efeadf;   /* cards */
+    --surface-2: #e1dacb;   /* hover */
+    --sunken:    #ded7c8;   /* code wells, bands */
 
     --text:   #1a1915;      /* ink */
-    --text-2: #47433a;      /* 9.0:1 on paper */
-    --text-3: #6a6456;      /* 5.3:1 on paper */
+    --text-2: #433f36;      /* 8.4:1 on paper */
+    --text-3: #5e5849;      /* 5.4:1 on paper */
 
-    --rule:        #dcd5c6;
-    --rule-strong: #c3baa7;
+    --rule:        #cfc6b3;
+    --rule-strong: #b3a88f;
     --rule-ink:    #1a1915;
 
-    --accent:      #b8360f; /* vermilion, 5.7:1 on paper */
-    --accent-text: #9c2e0c;
+    --accent:      #a02d0a; /* vermilion, 5.8:1 on paper */
+    --accent-text: #922a0a;
     --accent-wash: rgba(184, 54, 15, 0.08);
-    --data:        #1f5fad; /* secondary: strings, results */
-    --bar:         #a39c8c; /* the "before" bar */
+    --data:        #1b5499; /* secondary: strings, results */
+    --bar:         #9a917f; /* the "before" bar */
 
-    --success: #2f6b3a;
+    --success: #29602f;
     --warning: #8a5a00;
     --error:   #b42318;
-    --info:    #1f5fad;
+    --info:    #1b5499;
 
-    --code-kw:  #9c2e0c;
-    --code-str: #2f6b3a;
-    --code-num: #7a4a12;
-    --code-fn:  #1f5fad;
-    --code-com: #7e7667;
+    --code-kw:  #922a0a;
+    --code-str: #29602f;
+    --code-num: #71420d;
+    --code-fn:  #1b5499;
+    --code-com: #5e5849;
 
     --scrim: rgba(26, 25, 21, 0.35);
     --shadow-pop: 0 30px 70px -30px rgba(26, 25, 21, 0.35);
@@ -111,12 +111,12 @@
     --n-200: #2e2a23;
     --n-300: #3d382f;
     --n-400: #4f493e;
-    --n-500: #655f52;
-    --n-600: #7e7667;
-    --n-700: #c3baa7;
-    --n-800: #ddd6c8;
-    --n-900: #ebe6dc;
-    --n-950: #fbf9f4;
+    --n-500: #585245;
+    --n-600: #5e5849;
+    --n-700: #b3a88f;
+    --n-800: #d3cbba;
+    --n-900: #e0d9ca;
+    --n-950: #efeadf;
 }
 
 /* ---------- dark ---------- */

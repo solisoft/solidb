@@ -3,7 +3,7 @@
     a theme never sees the other one flash. With no saved choice, CSS follows
     prefers-color-scheme (see the token blocks in app/assets/css/application.css). %>
     <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#e9e3d6" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
     <script>
       (function () {
