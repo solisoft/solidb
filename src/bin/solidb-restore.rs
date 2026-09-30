@@ -299,6 +299,13 @@ struct Args {
     /// Read the password from this file (one trailing newline is ignored).
     #[arg(long)]
     password_file: Option<String>,
+
+    /// SQL input only: how backslashes in '…' strings are read. `mysql`
+    /// treats them as escapes; `postgres` and `sqlite` keep them literally
+    /// (except in PostgreSQL's E'…' strings). `auto` picks mysql when the
+    /// dump says it is one (a MySQL/MariaDB header, `/*!` or backticks).
+    #[arg(long, default_value = "auto", value_parser = ["auto", "mysql", "postgres", "sqlite"])]
+    sql_dialect: String,
 }
 
 #[tokio::main]
@@ -460,8 +467,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
     } else if format == "sql" {
-        eprintln!("Restoring from SQL INSERT statements (other statements are skipped)...");
-        let mut splitter = SqlSplitter::default();
+        let mysql = match args.sql_dialect.as_str() {
+            "mysql" => true,
+            "postgres" | "sqlite" => false,
+            _ => looks_like_mysql(reader.fill_buf()?),
+        };
+        eprintln!(
+            "Restoring from SQL INSERT statements (other statements are skipped; {} strings)...",
+            if mysql { "MySQL" } else { "standard" }
+        );
+        let mut splitter = SqlSplitter {
+            mysql,
+            ..SqlSplitter::default()
+        };
         let mut pending: Vec<String> = Vec::new();
         let mut line = String::new();
         let mut at_eof = false;
@@ -474,7 +492,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 splitter.feed(&line, &mut pending);
             }
             for stmt in pending.drain(..) {
-                let insert = match parse_sql_insert(&stmt) {
+                let insert = match parse_sql_insert(&stmt, mysql) {
                     Ok(Some(i)) => i,
                     Ok(None) => continue,
                     Err(e) => {
@@ -1656,8 +1674,21 @@ use colored::*;
 struct SqlSplitter {
     stmt: String,
     quote: Option<char>,
+    /// Backslash escapes the next character in the quote being read.
+    quote_escapes: bool,
     escaped: bool,
     block_comment: bool,
+    /// MySQL reads `\` as an escape in every string; PostgreSQL and SQLite
+    /// only in E'…'.
+    mysql: bool,
+}
+
+/// Is the `'` about to be pushed onto `stmt` the start of a PostgreSQL E'…'
+/// string (an `E` that is not the end of a longer word)?
+fn opens_escape_string(stmt: &str) -> bool {
+    let mut rev = stmt.chars().rev();
+    matches!(rev.next(), Some('E' | 'e'))
+        && !rev.next().is_some_and(|c| c.is_alphanumeric() || c == '_')
 }
 
 impl SqlSplitter {
@@ -1676,7 +1707,7 @@ impl SqlSplitter {
                 self.stmt.push(c);
                 if self.escaped {
                     self.escaped = false;
-                } else if c == '\\' && q != '`' {
+                } else if c == '\\' && self.quote_escapes {
                     self.escaped = true;
                 } else if c == q {
                     self.quote = None;
@@ -1685,6 +1716,8 @@ impl SqlSplitter {
             }
             match c {
                 '\'' | '"' | '`' => {
+                    self.quote_escapes =
+                        c == '\'' && (self.mysql || opens_escape_string(&self.stmt));
                     self.quote = Some(c);
                     self.stmt.push(c);
                 }
@@ -1731,6 +1764,7 @@ struct SqlInsert {
 struct SqlCursor<'a> {
     s: &'a str,
     pos: usize,
+    mysql: bool,
 }
 
 impl<'a> SqlCursor<'a> {
@@ -1820,7 +1854,8 @@ impl<'a> SqlCursor<'a> {
             None
         };
         if let Some(off) = quoted_at {
-            return self.quoted_string(off);
+            let escapes = self.mysql || (off == 1 && matches!(r.as_bytes()[0], b'E' | b'e'));
+            return self.quoted_string(off, escapes);
         }
         let end = r
             .find(|c: char| c == ',' || c == ')' || c.is_whitespace())
@@ -1847,7 +1882,7 @@ impl<'a> SqlCursor<'a> {
         Ok(v)
     }
 
-    fn quoted_string(&mut self, quote_at: usize) -> Result<Value, String> {
+    fn quoted_string(&mut self, quote_at: usize, escapes: bool) -> Result<Value, String> {
         let body_start = self.pos + quote_at + 1;
         let mut out = String::new();
         let mut chars = self.s[body_start..].char_indices().peekable();
@@ -1861,7 +1896,7 @@ impl<'a> SqlCursor<'a> {
                     self.pos = body_start + i + 1;
                     return Ok(Value::String(out));
                 }
-                '\\' => match chars.next() {
+                '\\' if escapes => match chars.next() {
                     Some((_, 'n')) => out.push('\n'),
                     Some((_, 'r')) => out.push('\r'),
                     Some((_, 't')) => out.push('\t'),
@@ -1878,13 +1913,29 @@ impl<'a> SqlCursor<'a> {
     }
 }
 
+/// Does the start of a dump say it came from MySQL/MariaDB? Only MySQL reads
+/// backslashes as escapes in ordinary strings, and reading a PostgreSQL or
+/// SQLite dump that way swallows every statement after a value ending in `\`.
+fn looks_like_mysql(head: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(head);
+    head.contains("MySQL dump")
+        || head.contains("MariaDB dump")
+        || head.contains("/*!")
+        || head.contains("INSERT INTO `")
+}
+
 fn preview(s: &str) -> String {
     s.chars().take(24).collect()
 }
 
-/// Parse one statement; `Ok(None)` if it is not an INSERT.
-fn parse_sql_insert(stmt: &str) -> Result<Option<SqlInsert>, String> {
-    let mut c = SqlCursor { s: stmt, pos: 0 };
+/// Parse one statement; `Ok(None)` if it is not an INSERT. `mysql` selects
+/// MySQL's backslash escapes in every string (see [`SqlSplitter::mysql`]).
+fn parse_sql_insert(stmt: &str, mysql: bool) -> Result<Option<SqlInsert>, String> {
+    let mut c = SqlCursor {
+        s: stmt,
+        pos: 0,
+        mysql,
+    };
     if !c.eat_keyword("insert") {
         return Ok(None);
     }
@@ -1981,6 +2032,7 @@ mod tests {
             user: None,
             password: None,
             password_file: None,
+            sql_dialect: "auto".to_string(),
         }
     }
 
@@ -1991,7 +2043,14 @@ mod tests {
     }
 
     fn sql(text: &str) -> Vec<SqlInsert> {
-        let mut sp = SqlSplitter::default();
+        sql_as(text, true)
+    }
+
+    fn sql_as(text: &str, mysql: bool) -> Vec<SqlInsert> {
+        let mut sp = SqlSplitter {
+            mysql,
+            ..SqlSplitter::default()
+        };
         let mut stmts = Vec::new();
         for line in text.split_inclusive('\n') {
             sp.feed(line, &mut stmts);
@@ -1999,7 +2058,7 @@ mod tests {
         sp.finish(&mut stmts);
         stmts
             .iter()
-            .filter_map(|s| parse_sql_insert(s).expect("parses"))
+            .filter_map(|s| parse_sql_insert(s, mysql).expect("parses"))
             .collect()
     }
 
@@ -2037,13 +2096,50 @@ COMMIT;
     }
 
     #[test]
+    fn postgres_and_sqlite_keep_backslashes_literally() {
+        // A Windows path, and a value ending in a backslash: read as MySQL,
+        // the second one's `\'` would never close the string and every later
+        // statement would be swallowed.
+        let dump = "INSERT INTO t (p) VALUES ('C:\\dir\\');\n\
+                    INSERT INTO t (p) VALUES ('a\\nb');\n\
+                    INSERT INTO t (p) VALUES (E'tab\\there');\n\
+                    INSERT INTO t (p) VALUES ('last');\n";
+        let rows: Vec<Value> = sql_as(dump, false)
+            .into_iter()
+            .map(|i| i.rows[0][0].clone())
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                json!("C:\\dir\\"),
+                json!("a\\nb"),
+                json!("tab\there"),
+                json!("last")
+            ]
+        );
+    }
+
+    #[test]
+    fn mysql_dumps_are_recognised_by_their_header() {
+        assert!(looks_like_mysql(b"-- MySQL dump 10.13  Distrib 8.0\n"));
+        assert!(looks_like_mysql(b"/*!40101 SET NAMES utf8 */;"));
+        assert!(looks_like_mysql(b"INSERT INTO `users` (`id`) VALUES (1);"));
+        assert!(!looks_like_mysql(b"--\n-- PostgreSQL database dump\n--\n"));
+        assert!(!looks_like_mysql(
+            b"PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;"
+        ));
+        assert!(!opens_escape_string("INSERT INTO t (a) VALUES (DATE"));
+        assert!(opens_escape_string("INSERT INTO t (a) VALUES (E"));
+    }
+
+    #[test]
     fn sql_insert_problems_are_reported_not_guessed() {
-        let err = |s: &str| parse_sql_insert(s).unwrap_err();
+        let err = |s: &str| parse_sql_insert(s, true).unwrap_err();
         assert!(err("INSERT INTO t VALUES (1)").contains("no column list"));
         assert!(err("INSERT INTO t (a, b) VALUES (1)").contains("1 values for 2 columns"));
         assert!(err("INSERT INTO t (a) VALUES (now())").contains("unsupported value"));
         assert!(err("INSERT INTO t (a) VALUES ('open").contains("unterminated"));
-        assert!(parse_sql_insert("CREATE TABLE t (a int)")
+        assert!(parse_sql_insert("CREATE TABLE t (a int)", true)
             .unwrap()
             .is_none());
     }
