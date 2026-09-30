@@ -6,7 +6,7 @@
 #
 # Writes public/images/og-cover.png (home) and og-docs.png (documentation).
 # Needs a Chromium/Chrome on PATH and network access on first run — the card
-# pulls Space Grotesk / JetBrains Mono / Inter from Google Fonts, and the
+# pulls Newsreader / IBM Plex Sans / IBM Plex Mono from Google Fonts, and the
 # rendered PNG is what ships, so the fonts are only needed here.
 #
 # Snap-confined Chromium cannot write into /tmp, nor into dot-directories under

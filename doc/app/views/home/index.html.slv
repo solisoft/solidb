@@ -44,26 +44,138 @@
       <p class="hero-meta">O'Saasy License · Rust and RocksDB · HTTP, WebSocket and a MessagePack driver</p>
     </div>
 
-    <figure class="capture">
-      <div class="capture-title">A transaction that should fail, failing.</div>
-      <pre><span class="dim"># users has a unique index on email</span>
+    <%# Slideshow of captured sessions. Every slide is copied from a release
+        post that ran it on a real server; the caption says which, and says
+        "abridged" where lines were cut. Add a slide only with its source.
+        Script at the bottom of this file; without JS the first slide shows. %>
+    <section class="capture slideshow" aria-roledescription="carousel" aria-label="Captured from real servers" data-slideshow>
+      <div class="slide-tabs" role="tablist" aria-label="Features">
+        <button type="button" role="tab" id="st-tx" aria-controls="sl-tx" aria-selected="true">Transactions</button>
+        <button type="button" role="tab" id="st-col" aria-controls="sl-col" aria-selected="false" tabindex="-1">Columnar</button>
+        <button type="button" role="tab" id="st-ts" aria-controls="sl-ts" aria-selected="false" tabindex="-1">Time series</button>
+        <button type="button" role="tab" id="st-roles" aria-controls="sl-roles" aria-selected="false" tabindex="-1">Roles</button>
+        <button type="button" role="tab" id="st-sec" aria-controls="sl-sec" aria-selected="false" tabindex="-1">Security</button>
+        <button type="button" role="tab" id="st-repl" aria-controls="sl-repl" aria-selected="false" tabindex="-1">Replication</button>
+      </div>
+
+      <div class="slides">
+        <figure class="slide is-active" id="sl-tx" role="tabpanel" aria-labelledby="st-tx" aria-roledescription="slide">
+          <div class="capture-title">A transaction that should fail, failing.</div>
+          <pre><span class="dim"># users has a unique index on email</span>
 POST …/transaction/$TX/query
-  INSERT {_key:"u1", email:"a@x.io"} INTO users   <span class="dim">→ staged</span>
+  <span class="tok-kw">INSERT</span> {_key:<span class="tok-str">"u1"</span>, email:<span class="tok-str">"a@x.io"</span>} <span class="tok-kw">INTO</span> users   <span class="dim">→ staged</span>
 POST …/transaction/$TX/query
-  INSERT {_key:"u2", email:"a@x.io"} INTO users   <span class="dim">→ staged</span>
+  <span class="tok-kw">INSERT</span> {_key:<span class="tok-str">"u2"</span>, email:<span class="tok-str">"a@x.io"</span>} <span class="tok-kw">INTO</span> users   <span class="dim">→ staged</span>
 POST …/transaction/$TX/commit
 <span class="hit">{"code":400,"type":"InvalidDocument",
  "error":"Unique constraint violated:
    'uniq_email:046140782e696f00' is claimed
    by both 'u1' and 'u2' in this transaction"}</span>
 
-FOR u IN users RETURN u._key   <span class="dim">→ "result":[]</span></pre>
-      <figcaption>
-        Captured from a 2.1.0 build on a throwaway server. Before 2.1.0 both inserts
-        passed and both committed. The commit now fails as a whole and writes nothing.
-        Source: <a href="/blog/solidb-2-1-transactions-conflicts-roles#unique">/blog/solidb-2-1-transactions-conflicts-roles</a>
-      </figcaption>
-    </figure>
+<span class="tok-kw">FOR</span> u <span class="tok-kw">IN</span> users <span class="tok-kw">RETURN</span> u._key   <span class="dim">→ "result":[]</span></pre>
+          <figcaption>
+            Release 2.1.0. Captured on a throwaway server. Before 2.1.0 both inserts
+            committed; now the commit fails as a whole and writes nothing.
+            Source: <a href="/blog/solidb-2-1-transactions-conflicts-roles#unique">/blog/solidb-2-1-transactions-conflicts-roles</a>
+          </figcaption>
+        </figure>
+
+        <figure class="slide" id="sl-col" role="tabpanel" aria-labelledby="st-col" aria-roledescription="slide">
+          <div class="capture-title">Columnar rows joined to documents, in one query.</div>
+          <pre><span class="dim"># metrics is a columnar collection, hosts a document one</span>
+<span class="tok-kw">FOR</span> m <span class="tok-kw">IN</span> metrics
+  <span class="tok-kw">FILTER</span> m.cpu &gt; <span class="tok-num">50</span>
+  <span class="tok-kw">FOR</span> h <span class="tok-kw">IN</span> hosts
+    <span class="tok-kw">FILTER</span> h._key == m.host
+    <span class="tok-kw">RETURN</span> {region: h.region, cpu: m.cpu}
+
+<span class="out">→ [{"cpu": 58.0, "region": "eu-west"},
+   {"cpu": 72.5, "region": "eu-west"},
+   {"cpu": 90.0, "region": "us-east"}]</span></pre>
+          <figcaption>
+            Release 0.33.0. Every result in the post was produced on a throwaway server.
+            Source: <a href="/blog/columnar-collections-in-sdbql#first-class">/blog/columnar-collections-in-sdbql</a>
+          </figcaption>
+        </figure>
+
+        <figure class="slide" id="sl-ts" role="tabpanel" aria-labelledby="st-ts" aria-roledescription="slide">
+          <div class="capture-title">Days with no orders still get a row.</div>
+          <pre><span class="tok-kw">LET</span> per_day = <span class="tok-fn">COUNT_BY</span>((<span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders <span class="tok-kw">RETURN</span> o),
+                       o -&gt; <span class="tok-fn">DATE_TRUNC</span>(o.at, <span class="tok-str">"day"</span>))
+<span class="tok-kw">FOR</span> d <span class="tok-kw">IN</span> <span class="tok-fn">DATE_SERIES</span>(<span class="tok-str">"2024-03-01"</span>, <span class="tok-str">"2024-03-04"</span>, <span class="tok-str">"day"</span>)
+  <span class="tok-kw">RETURN</span> {day: <span class="tok-fn">LEFT</span>(d, <span class="tok-num">10</span>), orders: per_day[d] || <span class="tok-num">0</span>}
+
+<span class="out">→ [{"day": "2024-03-01", "orders": 2},
+   {"day": "2024-03-02", "orders": 0},
+   {"day": "2024-03-03", "orders": 1},
+   {"day": "2024-03-04", "orders": 0}]</span></pre>
+          <figcaption>
+            Release 1.3.0. Produced on a 1.3.0 server.
+            Source: <a href="/blog/sdbql-1-3-new-functions#reports">/blog/sdbql-1-3-new-functions</a>
+          </figcaption>
+        </figure>
+
+        <figure class="slide" id="sl-roles" role="tabpanel" aria-labelledby="st-roles" aria-roledescription="slide">
+          <div class="capture-title">A role that stops at one database.</div>
+          <pre>POST /_api/auth/users/bob/roles
+  {"role":"editor","database":"v"}
+<span class="dim">→ 201</span> {"username":"bob","role":"editor","database":"v", …}
+
+bob reads   v                <span class="dim">→</span> 200
+bob writes  v                <span class="dim">→</span> 200
+bob reads   other            <span class="dim">→</span> <span class="hit">403</span>
+bob writes  other            <span class="dim">→</span> <span class="hit">403</span>
+bob creates a database       <span class="dim">→</span> <span class="hit">403</span></pre>
+          <figcaption>
+            Release 2.1.0. Captured on a throwaway server.
+            Source: <a href="/blog/solidb-2-1-transactions-conflicts-roles#roles">/blog/solidb-2-1-transactions-conflicts-roles</a>
+          </figcaption>
+        </figure>
+
+        <figure class="slide" id="sl-sec" role="tabpanel" aria-labelledby="st-sec" aria-roledescription="slide">
+          <div class="capture-title">Code the server runs cannot be written by name.</div>
+          <pre><span class="dim"># ana holds the editor role</span>
+curl -X POST …/_api/database/blog/document/_scripts \
+  -H "authorization: Bearer $T" \
+  -d '{"name":"pwn","path":"pwn","code":"return 1"}'
+
+<span class="hit">→ HTTP 403
+{"code": 403,
+ "error": "Access denied: '_scripts' is managed by the
+   server and is not writable through this API; use
+   the dedicated admin endpoints",
+ "type": "Forbidden"}</span></pre>
+          <figcaption>
+            Release 1.1.0. Captured on a throwaway server; request abridged.
+            Source: <a href="/blog/secure-by-default#demo">/blog/secure-by-default</a>
+          </figcaption>
+        </figure>
+
+        <figure class="slide" id="sl-repl" role="tabpanel" aria-labelledby="st-repl" aria-roledescription="slide">
+          <div class="capture-title">A second node joins and serves the first one's data.</div>
+          <pre><span class="dim"># n2 log</span>
+Sent join request to 127.0.0.1:6923
+Successfully joined cluster. Received 2 peers.
+Starting full sync: 1 databases, 7 documents
+Full sync complete, final sequence: 5
+
+<span class="dim"># query on n2</span>
+<span class="tok-kw">FOR</span> n <span class="tok-kw">IN</span> notes <span class="tok-kw">RETURN</span> {key: n._key, from: n.from}
+<span class="out">→ [{"from": "n1", "key": "hello"}]</span></pre>
+          <figcaption>
+            Release 0.34.0. Real nodes started on one host; log abridged.
+            Source: <a href="/blog/clustering-across-machines#walkthrough">/blog/clustering-across-machines</a>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="slide-controls">
+        <button type="button" class="slide-btn" data-prev aria-label="Previous example"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></button>
+        <span class="slide-count" aria-live="polite"><span data-index>1</span> / 6</span>
+        <button type="button" class="slide-btn" data-next aria-label="Next example"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg></button>
+        <button type="button" class="slide-btn slide-play" data-toggle aria-label="Pause the slideshow" aria-pressed="false"><svg class="ico-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.5" height="14" rx="1"></rect><rect x="13.5" y="5" width="3.5" height="14" rx="1"></rect></svg><svg class="ico-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg></button>
+      </div>
+    </section>
   </div>
 </section>
 
@@ -176,32 +288,32 @@ FOR u IN users RETURN u._key   <span class="dim">→ "result":[]</span></pre>
     <div class="shapes">
       <div class="shape">
         <div class="shape-head"><b>Graph</b><span>1 to 2 hops out</span></div>
-        <pre class="well"><b>FOR</b> v, e <b>IN</b> 1..2 <b>OUTBOUND</b> 'people/alice' follows
-  <b>FILTER</b> e.since &gt; 2020
-  <b>RETURN</b> { person: v.name, since: e.since }</pre>
+        <pre class="well"><span class="tok-kw">FOR</span> v, e <span class="tok-kw">IN</span> <span class="tok-num">1</span>..<span class="tok-num">2</span> <span class="tok-kw">OUTBOUND</span> <span class="tok-str">'people/alice'</span> follows
+  <span class="tok-kw">FILTER</span> e.since &gt; <span class="tok-num">2020</span>
+  <span class="tok-kw">RETURN</span> { person: v.name, since: e.since }</pre>
       </div>
       <div class="shape">
         <div class="shape-head"><b>Vector</b><span>bind the query embedding as @vec</span></div>
-        <pre class="well"><b>FOR</b> doc <b>IN</b> articles
-  <b>LET</b> sim = VECTOR_SIMILARITY(doc.embedding, @vec)
-  <b>FILTER</b> sim &gt; 0.8
-  <b>SORT</b> sim <b>DESC</b> <b>LIMIT</b> 10
-  <b>RETURN</b> { title: doc.title, score: sim }</pre>
+        <pre class="well"><span class="tok-kw">FOR</span> doc <span class="tok-kw">IN</span> articles
+  <span class="tok-kw">LET</span> sim = <span class="tok-fn">VECTOR_SIMILARITY</span>(doc.embedding, <span class="tok-bind">@vec</span>)
+  <span class="tok-kw">FILTER</span> sim &gt; <span class="tok-num">0.8</span>
+  <span class="tok-kw">SORT</span> sim <span class="tok-kw">DESC</span> <span class="tok-kw">LIMIT</span> <span class="tok-num">10</span>
+  <span class="tok-kw">RETURN</span> { title: doc.title, score: sim }</pre>
       </div>
       <div class="shape">
         <div class="shape-head"><b>Hybrid</b><span>vector index + fulltext field, one call</span></div>
-        <pre class="well"><b>FOR</b> r <b>IN</b> HYBRID_SEARCH("articles", "embedding_idx",
-    "content", @vec, "machine learning",
-    { vector_weight: 0.8, text_weight: 0.2, limit: 5 })
-  <b>RETURN</b> r</pre>
+        <pre class="well"><span class="tok-kw">FOR</span> r <span class="tok-kw">IN</span> <span class="tok-fn">HYBRID_SEARCH</span>(<span class="tok-str">"articles"</span>, <span class="tok-str">"embedding_idx"</span>,
+    <span class="tok-str">"content"</span>, <span class="tok-bind">@vec</span>, <span class="tok-str">"machine learning"</span>,
+    { vector_weight: <span class="tok-num">0.8</span>, text_weight: <span class="tok-num">0.2</span>, limit: <span class="tok-num">5</span> })
+  <span class="tok-kw">RETURN</span> r</pre>
       </div>
       <div class="shape">
         <div class="shape-head"><b>Time-series</b><span>requests per hour</span></div>
-        <pre class="well"><b>FOR</b> e <b>IN</b> events
-  <b>COLLECT</b> bucket = TIME_BUCKET(e.ts, '1h')
-  <b>AGGREGATE</b> hits = COUNT(1)
-  <b>SORT</b> bucket <b>ASC</b>
-  <b>RETURN</b> { bucket, hits }</pre>
+        <pre class="well"><span class="tok-kw">FOR</span> e <span class="tok-kw">IN</span> events
+  <span class="tok-kw">COLLECT</span> bucket = <span class="tok-fn">TIME_BUCKET</span>(e.ts, <span class="tok-str">'1h'</span>)
+  <span class="tok-kw">AGGREGATE</span> hits = <span class="tok-fn">COUNT</span>(<span class="tok-num">1</span>)
+  <span class="tok-kw">SORT</span> bucket <span class="tok-kw">ASC</span>
+  <span class="tok-kw">RETURN</span> { bucket, hits }</pre>
       </div>
     </div>
   </div>
@@ -332,3 +444,71 @@ $ solidb --port 6745 --data-dir ./data</pre>
     </nav>
   </div>
 </footer>
+
+<script>
+  // Hero slideshow: tabs name the features, arrows step through them, and it
+  // advances on its own every 8 s unless the reader prefers reduced motion,
+  // pauses it, or is hovering / focused inside it.
+  (function () {
+    var root = document.querySelector("[data-slideshow]");
+    if (!root) return;
+    var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+    var slides = Array.prototype.slice.call(root.querySelectorAll(".slide"));
+    var indexLabel = root.querySelector("[data-index]");
+    var toggle = root.querySelector("[data-toggle]");
+    var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var current = 0, timer = null, paused = reduceMotion, held = false;
+    var DELAY = 8000;
+
+    function show(i, focusTab) {
+      current = (i + slides.length) % slides.length;
+      slides.forEach(function (slide, n) {
+        var on = n === current;
+        slide.classList.toggle("is-active", on);
+        slide.setAttribute("aria-hidden", on ? "false" : "true");
+        tabs[n].setAttribute("aria-selected", on ? "true" : "false");
+        tabs[n].tabIndex = on ? 0 : -1;
+      });
+      indexLabel.textContent = current + 1;
+      if (focusTab) tabs[current].focus();
+      restart();
+    }
+    function restart() {
+      clearTimeout(timer);
+      root.classList.remove("is-running");
+      if (paused || held) return;
+      void root.offsetWidth; // restart the progress underline
+      root.classList.add("is-running");
+      timer = setTimeout(function () { show(current + 1); }, DELAY);
+    }
+    function setPaused(p) {
+      paused = p;
+      root.classList.toggle("is-paused", p);
+      toggle.setAttribute("aria-pressed", p ? "true" : "false");
+      toggle.setAttribute("aria-label", p ? "Play the slideshow" : "Pause the slideshow");
+      restart();
+    }
+
+    tabs.forEach(function (tab, n) {
+      tab.addEventListener("click", function () { show(n); });
+      tab.addEventListener("keydown", function (e) {
+        if (e.key === "ArrowRight") { e.preventDefault(); show(current + 1, true); }
+        if (e.key === "ArrowLeft")  { e.preventDefault(); show(current - 1, true); }
+        if (e.key === "Home")       { e.preventDefault(); show(0, true); }
+        if (e.key === "End")        { e.preventDefault(); show(slides.length - 1, true); }
+      });
+    });
+    root.querySelector("[data-prev]").addEventListener("click", function () { show(current - 1); });
+    root.querySelector("[data-next]").addEventListener("click", function () { show(current + 1); });
+    toggle.addEventListener("click", function () { setPaused(!paused); });
+    function hold(h) { held = h; restart(); }
+    root.addEventListener("mouseenter", function () { hold(true); });
+    root.addEventListener("mouseleave", function () { hold(false); });
+    root.addEventListener("focusin", function () { hold(true); });
+    root.addEventListener("focusout", function (e) { if (!root.contains(e.relatedTarget)) hold(false); });
+
+    root.classList.add("is-ready");
+    setPaused(paused);
+    show(0);
+  })();
+</script>

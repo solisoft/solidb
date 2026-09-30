@@ -8,7 +8,7 @@
 <% page_url = site_url(current_path() ?? "/blog") %>
 <%# A post shares under its own headline; og:site_name already says SoliDB. %>
 <% share_title = article ? article["title"] : title %>
-<% image_alt = "The SoliDB logo beside a terminal running an SDBQL query and printing its JSON result." %>
+<% image_alt = "SoliDB: documents, graphs, vectors and time-series in one database. Beside it, each data model with the SDBQL that queries it: FOR … FILTER, OUTBOUND, VECTOR_SIMILARITY, FULLTEXT, GEO_DISTANCE and TIME_BUCKET." %>
     <meta name="description" content="<%= description %>">
     <link rel="canonical" href="<%= page_url %>">
     <link rel="alternate" type="application/atom+xml" title="SoliDB Blog" href="/blog/feed.xml">
