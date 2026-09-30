@@ -64,12 +64,17 @@ struct DirtyVecEntry {
 /// Shard configuration per shared keyspace. Read by every query that scans
 /// the collection (twice for a driver query: once to pick inline execution,
 /// once by the scan), written only by [`Collection::set_shard_config`] —
-/// which updates this — and kept by `truncate`. Keyed by keyspace id, which
-/// is never reused, so a recreated collection starts uncached. Legacy
-/// (per-CF) collections are not cached: their id is a reusable name.
-static SHARD_CONFIGS: Lazy<
-    DashMap<KsId, Option<crate::sharding::coordinator::CollectionShardConfig>>,
-> = Lazy::new(DashMap::new);
+/// which updates this — and kept by `truncate`. Keyed by the database *and*
+/// the keyspace id: ids are never reused within one database, but every
+/// database numbers from the start, so two engines in one process (tests,
+/// tools) used to read each other's configs. An entry is served only while its
+/// database is the same live instance, since a freed address can be reused.
+/// Legacy (per-CF) collections are not cached: their id is a reusable name.
+type ShardConfigEntry = (
+    Weak<DB>,
+    Option<crate::sharding::coordinator::CollectionShardConfig>,
+);
+static SHARD_CONFIGS: Lazy<DashMap<(usize, KsId), ShardConfigEntry>> = Lazy::new(DashMap::new);
 
 static DIRTY_VECTOR_INDEXES: Lazy<DashMap<(usize, crate::storage::keyspace::KsId), DirtyVecEntry>> =
     Lazy::new(DashMap::new);
@@ -462,7 +467,10 @@ impl Collection {
             .put_ks(&cf, SHARD_CONFIG_KEY.as_bytes(), &config_bytes)
             .map_err(|e| DbError::InternalError(format!("Failed to store shard config: {}", e)))?;
         if matches!(self.ks.id(), KsId::Shared(_)) {
-            SHARD_CONFIGS.insert(self.ks.id().clone(), Some(config.clone()));
+            SHARD_CONFIGS.insert(
+                self.shard_config_key(),
+                (Arc::downgrade(&self.db), Some(config.clone())),
+            );
         }
 
         tracing::info!(
@@ -478,8 +486,11 @@ impl Collection {
     pub fn get_shard_config(&self) -> Option<crate::sharding::coordinator::CollectionShardConfig> {
         let cached = matches!(self.ks.id(), KsId::Shared(_));
         if cached {
-            if let Some(config) = SHARD_CONFIGS.get(self.ks.id()) {
-                return config.clone();
+            if let Some(entry) = SHARD_CONFIGS.get(&self.shard_config_key()) {
+                let (db, config) = entry.value();
+                if db.upgrade().is_some_and(|db| Arc::ptr_eq(&db, &self.db)) {
+                    return config.clone();
+                }
             }
         }
         let cf = self.ks.handle(&self.db)?;
@@ -490,9 +501,16 @@ impl Collection {
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok());
         if cached {
-            SHARD_CONFIGS.insert(self.ks.id().clone(), config.clone());
+            SHARD_CONFIGS.insert(
+                self.shard_config_key(),
+                (Arc::downgrade(&self.db), config.clone()),
+            );
         }
         config
+    }
+
+    fn shard_config_key(&self) -> (usize, KsId) {
+        (Arc::as_ptr(&self.db) as usize, self.ks.id().clone())
     }
 
     /// Save shard table to storage (persisting assignments)

@@ -266,3 +266,111 @@ async fn replicas_are_sent_the_stored_document_not_the_patch() {
     );
     assert_eq!(entries[1]["_key"], "k");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn update_and_replace_find_documents_sharded_by_another_field() {
+    let tmp = TempDir::new().unwrap();
+    let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("d".to_string()).unwrap();
+    let db = engine.get_database("d").unwrap();
+    db.create_collection("c".to_string(), None).unwrap();
+    let config = CollectionShardConfig {
+        num_shards: 4,
+        shard_key: "tenant".to_string(),
+        replication_factor: 1,
+    };
+    db.get_collection("c")
+        .unwrap()
+        .set_shard_config(&config)
+        .unwrap();
+    let coord = Arc::new(ShardCoordinator::new(engine.clone(), None, None));
+    coord.init_collection("d", "c", &config).unwrap();
+    coord.create_shards("d", "c").await.unwrap();
+
+    // Enough documents that some key hash and tenant hash disagree.
+    let keys: Vec<String> = (0..12).map(|i| format!("k{i}")).collect();
+    let mut misrouted_by_key = 0;
+    for (i, key) in keys.iter().enumerate() {
+        let tenant = format!("t{}", i % 5);
+        if coord.route(key, 4) != coord.route(&tenant, 4) {
+            misrouted_by_key += 1;
+        }
+        coord
+            .insert(
+                "d",
+                "c",
+                &config,
+                json!({"_key": key, "tenant": tenant, "n": i}),
+            )
+            .await
+            .unwrap();
+    }
+    assert!(misrouted_by_key > 0, "fixture does not exercise the bug");
+
+    for key in &keys {
+        let updated = coord
+            .update("d", "c", &config, key, json!({"n": 100}))
+            .await;
+        assert!(updated.is_ok(), "update {} failed: {:?}", key, updated);
+        let replaced = coord
+            .replace("d", "c", &config, key, json!({"only": true}))
+            .await;
+        assert!(replaced.is_ok(), "replace {} failed: {:?}", key, replaced);
+        let stored = coord.get("d", "c", key).await.unwrap();
+        assert_eq!(stored["only"], true);
+        assert!(
+            stored.get("n").is_none(),
+            "replaced, not merged: {}",
+            stored
+        );
+        assert!(
+            stored.get("tenant").is_some(),
+            "the shard key is kept: {}",
+            stored
+        );
+    }
+
+    // Changing the shard key would strand the document on the wrong shard.
+    let moved = coord
+        .update("d", "c", &config, "k1", json!({"tenant": "elsewhere"}))
+        .await;
+    assert!(
+        matches!(moved, Err(solidb::DbError::BadRequest(_))),
+        "{:?}",
+        moved
+    );
+}
+
+#[test]
+fn two_engines_do_not_share_shard_configs() {
+    let make = |shards: u16| {
+        let tmp = TempDir::new().unwrap();
+        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        db.get_collection("c")
+            .unwrap()
+            .set_shard_config(&CollectionShardConfig {
+                num_shards: shards,
+                shard_key: "_key".to_string(),
+                replication_factor: 1,
+            })
+            .unwrap();
+        (tmp, engine)
+    };
+    // Same database and collection ids in both, different configs.
+    let (_t1, a) = make(3);
+    let (_t2, b) = make(7);
+    let shards = |e: &StorageEngine| {
+        e.get_database("d")
+            .unwrap()
+            .get_collection("c")
+            .unwrap()
+            .get_shard_config()
+            .unwrap()
+            .num_shards
+    };
+    assert_eq!(shards(&a), 3);
+    assert_eq!(shards(&b), 7);
+}

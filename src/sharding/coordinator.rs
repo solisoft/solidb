@@ -95,6 +95,31 @@ where
     fut.await;
 }
 
+/// The error a peer's failed document call stands for. A remote 409 or 404
+/// used to become `InternalError`, so `OPTIONS {ignoreErrors: true}` and the
+/// insert-race fallback, which match on the document-level variants, never
+/// recognised a conflict on another node.
+async fn remote_failure(op: &str, res: reqwest::Response) -> crate::error::DbError {
+    use crate::error::DbError;
+    let status = res.status();
+    let body: serde_json::Value = res.json().await.unwrap_or_default();
+    let message = body
+        .get("error")
+        .and_then(|m| m.as_str())
+        .map(|m| format!("remote {}: {}", op, m))
+        .unwrap_or_else(|| format!("Remote {} failed: {}", op, status));
+    match body.get("type").and_then(|t| t.as_str()) {
+        Some("InvalidDocument") => return DbError::InvalidDocument(message),
+        Some("SchemaValidationError") => return DbError::SchemaValidationError(message),
+        _ => {}
+    }
+    match status {
+        reqwest::StatusCode::NOT_FOUND => DbError::DocumentNotFound(message),
+        reqwest::StatusCode::CONFLICT => DbError::ConflictError(message),
+        _ => DbError::InternalError(message),
+    }
+}
+
 impl ShardCoordinator {
     pub const MAX_BLOB_REPLICAS: u16 = 10;
     pub const MIN_BLOB_REPLICAS: u16 = 2;
@@ -2206,10 +2231,7 @@ impl ShardCoordinator {
                         })?;
                         Ok(val)
                     } else {
-                        Err(crate::error::DbError::InternalError(format!(
-                            "Remote insert failed: {}",
-                            res.status()
-                        )))
+                        Err(remote_failure("insert", res).await)
                     }
                 } else {
                     Err(crate::error::DbError::InternalError(format!(
@@ -2808,6 +2830,51 @@ impl ShardCoordinator {
     }
 
     /// Update a document with shard coordination
+    /// The value a write to the existing document `key` must be routed by.
+    ///
+    /// On a collection sharded by `_key` that is the key. On one sharded by
+    /// another field, `insert` placed the document by that field's value, which
+    /// the key alone does not reveal, so the document is looked up (every shard
+    /// is searched). A write that would change the value is refused: moving a
+    /// document to another shard is not supported. `keep_shard_key` puts the
+    /// current value into a body that omits it (a replace), so the replaced
+    /// document stays findable.
+    async fn existing_shard_key_value(
+        &self,
+        database: &str,
+        collection: &str,
+        config: &CollectionShardConfig,
+        key: &str,
+        document: &mut serde_json::Value,
+        keep_shard_key: bool,
+    ) -> Result<String, crate::error::DbError> {
+        if config.shard_key == "_key" {
+            return Ok(key.to_string());
+        }
+        let current = self.get(database, collection, key).await?;
+        let current_value = current.get(&config.shard_key).cloned();
+        match document.get(&config.shard_key) {
+            Some(new_value) if Some(new_value) != current_value.as_ref() => {
+                return Err(crate::error::DbError::BadRequest(format!(
+                    "cannot change '{}', the shard key of '{}': moving a document between shards is not supported",
+                    config.shard_key, collection
+                )));
+            }
+            None if keep_shard_key => {
+                if let (Some(obj), Some(v)) = (document.as_object_mut(), current_value.clone()) {
+                    obj.insert(config.shard_key.clone(), v);
+                }
+            }
+            _ => {}
+        }
+        // Same rule as `insert`: the field's string value, else the key.
+        Ok(current_value
+            .as_ref()
+            .and_then(|v| v.as_str())
+            .unwrap_or(key)
+            .to_string())
+    }
+
     pub async fn update(
         &self,
         database: &str,
@@ -2818,16 +2885,10 @@ impl ShardCoordinator {
     ) -> Result<serde_json::Value, crate::error::DbError> {
         use crate::sharding::router::ShardRouter;
 
-        let shard_key_value = if config.shard_key == "_key" {
-            key.to_string()
-        } else {
-            // For update, we might not have the full doc content to extract shard key?
-            // If shard key is immutable, we can assume it matches current doc?
-            // But we don't have current doc.
-            // If shard key is NOT _key, update(key) is ambiguous if we don't know shard key.
-            // Assume _key for now.
-            key.to_string()
-        };
+        let mut document = document;
+        let shard_key_value = self
+            .existing_shard_key_value(database, collection, config, key, &mut document, false)
+            .await?;
 
         let shard_id = ShardRouter::route(&shard_key_value, config.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
@@ -2908,10 +2969,7 @@ impl ShardCoordinator {
                         })?;
                         Ok(val)
                     } else {
-                        Err(crate::error::DbError::InternalError(format!(
-                            "Remote update failed: {}",
-                            res.status()
-                        )))
+                        Err(remote_failure("update", res).await)
                     }
                 } else {
                     Err(crate::error::DbError::InternalError(
@@ -2938,16 +2996,10 @@ impl ShardCoordinator {
     ) -> Result<serde_json::Value, crate::error::DbError> {
         use crate::sharding::router::ShardRouter;
 
-        let shard_key_value = if config.shard_key == "_key" {
-            key.to_string()
-        } else {
-            // For update, we might not have the full doc content to extract shard key?
-            // If shard key is immutable, we can assume it matches current doc?
-            // But we don't have current doc.
-            // If shard key is NOT _key, update(key) is ambiguous if we don't know shard key.
-            // Assume _key for now.
-            key.to_string()
-        };
+        let mut document = document;
+        let shard_key_value = self
+            .existing_shard_key_value(database, collection, config, key, &mut document, true)
+            .await?;
 
         let shard_id = ShardRouter::route(&shard_key_value, config.num_shards);
         let physical_coll = format!("{}_s{}", collection, shard_id);
@@ -3049,10 +3101,7 @@ impl ShardCoordinator {
                         })?;
                         Ok(val)
                     } else {
-                        Err(crate::error::DbError::InternalError(format!(
-                            "Remote replace failed: {}",
-                            res.status()
-                        )))
+                        Err(remote_failure("replace", res).await)
                     }
                 } else {
                     Err(crate::error::DbError::InternalError(
@@ -3145,10 +3194,7 @@ impl ShardCoordinator {
                     if res.status().is_success() {
                         Ok(())
                     } else {
-                        Err(crate::error::DbError::InternalError(format!(
-                            "Remote delete failed: {}",
-                            res.status()
-                        )))
+                        Err(remote_failure("delete", res).await)
                     }
                 } else {
                     Err(crate::error::DbError::InternalError(
@@ -3665,6 +3711,64 @@ impl ShardCoordinator {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// A peer answering one fixed status and JSON body.
+    async fn peer_reply(status: u16, body: serde_json::Value) -> reqwest::Response {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(move || {
+                let body = body.clone();
+                async move {
+                    (
+                        axum::http::StatusCode::from_u16(status).unwrap(),
+                        axum::Json(body),
+                    )
+                }
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        reqwest::get(format!("http://{}/", addr)).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn remote_failures_keep_their_document_level_meaning() {
+        use crate::error::DbError;
+        let conflict = peer_reply(
+            409,
+            serde_json::json!({"code": 409, "error": "Document with _key 'k' already exists", "type": "ConflictError"}),
+        )
+        .await;
+        let e = remote_failure("insert", conflict).await;
+        assert!(
+            matches!(e, DbError::ConflictError(ref m) if m.contains("already exists")),
+            "{:?}",
+            e
+        );
+
+        let missing = peer_reply(
+            404,
+            serde_json::json!({"code": 404, "error": "nope", "type": "DocumentNotFound"}),
+        )
+        .await;
+        assert!(matches!(
+            remote_failure("update", missing).await,
+            DbError::DocumentNotFound(_)
+        ));
+
+        let invalid = peer_reply(400, serde_json::json!({"code": 400, "error": "Unique constraint violated", "type": "InvalidDocument"})).await;
+        assert!(matches!(
+            remote_failure("insert", invalid).await,
+            DbError::InvalidDocument(_)
+        ));
+
+        let broken = peer_reply(500, serde_json::json!({"oops": true})).await;
+        assert!(matches!(
+            remote_failure("delete", broken).await,
+            DbError::InternalError(_)
+        ));
+    }
 
     fn create_test_coordinator() -> (ShardCoordinator, TempDir) {
         let tmp_dir = TempDir::new().expect("Failed to create temp dir");
