@@ -41,6 +41,24 @@ pub trait BatchSender: Send + Sync {
     }
 }
 
+/// The `_verify` request a migrating node sends to the node that now owns a
+/// shard. The peer's auth middleware treats a request as cluster-internal only
+/// when it carries `X-Shard-Direct` *and* the cluster secret; the secret alone
+/// is read as an ordinary request with no token, and answered 401.
+fn verify_request(
+    client: &reqwest::Client,
+    url: &str,
+    secret: &str,
+    keys: &[String],
+) -> reqwest::RequestBuilder {
+    client
+        .post(url)
+        .header("X-Shard-Direct", "true")
+        .header("X-Cluster-Secret", secret)
+        .json(&serde_json::json!({ "keys": keys }))
+        .timeout(std::time::Duration::from_secs(30))
+}
+
 /// Verify that migrated documents are accessible at their new locations
 #[allow(clippy::too_many_arguments)]
 async fn verify_migrated_documents(
@@ -131,14 +149,17 @@ async fn verify_migrated_documents(
                         ),
                     );
 
-                    match client
-                        .post(&url)
-                        .header("X-Cluster-Secret", &secret)
-                        .json(&serde_json::json!({ "keys": shard_keys }))
-                        .timeout(std::time::Duration::from_secs(30))
+                    match verify_request(&client, &url, &secret, &shard_keys)
                         .send()
                         .await
                     {
+                        Ok(response) if !response.status().is_success() => {
+                            tracing::error!(
+                                "RESHARD: verification on node {} answered {} - NOT marking docs as verified",
+                                node_id,
+                                response.status()
+                            );
+                        }
                         Ok(response) => {
                             if let Ok(body) = response.json::<serde_json::Value>().await {
                                 if let Some(found) = body.get("found").and_then(|f| f.as_array()) {
@@ -1054,6 +1075,20 @@ pub struct MigrationStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_request_is_marked_cluster_internal() {
+        let req = verify_request(
+            &reqwest::Client::new(),
+            "http://peer:6745/_api/database/d/document/c_s1/_verify",
+            "secret",
+            &["k".to_string()],
+        )
+        .build()
+        .unwrap();
+        assert_eq!(req.headers()["X-Shard-Direct"], "true");
+        assert_eq!(req.headers()["X-Cluster-Secret"], "secret");
+    }
     use crate::storage::StorageEngine;
     use std::collections::HashMap;
     use tempfile::tempdir;

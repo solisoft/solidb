@@ -2863,7 +2863,10 @@ impl ShardCoordinator {
                     collection: physical_coll.clone(),
                     operation: Operation::Update,
                     key: key.to_string(),
-                    data: serde_json::to_vec(&document).ok(),
+                    // The stored document, not the request: replicas apply an
+                    // Update as a full replace, so a merge patch would erase
+                    // every field it does not mention.
+                    data: serde_json::to_vec(&merged).ok(),
                     timestamp: chrono::Utc::now().timestamp_millis() as u64,
                     origin_sequence: None,
                 };
@@ -2987,7 +2990,10 @@ impl ShardCoordinator {
                     collection: physical_coll.clone(),
                     operation: Operation::Update,
                     key: key.to_string(),
-                    data: serde_json::to_vec(&document).ok(),
+                    // The stored document, not the request: replicas apply an
+                    // Update as a full replace, so a merge patch would erase
+                    // every field it does not mention.
+                    data: serde_json::to_vec(&merged).ok(),
                     timestamp: chrono::Utc::now().timestamp_millis() as u64,
                     origin_sequence: None,
                 };

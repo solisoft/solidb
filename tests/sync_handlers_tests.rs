@@ -1065,3 +1065,52 @@ async fn conflict_bookkeeping_is_not_reachable_by_name() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_delta_push_reaches_the_log_with_the_patched_document() {
+    let (_tmp, app, token) = create_app();
+    let a = session_for(&app, &token, "dev-A").await;
+    push(
+        &app,
+        &token,
+        &a,
+        change_with("d1", json!({"name": "x", "n": 1}), empty_version_vector()),
+    )
+    .await;
+
+    let mut delta = change_with("d1", Value::Null, empty_version_vector());
+    delta["is_delta"] = json!(true);
+    delta["delta_patch"] = json!([{"op": "replace", "path": "/n", "value": 2}]);
+    let r = push(&app, &token, &a, delta).await;
+    assert_eq!(r["accepted"], 1, "{}", r);
+
+    // A reader of the log (a peer, or another device) must see the patched
+    // document. The entry used to carry the client's `document_data`, which a
+    // delta leaves empty, and peers drop an update with no data.
+    let reader = register(
+        &app,
+        &token,
+        json!({"device_id": "dev-reader", "api_key": "k", "subscriptions": ["items"]}),
+    )
+    .await;
+    let pulled = body_json(
+        app.clone()
+            .oneshot(json_post(
+                "/_api/sync/pull",
+                &token,
+                json!({"session_id": reader["session_id"], "client_vector": empty_version_vector()}),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let last = pulled["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rfind(|c| c["document_key"] == "d1")
+        .cloned()
+        .expect("the delta is in the log");
+    assert_eq!(last["document_data"]["n"], 2, "{}", last);
+    assert_eq!(last["document_data"]["name"], "x", "{}", last);
+}

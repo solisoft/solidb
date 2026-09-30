@@ -137,12 +137,25 @@ impl Trigger {
             && query.join_clauses.is_empty()
             && query.filter_clauses.is_empty()
             && query.body_clauses.is_empty();
-        match query.return_clause {
-            Some(r) if is_bare => Ok(r.expression),
-            _ => Err(DbError::BadRequest(
-                "trigger filter must be a single SDBQL expression".to_string(),
-            )),
+        let expr = match query.return_clause {
+            Some(r) if is_bare => r.expression,
+            _ => {
+                return Err(DbError::BadRequest(
+                    "trigger filter must be a single SDBQL expression".to_string(),
+                ))
+            }
+        };
+        // A filter runs on every matching write, outside any request, so it
+        // must not write: a subquery such as `(FOR i IN 1..1 INSERT … INTO
+        // _admins RETURN 1)` would otherwise run on each document change.
+        if crate::sdbql::ast::expression_mutates(&expr) {
+            return Err(DbError::BadRequest(
+                "trigger filter must not write (no INSERT/UPDATE/REMOVE/UPSERT or \
+                 state-changing function)"
+                    .to_string(),
+            ));
         }
+        Ok(expr)
     }
 
     /// Whether the filter (if any) lets this change through.
@@ -163,6 +176,15 @@ impl Trigger {
                 db_name.to_string(),
                 HashMap::new(),
             )
+            // Read-only, never the server: a filter that slipped past
+            // `parse_filter` still could not write or create indexes.
+            .with_principal(crate::sdbql::QueryPrincipal {
+                user: format!("trigger:{}", self.name),
+                roles: Vec::new(),
+                can_read: true,
+                can_write: false,
+                can_admin: false,
+            })
             .with_timeout(Duration::from_secs(1));
             let mut ctx = crate::sdbql::executor::types::Context::default();
             ctx.insert("doc".to_string(), doc.to_value());
@@ -534,6 +556,23 @@ mod tests {
         assert!(!passes(&t, &doc(5)), "a broken filter fails closed");
 
         assert!(Trigger::parse_filter("doc.x == 1").is_ok());
+        // Writing is refused, however deep the subquery sits.
+        for writing in [
+            "LENGTH((FOR i IN 1..1 INSERT {a: 1} INTO _admins RETURN 1)) > 0",
+            "doc.x == 1 AND LENGTH((FOR u IN users REMOVE u IN users RETURN 1)) > 0",
+            "(FOR i IN 1..1 UPSERT {_key: 'k'} INSERT {} UPDATE {} IN c RETURN 1)[0] == 1",
+        ] {
+            assert!(
+                Trigger::parse_filter(writing).is_err(),
+                "accepted: {}",
+                writing
+            );
+        }
+        // A stored filter that writes (saved before this check) does not fire
+        // and writes nothing.
+        t.filter =
+            Some("LENGTH((FOR i IN 1..1 INSERT {_key: 'x'} INTO c RETURN 1)) > 0".to_string());
+        assert!(!passes(&t, &doc(5)));
         assert!(Trigger::parse_filter("1) FOR x IN y RETURN (x").is_err());
     }
 

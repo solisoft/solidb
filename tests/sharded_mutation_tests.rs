@@ -204,3 +204,65 @@ async fn plain_insert_of_an_existing_key_conflicts() {
     run(&f, "FOR i IN 1..4 INSERT {n: i} INTO c").await.unwrap();
     assert_eq!(run(&f, "FOR d IN c RETURN 1").await.unwrap().len(), 10);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn replicas_are_sent_the_stored_document_not_the_patch() {
+    use solidb::sync::log::SyncLog;
+    let tmp = TempDir::new().unwrap();
+    let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("d".to_string()).unwrap();
+    let db = engine.get_database("d").unwrap();
+    db.create_collection("c".to_string(), None).unwrap();
+    let config = CollectionShardConfig {
+        num_shards: 2,
+        shard_key: "_key".to_string(),
+        replication_factor: 1,
+    };
+    db.get_collection("c")
+        .unwrap()
+        .set_shard_config(&config)
+        .unwrap();
+    let log_dir = tmp.path().join("log");
+    let log = Arc::new(SyncLog::new("n1".to_string(), log_dir.to_str().unwrap(), 64).unwrap());
+    let coord = Arc::new(ShardCoordinator::new(
+        engine.clone(),
+        None,
+        Some(log.clone()),
+    ));
+    coord.init_collection("d", "c", &config).unwrap();
+    coord.create_shards("d", "c").await.unwrap();
+
+    coord
+        .insert("d", "c", &config, json!({"_key": "k", "a": 1, "b": 2}))
+        .await
+        .unwrap();
+    coord
+        .update("d", "c", &config, "k", json!({"b": 20}))
+        .await
+        .unwrap();
+    coord
+        .replace("d", "c", &config, "k", json!({"c": 3}))
+        .await
+        .unwrap();
+
+    let entries: Vec<Value> = log
+        .get_entries_after(0, 1000)
+        .into_iter()
+        .filter(|e| e.key == "k" && format!("{:?}", e.operation) == "Update")
+        .map(|e| serde_json::from_slice(e.data.as_deref().unwrap()).unwrap())
+        .collect();
+    assert_eq!(entries.len(), 2, "{:?}", entries);
+    assert_eq!(
+        entries[0]["a"], 1,
+        "the update entry lost a field: {}",
+        entries[0]
+    );
+    assert_eq!(entries[0]["b"], 20);
+    assert_eq!(entries[1]["c"], 3);
+    assert!(
+        entries[1].get("a").is_none(),
+        "a replace keeps no old field: {}",
+        entries[1]
+    );
+    assert_eq!(entries[1]["_key"], "k");
+}

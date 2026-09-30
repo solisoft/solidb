@@ -671,10 +671,20 @@ fn log_sync_change(state: &AppState, change: &SyncChange) -> u64 {
         ChangeOperation::Update => Operation::Update,
         ChangeOperation::Delete => Operation::Delete,
     };
-    let data_bytes = change
-        .document_data
-        .as_ref()
-        .and_then(|d| serde_json::to_vec(d).ok());
+    // The document as stored, not as sent: a delta change carries a patch
+    // and no `document_data`, and peers skip an Insert/Update with no data,
+    // so they would never see it. Reading back also gives peers the server's
+    // system fields.
+    let data_bytes = match change.operation {
+        ChangeOperation::Delete => None,
+        _ => state
+            .storage
+            .get_database(&change.database)
+            .and_then(|db| db.get_collection(&change.collection))
+            .and_then(|c| c.get(&change.document_key))
+            .ok()
+            .and_then(|doc| serde_json::to_vec(&doc.to_value()).ok()),
+    };
     log.append(LogEntry::new_op(
         change.database.clone(),
         change.collection.clone(),
