@@ -21,27 +21,7 @@ python3 -m http.server 8000
 - **O** for overview
 - **S** for speaker notes
 
-## Structure
-
-```
-pitch/
-├── index.html          # Main presentation
-└── slides/
-    ├── 01-cover.md
-    ├── 02-problem.md
-    ├── 03-solution.md
-    ├── 04-product.md
-    ├── 05-traction.md
-    ├── 06-business-model.md
-    ├── 07-market.md
-    ├── 08-competition.md
-    ├── 09-gtm.md
-    ├── 10-team.md
-    ├── 11-use-of-funds.md
-    └── 12-cta.md
-```
-
 ## Customization
 
-Edit the markdown files in `slides/` to update content.
-Colors and styles can be modified in `index.html`'s `<style>` section.
+The whole deck lives in `index.html`: one `<section>` per slide, styles in its `<style>` block.
+`<!-- TODO -->` comments mark claims that still need a cited source before the deck is sent.

@@ -439,16 +439,16 @@
                 <h2>The Modern Stack is Broken</h2>
                 <div class="stats">
                     <div class="stat fragment" data-fragment-index="1">
-                        <div class="stat-value">5-6</div>
-                        <div class="stat-label">Databases per app</div>
+                        <div class="stat-value">5+</div>
+                        <div class="stat-label">Services to run</div>
                     </div>
                     <div class="stat fragment" data-fragment-index="2">
-                        <div class="stat-value">$50K+</div>
-                        <div class="stat-label">Monthly DB costs</div>
+                        <div class="stat-value">5+</div>
+                        <div class="stat-label">Bills to pay</div>
                     </div>
                     <div class="stat fragment" data-fragment-index="3">
-                        <div class="stat-value">40%</div>
-                        <div class="stat-label">Eng. time on integration</div>
+                        <div class="stat-value">5+</div>
+                        <div class="stat-label">Things that page you at night</div>
                     </div>
                 </div>
                 <h3 style="margin-top: 0.6em;">Current reality: MongoDB + Redis + Elasticsearch + Kafka + Celery + ...</h3>
@@ -473,9 +473,6 @@
                         </ul>
                     </div>
                 </div>
-                <blockquote style="margin-top: 0.6em;">
-                    "We spent more time integrating databases than building our product."
-                </blockquote>
             </section>
 
             <!-- ============ SLIDE 4: SOLUTION ============ -->
@@ -518,7 +515,7 @@
             <!-- ============ SLIDE 5: PRODUCT ============ -->
             <section>
                 <h2>Developer-Friendly by Design</h2>
-                <h3>SDBQL &mdash; The query language developers love</h3>
+                <h3>SDBQL &mdash; readable, ArangoDB-inspired queries</h3>
                 <pre><code data-trim data-noescape class="language-sql">
 FOR doc IN users
   FILTER doc.age > 25 AND doc.status == "active"
@@ -549,15 +546,16 @@ FOR doc IN users
                     </div>
                     <div class="feature-card" style="padding: 0.5em 0.7em;">
                         <div class="title" style="font-size: 0.7em;">&#128230; 8 Client SDKs</div>
-                        <div class="desc">Rust, Go, Python, Node, PHP, Ruby, Elixir</div>
+                        <div class="desc">Rust, Go, Python, Node, PHP, Ruby, Elixir, mobile</div>
                     </div>
                 </div>
             </section>
 
             <!-- ============ SLIDE 6: TRACTION ============ -->
             <section>
-                <h2>Production-Proven Performance</h2>
-                <h3>Benchmark &mdash; 16 cores, 27 GiB RAM</h3>
+                <h2>Built, Tested, Fast</h2>
+                <!-- TODO: re-run on v2.1 and cite the script + date; no source for these figures in the repo -->
+                <h3>Internal benchmark &mdash; 16 cores, 27 GiB RAM</h3>
                 <div class="stats" style="margin-top: 0.6em;">
                     <div class="stat">
                         <div class="stat-value">67,599</div>
@@ -576,10 +574,10 @@ FOR doc IN users
                     <div style="text-align: left;">
                         <p style="font-weight: 600; color: #fff; margin-bottom: 0.2em;">Technical Validation</p>
                         <ul>
-                            <li><strong>592 tests</strong> across 54 test files</li>
-                            <li><strong>v0.22.6</strong> stable release</li>
+                            <li><strong>3,000+ automated tests</strong></li>
+                            <li><strong>v2.1</strong> stable release</li>
                             <li><strong>8 official client libraries</strong></li>
-                            <li><strong>5 built-in apps</strong> on the platform</li>
+                            <li><strong>Default database</strong> of the Soli web framework</li>
                         </ul>
                     </div>
                     <div style="text-align: left;">
@@ -616,13 +614,6 @@ FOR doc IN users
                             <td>Rust</td>
                         </tr>
                         <tr>
-                            <td>ACID Transactions</td>
-                            <td><span class="check">&#10003;</span></td>
-                            <td><span class="check">&#10003;</span></td>
-                            <td>Limited</td>
-                            <td><span class="check">&#10003;</span></td>
-                        </tr>
-                        <tr>
                             <td>Native Scripting</td>
                             <td class="win">Lua 5.4</td>
                             <td><span class="cross">&#10007;</span></td>
@@ -632,7 +623,7 @@ FOR doc IN users
                         <tr>
                             <td>Vector Search</td>
                             <td class="win">HNSW</td>
-                            <td>Atlas (paid)</td>
+                            <td>Atlas-first</td>
                             <td>Native</td>
                             <td>Native</td>
                         </tr>
@@ -644,18 +635,11 @@ FOR doc IN users
                             <td>WebSocket</td>
                         </tr>
                         <tr>
-                            <td>Self-hosted</td>
-                            <td class="win">Full-featured</td>
-                            <td>Limited</td>
-                            <td>Full</td>
-                            <td>Full</td>
-                        </tr>
-                        <tr>
                             <td>License</td>
                             <td class="win">O'Saasy</td>
                             <td>SSPL</td>
-                            <td>Apache 2</td>
-                            <td>Apache 2</td>
+                            <td>BSL 1.1</td>
+                            <td>BSL 1.1</td>
                         </tr>
                     </tbody>
                 </table>
@@ -667,23 +651,24 @@ FOR doc IN users
             <!-- ============ SLIDE 8: MARKET ============ -->
             <section>
                 <h2>Market Opportunity</h2>
-                <h3>Total Addressable Market: <strong style="color: var(--accent-bright);">$100B+</strong></h3>
+                <!-- TODO: bottom-up sizing (target customers x price) with cited sources; the old top-down TAM figures had none -->
+                <h3>Four workloads, one database</h3>
                 <div class="stats" style="margin-top: 0.5em; gap: 0.8em;">
                     <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
-                        <div class="stat-value" style="font-size: 1.5em;">$70B</div>
-                        <div class="stat-label">General DB <span class="pill pill-green" style="margin-left:0.3em;">12% CAGR</span></div>
+                        <div class="stat-value" style="font-size: 1.2em;">Documents</div>
+                        <div class="stat-label">MongoDB, Couchbase</div>
                     </div>
                     <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
-                        <div class="stat-value" style="font-size: 1.5em;">$3.5B</div>
-                        <div class="stat-label">Vector DB <span class="pill pill-green" style="margin-left:0.3em;">35% CAGR</span></div>
+                        <div class="stat-value" style="font-size: 1.2em;">Vectors</div>
+                        <div class="stat-label">Pinecone, Weaviate</div>
                     </div>
                     <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
-                        <div class="stat-value" style="font-size: 1.5em;">$7B</div>
-                        <div class="stat-label">Time-Series <span class="pill pill-green" style="margin-left:0.3em;">10% CAGR</span></div>
+                        <div class="stat-value" style="font-size: 1.2em;">Time-series</div>
+                        <div class="stat-label">InfluxDB, Timescale</div>
                     </div>
                     <div class="stat" style="min-width: 130px; padding: 0.6em 1em;">
-                        <div class="stat-value" style="font-size: 1.5em;">$20B</div>
-                        <div class="stat-label">Real-time <span class="pill pill-green" style="margin-left:0.3em;">25% CAGR</span></div>
+                        <div class="stat-value" style="font-size: 1.2em;">Real-time</div>
+                        <div class="stat-label">Firebase, Convex</div>
                     </div>
                 </div>
                 <div class="two-col" style="margin-top: 0.6em; font-size: 0.72em;">
@@ -709,7 +694,7 @@ FOR doc IN users
 
             <!-- ============ SLIDE 9: BUSINESS MODEL ============ -->
             <section>
-                <h2>Business Model: Open-Core</h2>
+                <h2>Business Model: Managed Cloud</h2>
                 <table style="width: 70%;">
                     <thead>
                         <tr>
@@ -764,14 +749,14 @@ FOR doc IN users
                         <div class="timeline-label">Phase 1 &mdash; Now</div>
                         <div class="timeline-goal">Developer Community</div>
                         <div class="timeline-detail">
-                            Open source on GitHub<br>
+                            Source-available on GitHub<br>
                             8 client libraries<br>
                             Hackathons &amp; meetups<br>
                             Content marketing
                         </div>
                     </div>
                     <div class="timeline-item fragment">
-                        <div class="timeline-label">Phase 2 &mdash; Q2 2026</div>
+                        <div class="timeline-label">Phase 2 &mdash; Next 6 months</div>
                         <div class="timeline-goal">Early Adopters</div>
                         <div class="timeline-detail">
                             10 paying customers<br>
@@ -781,7 +766,7 @@ FOR doc IN users
                         </div>
                     </div>
                     <div class="timeline-item fragment">
-                        <div class="timeline-label">Phase 3 &mdash; Q4 2026</div>
+                        <div class="timeline-label">Phase 3 &mdash; 6-18 months</div>
                         <div class="timeline-goal">Scale</div>
                         <div class="timeline-detail">
                             Enterprise sales team<br>
@@ -792,7 +777,7 @@ FOR doc IN users
                     </div>
                 </div>
                 <div style="margin-top: 0.6em;">
-                    <h3>Why Developers Love SoliDB</h3>
+                    <h3>Why SoliDB</h3>
                     <p style="font-size: 0.72em; color: var(--text-muted); max-width: 700px; margin: 0.3em auto 0;">
                         Single binary, zero dependencies &bull; Familiar SDBQL syntax &bull; Built-in dashboard &amp; REPL &bull; No config files needed
                     </p>
@@ -802,21 +787,13 @@ FOR doc IN users
             <!-- ============ SLIDE 11: TEAM ============ -->
             <section>
                 <h2>Team</h2>
-                <p style="font-size: 0.78em; color: var(--text-muted); margin-bottom: 0.5em;">
-                    <span class="pill pill-amber">Founded 2024</span>
-                </p>
+                <!-- TODO: add years of experience and past roles; name advisors only once they have agreed -->
                 <div class="two-col" style="font-size: 0.65em; gap: 1em;">
                     <div style="text-align: left;">
-                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.15em;">Core Team</p>
+                        <p style="font-weight: 600; color: #fff; margin-bottom: 0.15em;">Founder</p>
                         <ul>
-                            <li><strong>solisoft</strong> &mdash; Core maintainer, 15+ years database experience</li>
-                            <li>Growing open source community on GitHub</li>
-                        </ul>
-                        <p style="font-weight: 600; color: #fff; margin-top: 0.4em; margin-bottom: 0.15em;">Advisors</p>
-                        <ul>
-                            <li>Database industry veterans</li>
-                            <li>Distributed systems experts</li>
-                            <li>Former FAANG engineers</li>
+                            <li><strong>Olivier Bonnaure</strong> &mdash; author of SoliDB</li>
+                            <li>Also built the Soli language &amp; web framework, SoliKV and soli-proxy &mdash; one integrated stack</li>
                         </ul>
                     </div>
                     <div style="text-align: left;">
@@ -829,8 +806,8 @@ FOR doc IN users
                         </ul>
                         <p style="font-weight: 600; color: #fff; margin-top: 0.4em; margin-bottom: 0.15em;">We're Looking For</p>
                         <ul>
+                            <li>A go-to-market co-founder</li>
                             <li>Senior Rust engineers who love databases</li>
-                            <li>Industry advisors who believe in the vision</li>
                         </ul>
                     </div>
                 </div>
@@ -900,7 +877,7 @@ FOR doc IN users
                     <span class="check">&#10003;</span> <strong>Database-in-a-Box</strong> &mdash; Replace 5-6 databases with one<br>
                     <span class="check">&#10003;</span> <strong>Rust-powered</strong> &mdash; Zero GC, maximum performance<br>
                     <span class="check">&#10003;</span> <strong>AI-ready</strong> &mdash; Built-in vector search &amp; LLM integration<br>
-                    <span class="check">&#10003;</span> <strong>Open-core</strong> &mdash; Permissive license, community-driven<br>
+                    <span class="check">&#10003;</span> <strong>Source-available</strong> &mdash; Free to self-host (O'Saasy); paid managed cloud<br>
                     <span class="check">&#10003;</span> <strong>$2.5M raise</strong> &mdash; Scaling engineering and cloud
                 </div>
                 <a href="https://solidb.solisoft.net" class="cta-button" style="font-size: 0.8em; padding: 0.6em 2em;">Try SoliDB Today</a>
