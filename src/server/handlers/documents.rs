@@ -805,8 +805,21 @@ pub async fn update_document(
     // (used to forward a sharded REPLACE to the node that owns the shard).
     let replace = params.get("replace").map(|v| v == "true").unwrap_or(false);
 
+    // Conditional update via If-Match (optimistic CAS on _rev).
+    let if_match = headers
+        .get(axum::http::header::IF_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim_matches('"').to_string());
+
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {
+        // A staged operation merges; asking for a replace and getting a merge
+        // would keep the fields the caller meant to drop.
+        if replace {
+            return Err(DbError::BadRequest(
+                "replace=true is not supported inside a transaction".to_string(),
+            ));
+        }
         let tx_manager = state.storage.transaction_manager()?;
         let tx_arc = tx_manager.get(tx_id)?;
         let mut tx = tx_arc
@@ -826,6 +839,19 @@ pub async fn update_document(
             if let Some(ref coordinator) = state.shard_coordinator {
                 // Check for direct shard access
                 if !is_verified_shard_direct(&headers, claims.as_deref()) {
+                    // The coordinator has no compare-and-swap, so an If-Match
+                    // would be dropped and a concurrent write overwritten.
+                    if if_match.is_some() {
+                        return Err(DbError::BadRequest(
+                            "If-Match is not supported on sharded collections".to_string(),
+                        ));
+                    }
+                    if replace {
+                        let doc = coordinator
+                            .replace(&db_name, &coll_name, &shard_config, &key, data)
+                            .await?;
+                        return Ok(update_reply(doc, true));
+                    }
                     let doc = coordinator
                         .update(&db_name, &coll_name, &shard_config, &key, data)
                         .await?;
@@ -838,19 +864,12 @@ pub async fn update_document(
     // Get old document for trigger (before update)
     let old_doc_value = collection.get(&key).ok().map(|d| d.to_value());
 
-    // Conditional update via If-Match (optimistic CAS on _rev).
-    let if_match = headers
-        .get(axum::http::header::IF_MATCH)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim_matches('"').to_string());
-
     // Try update, or insert if upsert=true and document not found
     let (doc, was_upsert) = if replace {
-        collection.get(&key)?;
-        if let Value::Object(ref mut obj) = data {
-            obj.insert("_key".to_string(), Value::String(key.clone()));
-        }
-        (collection.insert_or_replace(data.clone())?, false)
+        (
+            collection.replace_existing(&key, if_match.as_deref(), data.clone())?,
+            false,
+        )
     } else {
         match if_match {
             Some(rev) => (collection.update_with_rev(&key, &rev, data.clone())?, false),

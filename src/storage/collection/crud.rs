@@ -311,6 +311,54 @@ impl Collection {
         })
     }
 
+    /// Replace an existing document wholesale, optionally only if its `_rev`
+    /// is still `expected_rev` (checked and written under the key's lock, so
+    /// it is a real compare-and-swap). `DocumentNotFound` if it does not exist,
+    /// `ConflictError` if the revision moved. Keeps `_created_at`.
+    pub fn replace_existing(
+        &self,
+        key: &str,
+        expected_rev: Option<&str>,
+        mut data: Value,
+    ) -> DbResult<Document> {
+        if self.collection_type.read().as_str() == "timeseries" {
+            return Err(DbError::OperationNotSupported(
+                "Update operations are not allowed on timeseries collections".to_string(),
+            ));
+        }
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("_key".to_string(), Value::String(key.to_string()));
+        }
+        if self.collection_type.read().as_str() == "edge" {
+            self.validate_edge_document(&data)?;
+        }
+        if let Some(validator) = self.get_cached_schema_validator()? {
+            validator.validate(&data).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
+        }
+        let key = take_key(&mut data)?;
+        let mut doc = Document::with_key(&self.name, key.clone(), data);
+
+        self.with_key_locked(&key, || {
+            let old_doc = self.get(&key)?;
+            if let Some(rev) = expected_rev {
+                if old_doc.revision() != rev {
+                    return Err(DbError::ConflictError(format!(
+                        "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
+                        key,
+                        rev,
+                        old_doc.revision()
+                    )));
+                }
+            }
+            doc.created_at = old_doc.created_at;
+            let old_value = old_doc.to_value();
+            let new_value = doc.to_value();
+            self.write_update_locked(&key, old_value, doc, new_value)
+        })
+    }
+
     /// Apply an RFC 6902 patch to the stored document and replace it with the
     /// result, read and written under the key's lock so two concurrent patches
     /// cannot lose one another's changes. The patch sees the document as a
