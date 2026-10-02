@@ -134,7 +134,8 @@
   "name": "my-photo.jpg",
   "type": "image/jpeg",
   "size": 1048576,
-  "chunks": 4,
+  "chunks": 1,
+  "chunk_size": 1048576,
   "created": "2024-03-15T10:00:00Z"
 }</pre>
                   </div>
@@ -257,6 +258,26 @@
                 -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span>
               </div>
             </div>
+
+            <h3 class="text-lg font-semibold text-white mt-8 mb-3">Streaming audio and video</h3>
+            <p class="text-gray-300 mb-4 leading-relaxed">
+              Downloads accept a single HTTP <code>Range</code>, which is what an <code>&lt;audio&gt;</code> or <code>&lt;video&gt;</code> element, iOS Safari and podcast apps send to start playback and to seek. The answer is <code>206 Partial Content</code> with only the requested bytes; a range that starts past the end is a <code>416</code>, and a header SoliDB does not understand is ignored in favour of the whole file. Every download advertises <code>Accept-Ranges: bytes</code>, and <code>HEAD</code> returns the size and type without the body.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg p-4 font-mono text-sm border border-white/5">
+              <span class="text-gray-500"># First kilobyte of an episode</span><br>
+              <div>
+                <span class="text-purple-400">curl</span> -i http://localhost:6745/_api/blob/_system/podcasts/&lt;key&gt; \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Authorization: Bearer $TOKEN"</span> \
+              </div>
+              <div class="pl-4">
+                -H <span class="text-green-400">"Range: bytes=0-1023"</span>
+              </div>
+            </div>
+            <p class="text-sm text-gray-400 mt-4 leading-relaxed">
+              Uploads record their chunk layout in the metadata (<code>chunk_size</code>, or <code>chunk_sizes</code> when the chunks differ in length), so a range starts reading at the chunk that holds its first byte. A blob uploaded before range support has no layout: its chunks are read from the first one, and reading still stops at the end of the range. Sharded blob collections ignore <code>Range</code> and send the whole file.
+            </p>
           </div>
         </div>
       </section>

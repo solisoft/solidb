@@ -324,7 +324,7 @@ pub async fn complete_upload(
     let collection = database.get_collection(&coll_name)?;
 
     // Finalize: move temp chunks to permanent storage
-    collection.finalize_blob_upload(&upload_id, &blob_key, total_chunks)?;
+    let chunk_sizes = collection.finalize_blob_upload(&upload_id, &blob_key, total_chunks)?;
 
     // Build metadata document
     let mut metadata = serde_json::Map::new();
@@ -337,6 +337,7 @@ pub async fn complete_upload(
     }
     metadata.insert("size".to_string(), Value::Number(total_size.into()));
     metadata.insert("chunks".to_string(), Value::Number(total_chunks.into()));
+    super::blob_range::record_chunk_layout(&mut metadata, &chunk_sizes);
     metadata.insert(
         "created".to_string(),
         Value::String(chrono::Utc::now().to_rfc3339()),

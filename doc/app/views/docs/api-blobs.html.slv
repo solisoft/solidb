@@ -45,9 +45,11 @@
                      "type": "image/jpeg",
                      "size": 123456,
                      "chunks": 1,
+                     "chunk_size": 123456,
                      "created": "2023-10-27T10:00:00Z"
                    }
                  </div>
+                 <p class="text-xs text-gray-500 mt-2">The file is stored in 1&nbsp;MiB chunks. <code>chunk_size</code> records their length (all but the last); an upload whose chunks differ in length records a <code>chunk_sizes</code> array instead. Range downloads use it to start at the right chunk.</p>
                </div>
             </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
@@ -55,16 +57,44 @@
                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
                 <code class="text-gray-300">/_api/blob/:db/:collection/:key</code>
               </div>
-              <p class="text-sm text-gray-400">Download a blob.</p>
+              <p class="text-sm text-gray-400">Download a blob. <code class="text-gray-300">Content-Type</code> is the type it was uploaded with, and <code class="text-gray-300">Content-Disposition</code> carries its file name. <code class="text-gray-300">HEAD</code> on the same path returns the headers without the body.</p>
+              <p class="text-sm text-gray-400 mt-2">Supports one byte range, so audio and video can be streamed and seeked: send <code class="text-fuchsia-400">Range: bytes=a-b</code>, <code class="text-fuchsia-400">bytes=a-</code> or <code class="text-fuchsia-400">bytes=-n</code> (the last <em>n</em> bytes). Every response carries <code class="text-gray-300">Accept-Ranges: bytes</code>. A malformed header, several ranges, or a range sent with <code class="text-gray-300">If-Range</code> is ignored and the whole blob is returned with <code class="text-gray-300">200</code>.</p>
+              <p class="text-xs text-gray-500 mt-1">On a sharded blob collection the <code>Range</code> header is ignored: the whole blob is always returned.</p>
 
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Headers</h4>
+                 <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 font-mono text-xs p-3 text-gray-400">
+<pre>Range: bytes=1000-1999          <span class="text-gray-500">// optional</span></pre>
+                 </div>
+               </div>
                <div class="mt-4 mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
                  <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
                    <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
                       <span class="text-emerald-400 font-bold">200 OK</span>
-                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/octet-stream</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">no Range</span>
                    </div>
-                   <span class="italic text-gray-500">// Binary file content</span>
+                   <span class="italic text-gray-500">// Binary file content, Content-Length: size</span>
+                 </div>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 mt-3">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">206 Partial Content</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">Range: bytes=1000-1999</span>
+                   </div>
+<pre>Accept-Ranges: bytes
+Content-Range: bytes 1000-1999/150000
+Content-Length: 1000
+Content-Type: audio/mpeg
+Content-Disposition: attachment; filename="episode-42.mp3"
+
+<span class="italic text-gray-500">// Bytes 1000 to 1999 of the blob</span></pre>
+                 </div>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 mt-3">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-amber-400 font-bold">416 Range Not Satisfiable</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">range starts past the end</span>
+                   </div>
+<pre>Content-Range: bytes */150000</pre>
                  </div>
                </div>
             </div>
@@ -218,6 +248,7 @@
   "type": "video/mp4",
   "size": 10485760,
   "chunks": 10,
+  "chunk_size": 1048576,           <span class="text-gray-500">// or "chunk_sizes": [...] if the chunks sent differ in length</span>
   "created": "2026-03-13T14:00:00Z"
 }</pre>
                  </div>

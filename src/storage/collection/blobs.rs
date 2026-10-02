@@ -140,12 +140,17 @@ impl Collection {
 
     /// Finalize a resumable upload: copy temp chunks to permanent blob storage and delete temps.
     /// Uses a WriteBatch for atomicity.
+    ///
+    /// Returns each chunk's length, in order. The client chose the chunk
+    /// size and nothing forces it to send exactly that much per chunk, so
+    /// these — not the session's `chunk_size` — are what the blob document
+    /// records for range requests.
     pub fn finalize_blob_upload(
         &self,
         upload_id: &str,
         blob_key: &str,
         total_chunks: u32,
-    ) -> DbResult<()> {
+    ) -> DbResult<Vec<u64>> {
         let db = &self.db;
         let cf = self
             .ks
@@ -156,6 +161,7 @@ impl Collection {
         self.ensure_chunk_count();
 
         let mut batch = WriteBatch::default();
+        let mut sizes = Vec::with_capacity(total_chunks as usize);
 
         for i in 0..total_chunks {
             let tmp_key = format!("{}{}:{}", BLO_TMP_PREFIX, upload_id, i);
@@ -169,6 +175,7 @@ impl Collection {
                     ))
                 })?;
 
+            sizes.push(data.len() as u64);
             let perm_key = Self::blo_chunk_key(blob_key, i as usize);
             batch.put_ks(&cf, &perm_key, &data);
             batch.delete_ks(&cf, tmp_key.as_bytes());
@@ -182,7 +189,7 @@ impl Collection {
             .fetch_add(total_chunks as usize, Ordering::Relaxed);
         self.count_dirty.store(true, Ordering::Relaxed);
 
-        Ok(())
+        Ok(sizes)
     }
 
     /// Delete all temporary chunks for a given upload session (used by cleanup task)

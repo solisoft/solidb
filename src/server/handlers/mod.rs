@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod auth;
 pub mod backup;
+pub mod blob_range;
 pub mod blob_upload;
 pub mod blobs;
 pub mod cluster;

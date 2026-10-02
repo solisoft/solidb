@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+* **Blob downloads answer `Range` requests.** `GET /_api/blob/{db}/{coll}/{key}`
+  now honours one `Range: bytes=a-b`, `bytes=a-` or `bytes=-n` with
+  `206 Partial Content`, the matching `Content-Range` and `Content-Length`, and
+  the same `Content-Type` / `Content-Disposition` as a full download. Audio and
+  video blobs stream and seek in browsers and podcast apps; iOS Safari would
+  not play them without it. Every download, `HEAD` included, now sends
+  `Accept-Ranges: bytes`.
+  * A range past the end answers `416` with `Content-Range: bytes */size`. A
+    malformed or multi-range header, or one under `If-Range`, is ignored and
+    the whole blob is sent with `200`, as RFC 9110 allows.
+  * Only the requested bytes are sent. Uploads now record the chunk layout in
+    the blob document — `chunk_size` when every chunk but the last has the
+    same length, `chunk_sizes` otherwise — so a range starts reading at the
+    chunk that holds its first byte. Blobs stored before this change have no
+    layout: their chunks are read from the first one and the bytes before the
+    range dropped, and reading stops at the range's end.
+  * Multipart uploads are stored in 1 MiB chunks, like resumable and Lua
+    uploads, instead of in whatever pieces the network delivered.
+  * Sharded blob collections still answer `200` with the whole blob.
+
 ## [2.2.0](https://github.com/solisoft/solidb/compare/v2.1.0...v2.2.0) (2026-10-02)
 
 ### Changed

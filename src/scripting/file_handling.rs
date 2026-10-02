@@ -203,7 +203,9 @@ pub fn create_upload_function(
         // Store blob chunks
         let total_size = bytes.len();
         let mut chunk_index = 0u32;
+        let mut chunk_sizes: Vec<u64> = Vec::new();
         for chunk in bytes.chunks(CHUNK_SIZE) {
+            chunk_sizes.push(chunk.len() as u64);
             collection
                 .put_blob_chunk(&file_key, chunk_index, chunk)
                 .map_err(|e| {
@@ -250,6 +252,7 @@ pub fn create_upload_function(
             JsonValue::String(mime_type.to_string()),
         );
         metadata.insert("chunks".to_string(), JsonValue::Number(chunk_index.into()));
+        crate::server::handlers::blob_range::record_chunk_layout(&mut metadata, &chunk_sizes);
         metadata.insert(
             "created_at".to_string(),
             JsonValue::String(chrono::Utc::now().to_rfc3339()),
