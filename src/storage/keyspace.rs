@@ -292,9 +292,11 @@ impl Keyspace {
         let Some((lo, hi)) = self.physical_range(db) else {
             return 0;
         };
+        // rust-rocksdb 0.52+ returns a Result; an error reads as size 0, like a
+        // missing column family above.
         db.get_approximate_sizes_cf(&cf, &[rust_rocksdb::Range::new(&lo, &hi)])
-            .first()
-            .copied()
+            .ok()
+            .and_then(|sizes| sizes.first().copied())
             .unwrap_or(0)
     }
 }

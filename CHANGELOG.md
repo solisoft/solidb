@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+* **RocksDB 11.8.1** (was 10.10.1), through rust-rocksdb 0.53 (was 0.46).
+  * Data written by 2.x opens unchanged.
+  * Data written after the upgrade still opens with the previous binary.
+    Checked both ways on a real data directory: 10.10.1 → 11.8.1 → 10.10.1 →
+    11.8.1, with counts, index lookups and updates verified at each step.
+  * New SST files use RocksDB's format 7, which every RocksDB since 10.4 reads.
+  * After a crash, WAL replay now stays within the memtable budget instead of
+    holding the whole WAL in memory.
+  * Measured with the engine benchmark at 5M documents: no change.
+  * At 30M documents (one run each): updates +39%, missing-key reads +21%,
+    index scans +15%, peak memory slightly lower.
+  * The minimum supported Rust is now 1.91, the floor rust-rocksdb 0.53
+    declares.
+
 ## [2.1.0](https://github.com/solisoft/solidb/compare/v2.0.5...v2.1.0) (2026-09-29)
 
 ### Added

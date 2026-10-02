@@ -202,7 +202,7 @@ jobs:
           sudo apt-get install -y pkg-config
 
       - name: Install Rust (MSRV from Cargo.toml)
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1.91.0
 
       # rust-cache, for the reasons spelled out on the `test` job above.
       - name: Cargo cache

@@ -305,7 +305,7 @@ impl StorageEngine {
         opts.set_keep_log_file_num(5);
         opts.set_max_log_file_size(64 * 1024 * 1024);
 
-        // Recycle LOG files instead of deleting
+        // Recycle WAL files instead of deleting them
         opts.set_recycle_log_file_num(3);
 
         // Enable parallel memtable writes for better concurrency
