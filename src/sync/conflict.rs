@@ -8,6 +8,9 @@ use serde_json::Value;
 use std::sync::Arc;
 
 /// Trait for conflict resolution strategies
+// clippy 1.99: async_trait marks each generated method #[must_use] while it
+// returns a Pin<Box<dyn Future>>, already must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait ConflictResolver: Send + Sync {
     /// Resolve a conflict between two versions of a document

@@ -647,11 +647,7 @@ pub(crate) fn release_pending_embed(n: u64) {
     if n == 0 {
         return;
     }
-    let _ = PENDING_EMBED_COUNT.fetch_update(
-        std::sync::atomic::Ordering::Relaxed,
-        std::sync::atomic::Ordering::Relaxed,
-        |cur| Some(cur.saturating_sub(n)),
-    );
+    super::saturating_sub_u64(&PENDING_EMBED_COUNT, n);
 }
 
 #[cfg(test)]

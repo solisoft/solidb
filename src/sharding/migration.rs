@@ -15,6 +15,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Trait for sending batches of documents to their new destination
+// clippy 1.99: async_trait marks each generated method #[must_use] while it
+// returns a Pin<Box<dyn Future>>, already must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait BatchSender: Send + Sync {
     /// Send a batch of documents to the cluster (router will handle placement)

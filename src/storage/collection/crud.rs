@@ -611,11 +611,7 @@ impl Collection {
         // with its own counter — a plain fetch_sub on an instance that didn't
         // see the inserts wraps to u64::MAX and the UI shows
         // 18446744073709551615 documents.
-        let _ = self
-            .doc_count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(deleted))
-            });
+        super::saturating_sub_usize(&self.doc_count, deleted);
         self.count_dirty.store(true, Ordering::Relaxed);
 
         for (key, old_data) in docs {
@@ -1354,11 +1350,7 @@ impl Collection {
     /// Saturating: a counter that didn't observe the matching insert (another
     /// Collection instance did) must floor at 0, not wrap to u64::MAX.
     pub(crate) fn decrement_count(&self) {
-        let _ = self
-            .doc_count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(1))
-            });
+        super::saturating_sub_usize(&self.doc_count, 1);
         self.count_dirty.store(true, Ordering::Relaxed);
     }
 

@@ -102,11 +102,7 @@ impl Collection {
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             // Saturating: a counter that didn't observe the matching inserts
             // must floor at 0, not wrap to u64::MAX.
-            let _ =
-                self.chunk_count
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                        Some(current.saturating_sub(count))
-                    });
+            super::saturating_sub_usize(&self.chunk_count, count);
             self.count_dirty.store(true, Ordering::Relaxed);
         }
 

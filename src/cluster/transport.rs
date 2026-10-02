@@ -105,6 +105,9 @@ pub enum ClusterMessage {
 }
 
 /// Abstract transport layer
+// clippy 1.99: async_trait marks each generated method #[must_use] while it
+// returns a Pin<Box<dyn Future>>, already must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait Transport: Send + Sync {
     async fn send(&self, to: &str, msg: ClusterMessage) -> Result<()>;

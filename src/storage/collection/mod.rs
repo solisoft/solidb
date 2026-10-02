@@ -220,3 +220,32 @@ impl std::fmt::Debug for Collection {
             .finish()
     }
 }
+
+/// Subtract `n` from a counter, flooring at 0 instead of wrapping to
+/// `usize::MAX`. A compare-exchange loop rather than `fetch_update`, which
+/// Rust 1.99 deprecates in favour of `try_update` — a name the MSRV (1.91)
+/// does not have.
+pub(crate) fn saturating_sub_usize(counter: &AtomicUsize, n: usize) {
+    let mut current = counter.load(std::sync::atomic::Ordering::Relaxed);
+    while let Err(actual) = counter.compare_exchange_weak(
+        current,
+        current.saturating_sub(n),
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    ) {
+        current = actual;
+    }
+}
+
+/// [`saturating_sub_usize`] for a `u64` counter.
+pub(crate) fn saturating_sub_u64(counter: &std::sync::atomic::AtomicU64, n: u64) {
+    let mut current = counter.load(std::sync::atomic::Ordering::Relaxed);
+    while let Err(actual) = counter.compare_exchange_weak(
+        current,
+        current.saturating_sub(n),
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    ) {
+        current = actual;
+    }
+}
