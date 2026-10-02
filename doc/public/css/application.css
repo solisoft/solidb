@@ -6406,6 +6406,15 @@ a {
     color: var(--text);
     font-size: inherit;
   }
+  .docs-prose :is([class*="bg-"], [class*="border"]) > pre, .docs-prose :is([class*="bg-"], [class*="border"]) > * > pre, .docs-prose :is([class*="bg-"], [class*="border"]) > .code-wrap > pre, .docs-prose :is([class*="bg-"], [class*="border"]) > * > .code-wrap > pre {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+  .docs-prose :is([class^="p-"], [class*=" p-"]) > pre, .docs-prose :is([class^="p-"], [class*=" p-"]) > .code-wrap > pre {
+    padding: 0;
+  }
   .docs-prose table {
     width: 100%;
     border-collapse: collapse;
@@ -6513,6 +6522,76 @@ a {
 }
 .code-wrap .copy-btn.copied {
   color: var(--success);
+}
+.docs-prose pre > code {
+  display: block;
+  background: none !important;
+  border: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  font-size: 13.5px !important;
+}
+.docs-prose .grid:has(pre) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+.docs-prose .grid:has(> [id^="fn-"]) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+.docs-prose [id^="fn-"] {
+  background: none !important;
+  border: 0 !important;
+  border-top: 1px solid var(--rule) !important;
+  border-radius: 0 !important;
+  padding: 22px 0 6px !important;
+}
+.docs-prose [id^="fn-"] > code.block {
+  background: none !important;
+  border: 0 !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  margin-bottom: 6px !important;
+}
+.docs-prose [id^="fn-"] > p {
+  font-size: 15px !important;
+  color: var(--text-2) !important;
+  max-width: 70ch;
+}
+.docs-prose [id^="fn-"] > div:not(.code-wrap) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  background: none !important;
+  border-bottom: 0 !important;
+}
+.docs-prose [id^="fn-"] .grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 20px !important;
+}
+.docs-prose [id^="fn-"] h4 {
+  font-family: var(--font-mono);
+  font-size: 12px !important;
+  letter-spacing: 0.06em;
+  color: var(--text-3) !important;
+}
+.docs-prose [id^="fn-"] ul {
+  font-size: 14px !important;
+  color: var(--text-2) !important;
+}
+.docs-prose [id^="fn-"] div > code:only-child {
+  background: none !important;
+  border: 0 !important;
+  padding: 0 !important;
+  font-size: 15px !important;
+  color: var(--text) !important;
+}
+.docs-prose [id^="fn-"] pre {
+  margin: 12px 0 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
 }
 .docs-nav-inner {
   display: grid;
@@ -6945,11 +7024,17 @@ a {
   background-image: none !important;
 }
 .docs-prose [class*="bg-blue-"], .docs-prose [class*="bg-sky-"], .docs-prose [class*="bg-cyan-"], .docs-prose [class*="bg-teal-"], .docs-prose [class*="bg-emerald-"], .docs-prose [class*="bg-green-"] {
-  background-color: var(--data) !important;
-  @supports (color: color-mix(in lab, red, red)) {
-    background-color: color-mix(in srgb, var(--data) 9%, transparent) !important;
-  }
+  background-color: var(--sunken) !important;
   background-image: none !important;
+}
+.docs-prose :is([class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"], [class*="bg-teal-"], [class*="bg-emerald-"], [class*="bg-green-"]):is([class*="border-blue-"], [class*="border-sky-"], [class*="border-cyan-"], [class*="border-teal-"], [class*="border-emerald-"], [class*="border-green-"]) {
+  border-left: 3px solid var(--data) !important;
+}
+.docs-prose :is([class*="bg-indigo-"], [class*="bg-violet-"], [class*="bg-purple-"], [class*="bg-fuchsia-"], [class*="bg-pink-"], [class*="bg-rose-"], [class*="bg-red-"], [class*="bg-orange-"], [class*="bg-amber-"], [class*="bg-yellow-"], [class*="bg-lime-"]):is([class*="border-indigo-"], [class*="border-violet-"], [class*="border-purple-"], [class*="border-fuchsia-"], [class*="border-pink-"], [class*="border-rose-"], [class*="border-red-"], [class*="border-orange-"], [class*="border-amber-"], [class*="border-yellow-"], [class*="border-lime-"]) {
+  border-left: 3px solid var(--accent) !important;
+}
+.docs-prose [class*="bg-black"] {
+  background-color: var(--sunken) !important;
 }
 .docs-prose [class*="from-"][class*="to-"] {
   background-image: none !important;

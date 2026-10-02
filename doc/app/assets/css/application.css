@@ -721,6 +721,22 @@ a { color: inherit; text-decoration: none; }
         font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
     }
     .docs-prose pre code { background: none; border: 0; padding: 0; color: var(--text); font-size: inherit; }
+    /* Most ported pages wrap their code in a card that already draws the box
+       (bg-gray-950 … border … p-4). A pre directly inside one (as its child
+       or grandchild — the copy button's .code-wrap, added by the docs layout's
+       script, does not count) must not draw a second box inside it; and when its
+       parent pads it, it adds no padding either. A pre deeper in a big
+       section card is a block of its own and keeps its box.
+       A pre that sets its own bg/border/padding utilities still wins: this is
+       the base layer. */
+    .docs-prose :is([class*="bg-"], [class*="border"]) > pre,
+    .docs-prose :is([class*="bg-"], [class*="border"]) > * > pre,
+    .docs-prose :is([class*="bg-"], [class*="border"]) > .code-wrap > pre,
+    .docs-prose :is([class*="bg-"], [class*="border"]) > * > .code-wrap > pre {
+        background: none; border: 0; border-radius: 0; margin: 0;
+    }
+    .docs-prose :is([class^="p-"], [class*=" p-"]) > pre,
+    .docs-prose :is([class^="p-"], [class*=" p-"]) > .code-wrap > pre { padding: 0; }
     .docs-prose table { width: 100%; border-collapse: collapse; margin: 0 0 20px; font-size: 14px; }
     .docs-prose th { text-align: left; color: var(--text); font-weight: 600; border-bottom: 1px solid var(--rule-ink); padding: 10px 12px; }
     .docs-prose td { border-bottom: 1px solid var(--rule); padding: 10px 12px; vertical-align: top; }
@@ -758,6 +774,64 @@ a { color: inherit; text-decoration: none; }
 .code-wrap:hover .copy-btn, .code-wrap .copy-btn:focus-visible { opacity: 1; }
 .code-wrap .copy-btn:hover { color: var(--text); }
 .code-wrap .copy-btn.copied { color: var(--success); }
+
+/* Code in the ported pages: the box (background, border, padding) was put on
+   the inline <code> inside <pre>, which paints one box per line. The <pre>
+   is the box; its <code> is a plain block. Unlayered, so it beats utilities. */
+.docs-prose pre > code {
+    display: block;
+    background: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    font-size: 13.5px !important;
+}
+
+/* No code in tight columns: ~107 grids across the ported pages put code
+   blocks two or three to a row, where every example wrapped or scrolled. A
+   grid that contains a <pre> is one column at every width; grids of plain
+   cards keep their columns. */
+.docs-prose .grid:has(pre) { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* SDBQL function reference (sdbql-functions-*, aggregations, graphs): each
+   function is one full-width ruled entry. The pages lay them out two to a row
+   from md up, which squeezed every example into a scrolling column. */
+.docs-prose .grid:has(> [id^="fn-"]) { grid-template-columns: minmax(0, 1fr) !important; gap: 0 !important; }
+.docs-prose [id^="fn-"] {
+    background: none !important;
+    border: 0 !important;
+    border-top: 1px solid var(--rule) !important;
+    border-radius: 0 !important;
+    padding: 22px 0 6px !important;
+}
+.docs-prose [id^="fn-"] > code.block {
+    background: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: var(--text) !important;
+    margin-bottom: 6px !important;
+}
+.docs-prose [id^="fn-"] > p { font-size: 15px !important; color: var(--text-2) !important; max-width: 70ch; }
+/* the detailed entries (DATE_ADD, …): header band and body lose their own
+   boxes, and Parameters / Examples stack instead of sharing a row */
+.docs-prose [id^="fn-"] > div:not(.code-wrap) {
+    padding-left: 0 !important; padding-right: 0 !important;
+    background: none !important; border-bottom: 0 !important;
+}
+.docs-prose [id^="fn-"] .grid { grid-template-columns: minmax(0, 1fr) !important; gap: 20px !important; }
+.docs-prose [id^="fn-"] h4 { font-family: var(--font-mono); font-size: 12px !important; letter-spacing: 0.06em; color: var(--text-3) !important; }
+.docs-prose [id^="fn-"] ul { font-size: 14px !important; color: var(--text-2) !important; }
+/* the signature is a <code> alone in a box: the box is enough */
+.docs-prose [id^="fn-"] div > code:only-child {
+    background: none !important; border: 0 !important; padding: 0 !important;
+    font-size: 15px !important; color: var(--text) !important;
+}
+.docs-prose [id^="fn-"] pre {
+    margin: 12px 0 16px; padding: 12px 16px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 4px;
+}
 
 /* ---------- docs top bar ---------- */
 .docs-nav-inner {
@@ -949,8 +1023,25 @@ a { color: inherit; text-decoration: none; }
 .docs-prose [class*="bg-teal-"],
 .docs-prose [class*="bg-emerald-"],
 .docs-prose [class*="bg-green-"] {
-  background-color: color-mix(in srgb, var(--data) 9%, transparent) !important;
+  /* Not a translucent blue: blue over warm paper mixes to grey. The panel or
+     pill takes the neutral well and keeps its hue in text, icon and rule. */
+  background-color: var(--sunken) !important;
   background-image: none !important;
+}
+
+/* Callouts — a tinted panel with a tinted border ("Note", "Warning") — read
+   as a left rule in the fold colour rather than a boxed wash. */
+.docs-prose :is([class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-cyan-"], [class*="bg-teal-"], [class*="bg-emerald-"], [class*="bg-green-"]):is([class*="border-blue-"], [class*="border-sky-"], [class*="border-cyan-"], [class*="border-teal-"], [class*="border-emerald-"], [class*="border-green-"]) {
+  border-left: 3px solid var(--data) !important;
+}
+.docs-prose :is([class*="bg-indigo-"], [class*="bg-violet-"], [class*="bg-purple-"], [class*="bg-fuchsia-"], [class*="bg-pink-"], [class*="bg-rose-"], [class*="bg-red-"], [class*="bg-orange-"], [class*="bg-amber-"], [class*="bg-yellow-"], [class*="bg-lime-"]):is([class*="border-indigo-"], [class*="border-violet-"], [class*="border-purple-"], [class*="border-fuchsia-"], [class*="border-pink-"], [class*="border-rose-"], [class*="border-red-"], [class*="border-orange-"], [class*="border-amber-"], [class*="border-yellow-"], [class*="border-lime-"]) {
+  border-left: 3px solid var(--accent) !important;
+}
+
+/* bg-black/20…/40 was a darker well on the old dark site; ink at 30% over
+   paper is a muddy grey. It is the code well. */
+.docs-prose [class*="bg-black"] {
+  background-color: var(--sunken) !important;
 }
 
 /* gradient panels, decorative blurs and glows → flat */

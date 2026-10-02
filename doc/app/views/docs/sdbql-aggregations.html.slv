@@ -134,20 +134,20 @@
               <div class="p-5 space-y-4 overflow-x-auto">
                 <table class="w-full text-sm">
                   <tbody>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT()</td><td class="py-2 text-gray-400">Number of rows in the group.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT(expr)</td><td class="py-2 text-gray-400">Rows where <code>expr</code> is not null.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">LENGTH(expr)</td><td class="py-2 text-gray-400">Number of rows (AQL: same as <code>COUNT()</code>).</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SUM(expr)</td><td class="py-2 text-gray-400">Sum of the numeric values; other values are skipped.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">AVG(expr) / AVERAGE(expr)</td><td class="py-2 text-gray-400">Mean of the numeric values; <code>null</code> when there are none.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">MIN(expr) / MINIMUM(expr), MAX(expr) / MAXIMUM(expr)</td><td class="py-2 text-gray-400">Smallest / largest non-null value in AQL type order; the stored value is returned unchanged.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COUNT_DISTINCT(expr) / COUNT_UNIQUE(expr)</td><td class="py-2 text-gray-400">Number of distinct values (<code>1</code> and <code>1.0</code> are the same value).</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, as an array, in first-seen order.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SORTED_UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, sorted.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">COLLECT_LIST(expr) / PUSH(expr)</td><td class="py-2 text-gray-400">Every value, as an array, in row order.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">VARIANCE(expr) / VARIANCE_POPULATION(expr), VARIANCE_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample variance of the numeric values.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">STDDEV(expr) / STDDEV_POPULATION(expr), STDDEV_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample standard deviation.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">MEDIAN(expr)</td><td class="py-2 text-gray-400">Median of the numeric values.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">BIT_AND(expr), BIT_OR(expr), BIT_XOR(expr)</td><td class="py-2 text-gray-400">Bitwise fold of the integer values; nulls are skipped, any other non-integer makes the result <code>null</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT()</td><td class="py-2 text-gray-400">Number of rows in the group.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT(expr)</td><td class="py-2 text-gray-400">Rows where <code>expr</code> is not null.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">LENGTH(expr)</td><td class="py-2 text-gray-400">Number of rows (AQL: same as <code>COUNT()</code>).</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SUM(expr)</td><td class="py-2 text-gray-400">Sum of the numeric values; other values are skipped.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">AVG(expr) / AVERAGE(expr)</td><td class="py-2 text-gray-400">Mean of the numeric values; <code>null</code> when there are none.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">MIN(expr) / MINIMUM(expr)<br>MAX(expr) / MAXIMUM(expr)</td><td class="py-2 text-gray-400">Smallest / largest non-null value in AQL type order; the stored value is returned unchanged.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT_DISTINCT(expr) / COUNT_UNIQUE(expr)</td><td class="py-2 text-gray-400">Number of distinct values (<code>1</code> and <code>1.0</code> are the same value).</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, as an array, in first-seen order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SORTED_UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, sorted.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COLLECT_LIST(expr) / PUSH(expr)</td><td class="py-2 text-gray-400">Every value, as an array, in row order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">VARIANCE(expr) / VARIANCE_POPULATION(expr)<br>VARIANCE_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample variance of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">STDDEV(expr) / STDDEV_POPULATION(expr)<br>STDDEV_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample standard deviation.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">MEDIAN(expr)</td><td class="py-2 text-gray-400">Median of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">BIT_AND(expr)<br>BIT_OR(expr)<br>BIT_XOR(expr)</td><td class="py-2 text-gray-400">Bitwise fold of the integer values; nulls are skipped, any other non-integer makes the result <code>null</code>.</td></tr>
                   </tbody>
                 </table>
                 <p class="text-xs text-gray-500">
@@ -335,15 +335,15 @@ RETURN SKETCH_MERGE(a, b).estimate</code></pre>
             <div class="overflow-x-auto">
               <table class="w-full text-sm">
                 <tbody>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">ROW_NUMBER()</td><td class="py-2 text-gray-400">1, 2, 3… in window order.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">RANK() / DENSE_RANK()</td><td class="py-2 text-gray-400">Rank with gaps / without gaps; rows with equal ORDER BY values are peers.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">PERCENT_RANK()</td><td class="py-2 text-gray-400">(rank − 1) / (rows − 1); 0 for a single row.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">CUME_DIST()</td><td class="py-2 text-gray-400">Rows up to and including the current row's last peer, over rows.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">NTILE(n)</td><td class="py-2 text-gray-400">Bucket number 1…n; bucket sizes differ by at most one, larger buckets first.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">LAG(expr, offset?, default?) / LEAD(...)</td><td class="py-2 text-gray-400">Value <code>offset</code> rows before / after (default 1), or <code>default</code>.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">FIRST_VALUE(expr) / LAST_VALUE(expr)</td><td class="py-2 text-gray-400">First / last value of the whole partition.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">NTH_VALUE(expr, n)</td><td class="py-2 text-gray-400">Value of the n-th row (1-based) of the whole partition, or <code>null</code>.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300 whitespace-nowrap">SUM / AVG / COUNT / MIN / MAX (expr)</td><td class="py-2 text-gray-400">With ORDER BY: running value from the partition start to the current row. Without ORDER BY: the whole partition.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">ROW_NUMBER()</td><td class="py-2 text-gray-400">1, 2, 3… in window order.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">RANK() / DENSE_RANK()</td><td class="py-2 text-gray-400">Rank with gaps / without gaps; rows with equal ORDER BY values are peers.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">PERCENT_RANK()</td><td class="py-2 text-gray-400">(rank − 1) / (rows − 1); 0 for a single row.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">CUME_DIST()</td><td class="py-2 text-gray-400">Rows up to and including the current row's last peer, over rows.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">NTILE(n)</td><td class="py-2 text-gray-400">Bucket number 1…n; bucket sizes differ by at most one, larger buckets first.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">LAG(expr<br>offset?<br>default?) / LEAD(...)</td><td class="py-2 text-gray-400">Value <code>offset</code> rows before / after (default 1), or <code>default</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">FIRST_VALUE(expr) / LAST_VALUE(expr)</td><td class="py-2 text-gray-400">First / last value of the whole partition.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">NTH_VALUE(expr<br>n)</td><td class="py-2 text-gray-400">Value of the n-th row (1-based) of the whole partition, or <code>null</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SUM / AVG / COUNT / MIN / MAX (expr)</td><td class="py-2 text-gray-400">With ORDER BY: running value from the partition start to the current row. Without ORDER BY: the whole partition.</td></tr>
                 </tbody>
               </table>
             </div>
