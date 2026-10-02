@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.2.0](https://github.com/solisoft/solidb/compare/v2.1.0...v2.2.0) (2026-10-03)
+
 ### Added
 
 * **Blob downloads answer `Range` requests.** `GET /_api/blob/{db}/{coll}/{key}`
@@ -23,8 +25,6 @@
   * Multipart uploads are stored in 1 MiB chunks, like resumable and Lua
     uploads, instead of in whatever pieces the network delivered.
   * Sharded blob collections still answer `200` with the whole blob.
-
-## [2.2.0](https://github.com/solisoft/solidb/compare/v2.1.0...v2.2.0) (2026-10-02)
 
 ### Changed
 

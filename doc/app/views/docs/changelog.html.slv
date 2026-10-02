@@ -9,27 +9,15 @@
     </p>
   </div>
 
-  <!-- Unreleased -->
-  <section id="unreleased" class="mb-16 scroll-mt-24">
-    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
-      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
-      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
-    </div>
-    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
-      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
-        <li><strong class="text-white">Blob downloads answer <code>Range</code> requests</strong> &mdash; <code>GET /_api/blob/{db}/{coll}/{key}</code> honours one <code>bytes=a-b</code>, <code>bytes=a-</code> or <code>bytes=-n</code> with <code>206 Partial Content</code>, so audio and video blobs stream and seek in browsers and podcast apps (iOS Safari would not play them without it). A range past the end is a <code>416</code>; a malformed or multi-range header is ignored and the whole blob sent. Downloads send <code>Accept-Ranges: bytes</code>, and <code>HEAD</code> returns the headers alone. Uploads now record their chunk layout, so a range reads only from the chunk holding its first byte; older blobs are read from the start. Multipart uploads are stored in 1&nbsp;MiB chunks. Sharded blob collections still send the whole blob.</li>
-      </ul>
-    </div>
-  </section>
-
   <!-- 2.2.0 -->
   <section id="v2-2-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
       <h2 class="text-3xl font-bold text-white">v2.2.0</h2>
-      <span class="text-sm font-medium text-gray-400">October 2, 2026</span>
+      <span class="text-sm font-medium text-gray-400">October 3, 2026</span>
     </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Blob downloads answer <code>Range</code> requests</strong> &mdash; <code>GET /_api/blob/{db}/{coll}/{key}</code> honours one <code>bytes=a-b</code>, <code>bytes=a-</code> or <code>bytes=-n</code> with <code>206 Partial Content</code>, so audio and video blobs stream and seek in browsers and podcast apps (iOS Safari would not play them without it). A range past the end is a <code>416</code>; a malformed or multi-range header is ignored and the whole blob sent. Downloads send <code>Accept-Ranges: bytes</code>, and <code>HEAD</code> returns the headers alone. Uploads now record their chunk layout, so a range reads only from the chunk holding its first byte; older blobs are read from the start. Multipart uploads are stored in 1&nbsp;MiB chunks. Sharded blob collections still send the whole blob.</li>
         <li><strong class="text-white">RocksDB 11.8.1</strong> &mdash; up from 10.10.1 (rust-rocksdb 0.53). Data written by 2.x opens unchanged, and data written after the upgrade still opens with a 2.1 binary: checked both ways on a real data directory. On the engine benchmark it is level with 10.10.1 at 5M documents; at 30M, updates were 39% faster, reads of missing keys 21% and index scans 15%. After a crash, WAL replay now stays within the memtable budget.</li>
         <li><strong class="text-white">Minimum Rust 1.91</strong> &mdash; the floor rust-rocksdb 0.53 declares (was 1.89). SoliDB also builds clean on Rust 1.99.</li>
         <li><strong class="text-white">Fixed: the licence names SoliSoft</strong> &mdash; <code>LICENCE.md</code> still carried the O&rsquo;Saasy template&rsquo;s 37signals copyright line.</li>
