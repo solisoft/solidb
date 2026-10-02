@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.2.0](https://github.com/solisoft/solidb/compare/v2.1.0...v2.2.0) (2026-10-02)
+
 ### Changed
 
 * **RocksDB 11.8.1** (was 10.10.1), through rust-rocksdb 0.53 (was 0.46).
@@ -17,6 +19,15 @@
     index scans +15%, peak memory slightly lower.
   * The minimum supported Rust is now 1.91, the floor rust-rocksdb 0.53
     declares.
+
+### Fixed
+
+* **The licence names SoliSoft.** `LICENCE.md` still carried the O'Saasy
+  template's "Copyright 2025, 37signals LLC", so its anti-SaaS clause named
+  the wrong licensor.
+* **Builds clean on Rust 1.99.** It deprecates `Atomic*::fetch_update` and adds
+  clippy's `double_must_use`; counters now floor at zero through a helper that
+  compiles on every toolchain from the MSRV up.
 
 ## [2.1.0](https://github.com/solisoft/solidb/compare/v2.0.5...v2.1.0) (2026-09-29)
 

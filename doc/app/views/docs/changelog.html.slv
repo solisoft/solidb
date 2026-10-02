@@ -9,6 +9,22 @@
     </p>
   </div>
 
+  <!-- 2.2.0 -->
+  <section id="v2-2-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.2.0</h2>
+      <span class="text-sm font-medium text-gray-400">October 2, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">RocksDB 11.8.1</strong> &mdash; up from 10.10.1 (rust-rocksdb 0.53). Data written by 2.x opens unchanged, and data written after the upgrade still opens with a 2.1 binary: checked both ways on a real data directory. On the engine benchmark it is level with 10.10.1 at 5M documents; at 30M, updates were 39% faster, reads of missing keys 21% and index scans 15%. After a crash, WAL replay now stays within the memtable budget.</li>
+        <li><strong class="text-white">Minimum Rust 1.91</strong> &mdash; the floor rust-rocksdb 0.53 declares (was 1.89). SoliDB also builds clean on Rust 1.99.</li>
+        <li><strong class="text-white">Fixed: the licence names SoliSoft</strong> &mdash; <code>LICENCE.md</code> still carried the O&rsquo;Saasy template&rsquo;s 37signals copyright line.</li>
+        <li><strong class="text-white">Docs site</strong> &mdash; a 404 page that suggests the page you probably meant, per-page share titles and descriptions, a feature slideshow on the home page, and code blocks that no longer draw a box inside a box.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.1.0 -->
   <section id="v2-1-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
