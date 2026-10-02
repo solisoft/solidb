@@ -277,3 +277,22 @@ def docs_clip(text, limit)
     end
     return Regex.replace("[,;:.\\s]+$", clipped, "") + "…"
 end
+
+# Every page the sidebar lists, once each, as {"path", "label"} — what the 404
+# page scores a mistyped address against.
+def docs_pages()
+    pages = []
+    seen = []
+    docs_nav().each do |section|
+        section["items"].each do |item|
+            entries = [item] + (item["subitems"] ?? [])
+            entries.each do |entry|
+                next if seen.includes?(entry["slug"])
+
+                seen.push(entry["slug"])
+                pages.push({"path": "/docs/" + entry["slug"], "label": docs_page_name(entry["slug"]) ?? entry["label"]})
+            end
+        end
+    end
+    return pages
+end

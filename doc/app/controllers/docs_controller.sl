@@ -43,14 +43,16 @@ class DocsController < Controller
         return words.join(" ")
     end
 
+    # The site's 404 page (app/views/errors/404.html.slv), which is also what
+    # an unmatched route gets.
     def not_found
-        body = "<!doctype html><meta charset=\"utf-8\"><title>Not found</title>" +
-            "<body style=\"background:#090c0b;color:#ece6d6;font-family:system-ui;" +
-            "display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center\">" +
-            "<div><h1 style=\"font-size:2rem;margin-bottom:8px\">404</h1>" +
-            "<p style=\"color:#9ba39c\">That documentation page doesn't exist. " +
-            "<a href=\"/docs\" style=\"color:#f5a623\">Back to the docs</a>.</p></div>"
-        return { "status": 404, "headers": { "Content-Type": "text/html; charset=utf-8" }, "body": body }
+        return render("errors/404", {
+            "layout": false,
+            "status": 404,
+            "message": "There is no documentation page at this address.",
+            "back_href": "/docs",
+            "back_label": "Back to the docs"
+        }, {"status": 404})
     end
 
     # Curated titles (everything else falls back to titleize()).

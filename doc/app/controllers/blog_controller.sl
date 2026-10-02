@@ -210,17 +210,18 @@ class BlogController < Controller
     return text.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub("\"", "&quot;")
   end
 
+  # The site's 404 page (app/views/errors/404.html.slv), which is also what
+  # an unmatched route gets.
   def not_found
-    body = "<!doctype html><meta charset=\"utf-8\"><title>Not found</title>"
-    + "<body style=\"background:#090c0b;color:#ece6d6;font-family:system-ui;"
-    + "display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center\">"
-    + "<div><h1 style=\"font-size:2rem;margin-bottom:8px\">404</h1>"
-    + "<p style=\"color:#9ba39c\">That post doesn't exist. "
-    + "<a href=\"/blog\" style=\"color:#f5a623\">Back to the blog</a>.</p></div>"
-    return {
+    return render("errors/404", {
+      "layout": false,
       "status": 404,
-      "headers": {"Content-Type": "text/html; charset=utf-8"},
-      "body": body
-    }
+      "message": "There is no post at this address.",
+      "back_href": "/blog",
+      "back_label": "Back to the blog",
+      "extra_candidates": this.posts().map do |post|
+        {"path": "/blog/" + post["slug"], "label": post["title"]}
+      end
+    }, {"status": 404})
   end
 end

@@ -1,0 +1,247 @@
+<%# Not found. Soli renders this for any route that matches nothing, without a
+    layout, and passes `status`, `message` and `request_id`. DocsController and
+    BlogController render it too, for a slug they don't have, adding
+    `back_href` / `back_label` for a link back to their index; the blog also
+    passes its posts as `extra_candidates` ({"path", "label"} each).
+
+    An unmatched route has no current_path() here, so the address is read in
+    the browser: the script at the bottom writes it into the query card and
+    scores it against every docs page (docs_pages(), app/helpers/docs_helper.sl)
+    to offer "Did you mean". Without JavaScript the page still reads as a
+    whole; that section just stays hidden.
+
+    Styles are inline, on the site's own tokens, so this page needs no rebuild
+    of the compiled Tailwind file. %>
+<% candidates = docs_pages() + (extra_candidates ?? []) + [{"path": "/docs", "label": "Documentation home"}, {"path": "/blog", "label": "Blog"}, {"path": "/", "label": "Home"}] %>
+<% candidates_json = candidates.to_json.gsub("</", "<\\/") %>
+<% back_link = back_href ?? "/" %>
+<% back_text = back_label ?? "Back to the home page" %>
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page not found — SoliDB</title>
+    <meta name="robots" content="noindex">
+    <%- partial("shared/theme_head", {}) %>
+    <link rel="stylesheet" href="<%= public_path("css/application.css") %>">
+    <style>
+        .nf { padding: 88px 0 80px; }
+        .nf-grid {
+            display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+            gap: 56px; align-items: center;
+        }
+        .nf-status {
+            margin: 0; font-family: var(--font-display); font-style: italic; font-weight: 400;
+            font-size: clamp(5.5rem, 13vw, 9.5rem); line-height: 0.85; letter-spacing: -0.03em;
+            color: var(--accent);
+        }
+        .nf h1 {
+            margin: 22px 0 0; font-family: var(--font-display); font-weight: 400;
+            font-size: clamp(2.1rem, 4.4vw, 3.4rem); line-height: 1.08; letter-spacing: -0.015em;
+            text-wrap: balance;
+        }
+        .nf-lede {
+            margin: 22px 0 0; font-size: clamp(1.05rem, 1.4vw, 1.2rem); line-height: 1.55;
+            color: var(--text-2); max-width: 34em;
+        }
+        .nf-cta { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 30px; }
+        .nf-query { height: auto; }
+        .nf-query .cc-bar { justify-content: space-between; }
+        .nf-query pre { font-size: 14px; }
+        .nf-result {
+            display: flex; align-items: baseline; gap: 12px; padding: 14px 20px;
+            border-top: 1px dashed var(--rule); font-size: 13px; color: var(--text-3);
+        }
+        .nf-result code { font-family: var(--font-mono); font-size: 14px; color: var(--data); }
+        .nf-result .nf-arrow { color: var(--text-3); }
+        .nf-next {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px;
+            margin-top: 80px; padding: 44px 0 24px; border-top: 1px solid var(--rule);
+        }
+        .nf-next h2 { margin: 0 0 14px; font-family: var(--font-display); font-weight: 400; font-size: 26px; }
+        .nf-next [hidden] { display: none; }
+        .nf-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule-ink); }
+        .nf-list li { border-bottom: 1px solid var(--rule); }
+        .nf-list a {
+            display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+            padding: 13px 2px; min-height: 44px; box-sizing: border-box;
+        }
+        .nf-list .nf-label { font-size: 16px; color: var(--text); transition: color .15s ease; }
+        .nf-list .nf-path {
+            font-family: var(--font-mono); font-size: 12.5px; color: var(--text-3);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+        }
+        .nf-list a:hover .nf-label { color: var(--accent-text); }
+        @media (max-width: 860px) {
+            .nf { padding: 52px 0 48px; }
+            .nf-grid, .nf-next { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+            .nf-next { margin-top: 56px; }
+        }
+    </style>
+</head>
+<body class="soli-body">
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="SoliDB home">SoliDB <%- partial("shared/version_pill", {}) %></a>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="/docs">Docs</a>
+      <a href="/docs/sdbql">SDBQL</a>
+      <a href="/blog">Blog</a>
+      <a href="/docs/changelog">Changelog</a>
+    </nav>
+
+    <div class="nav-right">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">GitHub</a>
+      <%- partial("shared/theme_toggle", {}) %>
+    </div>
+  </div>
+</header>
+
+<main class="nf">
+  <div class="wrap nf-grid">
+    <div>
+      <p class="nf-status" aria-hidden="true"><%= status %></p>
+      <h1>No document at this address.</h1>
+      <p class="nf-lede">
+        <%= message %> It may have moved, or the link has a typo.
+      </p>
+      <div class="nf-cta">
+        <a class="btn btn-primary" href="/docs">Browse the documentation</a>
+        <a class="btn-link" href="<%= back_link %>"><%= back_text %></a>
+      </div>
+    </div>
+
+    <figure class="code-card nf-query" aria-label="An SDBQL query for this address, returning no documents">
+      <div class="cc-bar"><span>lookup.sdbql</span><span>HTTP <%= status %></span></div>
+      <pre><span class="tok-kw">FOR</span> page <span class="tok-kw">IN</span> site
+  <span class="tok-kw">FILTER</span> page.path <span class="tok-punc">==</span> <span class="tok-str" data-path>"<%= current_path() ?? "" %>"</span>
+  <span class="tok-kw">RETURN</span> page</pre>
+      <div class="nf-result"><span class="nf-arrow" aria-hidden="true">→</span><code>[]</code><span>0 documents</span></div>
+    </figure>
+  </div>
+
+  <div class="wrap"><div class="nf-next">
+    <section data-suggest hidden>
+      <h2>Did you mean</h2>
+      <ul class="nf-list" data-suggest-list></ul>
+    </section>
+    <section>
+      <h2>Or start from</h2>
+      <ul class="nf-list">
+        <li><a href="/docs/getting-started"><span class="nf-label">Getting started</span><span class="nf-path">/docs/getting-started</span></a></li>
+        <li><a href="/docs/sdbql"><span class="nf-label">SDBQL reference</span><span class="nf-path">/docs/sdbql</span></a></li>
+        <li><a href="/docs/api"><span class="nf-label">HTTP API reference</span><span class="nf-path">/docs/api</span></a></li>
+        <li><a href="/blog"><span class="nf-label">Release notes and deep dives</span><span class="nf-path">/blog</span></a></li>
+        <li><a href="/docs/changelog"><span class="nf-label">Changelog</span><span class="nf-path">/docs/changelog</span></a></li>
+      </ul>
+    </section>
+  </div></div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <div class="foot-brand">
+      <a class="brand" href="/">SoliDB</a>
+      <span>SoliSoft · O'Saasy License</span>
+    </div>
+<% if request_id %>
+    <span class="foot-note">Reference <%= request_id %></span>
+<% end %>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/docs">Docs</a>
+      <a href="/blog">Blog</a>
+      <a href="https://github.com/solisoft/solidb">GitHub</a>
+      <a href="https://github.com/solisoft/solidb/issues">Report a broken link</a>
+    </nav>
+  </div>
+</footer>
+
+<script type="application/json" id="nf-pages"><%- candidates_json %></script>
+<script>
+  // Fill the query card with the address that was asked for, then rank every
+  // known page against its words. textContent throughout: the address is
+  // whatever the visitor (or a link) typed, never markup.
+  (function () {
+    var path = location.pathname;
+    try { path = decodeURI(path); } catch (e) {}
+    var literal = document.querySelector("[data-path]");
+    if (literal) literal.textContent = JSON.stringify(path);
+
+    var pages;
+    try { pages = JSON.parse(document.getElementById("nf-pages").textContent); } catch (e) { return; }
+
+    function words(text) {
+      return text.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) {
+        // Drop "docs" and "html" (in every docs path), and one- or two-letter
+        // words ("in", "of") — but keep numbers: "2-1" names a release.
+        return w && w !== "docs" && w !== "html" && (w.length > 2 || /^[0-9]+$/.test(w));
+      });
+    }
+    function stem(word) { return word.length > 3 ? word.replace(/(ies|es|s)$/, "") : word; }
+    function distance(a, b) {
+      var row = [], i, j, prev, tmp;
+      for (j = 0; j <= b.length; j++) row[j] = j;
+      for (i = 1; i <= a.length; i++) {
+        prev = row[0]; row[0] = i;
+        for (j = 1; j <= b.length; j++) {
+          tmp = row[j];
+          row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+          prev = tmp;
+        }
+      }
+      return row[b.length];
+    }
+    // 3 for the same word, 2 for the same stem ("function"/"functions"),
+    // 1 for a prefix or a typo of two letters or fewer.
+    function closeness(asked, known) {
+      if (asked === known) return 3;
+      if (stem(asked) === stem(known)) return 2;
+      var shorter = Math.min(asked.length, known.length);
+      if (shorter >= 4 && (known.indexOf(asked) === 0 || asked.indexOf(known) === 0)) return 1;
+      if (shorter >= 4 && distance(asked, known) <= 2) return 1;
+      return 0;
+    }
+
+    var asked = words(path);
+    if (!asked.length) return;
+
+    var ranked = pages.map(function (page) {
+      var known = words(page.path);
+      var score = 0;
+      asked.forEach(function (word) {
+        var best = 0;
+        known.forEach(function (candidate) { best = Math.max(best, closeness(word, candidate)); });
+        score += best;
+      });
+      // Of two equal matches, prefer the page with fewer words left over.
+      return { page: page, score: score - 0.01 * Math.max(0, known.length - asked.length) };
+    }).filter(function (entry) {
+      return entry.score > 0.5 && entry.page.path !== location.pathname;
+    }).sort(function (a, b) { return b.score - a.score; });
+    if (!ranked.length) return;
+
+    var top = ranked[0].score;
+    var list = document.querySelector("[data-suggest-list]");
+    ranked.filter(function (entry) { return entry.score >= top * 0.6; }).slice(0, 4).forEach(function (entry) {
+      var link = document.createElement("a");
+      link.href = entry.page.path;
+      var label = document.createElement("span");
+      label.className = "nf-label";
+      label.textContent = entry.page.label;
+      var where = document.createElement("span");
+      where.className = "nf-path";
+      where.textContent = entry.page.path;
+      link.appendChild(label);
+      link.appendChild(where);
+      var item = document.createElement("li");
+      item.appendChild(link);
+      list.appendChild(item);
+    });
+    document.querySelector("[data-suggest]").hidden = false;
+  })();
+</script>
+</body>
+</html>
