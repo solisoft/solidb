@@ -34,10 +34,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The version the server runs, verified below rather than hoped for. A CI that
-  # checks the site against a different interpreter than production has not
-  # checked production.
-  SOLI_VERSION: "2.14.0"
+  # The reference soli: the verify job installs it and boots the site under it.
+  # It need not match the server — the deploy job reads the server's version
+  # and, when it differs, boots the site under that one before syncing. Bump it
+  # when the deploy log's notice says the server has moved on.
+  SOLI_VERSION: "2.15.0"
 
 jobs:
   verify:
@@ -71,32 +72,12 @@ jobs:
       - name: The compiled CSS is committed
         run: test -s public/css/application.css
 
-      # The real gate. It boots the site exactly as the server will — no .env,
-      # since that file is gitignored and lives on the server — and asks for
-      # /up. Booting warms handlers and class methods, so a syntax error,
-      # a missing view or a broken route registration fails here rather than in
-      # production. A database is not needed to answer /up.
+      # The early gate, on the reference version above: the site boots
+      # without .env and answers /up (.github/scripts/www-boot-check.sh). The
+      # deploy job repeats it on the version the server actually runs.
       - name: The site boots and answers /up
-        run: |
-          set -euo pipefail
-          soli serve . --port 19555 --workers 1 > /tmp/boot.log 2>&1 &
-          pid=$!
-          code=000
-          for i in $(seq 1 45); do
-            code="$(curl -s -o /dev/null -w '%{http_code}' -m 2 http://127.0.0.1:19555/up || echo 000)"
-            [ "$code" = "200" ] && break
-            kill -0 $pid 2>/dev/null || { echo "the server exited before answering" >&2; break; }
-            sleep 1
-          done
-          kill -TERM $pid 2>/dev/null || true
-          wait $pid 2>/dev/null || true
-          if [ "$code" != "200" ]; then
-            echo "/up answered $code, not 200:" >&2
-            tail -40 /tmp/boot.log >&2
-            exit 1
-          fi
-          echo "/up -> 200"
-          grep -E 'warmed [0-9]+ handlers' /tmp/boot.log || true
+        working-directory: .
+        run: .github/scripts/www-boot-check.sh "$(command -v soli)"
 
       # Advisory, deliberately not blocking. The site may have lint issues that
       # predate this workflow.
@@ -206,6 +187,30 @@ jobs:
             exit 1
           fi
 
+      # The server's soli is upgraded independently of this repository (2.6.1
+      # -> 2.12.1 -> 2.13.0 -> 2.14.0 -> 2.15.0 in a few days), so chasing it
+      # with SOLI_VERSION kept failing deploys. Instead, before anything is
+      # copied: read the version the server runs and, when it differs from the
+      # reference, boot the site under exactly that version.
+      - name: The site boots under the server's soli
+        if: steps.cfg.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          installed="$(ssh "$USER@$HOST" 'soli --version' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          [ -n "$installed" ] || { echo "could not read the server's soli version" >&2; exit 1; }
+          echo "server: $installed — reference: $SOLI_VERSION"
+          if [ "$installed" = "$SOLI_VERSION" ]; then
+            echo "same version the verify job booted; nothing more to check"
+            exit 0
+          fi
+          echo "::notice::the server runs soli $installed; SOLI_VERSION ($SOLI_VERSION) can be bumped"
+          tmp="$(mktemp -d)"
+          curl -fsSL "https://github.com/solisoft/soli_lang/releases/download/v$installed/soli-linux-amd64.tar.gz" \
+            -o "$tmp/pkg.tar.gz"
+          tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"
+          bin="$(find "$tmp" -type f -name soli -perm -u+x | head -1)"
+          .github/scripts/www-boot-check.sh "$bin" 19556
+
       # --delete-delay: what leaves the repository leaves the server. The
       # exclusions protect what belongs to the server — the secrets (.env) and
       # the proxy's own files (app.infos, restart.txt) — plus node_modules,
@@ -239,19 +244,6 @@ jobs:
             --exclude='run/' \
             --exclude='sites/' \
             doc/ "$USER@$HOST:$SITES_DIR/$SITE_DIR/"
-
-      - name: The server runs the pinned version
-        if: steps.cfg.outputs.configured == 'true'
-        run: |
-          set -euo pipefail
-          installed="$(ssh "$USER@$HOST" 'soli --version' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-          echo "server: $installed — pinned: $SOLI_VERSION"
-          if [ "$installed" != "$SOLI_VERSION" ]; then
-            echo "" >&2
-            echo "The server runs Soli $installed; this workflow verified $SOLI_VERSION." >&2
-            echo "Align SOLI_VERSION here, or update the server." >&2
-            exit 1
-          fi
 
       - name: Migrations
         if: steps.cfg.outputs.configured == 'true'
