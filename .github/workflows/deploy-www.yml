@@ -37,7 +37,7 @@ env:
   # The version the server runs, verified below rather than hoped for. A CI that
   # checks the site against a different interpreter than production has not
   # checked production.
-  SOLI_VERSION: "2.13.0"
+  SOLI_VERSION: "2.14.0"
 
 jobs:
   verify:
