@@ -6,7 +6,7 @@ describe("Docs pages") do
   test("the home page carries the version being released") do
     response = get("/")
     expect(res_status(response)).to_equal(200)
-    expect(res_body(response).include?("v2.2.0")).to_equal(true)
+    expect(res_body(response).include?("v2.2.1")).to_equal(true)
   end
 
   test("a docs page shows the same version as the landing page") do

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [2.2.1](https://github.com/solisoft/solidb/compare/v2.2.0...v2.2.1) (2026-10-07)
+
+### Fixed
+
+* **A server started with `--daemon` never gave freed memory back.**
+  jemalloc stops its background purge threads in the child of a `fork()`, and
+  `-d` forks, so on a daemonized server pages freed after a burst stayed
+  resident for as long as the process ran. A dev server up five days held
+  9.2 GB (RSS + swap) against 918 MB actually allocated; restarted on 2.2.1 it
+  sits at 854 MB. The purger is now restarted after daemonizing. Servers run
+  in the foreground (systemd, Docker) were not affected.
+* The startup line `jemalloc: background_thread=…` reported the boot option,
+  so it said `true` while the purger was off. It now reports the live setting
+  and warns when it is off.
+
 ## [2.2.0](https://github.com/solisoft/solidb/compare/v2.1.0...v2.2.0) (2026-10-03)
 
 ### Added
