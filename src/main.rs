@@ -37,17 +37,39 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub static malloc_conf: &[u8; 73] =
     b"background_thread:true,dirty_decay_ms:2000,muzzy_decay_ms:2000,thp:never\0";
 
-/// Report the allocator options jemalloc actually started with.
+/// Restart jemalloc's background purger in a forked child.
+///
+/// jemalloc stops its background threads in the child of a `fork()` and
+/// leaves them off (`background_thread_postfork_child`), while
+/// `opt.background_thread` keeps reading `true`. `--daemon` forks, so a
+/// daemonized server ran with no purger at all: on a dev box a `-d` server
+/// up for five days held 9.2 GB resident (6.9 GB RSS + 2.1 GB swap) against
+/// 918 MB allocated. Call this after daemonizing, before any other thread
+/// exists.
+#[cfg(unix)]
+fn restore_allocator_background_thread() {
+    use tikv_jemalloc_ctl::{background_thread, opt};
+
+    if opt::background_thread::read().unwrap_or(false) {
+        if let Err(e) = background_thread::write(true) {
+            eprintln!("jemalloc: could not restart background_thread after fork: {e}");
+        }
+    }
+}
+
+/// Report the allocator options jemalloc is actually running with.
 ///
 /// The tuning above is applied through a link-time symbol, so a rename in
 /// tikv-jemalloc-sys (or a build that drops the prefix) would make it a no-op
 /// with nothing to show for it. Reading the values back turns that from
-/// invisible into a warning in the log.
+/// invisible into a warning in the log. The background thread is read from
+/// the live `background_thread` setting, not `opt.background_thread`: a fork
+/// turns the former off and leaves the latter `true`.
 #[cfg(not(target_env = "msvc"))]
 fn log_allocator_tuning() {
-    use tikv_jemalloc_ctl::{opt, raw};
+    use tikv_jemalloc_ctl::{background_thread, raw};
 
-    let background = opt::background_thread::read().unwrap_or(false);
+    let background = background_thread::read().unwrap_or(false);
     // Decay intervals have no typed accessor in tikv-jemalloc-ctl; read the
     // mallctl directly. Both are `ssize_t` (-1 means "never decay").
     let dirty_ms = unsafe { raw::read::<isize>(b"opt.dirty_decay_ms\0") }.unwrap_or(-1);
@@ -62,8 +84,9 @@ fn log_allocator_tuning() {
     } else {
         tracing::warn!(
             "jemalloc: background_thread is OFF (dirty_decay_ms={}) — pages freed by \
-             threads that then go idle will stay resident. The `malloc_conf` \
-             symbol in main.rs is not reaching the allocator.",
+             threads that then go idle will stay resident. Either the `malloc_conf` \
+             symbol in main.rs is not reaching the allocator, or the process forked \
+             without `restore_allocator_background_thread`.",
             dirty_ms
         );
     }
@@ -459,6 +482,7 @@ fn main() -> anyhow::Result<()> {
         match daemonize.start() {
             Ok(_) => {
                 // We're now in the daemon process
+                restore_allocator_background_thread();
             }
             Err(e) => {
                 eprintln!("Error starting daemon: {}", e);
