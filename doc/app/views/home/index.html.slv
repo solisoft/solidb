@@ -30,10 +30,10 @@
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
-      <h1>SoliDB is a multi-model database in a single Rust binary.</h1>
+      <h1>Documents, graphs, vectors and search in one server.</h1>
       <p class="hero-lede">
-        Documents, graphs, vectors, time-series, geo and blobs share one RocksDB
-        store and one query language, SDBQL. The captures on this page come from real
+        SoliDB keeps them, with time-series, geo and blobs, in one RocksDB store
+        behind one query language, SDBQL. The captures on this page come from real
         servers. Each one names the release it shipped in and links to the post that
         shows how it was taken.
       </p>
