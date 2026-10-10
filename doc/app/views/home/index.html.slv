@@ -1,7 +1,7 @@
-<%# SoliDB landing page — "receipts, not adjectives". Every figure on this page
-    is copied from a release post and links to it; where a post says a number
-    is one run, a shell-loop wall-clock time, or was never measured, the page
-    says so too. When you add a row, add its source link, or leave the row out.
+<%# SoliDB landing page — "receipts, not adjectives". Every capture on this page
+    is copied from a release post and links to it, and every claim about
+    behaviour (the clustering facts included) was checked against the source.
+    When you add one, add its source, or leave it out.
     Styling lives in app/assets/css/application.css (LANDING section). No user
     content here, so nothing needs escaping. %>
 
@@ -10,7 +10,7 @@
     <a class="brand" href="/" aria-label="SoliDB home">SoliDB <%- partial("shared/version_pill", {}) %></a>
 
     <nav class="nav-links" aria-label="Primary">
-      <a href="#measurements">Measurements</a>
+      <a href="#cluster">Clustering</a>
       <a href="#limits">Limits</a>
       <a href="/docs">Docs</a>
       <a href="/blog">Blog</a>
@@ -33,9 +33,9 @@
       <h1>SoliDB is a multi-model database in a single Rust binary.</h1>
       <p class="hero-lede">
         Documents, graphs, vectors, time-series, geo and blobs share one RocksDB
-        store and one query language, SDBQL. The figures on this page were measured
-        while building it. Each one names the release it shipped in and links to the
-        post that shows how it was taken.
+        store and one query language, SDBQL. The captures on this page come from real
+        servers. Each one names the release it shipped in and links to the post that
+        shows how it was taken.
       </p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/docs/getting-started">Read the getting-started guide</a>
@@ -179,94 +179,99 @@ Full sync complete, final sequence: 5
   </div>
 </section>
 
-<!-- ======================== MEASUREMENTS ======================== -->
-<section class="sec" id="measurements">
+<!-- ========================== CLUSTERING ========================== -->
+<section class="sec" id="cluster">
   <div class="wrap">
     <div class="sec-head">
-      <h2>Measured, with the method attached.</h2>
+      <h2>A cluster is a peer and a keyfile.</h2>
       <p>
-        Every row is copied from a release post. Where the post says a figure is a
-        single run, a wall-clock time from a shell loop, or was not measured at all,
-        this table says so too. The two bars in a row share one scale.
+        A new node names one existing member with <code class="mono">--peer</code>. It
+        learns the other members from that member's answer, then pulls the data that
+        was written before it joined. HTTP and replication share one port. The
+        <a class="text-link" href="/docs/cluster">cluster</a> and
+        <a class="text-link" href="/docs/sharding">sharding</a> docs have the rest.
       </p>
     </div>
 
-    <div class="ledger-cols" aria-hidden="true">
-      <span>Operation</span><span>Before → after</span><span>Release</span><span>Measured in</span>
-    </div>
-    <div class="ledger">
-      <div class="ledger-row">
-        <div class="ledger-op">
-          <h3>Create 10 collections</h3>
-          <p>On a copy of a 1,144-collection instance, 7.4 GB. Each create used to rewrite and fsync RocksDB's whole OPTIONS file.</p>
-        </div>
-        <div class="bars">
-          <div class="bar-row"><span class="ver">1.3</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,952 ms</span></div>
-          <div class="bar-row after"><span class="ver">2.0</span><span class="bar-track"><span class="bar-fill" style="width:2.7%"></span></span><span class="val">53 ms</span></div>
-        </div>
-        <div class="ledger-meta">
-          <span class="ledger-rel"><span class="cell-label">Release </span>2.0.0</span>
-          <a class="source" href="/blog/solidb-2-0-shared-keyspace">/blog/solidb-2-0-shared-keyspace</a>
-        </div>
+    <div class="cluster">
+      <div class="cluster-main">
+      <pre class="well"><span class="dim"># once, then copy the file to every machine</span>
+$ openssl rand -hex 32 &gt; solidb.key
+
+<span class="dim"># the seed, on 10.0.0.1: no --peer</span>
+$ solidb --host 10.0.0.1 --keyfile solidb.key
+
+<span class="dim"># every other node names the seed</span>
+$ solidb --host 10.0.0.2 --keyfile solidb.key \
+    --peer 10.0.0.1:6745
+$ solidb --host 10.0.0.3 --keyfile solidb.key \
+    --peer 10.0.0.1:6745
+
+<span class="dim"># ask more than one node who it sees</span>
+$ curl -u admin:… 10.0.0.3:6745/_api/cluster/status</pre>
+
+      <figure class="cluster-figure">
+        <svg viewBox="0 0 480 284" role="img" aria-labelledby="cl-t">
+          <title id="cl-t">The three nodes the commands start: two joiners dial the seed, the seed answers each with the member list and a full sync, and the joiners learn about each other from that answer</title>
+          <defs>
+            <marker id="cl-arr-join" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="cl-head-join" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="cl-arr-sync" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="cl-head-sync" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+
+          <path class="cl-join" d="M52,208 L196,82" marker-end="url(#cl-arr-join)"/>
+          <path class="cl-sync" d="M222,82 L78,208" marker-end="url(#cl-arr-sync)"/>
+          <path class="cl-join" d="M428,208 L284,82" marker-end="url(#cl-arr-join)"/>
+          <path class="cl-sync" d="M258,82 L402,208" marker-end="url(#cl-arr-sync)"/>
+          <path class="cl-learn" d="M156,248 L324,248"/>
+
+          <text class="cl-label" x="104" y="132" text-anchor="end">--peer</text>
+          <text class="cl-label cl-label-sync" x="168" y="164">full sync</text>
+          <text class="cl-label" x="376" y="132">--peer</text>
+          <text class="cl-label cl-label-sync" x="312" y="164" text-anchor="end">full sync</text>
+          <text class="cl-note" x="240" y="240" text-anchor="middle">learned from db1</text>
+
+          <rect class="cl-node cl-seed" x="170" y="16" width="140" height="64" rx="4"/>
+          <rect class="cl-node" x="16" y="210" width="140" height="64" rx="4"/>
+          <rect class="cl-node" x="324" y="210" width="140" height="64" rx="4"/>
+          <text class="cl-name" x="186" y="42">db1 · seed</text>
+          <text class="cl-addr" x="186" y="64">10.0.0.1:6745</text>
+          <text class="cl-name" x="32" y="236">db2</text>
+          <text class="cl-addr" x="32" y="258">10.0.0.2:6745</text>
+          <text class="cl-name" x="340" y="236">db3</text>
+          <text class="cl-addr" x="340" y="258">10.0.0.3:6745</text>
+        </svg>
+        <figcaption>
+          The commands above, drawn. Each joiner dials only the seed; the seed answers
+          with the member list and a full copy of the data written before the join.
+          Every message on these lines is signed with the same <code>solidb.key</code>.
+        </figcaption>
+      </figure>
       </div>
 
-      <div class="ledger-row">
-        <div class="ledger-op">
-          <h3>10 inserts that auto-create their collection</h3>
-          <p>Same instance. Wall-clock HTTP calls from a shell loop: compare the rows, do not quote them as latency.</p>
+      <div class="cluster-facts">
+        <div class="cluster-fact">
+          <h3>No keyfile, no cluster.</h3>
+          <p>A node started with <code>--peer</code> and no <code>--keyfile</code> refuses to start. Every cluster message is signed with HMAC-SHA256 over a timestamp and a nonce, and is rejected if it is more than five minutes off the receiver's clock. The key signs traffic but does not encrypt it, so keep the port on a private network.</p>
         </div>
-        <div class="bars">
-          <div class="bar-row"><span class="ver">1.3</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,918 ms</span></div>
-          <div class="bar-row after"><span class="ver">2.0</span><span class="bar-track"><span class="bar-fill" style="width:2.9%"></span></span><span class="val">56 ms</span></div>
+        <div class="cluster-fact">
+          <h3>It will not advertise an address no peer can reach.</h3>
+          <p>With a peer on another host, a node that would give out <code>0.0.0.0</code>, <code>::</code> or loopback stops at startup. If you bind every interface, name the routable one with <code>--advertise</code>.</p>
         </div>
-        <div class="ledger-meta">
-          <span class="ledger-rel"><span class="cell-label">Release </span>2.0.0</span>
-          <a class="source" href="/blog/solidb-2-0-shared-keyspace">/blog/solidb-2-0-shared-keyspace</a>
+        <div class="cluster-fact">
+          <h3>Sharding is chosen per collection.</h3>
+          <p>Set <code>numShards</code> and <code>replicationFactor</code> when you create a collection, and each document goes to the shard its key hashes to. A collection created without them is replicated whole to every node.</p>
         </div>
-      </div>
-
-      <div class="ledger-row">
-        <div class="ledger-op">
-          <h3>Peak memory, 4,000-row UPSERT</h3>
-          <p>Rows sent as one 500 KB bind variable, which was copied into every row's context. Before the fix it hit the 30 s timeout; after, it finished in 70 ms.</p>
+        <div class="cluster-fact">
+          <h3>A dead node's shards get new replicas.</h3>
+          <p>Nodes send heartbeats every 5 s. A node silent for 10 s is suspected, and after 15 s it is marked dead. Every 5 s each node re-creates missing replicas on healthy members. When a node joins or comes back, <code>POST /_api/cluster/rebalance</code> spreads the shards out again.</p>
         </div>
-        <div class="bars">
-          <div class="bar-row"><span class="ver">1.2.2</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">15.9 GB</span></div>
-          <div class="bar-row after"><span class="ver">1.2.3</span><span class="bar-track"><span class="bar-fill" style="width:1.1%"></span></span><span class="val">178 MB</span></div>
+        <div class="cluster-fact">
+          <h3>Sharded collections have limits.</h3>
+          <p>A filter on an indexed field scans every shard. <code>If-Match</code> is refused. A write that would change a document's shard-key value is refused, because documents do not move between shards.</p>
         </div>
-        <div class="ledger-meta">
-          <span class="ledger-rel"><span class="cell-label">Release </span>1.2.3</span>
-          <a class="source" href="/blog/a-request-must-never-take-the-server-down">/blog/a-request-must-never-take-the-server-down</a>
-        </div>
-      </div>
-
-      <div class="ledger-row">
-        <div class="ledger-op">
-          <h3>Peak RSS, 400,000 documents into 200 collections</h3>
-          <p>613-collection checkpoint, prod profile, one run per variant. RocksDB's allocations moved from glibc arenas to jemalloc.</p>
-        </div>
-        <div class="bars">
-          <div class="bar-row"><span class="ver">1.0</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">1,881 MB</span></div>
-          <div class="bar-row after"><span class="ver">1.1</span><span class="bar-track"><span class="bar-fill" style="width:72%"></span></span><span class="val">1,356 MB</span></div>
-        </div>
-        <div class="ledger-meta">
-          <span class="ledger-rel"><span class="cell-label">Release </span>1.1.0</span>
-          <a class="source" href="/blog/where-the-memory-goes">/blog/where-the-memory-goes</a>
-        </div>
-      </div>
-
-      <div class="ledger-row">
-        <div class="ledger-op">
-          <h3>Server start, about 920 collections</h3>
-          <p>Two full sweeps of every collection ran at each start. After a clean shutdown they are skipped. The new start time was not measured, so none is shown.</p>
-        </div>
-        <div class="bars">
-          <div class="bar-row"><span class="ver">1.1</span><span class="bar-track"><span class="bar-fill" style="width:100%"></span></span><span class="val">22.5–33.0 s</span></div>
-          <div class="bar-row unmeasured"><span class="ver">1.2</span><span class="bar-track"></span><span class="val">not measured</span></div>
-        </div>
-        <div class="ledger-meta">
-          <span class="ledger-rel"><span class="cell-label">Release </span>1.2.0</span>
-          <a class="source" href="/blog/faster-startup-many-collections">/blog/faster-startup-many-collections</a>
+        <div class="cluster-fact">
+          <h3>A single node pays nothing for it.</h3>
+          <p>Since 2.0.3, a node with no peers does not write the replication log until a peer first reads from it. That log write cost about 40% of a primary-key update.</p>
         </div>
       </div>
     </div>
@@ -434,7 +439,7 @@ $ solidb --port 6745 --data-dir ./data</pre>
       <a class="brand" href="/">SoliDB</a>
       <span>SoliSoft · O'Saasy License</span>
     </div>
-    <span class="foot-note">Figures on this page last checked against v2.1.0</span>
+    <span class="foot-note">Claims on this page last checked against v2.2.1</span>
     <nav class="foot-links" aria-label="Footer">
       <a href="/docs">Docs</a>
       <a href="/blog">Blog</a>
