@@ -689,12 +689,23 @@ impl StorageEngine {
         // After the registry entries are gone, so a crash in between leaves
         // unreachable data (reclaimed by the next drop of the range), never a
         // collection whose data vanished under it.
-        {
+        let dropped = {
             let _catalog = super::collection_registry::catalog_lock();
-            super::collection_registry::drop_database_keyspaces(&self.db, name)?;
-        }
+            super::collection_registry::drop_database_keyspaces(&self.db, name)
+        };
 
-        Ok(())
+        // Cached query results are keyed by database *name*: left in place, a
+        // database recreated under this name would be answered with the
+        // dropped one's rows until a write to each collection evicted them.
+        // Last, once the data and registry entries are gone, and whether or
+        // not the range delete succeeded: a query that started earlier still
+        // found the collections and read the old rows, and its result must
+        // not survive the drop. Done here rather than in the handlers so every
+        // path that drops a database (HTTP, driver protocol, replication
+        // apply) is covered.
+        super::query_cache::invalidate_database(name);
+
+        dropped.map(|_| ())
     }
 
     /// List all databases
@@ -979,12 +990,19 @@ impl StorageEngine {
     }
 
     /// Evict `db:coll` from the owning `Database`'s handle cache, if that
-    /// database is loaded (audit D8: the two caches share instances).
+    /// database is loaded (audit D8: the two caches share instances), and
+    /// drop the query results cached against it: called when a collection is
+    /// created or deleted, after which no earlier answer about it holds.
     fn evict_database_cached_collection(&self, cf_name: &str) {
-        if let Some((db_name, coll_name)) = cf_name.split_once(':') {
-            if let Some(database) = self.databases.get(db_name) {
-                database.evict_cached_collection(coll_name);
-            }
+        let loaded = cf_name.split_once(':').and_then(|(db_name, coll_name)| {
+            self.databases
+                .get(db_name)
+                .map(|database| (database, coll_name))
+        });
+        match loaded {
+            // Invalidates the query cache too.
+            Some((database, coll_name)) => database.evict_cached_collection(coll_name),
+            None => super::query_cache::invalidate_collection("", cf_name),
         }
     }
 

@@ -672,7 +672,32 @@ impl Collection {
     }
 }
 
+#[must_use = "the cache is invalidated when this value drops"]
+pub(crate) struct InvalidateOnExit<'a>(&'a Collection);
+
+impl Drop for InvalidateOnExit<'_> {
+    fn drop(&mut self) {
+        self.0.invalidate_cached_queries();
+    }
+}
+
 impl Collection {
+    /// Drop every cached query result that read this collection. For the
+    /// changes that bypass [`Self::emit_change`] yet alter what a query
+    /// returns: truncate, and creating or dropping an index (FULLTEXT on a
+    /// collection without a fulltext index answers `[]`, which is cached).
+    pub(crate) fn invalidate_cached_queries(&self) {
+        crate::storage::query_cache::invalidate_collection("", &self.name);
+    }
+
+    /// [`Self::invalidate_cached_queries`] when the returned guard drops, so
+    /// an index DDL invalidates on every exit — success, `?`, or a failed
+    /// backfill — and after its last change, never before it. Bind it to a
+    /// name (`let _invalidate`); `let _ = …` drops it at once.
+    pub(crate) fn invalidate_cached_queries_on_exit(&self) -> InvalidateOnExit<'_> {
+        InvalidateOnExit(self)
+    }
+
     /// Publish a change event, dropping cached query results for this
     /// collection first. Every document write funnels through here, so the
     /// write paths outside the HTTP handlers (replication apply, TTL expiry,
@@ -681,7 +706,7 @@ impl Collection {
         &self,
         event: ChangeEvent,
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<ChangeEvent>> {
-        crate::storage::query_cache::invalidate_collection("", &self.name);
+        self.invalidate_cached_queries();
         self.change_sender.send(event)
     }
 }

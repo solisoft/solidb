@@ -106,6 +106,10 @@ impl Collection {
             )));
         }
 
+        // Whatever the outcome below, from here on cached results may have
+        // been computed against a half-built or half-removed index.
+        let _invalidate = self.invalidate_cached_queries_on_exit();
+
         // Store metadata
         let config_bytes = serde_json::to_vec(&config)?;
         {
@@ -213,6 +217,8 @@ impl Collection {
 
     /// Drop a vector index
     pub fn drop_vector_index(&self, name: &str) -> DbResult<()> {
+        let _invalidate = self.invalidate_cached_queries_on_exit();
+
         let db = &self.db;
         let cf = self
             .ks

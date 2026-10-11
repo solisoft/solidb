@@ -64,8 +64,12 @@ impl Database {
     }
 
     /// Forget every cached handle for `collection_name`, here and in the
-    /// engine's cache.
+    /// engine's cache, and every query result cached against it. Called when
+    /// the collection is created or deleted: a result computed against a
+    /// previous incarnation (a dropped collection or database of the same
+    /// name) must not answer for the new one.
     pub(crate) fn evict_cached_collection(&self, collection_name: &str) {
+        super::query_cache::invalidate_collection(&self.name, collection_name);
         self.collections.remove(collection_name);
         if let Some(engine) = &self.engine_collections {
             engine.remove(&self.collection_cf_name(collection_name));

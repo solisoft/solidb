@@ -80,6 +80,10 @@ impl Collection {
             )));
         }
 
+        // Whatever the outcome below, from here on cached results may have
+        // been computed against a half-built or half-removed index.
+        let _invalidate = self.invalidate_cached_queries_on_exit();
+
         let index = FulltextIndex {
             name: name.clone(),
             fields: fields.clone(),
@@ -153,6 +157,8 @@ impl Collection {
                 name
             )));
         }
+
+        let _invalidate = self.invalidate_cached_queries_on_exit();
 
         let db = &self.db;
         let cf = self

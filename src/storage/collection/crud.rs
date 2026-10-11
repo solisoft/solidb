@@ -1441,11 +1441,17 @@ impl Collection {
         self.count_dirty.store(true, Ordering::Relaxed);
         self.flush_stats();
 
+        // Unconditionally: `count` is the maintained counter, and a drifted
+        // counter of 0 would otherwise leave cached results listing the
+        // documents just removed. The event below goes straight to the
+        // channel, since `emit_change` would invalidate a second time.
+        self.invalidate_cached_queries();
+
         // One broadcast event instead of one-per-document: subscribers
         // (LiveQuery, stream processors) learn the collection was cleared
         // without being flooded.
         if count > 0 {
-            let _ = self.emit_change(ChangeEvent {
+            let _ = self.change_sender.send(ChangeEvent {
                 type_: ChangeType::Truncate,
                 key: String::new(),
                 data: None,

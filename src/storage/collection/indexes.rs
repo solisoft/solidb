@@ -163,6 +163,10 @@ impl Collection {
             )));
         }
 
+        // Whatever the outcome below, from here on cached results may have
+        // been computed against a half-built or half-removed index.
+        let _invalidate = self.invalidate_cached_queries_on_exit();
+
         // Create index metadata
         let index = Index::new(name.clone(), fields.clone(), index_type.clone(), unique);
         let index_bytes = serde_json::to_vec(&index)?;
@@ -313,6 +317,8 @@ impl Collection {
                 name
             )));
         }
+
+        let _invalidate = self.invalidate_cached_queries_on_exit();
 
         let db = &self.db;
         let cf = self

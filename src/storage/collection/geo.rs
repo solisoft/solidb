@@ -33,6 +33,10 @@ impl Collection {
             )));
         }
 
+        // Whatever the outcome below, from here on cached results may have
+        // been computed against a half-built or half-removed index.
+        let _invalidate = self.invalidate_cached_queries_on_exit();
+
         let index = GeoIndex {
             name: name.clone(),
             field: field.clone(),
@@ -98,6 +102,8 @@ impl Collection {
                 name
             )));
         }
+
+        let _invalidate = self.invalidate_cached_queries_on_exit();
 
         let db = &self.db;
         let cf = self
