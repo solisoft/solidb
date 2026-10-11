@@ -1,11 +1,13 @@
 use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
-use crate::sdbql::QueryExecutor;
+use crate::error::DbResult;
+use crate::sdbql::{Query, QueryExecutor};
 // Shared with the HTTP /cursor handler so both protocols cache, invalidate,
 // and decide what needs the blocking pool on exactly the same terms.
 use crate::server::handlers::query::{
     invalidate_collections, is_long_running_query, is_small_local_scan, mutated_collections,
 };
+use crate::server::query_metrics::{Observation, QueryKind};
 use crate::storage::query_cache;
 use std::collections::HashMap;
 
@@ -108,6 +110,7 @@ pub async fn handle_query(
 
     let storage = handler.storage.clone();
     let replication = handler.replication.clone();
+    let try_raw = cache_key.is_none() && !mutates;
 
     // Point reads run inline. The HTTP handler gates `spawn_blocking` on the
     // same predicate: a thread handoff costs more than the query itself on a
@@ -127,38 +130,16 @@ pub async fn handle_query(
         }
         // Rows copied straight from storage when the query allows it (and
         // nothing is to be cached: the cache holds decoded rows).
-        if cache_key.is_none() && !mutates {
-            match executor.execute_raw_msgpack(query) {
-                Ok(Some(rows)) => return Response::raw_rows(rows),
-                Ok(None) => {}
-                Err(e) => return Response::error(DriverError::DatabaseError(e.to_string())),
-            }
-        }
-        return match executor.execute(query) {
-            Ok(results) => {
-                if let Some(key) = cache_key {
-                    if results.len() <= query_cache::MAX_CACHED_ROWS {
-                        query_cache::get_query_cache().put_if_current(
-                            key,
-                            results.clone(),
-                            cache_generation,
-                        );
-                    }
-                }
-                if mutates {
-                    invalidate_collections(&invalidated);
-                }
-                Response::ok(serde_json::Value::Array(results))
-            }
-            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-        };
+        let observed = Observation::start(QueryKind::of(mutates));
+        let outcome = run(&executor, query, try_raw);
+        observed.finish();
+        return respond(outcome, cache_key, cache_generation, mutates, &invalidated);
     }
 
     // Execution runs on the blocking pool under a timeout, mirroring the HTTP
     // /cursor handler: the executor is synchronous CPU work and must not pin
     // the async runtime thread or run without an upper time bound.
     let exec_query = (*query).clone();
-    let try_raw = cache_key.is_none() && !mutates;
     let mut task = tokio::task::spawn_blocking(move || {
         let mut executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database)
@@ -171,12 +152,12 @@ pub async fn handle_query(
         if let Some(ref log) = replication {
             executor = executor.with_replication(log);
         }
-        if try_raw {
-            if let Some(rows) = executor.execute_raw_msgpack(&exec_query)? {
-                return Ok(Rows::Raw(rows));
-            }
-        }
-        executor.execute(&exec_query).map(Rows::Values)
+        // Measured here, on the thread that runs it: a panic, or a run past
+        // the client's timeout, is still recorded once.
+        let observed = Observation::start(QueryKind::of(mutates));
+        let outcome = run(&executor, &exec_query, try_raw);
+        observed.finish();
+        outcome
     });
 
     // `&mut task` so the handle survives a timeout and can still be observed.
@@ -186,32 +167,11 @@ pub async fn handle_query(
     )
     .await
     {
-        Ok(join_result) => match join_result {
-            Ok(Ok(Rows::Raw(rows))) => Response::raw_rows(rows),
-            Ok(Ok(Rows::Values(results))) => {
-                if let Some(key) = cache_key {
-                    if results.len() <= query_cache::MAX_CACHED_ROWS {
-                        query_cache::get_query_cache().put_if_current(
-                            key,
-                            results.clone(),
-                            cache_generation,
-                        );
-                    }
-                }
-                if mutates {
-                    // Same invalidation rule as the HTTP handler: drop the
-                    // touched collections, or everything when the set cannot
-                    // be determined.
-                    invalidate_collections(&invalidated);
-                }
-                Response::ok(serde_json::Value::Array(results))
-            }
-            Ok(Err(e)) => Response::error(DriverError::DatabaseError(e.to_string())),
-            Err(e) => Response::error(DriverError::DatabaseError(format!(
-                "Task join error: {}",
-                e
-            ))),
-        },
+        Ok(Ok(outcome)) => respond(outcome, cache_key, cache_generation, mutates, &invalidated),
+        Ok(Err(e)) => Response::error(DriverError::DatabaseError(format!(
+            "Task join error: {}",
+            e
+        ))),
         Err(_) => {
             // A blocking task is not cancellable: dropping the handle does not
             // stop the executor, so a mutating query that overruns the timeout
@@ -230,6 +190,49 @@ pub async fn handle_query(
                 QUERY_TIMEOUT_SECS
             )))
         }
+    }
+}
+
+/// Run `query`, copying the rows straight from storage when `try_raw` and the
+/// planner allows it.
+fn run(executor: &QueryExecutor, query: &Query, try_raw: bool) -> DbResult<Rows> {
+    if try_raw {
+        if let Some(rows) = executor.execute_raw_msgpack(query)? {
+            return Ok(Rows::Raw(rows));
+        }
+    }
+    executor.execute(query).map(Rows::Values)
+}
+
+/// Turn an execution outcome into the response, caching a read's rows and
+/// invalidating what a write touched.
+fn respond(
+    outcome: DbResult<Rows>,
+    cache_key: Option<String>,
+    cache_generation: u64,
+    mutates: bool,
+    invalidated: &[String],
+) -> Response {
+    match outcome {
+        Ok(Rows::Raw(rows)) => Response::raw_rows(rows),
+        Ok(Rows::Values(results)) => {
+            if let Some(key) = cache_key {
+                if results.len() <= query_cache::MAX_CACHED_ROWS {
+                    query_cache::get_query_cache().put_if_current(
+                        key,
+                        results.clone(),
+                        cache_generation,
+                    );
+                }
+            }
+            if mutates {
+                // Same invalidation rule as the HTTP handler: drop the touched
+                // collections, or everything when the set cannot be determined.
+                invalidate_collections(invalidated);
+            }
+            Response::ok(serde_json::Value::Array(results))
+        }
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
 

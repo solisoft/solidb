@@ -78,6 +78,30 @@
                     <code class="text-green-400">solidb_cluster_healthy_nodes</code>
                     <p class="text-gray-500 mt-1">Healthy cluster nodes (gauge, if clustered)</p>
                   </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_query_duration_seconds</code>
+                    <p class="text-gray-500 mt-1">SDBQL execution time, histogram. Label <code>kind</code> is <code>read</code> or <code>write</code>. Cache hits execute nothing and are not in it; they are <code>solidb_query_cache_hits_total</code>.</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_query_cache_hits_total</code>
+                    <p class="text-gray-500 mt-1">Result-cache hits. <code>solidb_query_cache_misses_total</code> counts misses and expired entries. <code>solidb_query_cache_entries</code> is how many results are held.</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_slow_queries_total</code>
+                    <p class="text-gray-500 mt-1">Executions at or above 100ms, including failures, panics and timeouts (counter)</p>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-4 mb-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Query latency</h4>
+                <p class="text-sm text-gray-400 mb-3">The histogram and the slow-query counter cover client queries on <code class="text-gray-300">POST /_api/database/{db}/cursor</code> and on the driver. Lua scripts, triggers and the queue worker are not included. Buckets are 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 1s, 5s, and +Inf. There is no label per query text. A query that outlives the client's 30-second timeout is counted when the executor stops, with its real duration. A cache hit is not timed: counting it does not read the clock, and the counters are kept per thread so a lookup does not wait on other cores.</p>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+                  <pre>histogram_quantile(0.99, sum by (le) (rate(solidb_query_duration_seconds_bucket{kind="read"}[5m])))
+
+rate(solidb_slow_queries_total[5m])
+
+rate(solidb_query_cache_hits_total[5m])
+  / (rate(solidb_query_cache_hits_total[5m]) + rate(solidb_query_cache_misses_total[5m]))</pre>
                 </div>
               </div>
               <div class="mt-4 mb-4">
@@ -127,6 +151,8 @@ solidb_cpu_usage_percent 15.50</pre>
                 SoliDB automatically logs queries that exceed <code class="text-orange-400">100ms</code> execution time to a special
                 <code class="text-orange-400">_slow_queries</code> collection in each database. This helps identify performance
                 bottlenecks and queries that need optimization.
+                The same threshold increments <code class="text-orange-400">solidb_slow_queries_total</code> on <code>/metrics</code>,
+                which also counts driver queries, failures and timeouts. The collection only receives finished HTTP queries.
               </p>
             </div>
 
@@ -134,8 +160,8 @@ solidb_cpu_usage_percent 15.50</pre>
               <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Configuration</h4>
               <p class="text-sm text-gray-400 mb-3">The slow query threshold is configured via a constant in the server:</p>
               <div class="bg-gray-950/50 p-4 rounded border border-white/5 font-mono text-xs text-gray-300">
-                <pre>// src/server/handlers.rs
-const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;  // Default: 100ms</pre>
+                <pre>// src/server/query_metrics.rs
+pub const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;</pre>
               </div>
             </div>
 

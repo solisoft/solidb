@@ -10,6 +10,7 @@ pub mod llm_client;
 pub mod metrics;
 pub mod nl_handlers;
 pub mod permission_cache;
+pub mod query_metrics;
 pub mod rate_limit;
 pub mod repl_session;
 pub mod role_handlers;

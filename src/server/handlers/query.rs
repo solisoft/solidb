@@ -3,7 +3,10 @@ use super::system::AppState;
 use crate::{
     error::DbError,
     sdbql::{ast::Expression, BodyClause, Query, QueryExecutor},
-    server::response::ApiResponse,
+    server::{
+        query_metrics::{Observation, QueryKind},
+        response::ApiResponse,
+    },
     storage::{query_cache, StorageEngine},
 };
 use axum::{
@@ -19,9 +22,6 @@ use std::sync::Arc;
 
 /// Default query execution timeout (30 seconds)
 const QUERY_TIMEOUT_SECS: u64 = 30;
-
-/// Default slow query threshold in milliseconds (100ms)
-const SLOW_QUERY_THRESHOLD_MS: f64 = 100.0;
 
 /// Maximum batch size to prevent memory exhaustion
 const MAX_BATCH_SIZE: usize = 10_000;
@@ -302,8 +302,9 @@ fn log_slow_query(
     cf_ops_during: u64,
     cf_ops_ms_during: f64,
 ) {
-    // Only log if query exceeds threshold
-    if execution_time_ms < SLOW_QUERY_THRESHOLD_MS {
+    // Only log if query exceeds threshold. Same constant as
+    // `solidb_slow_queries_total`, so the collection and the counter agree.
+    if execution_time_ms < crate::server::query_metrics::SLOW_QUERY_THRESHOLD_MS {
         return;
     }
 
@@ -477,6 +478,7 @@ pub async fn execute_query(
             .with_principal(principal_from_claims(&claims))
             .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
+            let _observed = Observation::start(QueryKind::Read);
             let results = executor.execute(query)?;
             return Ok(ApiResponse::new(
                 ExecuteQueryResponse {
@@ -505,6 +507,9 @@ pub async fn execute_query(
             )
         }
         .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
+
+        // Drop records the write, including the `?` paths inside the loop.
+        let _observed = Observation::start(QueryKind::Write);
 
         // Execute body clauses manually to intercept mutations
         // Bind variables are read from the executor, never copied into this
@@ -840,10 +845,11 @@ pub async fn execute_query(
                     }
                 }
 
-                let start = std::time::Instant::now();
-                let result = executor.execute_with_stats(&query)?;
-                let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-                Ok::<_, DbError>((result, execution_time_ms))
+                // Measured here, on the thread that runs it: a panic, or a run
+                // past the client's timeout, is still recorded once.
+                let observed = Observation::start(QueryKind::of(mutates));
+                let result = executor.execute_with_stats(&query);
+                (result, observed.finish())
             });
 
             // `&mut task` so the handle survives a timeout and can still be awaited.
@@ -853,8 +859,10 @@ pub async fn execute_query(
             )
             .await
             {
-                Ok(join_result) => join_result
-                    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??,
+                Ok(Ok((result, elapsed))) => (result?, elapsed.as_secs_f64() * 1000.0),
+                Ok(Err(e)) => {
+                    return Err(DbError::InternalError(format!("Task join error: {}", e)));
+                }
                 Err(_) => {
                     // A blocking task is not cancellable: dropping the handle does
                     // not stop the executor, so a mutation that overruns still
@@ -895,10 +903,10 @@ pub async fn execute_query(
                 }
             }
 
-            let start = std::time::Instant::now();
-            let result = executor.execute_with_stats(query)?;
-            let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-            (result, execution_time_ms)
+            let observed = Observation::start(QueryKind::of(mutates));
+            let result = executor.execute_with_stats(query);
+            let elapsed = observed.finish();
+            (result?, elapsed.as_secs_f64() * 1000.0)
         };
 
     let total_count = query_result.results.len();

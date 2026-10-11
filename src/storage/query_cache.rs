@@ -11,8 +11,10 @@
 //!   invalidation only touch the index sets they belong to — O(matching
 //!   entries), not O(total cache).
 
+use crate::observability::per_thread::{PerThread, Registration, Slot};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -99,14 +101,22 @@ impl QueryCache {
 
     /// Get a cached query result. Synchronous and non-blocking; safe to call
     /// from request hot paths.
+    ///
+    /// Every call counts as a hit or a miss, including an expired entry.
+    /// Callers look up once. The tally is thread-local, so a lookup does not
+    /// share a cache line with other cores or with this lock.
     pub fn get(&self, query_hash: &str) -> Option<Arc<Vec<serde_json::Value>>> {
-        let inner = self.inner.read();
-        if let Some(cached) = inner.entries.get(query_hash) {
-            if cached.cached_at.elapsed() < self.ttl {
-                return Some(cached.result.clone());
+        let found = {
+            let inner = self.inner.read();
+            match inner.entries.get(query_hash) {
+                Some(cached) if cached.cached_at.elapsed() < self.ttl => {
+                    Some(cached.result.clone())
+                }
+                _ => None,
             }
-        }
-        None
+        };
+        record_lookup(found.is_some());
+        found
     }
 
     /// Store a query result in cache. Parses the cache key to maintain the
@@ -198,6 +208,29 @@ impl QueryCache {
         }
     }
 
+    /// Invalidate every cached result computed against `db_name`, whatever
+    /// collections it read. A database drop must not let a later database of
+    /// the same name be answered with the dropped one's rows: keys carry only
+    /// the database *name*, so without this a recreated database hits the old
+    /// entries. O(total cache), which is fine for a rare DDL operation.
+    pub fn invalidate_database(&self, db_name: &str) {
+        bump_generation();
+        // Keys are `"db/colls:hash"`; database names cannot contain ':' but
+        // the trailing '/' keeps `foo` from matching `foobar`. A name that
+        // itself contains '/' can only over-invalidate, which is safe.
+        let prefix = format!("{}/", db_name);
+        let mut inner = self.inner.write();
+        let doomed: Vec<String> = inner
+            .entries
+            .keys()
+            .filter(|key| key.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for key in &doomed {
+            inner.remove_entry(key);
+        }
+    }
+
     /// Get cache statistics
     pub fn stats(&self) -> QueryCacheStats {
         QueryCacheStats {
@@ -226,6 +259,61 @@ pub struct QueryCacheStats {
     pub entries: usize,
     pub max_entries: usize,
     pub ttl_secs: u64,
+}
+
+/// Per-thread hit and miss tallies. A scrape sums them. Keeping the atomic
+/// off `QueryCache` leaves the lock's cache line alone: an increment next to
+/// the `RwLock` would bounce it between cores on every lookup.
+struct LookupCounts {
+    hits: AtomicU64,
+    misses: AtomicU64,
+}
+
+impl LookupCounts {
+    const fn new() -> Self {
+        Self {
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Slot for LookupCounts {
+    fn retire_into(&self, retired: &Self) {
+        for (from, into) in [(&self.hits, &retired.hits), (&self.misses, &retired.misses)] {
+            into.fetch_add(from.load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+    }
+}
+
+static LOOKUP_REGISTRY: PerThread<LookupCounts> = PerThread::new(LookupCounts::new());
+
+thread_local! {
+    static LOOKUPS: Registration<LookupCounts> = LOOKUP_REGISTRY.register(LookupCounts::new());
+}
+
+#[inline]
+fn record_lookup(hit: bool) {
+    let _ = LOOKUPS.try_with(|counts| {
+        let counter = if hit { &counts.hits } else { &counts.misses };
+        counter.fetch_add(1, Ordering::Relaxed);
+    });
+}
+
+/// Hit, miss and entry counts for `/metrics`. Does not create the cache:
+/// a scrape of a process that has never cached a query reports zeros.
+pub fn metrics_snapshot() -> (u64, u64, usize) {
+    let mut hits = 0u64;
+    let mut misses = 0u64;
+    LOOKUP_REGISTRY.for_each(|counts| {
+        hits += counts.hits.load(Ordering::Relaxed);
+        misses += counts.misses.load(Ordering::Relaxed);
+    });
+    let entries = QUERY_CACHE
+        .get()
+        .map(|cache| cache.inner.read().entries.len())
+        .unwrap_or(0);
+    (hits, misses, entries)
 }
 
 /// Global query cache instance
@@ -304,6 +392,13 @@ pub fn invalidate_collection(db_name: &str, collection: &str) {
     // The index is not partitioned by database; see `index_name`.
     let _ = db_name;
     get_query_cache().invalidate_collection(index_name(collection));
+}
+
+/// Drop every cached result computed against `db_name`. Called by
+/// [`crate::storage::StorageEngine::delete_database`], so every path that
+/// drops a database (HTTP, driver protocol, replication apply) is covered.
+pub fn invalidate_database(db_name: &str) {
+    get_query_cache().invalidate_database(db_name);
 }
 
 /// Drop the whole result cache (e.g. a transaction commit whose write set is
@@ -768,6 +863,41 @@ mod tests {
         assert!(cache.get("db/coll:missing").is_none());
     }
 
+    fn thread_lookups() -> (u64, u64) {
+        LOOKUPS.with(|counts| {
+            (
+                counts.hits.load(Ordering::Relaxed),
+                counts.misses.load(Ordering::Relaxed),
+            )
+        })
+    }
+
+    #[test]
+    fn test_hit_and_miss_counters() {
+        let cache = QueryCache::new(10, 60);
+        let (hits, misses) = thread_lookups();
+        assert!(cache.get("db/users:1").is_none());
+        cache.put("db/users:1".to_string(), vec![json!(1)]);
+        assert!(cache.get("db/users:1").is_some());
+        assert!(cache.get("db/users:1").is_some());
+        let (hits_after, misses_after) = thread_lookups();
+        assert_eq!(misses_after - misses, 1);
+        assert_eq!(hits_after - hits, 2);
+        assert_eq!(cache.stats().entries, 1);
+    }
+
+    #[test]
+    fn test_expired_entry_counts_as_a_miss() {
+        // A zero TTL is already expired on the next lookup.
+        let cache = QueryCache::new(10, 0);
+        let (hits, misses) = thread_lookups();
+        cache.put("db/users:1".to_string(), vec![json!(1)]);
+        assert!(cache.get("db/users:1").is_none());
+        let (hits_after, misses_after) = thread_lookups();
+        assert_eq!(hits_after, hits);
+        assert_eq!(misses_after - misses, 1);
+    }
+
     #[test]
     fn test_invalidate_collection() {
         let cache = QueryCache::new(10, 60);
@@ -792,6 +922,26 @@ mod tests {
         cache.invalidate_all();
         assert!(cache.get("db/users:1").is_none());
         assert!(cache.get("db/orders:2").is_none());
+    }
+
+    #[test]
+    fn test_invalidate_database() {
+        let cache = QueryCache::new(10, 60);
+        cache.put("app/layouts:1".to_string(), vec![json!("ghost1")]);
+        cache.put("app/:2".to_string(), vec![json!(1)]);
+        cache.put("app2/layouts:3".to_string(), vec![json!("kept")]);
+        cache.put("other/users:4".to_string(), vec![json!("kept")]);
+
+        cache.invalidate_database("app");
+        assert!(cache.get("app/layouts:1").is_none());
+        assert!(cache.get("app/:2").is_none());
+        // `app2` only shares a prefix with `app`.
+        assert!(cache.get("app2/layouts:3").is_some());
+        assert!(cache.get("other/users:4").is_some());
+        // The dropped entry is gone from the collection index too.
+        cache.invalidate_collection("layouts");
+        assert!(cache.get("app2/layouts:3").is_none());
+        assert_eq!(cache.index_len(), 1);
     }
 
     #[test]

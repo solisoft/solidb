@@ -103,6 +103,8 @@ pub async fn metrics_handler(
     output.push_str("# TYPE solidb_http_requests_total counter\n");
     output.push_str(&format!("solidb_http_requests_total {}\n\n", request_count));
 
+    super::query_metrics::write_prometheus(&mut output);
+
     // Uptime
     let uptime_secs = state.startup_time.elapsed().as_secs_f64();
     output.push_str("# HELP solidb_uptime_seconds Time since server started in seconds\n");
