@@ -2,8 +2,43 @@
 
 ## [Unreleased]
 
+### Added
+
+* **Query latency and result-cache series on `/metrics`.** Client queries on
+  `POST /_api/database/{db}/cursor` and on the driver's query command are
+  now measured:
+  * `solidb_query_duration_seconds`, a histogram labelled `kind="read"` or
+    `kind="write"`, with buckets from 1 ms to 5 s and `+Inf`. There is no
+    label per query text.
+  * `solidb_slow_queries_total` counts executions at or above 100 ms, the
+    threshold of the `_slow_queries` collection. It includes failures,
+    panics and timeouts, and driver queries.
+  * `solidb_query_cache_hits_total`, `solidb_query_cache_misses_total`
+    (expired entries included) and the `solidb_query_cache_entries` gauge.
+    A cache hit executes nothing and is not in the histogram.
+
+  A query that outlives the client's 30-second timeout is counted when the
+  executor stops, with its real duration. Lua scripts, triggers and the
+  queue worker are not included. Counters are kept per thread, so a query
+  does not wait on other cores to count itself.
+
 ### Fixed
 
+* **A cached query result could outlive the data it was computed from.**
+  With the result cache on, the next identical `/cursor` or driver query was
+  answered with the old rows until the TTL ran out after any of these:
+  * dropping a database or a collection and recreating it under the same
+    name;
+  * truncating a collection;
+  * creating or dropping an index. A `FULLTEXT` query on a collection with
+    no fulltext index answers `[]`, and that `[]` was cached. A result
+    computed while a new persistent index was still being backfilled could
+    stay cached with rows missing.
+
+  Each of these now drops the affected entries. A query already running
+  when the change lands can no longer store its result. The invalidation is
+  done in storage, so changes made through the driver, replication or Lua
+  are covered too.
 * **UPDATE could not move an edge.** The update merge skipped every attribute
   whose name starts with `_`, so `UPDATE k WITH {_from: …}` — and the UPDATE
   branch of an `UPSERT`, `PATCH` over REST, and the `OPTIONS {keepNull,
