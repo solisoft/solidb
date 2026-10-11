@@ -1,4 +1,3 @@
-pub mod distributed;
 pub mod lock_manager;
 pub mod manager;
 pub mod wal;

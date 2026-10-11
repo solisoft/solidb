@@ -58,7 +58,7 @@ groups = [
     { "slug": "blobs", "icon": "fa-photo-film", "label": "Blob Storage",
       "desc": "Binary storage with on-the-fly image transforms." },
     { "slug": "transactions", "icon": "fa-shield-halved", "label": "Transactions",
-      "desc": "Atomic commits, rollbacks, 2PC across nodes." },
+      "desc": "Atomic commits and rollbacks on one node." },
     { "slug": "scripting", "icon": "fa-scroll", "label": "Lua Scripting",
       "desc": "Custom API endpoints in embedded Lua 5.4." },
     { "slug": "observability", "icon": "fa-signal", "label": "Observability",

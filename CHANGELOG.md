@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Removed
+
+* **The `/_api/distributed/*` endpoints.** They advertised two-phase commit
+  across shards but never applied a write: every participant endpoint
+  answered "prepared" and "committed" without staging anything, and each
+  coordinator request built a new, empty coordinator, so `prepare` and
+  `commit` could not find the transaction `begin` had opened. Sharing the
+  coordinator would have let any caller make the server POST to an address of
+  its choosing. Transactions remain ACID on the node that receives them; none
+  spans shards or nodes.
+
 ### Added
 
 * **Query latency and result-cache series on `/metrics`.** Client queries on

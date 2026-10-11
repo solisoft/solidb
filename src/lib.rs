@@ -59,10 +59,6 @@ pub use storage::{
     TtlIndexStats,
 };
 pub use transaction::{
-    distributed::{
-        DistributedTransactionCoordinator, DistributedTransactionId, DistributedTransactionState,
-        ShardParticipantInfo,
-    },
-    manager::TransactionManager,
-    IsolationLevel, Operation, Transaction, TransactionId, TransactionState,
+    manager::TransactionManager, IsolationLevel, Operation, Transaction, TransactionId,
+    TransactionState,
 };
