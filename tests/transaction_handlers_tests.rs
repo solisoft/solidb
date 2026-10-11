@@ -404,3 +404,116 @@ async fn test_multiple_transactions() {
         assert_eq!(response.status(), StatusCode::OK);
     }
 }
+
+// ============================================================================
+// Reading a document inside a transaction
+// ============================================================================
+
+async fn call(
+    app: &axum::Router,
+    token: &str,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Authorization", auth_header(token));
+    if body.is_some() {
+        request = request.header("Content-Type", "application/json");
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            request
+                .body(Body::from(body.map(|b| b.to_string()).unwrap_or_default()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response_json(response).await)
+}
+
+/// The GET route reads the document as the transaction sees it: committed
+/// state at first, then its own uncommitted update and insert, and nothing
+/// after its own delete — while readers outside still see committed state.
+#[tokio::test]
+async fn test_get_document_in_transaction_reads_its_own_writes() {
+    let (app, _tmp, token) = create_test_app();
+    setup_db(&app, "txget", &token).await;
+    call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txget/collection",
+        Some(json!({"name": "notes"})),
+    )
+    .await;
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txget/document/notes",
+        Some(json!({"_key": "a", "title": "committed"})),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+
+    let (_, begun) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txget/transaction/begin",
+        Some(json!({})),
+    )
+    .await;
+    let tx = begun["id"].as_str().expect("tx id").to_string();
+    let doc = |key: &str| format!("/_api/database/txget/transaction/{tx}/document/notes/{key}");
+
+    let (status, body) = call(&app, &token, "GET", &doc("a"), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["title"], "committed");
+
+    let (status, _) = call(
+        &app,
+        &token,
+        "PUT",
+        &doc("a"),
+        Some(json!({"title": "staged"})),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+    let (_, body) = call(&app, &token, "GET", &doc("a"), None).await;
+    assert_eq!(body["title"], "staged");
+    let (_, outside) = call(
+        &app,
+        &token,
+        "GET",
+        "/_api/database/txget/document/notes/a",
+        None,
+    )
+    .await;
+    assert_eq!(outside["title"], "committed");
+
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txget/transaction/{tx}/document/notes"),
+        Some(json!({"_key": "b", "title": "new"})),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+    let (_, body) = call(&app, &token, "GET", &doc("b"), None).await;
+    assert_eq!(body["title"], "new");
+
+    let (status, _) = call(&app, &token, "DELETE", &doc("a"), None).await;
+    assert!(status.is_success(), "{status}");
+    let (status, _) = call(&app, &token, "GET", &doc("a"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = call(&app, &token, "GET", &doc("missing"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

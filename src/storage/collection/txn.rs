@@ -92,6 +92,28 @@ impl Collection {
         }
     }
 
+    /// The document `key` as transaction `tx` sees it: its own staged write
+    /// (an insert, an update, or a delete, which reads as missing) when it
+    /// made one, else the committed document under a shared lock.
+    pub fn get_tx_view(
+        &self,
+        tx: &Transaction,
+        lock_manager: &Arc<LockManager>,
+        key: &str,
+    ) -> DbResult<Option<Document>> {
+        Self::ensure_tx_active(tx)?;
+        let (db_name, coll_name) = self.parse_db_coll();
+        if let Some(staged) = Self::tx_local_state(tx, &db_name, &coll_name, key) {
+            return Ok(staged.map(|value| Self::txn_document(&self.name, key, &value)));
+        }
+        lock_manager.acquire_shared(tx.id, &db_name, &coll_name, key)?;
+        match self.get(key) {
+            Ok(doc) => Ok(Some(doc)),
+            Err(DbError::DocumentNotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn insert_tx(
         &self,
         tx: &mut Transaction,

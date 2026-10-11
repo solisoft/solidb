@@ -137,6 +137,24 @@
 
             <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection/:key</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Read a document as the transaction sees it: its own uncommitted insert or update when it made one, <code>404</code> after its own delete, otherwise the committed document (under a shared lock). Readers outside the transaction still see the committed version.</p>
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   { "_key": "doc1", "_rev": "…", "name": "Alice Updated", "age": 31 }
+                 </div>
+               </div>
+            </div>
+
+            <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/database/:db/transaction/:tx_id/document/:collection/:key</code>
               </div>

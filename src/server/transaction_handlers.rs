@@ -193,6 +193,35 @@ pub async fn insert_document_tx(
     Ok(Json(doc.to_value()))
 }
 
+/// `GET …/transaction/{tx_id}/document/{collection}/{key}`: the document as
+/// the transaction sees it — its own uncommitted insert or update, missing
+/// after its own delete, otherwise the committed document.
+pub async fn get_document_tx(
+    State(state): State<AppState>,
+    Path((db_name, tx_id_str, coll_name, key)): Path<(String, String, String, String)>,
+) -> Result<Json<Value>, DbError> {
+    let tx_id_value: u64 = tx_id_str
+        .strip_prefix("tx:")
+        .unwrap_or(&tx_id_str)
+        .parse()
+        .map_err(|_| DbError::InvalidDocument("Invalid transaction ID".to_string()))?;
+    let tx_id = TransactionId::from_u64(tx_id_value);
+    let tx_manager = state.storage.transaction_manager()?;
+    let tx_arc = tx_manager.get(tx_id)?;
+    let tx = tx_arc.read().unwrap();
+
+    // Scoped to the database named in the path (SEC-179), as a plain read.
+    let collection = state
+        .storage
+        .get_database(&db_name)?
+        .get_collection(&coll_name)?;
+    let lock_manager = tx_manager.lock_manager().clone();
+    match collection.get_tx_view(&tx, &lock_manager, &key)? {
+        Some(doc) => Ok(Json(doc.to_value())),
+        None => Err(DbError::DocumentNotFound(key)),
+    }
+}
+
 pub async fn update_document_tx(
     State(state): State<AppState>,
     claims: Option<axum::Extension<crate::server::auth::Claims>>,

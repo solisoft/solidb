@@ -668,6 +668,10 @@ pub fn create_router(
         )
         .route(
             "/_api/database/{db}/transaction/{tx_id}/document/{collection}/{key}",
+            get(super::transaction_handlers::get_document_tx),
+        )
+        .route(
+            "/_api/database/{db}/transaction/{tx_id}/document/{collection}/{key}",
             delete(super::transaction_handlers::delete_document_tx),
         )
         .route(
