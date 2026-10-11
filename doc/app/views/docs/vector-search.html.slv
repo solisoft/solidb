@@ -121,7 +121,7 @@
 -- The "embedding" field is populated automatically</code></pre>
 
             <div class="text-xs bg-emerald-900/20 border border-emerald-500/30 rounded p-3">
-              <strong>Tip:</strong> Set <code>OPENAI_API_KEY</code> (or equivalent) in environment or the <code>_env</code> collection. Works seamlessly with Graph RAG and hybrid search.
+              <strong>Tip:</strong> Set <code>OPENAI_API_KEY</code> (or equivalent) in the database&rsquo;s <code>_env</code> or the server environment for embeddings generated on insert. Embedding the documents that already exist when the index is created reads only the <em>server environment</em> (provider: the index&rsquo;s <code>embedding_provider</code>, else <code>NL_DEFAULT_PROVIDER</code> there, else <code>openai</code>). Works seamlessly with Graph RAG and hybrid search.
             </div>
           </div>
         </div>

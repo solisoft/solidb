@@ -88,7 +88,7 @@
           </div>
           <div class="mt-6 pt-6 border-t border-white/10">
               <p class="text-gray-400 text-xs italic">
-                Scripts are subject to a wall-clock deadline (default 30s, <code>SOLIDB_LUA_TIMEOUT_SECS</code>) and a memory limit (default 64MB, <code>SOLIDB_LUA_MEMORY_LIMIT_MB</code>) to prevent destabilizing the server.
+                Scripts are subject to a wall-clock deadline (default 30s, <code>SOLIDB_LUA_TIMEOUT_SECS</code>) and a memory limit (default 64MB, <code>SOLIDB_LUA_MEMORY_LIMIT_MB</code>) to prevent destabilizing the server. A node started with <code>--no-lua</code> (or <code>SOLIDB_NO_LUA=1</code>) runs no scripts at all: script and service endpoints answer 501.
                 The deadline also counts time spent parked in async calls such as <code>solidb.fetch</code>, <code>crypto.hash_password</code> or <code>time.sleep</code>, which work in pooled scripts too.
               </p>
               <p class="text-gray-400 text-xs italic mt-2">

@@ -95,7 +95,7 @@
                       <tr>
                         <td class="p-3 text-purple-400 font-mono">embedding_model</td>
                         <td class="p-3 font-mono">string</td>
-                        <td class="p-3">Specific embedding model (e.g. "text-embedding-3-small").</td>
+                        <td class="p-3">Specific embedding model. When omitted, <code>OPENAI_EMBEDDING_MODEL</code>, <code>OLLAMA_EMBEDDING_MODEL</code> or <code>GEMINI_EMBEDDING_MODEL</code>, else <code>text-embedding-3-small</code>, <code>nomic-embed-text</code> or <code>text-embedding-004</code>. Documents inserted later read that variable from the database&rsquo;s <code>_env</code>, then <code>_system</code>&rsquo;s <code>_env</code>, then the server environment. The documents embedded when the index is created read only the <em>server environment</em>.</td>
                         <td class="p-3">No</td>
                       </tr>
                       <tr>

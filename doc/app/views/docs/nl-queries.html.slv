@@ -270,6 +270,7 @@
                 Set <code class="text-pink-300">NL_DEFAULT_PROVIDER</code> to specify which provider to use by default:
               </p>
               <code class="text-gray-400 text-sm">openai | anthropic | ollama | gemini</code>
+              <p class="text-gray-400 text-xs mt-3">Unset, the default is <code>anthropic</code>. Every key on this page is looked up in the queried database&rsquo;s <code>_env</code> first, then in <code>_system/_env</code>, then in the server&rsquo;s environment.</p>
             </div>
           </div>
         </div>
@@ -1034,7 +1035,7 @@ Fields:
               <!-- Error 1 -->
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <h4 class="text-red-400 font-bold mb-2 font-mono text-sm">
-                  "OPENAI_API_KEY not found in _system/_env collection"
+                  "OPENAI_API_KEY not found in _env collection"
                 </h4>
                 <p class="text-gray-300 text-sm mb-3">
                   The API key for your chosen provider hasn't been configured.
@@ -1088,7 +1089,7 @@ Fields:
                 </p>
                 <div class="bg-gray-950/50 rounded-lg p-3">
                   <p class="text-xs text-green-400 mb-1">Solution:</p>
-                  <code class="text-xs text-gray-400">Use one of: openai, anthropic, ollama</code>
+                  <code class="text-xs text-gray-400">Use one of: openai, anthropic, ollama, gemini</code>
                 </div>
               </div>
 
@@ -1105,7 +1106,7 @@ Fields:
                   <ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
                     <li>Start Ollama: <code class="text-pink-300">ollama serve</code></li>
                     <li>Check OLLAMA_URL in _env (default: http://localhost:11434)</li>
-                    <li>If you set <code class="text-pink-300">OLLAMA_URL</code> to a loopback, link-local or private address, the request is refused unless the instance runs with <code class="text-pink-300">SOLIDB_ALLOW_PRIVATE_LLM_URL=1</code> &mdash; the value lives in the database's own <code>_env</code>, so anyone with Write there chooses where the server dials. The unset default is the server's own choice and is never refused.</li>
+                    <li>If you set <code class="text-pink-300">OLLAMA_URL</code> to a loopback, link-local or private address, the request is refused unless the instance runs with <code class="text-pink-300">SOLIDB_ALLOW_PRIVATE_LLM_URL=1</code> &mdash; the value can live in the database's own <code>_env</code>, so anyone with Write there chooses where the server dials. The check applies wherever the value was found (database <code>_env</code>, <code>_system/_env</code> or the server environment); only the unset default is never refused.</li>
                     <li>Ensure the model is pulled: <code class="text-pink-300">ollama pull llama3</code></li>
                   </ul>
                 </div>

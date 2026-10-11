@@ -327,7 +327,7 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_PORT</td>
                       <td class="p-3">6745</td>
-                      <td class="p-3">HTTP server port</td>
+                      <td class="p-3">HTTP server port. The image's command turns it into <code>--port</code>; the <code>solidb</code> binary itself does not read it.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_DATA_DIR</td>
@@ -335,14 +335,14 @@ volumes:
                       <td class="p-3">Data directory path</td>
                     </tr>
                     <tr>
-                      <td class="p-3 font-mono text-cyan-400">SOLIDB_LOG_LEVEL</td>
-                      <td class="p-3">info</td>
-                      <td class="p-3">Log verbosity level</td>
+                      <td class="p-3 font-mono text-cyan-400">RUST_LOG</td>
+                      <td class="p-3">solidb=info,tower_http=info</td>
+                      <td class="p-3">Log filter, in <code>tracing</code> directive syntax (e.g. <code>solidb=debug</code>)</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_ADMIN_PASSWORD</td>
                       <td class="p-3"><em>auto-generated</em></td>
-                      <td class="p-3">Admin user password</td>
+                      <td class="p-3">Password of the <code>admin</code> user created on first start. Unset: a random one is written to <code>&lt;data-dir&gt;/.admin_password</code>.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">JWT_SECRET</td>
@@ -352,12 +352,17 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_WEBHOOK_SECRET</td>
                       <td class="p-3"><em>unset</em></td>
-                      <td class="p-3">Default HMAC-SHA256 key used to sign outbound trigger webhooks via <code>X-Webhook-Signature</code>. Per-target <code>webhook_secret</code> wins; if both are unset the signature header is omitted. See <a href="/docs/triggers" class="text-cyan-400 hover:underline">Triggers</a>.</td>
+                      <td class="p-3">Instance-wide HMAC-SHA256 key for outbound trigger webhooks (<code>X-Webhook-Signature</code>), used only when <code>SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1</code> and the trigger has no <code>webhook_secret</code>. Off by default: the target URL is tenant-chosen, so the instance secret would become a signing oracle. Without either, webhooks are sent unsigned. See <a href="/docs/triggers" class="text-cyan-400 hover:underline">Triggers</a>.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLI_JOBS_SECRET</td>
                       <td class="p-3"><em>unset</em></td>
-                      <td class="p-3">Legacy fallback used only when <code>SOLI_WEBHOOK_SECRET</code> is unset. Prefer the latter for new setups.</td>
+                      <td class="p-3">Legacy fallback used only when <code>SOLI_WEBHOOK_SECRET</code> is unset, under the same <code>SOLIDB_ALLOW_GLOBAL_WEBHOOK_SECRET=1</code> condition. Prefer a per-trigger <code>webhook_secret</code>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-cyan-400">SOLIDB_NO_LUA</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Set to <code>1</code> to start no Lua VMs (same as <code>--no-lua</code>). Scripts, services and the REPL answer 501.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_POOL_SIZE</td>
@@ -367,12 +372,12 @@ volumes:
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_LUA_FAST_MODE</td>
                       <td class="p-3">false</td>
-                      <td class="p-3">Skip Lua global reset between requests</td>
+                      <td class="p-3">Skip the Lua global reset between requests. Ignored unless <code>SOLIDB_LUA_FAST_MODE_UNSAFE=1</code> is also set.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-cyan-400">SOLIDB_CLUSTER_SCHEME</td>
                       <td class="p-3">http</td>
-                      <td class="p-3">Protocol for cluster communication (anything but <code>http</code> means <code>https</code>)</td>
+                      <td class="p-3">Protocol for inter-node calls (anything but <code>http</code> means <code>https</code>; the default is <code>https</code> on a node run with <code>--tls-cert</code> and <code>SOLIDB_TLS_REQUIRE=1</code>)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -823,7 +828,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_ADMIN_PASSWORD</td>
                       <td class="p-3"><em>auto-generated</em></td>
-                      <td class="p-3">Override the default admin user password. If not set, a random password is generated and printed at startup.</td>
+                      <td class="p-3">Password for the <code class="text-amber-400">admin</code> user created on first start (when no admin exists yet); it does not change an existing admin. If unset, a random password is written to <code class="text-amber-400">&lt;data-dir&gt;/.admin_password</code> (mode 0600) and the log gives that path. A node started with <code class="text-amber-400">--peer</code> creates no admin unless this is set: it expects to receive one from the cluster.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">JWT_SECRET</td>
@@ -832,13 +837,48 @@ kubectl -n solidb get pods -w</pre>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_API_RATE_LIMIT</td>
-                      <td class="p-3">600</td>
-                      <td class="p-3">Requests allowed per client IP per window across the whole API. Over the limit the server answers <code class="text-amber-400">429</code> with <code class="text-amber-400">Retry-After</code>. Set to <code class="text-amber-400">0</code> to disable &mdash; useful for load tests and CI, which drive far more than 10 req/s from one address. Internal cluster traffic and CORS preflights are always exempt.</td>
+                      <td class="p-3">0 (off)</td>
+                      <td class="p-3">Requests allowed per caller per window across the whole API: per credential when the request carries one, otherwise per client address. Over the limit the server answers <code class="text-amber-400">429</code> with <code class="text-amber-400">Retry-After</code>. Off by default, because a database usually sits behind an application tier it trusts; turn it on for a node exposed to untrusted clients. Internal cluster traffic and CORS preflights are always exempt.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_API_RATE_WINDOW_SECS</td>
                       <td class="p-3">60</td>
                       <td class="p-3">Length of the rate-limit window in seconds.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_API_RATE_LIMIT_PER_IP</td>
+                      <td class="p-3">10 &times; <code>SOLIDB_API_RATE_LIMIT</code></td>
+                      <td class="p-3">Budget per client address, applied on top of the per-credential limit so that minting a new credential per request does not escape it. Set it only to change the 10&times; margin.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_DB_AUTHZ_MODE</td>
+                      <td class="p-3">enforce</td>
+                      <td class="p-3"><code class="text-amber-400">warn</code> logs per-database authorization failures instead of refusing them, as a dry run before enforcing. Ignored (and logged as an error) unless <code class="text-amber-400">SOLIDB_DB_AUTHZ_ALLOW_WARN=1</code> is also set.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_DB_AUTHZ_ALLOW_WARN</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Confirms <code class="text-amber-400">SOLIDB_DB_AUTHZ_MODE=warn</code>. Accepts <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ALLOW_UNAUTHENTICATED_SYNC</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Accept replication connections that do not authenticate with the keyfile. <code class="text-amber-400">SOLIDB_REQUIRE_KEYFILE=true</code> overrides it. Leave it off outside a test bench.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ENABLE_AI_VALIDATION</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Enables the AI validation endpoints (<code class="text-amber-400">/_api/ai/validate</code>…), which run <code class="text-amber-400">cargo</code> on the server host. They also require a global admin. Development hosts only.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ALLOW_WEBHOOK_LOOPBACK</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Let trigger webhooks target loopback addresses (<code class="text-amber-400">127.0.0.1</code>, <code class="text-amber-400">::1</code>, <code class="text-amber-400">localhost</code>). Development only.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_ALLOW_INSECURE_WEBHOOK_TLS</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Skip certificate verification for webhooks to development hosts only (<code class="text-amber-400">localhost</code>, <code class="text-amber-400">*.localhost</code>, <code class="text-amber-400">*.test</code>, <code class="text-amber-400">*.local</code>). Every other host keeps full TLS checks.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_TRUST_PROXY_HEADERS</td>
@@ -858,7 +898,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_PASSWORD</td>
                       <td class="p-3"><em>unset</em></td>
-                      <td class="p-3">Password read by <code class="text-amber-400">solidb-dump</code>, <code class="text-amber-400">solidb-restore</code> and <code class="text-amber-400">solidb-fuse</code> when neither <code class="text-amber-400">-p</code> nor <code class="text-amber-400">--password-file</code> is given. Keeps the password out of <code class="text-amber-400">ps</code> and shell history.</td>
+                      <td class="p-3">Password read by <code class="text-amber-400">solidb-dump</code>, <code class="text-amber-400">solidb-restore</code> and <code class="text-amber-400">solidb-fuse</code> when neither <code class="text-amber-400">-p</code> nor <code class="text-amber-400">--password-file</code> is given (dump and restore read it only together with <code class="text-amber-400">-u</code>). Keeps the password out of <code class="text-amber-400">ps</code> and shell history.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -881,6 +921,21 @@ kubectl -n solidb get pods -w</pre>
                   </thead>
                   <tbody class="text-gray-400 divide-y divide-white/5">
                     <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MAX_INTERMEDIATE_ROWS</td>
+                      <td class="p-3">5000000</td>
+                      <td class="p-3">Rows a single query may materialise, checked inside the executor. It bounds nested <code class="text-amber-400">FOR</code> cartesian products, which no <code class="text-amber-400">LIMIT</code> reaches. A query over the limit fails; the server keeps running. Invalid or <code class="text-amber-400">0</code> falls back to the default.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_GZIP_MIN_BYTES</td>
+                      <td class="p-3">4096</td>
+                      <td class="p-3">Smallest response body that gets gzip-compressed. Below that the saving is under one packet while the CPU cost is the same.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_NO_LUA</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Set to <code class="text-amber-400">1</code>, <code class="text-amber-400">true</code> or <code class="text-amber-400">yes</code> (or start with <code class="text-amber-400">--no-lua</code>) to create no Lua VM pool. Custom scripts, <code class="text-amber-400">/api/&#123;db&#125;/&#123;service&#125;/&hellip;</code> and the Lua REPL answer <code class="text-amber-400">501</code>; a trigger whose action is a Lua script fails its job at once, without retries. Script documents can still be stored. For nodes that never run Lua: it saves the pool's idle memory, about 150 KB per state (2.5 MB measured with 16 states).</td>
+                    </tr>
+                    <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_POOL_SIZE</td>
                       <td class="p-3"><em>CPU cores</em> (min 4)</td>
                       <td class="p-3">Number of pre-initialized Lua VM states in the pool. Each state handles one script at a time. Increase beyond CPU core count (e.g. 32 or 64) to reduce contention under high concurrency.</td>
@@ -888,7 +943,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_FAST_MODE</td>
                       <td class="p-3">false</td>
-                      <td class="p-3">Set to <code class="text-amber-400">1</code> or <code class="text-amber-400">true</code> to skip Lua global reset between requests. Provides maximum throughput for stateless scripts. Do not enable if scripts rely on clean global state.</td>
+                      <td class="p-3">Skip the Lua global reset between requests. <strong>Ignored</strong> (with a warning) unless <code class="text-amber-400">SOLIDB_LUA_FAST_MODE_UNSAFE=1</code> is also set, because globals one request sets then stay visible to later requests, possibly other users&rsquo;. Only for stateless, single-tenant scripts.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_LUA_FETCH_MAX_BYTES</td>
@@ -934,6 +989,117 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_JOBS_LEASE_SECS</td>
                       <td class="p-3">max(600, 2 &times; Lua timeout)</td>
                       <td class="p-3">A job left <code class="text-amber-400">running</code> longer than this is presumed orphaned and requeued (counts as a retry). Minimum 60.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SEMANTIC_CACHE_ENABLED</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Cache responses of <code class="text-amber-400">POST /_api/database/&#123;db&#125;/ai/generate</code> and answer a later prompt from the cache when its embedding is close enough. Entries are kept per database and per user. Accepts <code class="text-amber-400">1</code>, <code class="text-amber-400">true</code>, <code class="text-amber-400">yes</code>, <code class="text-amber-400">on</code>.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SEMANTIC_CACHE_THRESHOLD</td>
+                      <td class="p-3">0.95</td>
+                      <td class="p-3">Cosine similarity a new prompt must reach to reuse a cached response.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SEMANTIC_CACHE_TTL</td>
+                      <td class="p-3">3600</td>
+                      <td class="p-3">Seconds a cached response stays valid.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SEMANTIC_CACHE_MAX</td>
+                      <td class="p-3">256</td>
+                      <td class="p-3">Cached responses kept per database and user.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SEMANTIC_CACHE_PROVIDER</td>
+                      <td class="p-3">openai</td>
+                      <td class="p-3">Provider used to embed prompts for the cache (<code class="text-amber-400">openai</code>, <code class="text-amber-400">ollama</code>, <code class="text-amber-400">gemini</code>), configured like any other provider. Anthropic has no embedding model.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Storage -->
+            <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-6">
+              <h3 class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider">
+                Storage (RocksDB)
+              </h3>
+              <p class="text-gray-400 text-xs mb-3">Each of the first seven also has a command-line flag of the same name (<code class="text-amber-400">--block-cache</code>, <code class="text-amber-400">--memtable-budget</code>, &hellip;); the flag wins. Sizes accept <code class="text-amber-400">512MB</code>, <code class="text-amber-400">2GB</code> or a byte count. Defaults are given as production / <code class="text-amber-400">--dev</code>.</p>
+              <div class="overflow-hidden border border-white/5 rounded-lg">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-white/5 text-gray-300 font-bold border-b border-white/5">
+                    <tr>
+                      <th class="p-3">Variable</th>
+                      <th class="p-3">Default</th>
+                      <th class="p-3">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-gray-400 divide-y divide-white/5">
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_BLOCK_CACHE</td>
+                      <td class="p-3">512MB / 128MB</td>
+                      <td class="p-3">Shared RocksDB block cache.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MEMTABLE_BUDGET</td>
+                      <td class="p-3">512MB / 128MB</td>
+                      <td class="p-3">Cap on total memtable memory across all collections. <code class="text-amber-400">0</code> means unlimited. This is the knob that bounds write memory.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_WRITE_BUFFER_SIZE</td>
+                      <td class="p-3">64MB / 8MB</td>
+                      <td class="p-3">Memtable size per column family: the shared collection family, plus any 1.x column family not yet migrated.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MAX_OPEN_FILES</td>
+                      <td class="p-3">-1 / 512</td>
+                      <td class="p-3">Open SST limit; <code class="text-amber-400">-1</code> is unlimited. Each open SST pins its index and filter blocks unless <code class="text-amber-400">SOLIDB_BOUNDED_INDEX_CACHE</code> is on, so on a large dataset this caps that memory.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_BOUNDED_INDEX_CACHE</td>
+                      <td class="p-3">false / true</td>
+                      <td class="p-3">Keep index and filter blocks in the block cache instead of pinning them per SST. Caps their memory at some cost in read latency.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MAX_BACKGROUND_JOBS</td>
+                      <td class="p-3">6 / 2</td>
+                      <td class="p-3">Background compaction and flush threads.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MAX_TOTAL_WAL_SIZE</td>
+                      <td class="p-3">2GB / 256MB</td>
+                      <td class="p-3">Total WAL budget. It is a flush trigger, not a disk cap: lowering it to save disk produces many tiny SSTs. Bound memory with <code class="text-amber-400">SOLIDB_MEMTABLE_BUDGET</code> instead.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_BACKUP_ROOT</td>
+                      <td class="p-3"><code>&lt;data-dir&gt;/backups</code></td>
+                      <td class="p-3">Directory that <code class="text-amber-400">POST /_api/backup</code> checkpoints are written under; a requested path must stay inside it. A checkpoint hard-links SST files, so it must be on the same filesystem as the data.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_AUTO_CREATE_COLLECTIONS</td>
+                      <td class="p-3">true</td>
+                      <td class="p-3">Writing a document to an unknown collection creates it. Set to <code class="text-amber-400">0</code> to get <code class="text-amber-400">CollectionNotFound</code> instead.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_KS_GC_DELAY_SECS</td>
+                      <td class="p-3">10</td>
+                      <td class="p-3">Delay before a dropped collection's key range is compacted and its space reclaimed.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_MIGRATION_SKIP_SPACE_CHECK</td>
+                      <td class="p-3">unset</td>
+                      <td class="p-3">Set to <code class="text-amber-400">1</code> to start the 1.x &rarr; 2.x storage migration even when free disk is below 1.2 &times; the largest collection + 1 GiB.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_LEGACY_COLLECTION_CFS</td>
+                      <td class="p-3">false</td>
+                      <td class="p-3">Create new collections as 1.x column families and skip the migration. For testing the legacy path only.</td>
+                    </tr>
+                    <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CF_REUSE_GRACE_SECS</td>
+                      <td class="p-3">300</td>
+                      <td class="p-3">Legacy (1.x) collections only: grace period before an emptied column family is dropped.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -998,12 +1164,12 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_API_KEY</td>
                       <td class="p-3"><em>none</em></td>
-                      <td class="p-3">API key for CLI authentication. Overrides the value in <code class="text-amber-400">.solidb.json</code> config file.</td>
+                      <td class="p-3">API key for CLI authentication. Overrides the <code class="text-amber-400">auth_token</code> that <code class="text-amber-400">solidb scripts login</code> saves in <code class="text-amber-400">solidb-scripts.toml</code>.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_HOST</td>
                       <td class="p-3"><em>none</em></td>
-                      <td class="p-3">Server hostname for CLI commands. Overrides config file.</td>
+                      <td class="p-3">Server hostname for CLI commands. Overrides config file. <strong>The server reads it too</strong>: it is the bind address when <code class="text-amber-400">--host</code> is not given (default <code class="text-amber-400">127.0.0.1</code>), so exporting it for the CLI also moves a server started from the same shell.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_PORT</td>
@@ -1032,7 +1198,6 @@ kubectl -n solidb get pods -w</pre>
               >SOLIDB_ADMIN_PASSWORD=my_secure_password
 JWT_SECRET=your-secure-jwt-secret-32-chars-min
 SOLIDB_LUA_POOL_SIZE=32
-SOLIDB_LUA_FAST_MODE=1
 SOLIDB_CLUSTER_SCHEME=https
 SOLIDB_API_RATE_LIMIT=600
 SOLIDB_API_RATE_WINDOW_SECS=60</div>

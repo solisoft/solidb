@@ -69,7 +69,7 @@
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">API Rate Limiting</td>
-                  <td class="p-4 text-gray-400">Every endpoint — not just login — is throttled per client IP, defaulting to <strong>600 requests per 60 seconds</strong> (a sustained ~10 req/s) and answering <code class="text-cyan-400">429</code> with <code class="text-cyan-400">Retry-After</code> before any handler runs. Internal cluster traffic and CORS preflights are exempt. Tune via <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT</code> (<code>0</code> disables) and <code class="text-cyan-400">SOLIDB_API_RATE_WINDOW_SECS</code>.</td>
+                  <td class="p-4 text-gray-400">Off by default. Set <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT</code> to throttle every endpoint &mdash; not just login &mdash; per caller: per credential when the request carries one, otherwise per client address, with <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT_PER_IP</code> (default 10&times;) capping each address on top. Over the limit the server answers <code class="text-cyan-400">429</code> with <code class="text-cyan-400">Retry-After</code> before any handler runs. Internal cluster traffic and CORS preflights are exempt. Window: <code class="text-cyan-400">SOLIDB_API_RATE_WINDOW_SECS</code>.</td>
                 </tr>
                 <tr class="hover:bg-white/5 transition-colors">
                   <td class="p-4 text-gray-300 font-medium">Native TLS</td>
@@ -225,7 +225,7 @@ export SOLIDB_TRUST_PROXY_HEADERS=1</code></pre>
           <div>
             <h4 class="text-white font-semibold mb-1">Important Warning</h4>
             <p class="text-gray-300 text-sm">
-              If you do not set <code>JWT_SECRET</code>, all user sessions and API tokens will be <strong>invalidated</strong> every time the server restarts.
+              If you do not set <code>JWT_SECRET</code>, every issued JWT &mdash; login sessions, live-query tokens &mdash; is <strong>invalidated</strong> each time the server restarts. API keys are stored hashed in the database and are unaffected.
             </p>
           </div>
         </div>
@@ -314,13 +314,15 @@ chmod 600 solidb-keyfile
 # 3. Start with keyfile authentication
 solidb --keyfile solidb-keyfile --peer node2:6746 --peer node3:6746
 
-# 4. Enforce keyfile in production: refuse to start if missing.
+# 4. Optional: keep unauthenticated sync refused even if someone sets
+#    SOLIDB_ALLOW_UNAUTHENTICATED_SYNC (a node with --peer and no
+#    keyfile already refuses to start)
 export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           </div>
         </div>
 
         <p class="text-gray-400">
-          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster. Signed messages carry a timestamp and a nonce, and a message replayed inside the acceptance window is rejected. Set <code class="bg-gray-900 px-1 rounded">SOLIDB_REQUIRE_KEYFILE=true</code> so that nodes started without a keyfile fail closed instead of silently accepting unauthenticated peers.
+          The cluster communication protocol uses <strong>HMAC-SHA256</strong> to sign all handshake messages, ensuring that only nodes possessing the shared keyfile can join the cluster. Signed messages carry a timestamp and a nonce, and a message replayed inside the acceptance window is rejected. A node started with <code class="bg-gray-900 px-1 rounded">--peer</code> and no keyfile refuses to start, and a node without a keyfile refuses unauthenticated sync connections unless <code class="bg-gray-900 px-1 rounded">SOLIDB_ALLOW_UNAUTHENTICATED_SYNC=true</code>. <code class="bg-gray-900 px-1 rounded">SOLIDB_REQUIRE_KEYFILE=true</code> (only <code>true</code> is accepted) keeps them refused even then.
         </p>
         <p class="text-gray-400 mt-4">
           A request that carries <code class="bg-gray-900 px-1 rounded">X-Shard-Direct</code> or <code class="bg-gray-900 px-1 rounded">X-Scatter-Gather</code> is authenticated by the cluster secret alone: a missing or wrong <code class="bg-gray-900 px-1 rounded">X-Cluster-Secret</code> is answered <code class="bg-gray-900 px-1 rounded">401</code> and is <em>not</em> retried as ordinary user authentication. A wrong <code class="bg-gray-900 px-1 rounded">X-Cluster-Secret</code> on any other request is also <code class="bg-gray-900 px-1 rounded">401</code>. The node-to-node document endpoints (<code class="bg-gray-900 px-1 rounded">/document/{collection}/_batch</code>, <code class="bg-gray-900 px-1 rounded">_replica</code>, <code class="bg-gray-900 px-1 rounded">_verify</code>) answer <code class="bg-gray-900 px-1 rounded">403</code> to anything but the verified cluster identity, admin tokens included.
@@ -357,7 +359,7 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
           <div class="bg-gray-800/40 border border-white/5 rounded-xl p-6 hover:border-rose-500/30 transition-colors">
             <h3 class="text-lg font-bold text-white mb-2">Per-Client Request Throttle</h3>
             <p class="text-gray-400 text-sm">
-              The whole router is rate limited per client IP (<strong>600 requests / 60s</strong> by default), rejecting a flood with <code>429</code> before it reaches a handler. A caller whose address cannot be determined is not throttled rather than sharing a bucket with unrelated callers. Set <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT=0</code> to disable — useful in test environments that drive thousands of requests from one address.
+              The router-wide limiter is <strong>off by default</strong>: a database usually sits behind an application tier it trusts, and throttling that tier turns a capacity problem into an outage. Set <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT</code> on a node exposed to untrusted clients. Each credential then gets that many requests per window (each address, for requests without one), and a flood is rejected with <code>429</code> before it reaches a handler. <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT_PER_IP</code> (default 10&times; the budget) also caps each address, so minting a new credential per request does not escape it. A credential-less caller whose address cannot be determined is not throttled rather than sharing a bucket with unrelated callers.
             </p>
           </div>
 
@@ -430,7 +432,7 @@ export SOLIDB_REQUIRE_KEYFILE=true</code></pre>
             </li>
             <li class="flex items-start">
               <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">4</span>
-              <span class="ml-4 text-gray-300"><strong>Tune rate limiting if needed.</strong> The API is throttled per client IP (default 600 requests / 60s, answered with <code>429 Retry-After</code>); internal cluster traffic and CORS preflights are exempt. Raise it for heavy legitimate traffic with <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT</code>, or set it to <code>0</code> to disable; window length is <code class="text-cyan-400">SOLIDB_API_RATE_WINDOW_SECS</code>.</span>
+              <span class="ml-4 text-gray-300"><strong>Turn on rate limiting if the node faces untrusted clients.</strong> It is off by default. <code class="text-cyan-400">SOLIDB_API_RATE_LIMIT=600</code> allows 600 requests per window per credential (per address without one), answered with <code>429 Retry-After</code> beyond that; internal cluster traffic and CORS preflights are exempt. Window length is <code class="text-cyan-400">SOLIDB_API_RATE_WINDOW_SECS</code> (default 60).</span>
             </li>
             <li class="flex items-start">
               <span class="flex-shrink-0 w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-bold mt-0.5 border border-green-500/30">5</span>

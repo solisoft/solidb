@@ -37,7 +37,7 @@
           <div class="mt-6 bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
             <div class="text-gray-500"># Initialize your scripts directory</div>
             <div class="text-green-400">$ solidb scripts init --db myapp --host localhost --port 6745</div>
-            <div class="text-gray-500 mt-2"># Login to save authentication (writes SOLIDB_API_KEY to .env)</div>
+            <div class="text-gray-500 mt-2"># Login to save authentication (stores auth_token in solidb-scripts.toml)</div>
             <div class="text-green-400">$ solidb scripts login</div>
           </div>
 
@@ -65,7 +65,7 @@ ignore = ["*.bak", ".git", "node_modules", "tests"]</pre>
           </p>
           <div class="bg-black/40 p-4 rounded-lg font-mono text-sm border border-white/5">
             <div class="text-gray-500"># Load the token saved by `solidb scripts login`</div>
-            <div class="text-green-400">$ export $(grep SOLIDB_API_KEY .env) &amp;&amp; TOKEN=$SOLIDB_API_KEY</div>
+            <div class="text-green-400">$ TOKEN=$(sed -n 's/^auth_token = "\(.*\)"$/\1/p' solidb-scripts.toml)</div>
             <div class="text-gray-500 mt-2"># Create the "default" service in database "myapp"</div>
             <div class="text-green-400">$ curl -X POST http://localhost:6745/_api/database/myapp/services \
   -H "Authorization: Bearer $TOKEN" \

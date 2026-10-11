@@ -218,7 +218,7 @@ GET /_api/database/{db}/graph/communities?edge_collection=links # list detected 
           </table>
         </div>
         <p class="text-gray-400 text-sm mb-6">
-          Output is stored in <code>_graph_communities</code> (membership) and <code>_community_summaries</code> (title/summary/keywords), with the latest run per edge collection tracked in <code>_graph_runs</code>. Summaries use deterministic keyword extraction unless an LLM provider is configured (e.g. <code>OPENAI_API_KEY</code> in the database <code>_env</code>), in which case the model writes the summary with a keyword fallback on failure.
+          Output is stored in <code>_graph_communities</code> (membership) and <code>_community_summaries</code> (title/summary/keywords), with the latest run per edge collection tracked in <code>_graph_runs</code>. Summaries use deterministic keyword extraction unless the selected provider has its key configured &mdash; the <code>provider</code> option, else <code>NL_DEFAULT_PROVIDER</code>, else <code>anthropic</code> (so an <code>OPENAI_API_KEY</code> alone is not enough without <code>provider: "openai"</code>) &mdash; in which case the model writes the summary with a keyword fallback on failure.
         </p>
 
         <h3 class="text-lg font-bold text-white mb-3">2. COMMUNITY_SEARCH</h3>
