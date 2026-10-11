@@ -179,10 +179,15 @@
       });
     }
 
-    // scroll the active sidebar item into view
+    // Centre the active item in the sidebar by scrolling the sidebar alone.
+    // scrollIntoView would also scroll the window, cancelling nav.js's
+    // scroll-to-top after a link click (this script re-runs on every visit).
     (function() {
-      var active = document.querySelector('.docs-side .active');
-      if (active) active.scrollIntoView({ block: 'center' });
+      var side = document.querySelector('.docs-side');
+      var active = side && side.querySelector('.active');
+      if (!active) return;
+      var offset = active.getBoundingClientRect().top - side.getBoundingClientRect().top;
+      side.scrollTop += offset - (side.clientHeight - active.offsetHeight) / 2;
     })();
   </script>
 </body>
