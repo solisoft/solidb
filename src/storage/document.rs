@@ -6,6 +6,24 @@ use uuid::Uuid;
 /// Current binary format version for document serialization
 pub const BINARY_FORMAT_VERSION: u8 = 1;
 
+/// The attributes the server owns. A client cannot set or overwrite them; every
+/// other attribute — `_from` / `_to` on an edge, or a user field that happens
+/// to start with `_` — is ordinary data.
+pub const SYSTEM_FIELDS: [&str; 5] = ["_key", "_id", "_rev", "_created_at", "_updated_at"];
+
+/// Whether `field` is one of [`SYSTEM_FIELDS`].
+pub fn is_system_field(field: &str) -> bool {
+    SYSTEM_FIELDS.contains(&field)
+}
+
+fn strip_system_fields(data: &mut Value) {
+    if let Some(obj) = data.as_object_mut() {
+        for field in SYSTEM_FIELDS {
+            obj.remove(field);
+        }
+    }
+}
+
 /// Represents a JSON document in the database
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -47,13 +65,7 @@ impl Document {
         let now = Utc::now();
 
         // Remove system fields to prevent duplication
-        if let Some(obj) = data.as_object_mut() {
-            obj.remove("_key");
-            obj.remove("_id");
-            obj.remove("_rev");
-            obj.remove("_created_at");
-            obj.remove("_updated_at");
-        }
+        strip_system_fields(&mut data);
 
         Self {
             key,
@@ -71,13 +83,7 @@ impl Document {
         let now = Utc::now();
 
         // Remove system fields to prevent duplication
-        if let Some(obj) = data.as_object_mut() {
-            obj.remove("_key");
-            obj.remove("_id");
-            obj.remove("_rev");
-            obj.remove("_created_at");
-            obj.remove("_updated_at");
-        }
+        strip_system_fields(&mut data);
 
         Self {
             key,
@@ -92,23 +98,19 @@ impl Document {
     /// Update the document data (merges with existing data)
     /// Generates a new revision on every update
     pub fn update(&mut self, data: Value) {
-        // Merge new data with existing data
+        // Merge new data with existing data. Only the server-owned attributes
+        // are skipped: skipping every `_`-prefixed key silently kept an edge's
+        // old `_from` / `_to` on UPDATE, while INSERT and REPLACE honoured them.
         if let (Some(existing), Some(new)) = (self.data.as_object_mut(), data.as_object()) {
             for (key, value) in new {
-                if !key.starts_with('_') {
+                if !is_system_field(key) {
                     existing.insert(key.clone(), value.clone());
                 }
             }
         } else {
             // If not objects, replace entirely but ensure no system fields if it becomes an object
             let mut new_data = data;
-            if let Some(obj) = new_data.as_object_mut() {
-                obj.remove("_key");
-                obj.remove("_id");
-                obj.remove("_rev");
-                obj.remove("_created_at");
-                obj.remove("_updated_at");
-            }
+            strip_system_fields(&mut new_data);
             self.data = new_data;
         }
         self.rev = Self::generate_rev();
@@ -263,6 +265,25 @@ mod tests {
         assert_eq!(doc.key, "eve");
         // Regular field added
         assert_eq!(doc.data.get("email"), Some(&json!("eve@test.com")));
+    }
+
+    #[test]
+    fn test_document_update_keeps_non_system_underscore_fields() {
+        let mut doc = Document::with_key(
+            "follows",
+            "e1".to_string(),
+            json!({"_from": "people/a", "_to": "people/b"}),
+        );
+
+        doc.update(json!({"_from": "people/c", "_meta": 1, "_rev": "forged", "_id": "x/y"}));
+
+        assert_eq!(doc.data.get("_from"), Some(&json!("people/c")));
+        assert_eq!(doc.data.get("_to"), Some(&json!("people/b")));
+        assert_eq!(doc.data.get("_meta"), Some(&json!(1)));
+        assert_ne!(doc.rev, "forged");
+        assert_eq!(doc.id, "follows/e1");
+        assert!(doc.data.get("_rev").is_none());
+        assert!(doc.data.get("_id").is_none());
     }
 
     #[test]

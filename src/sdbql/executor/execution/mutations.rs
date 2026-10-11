@@ -88,7 +88,8 @@ pub(super) fn selector_key(value: &Value, statement: &str) -> DbResult<String> {
 /// Merge `patch` into `target` with AQL's `keepNull` / `mergeObjects`.
 ///
 /// Top-level system attributes (`_key`, `_rev`, ...) in the patch are
-/// skipped, as the storage layer's own merge skips them.
+/// skipped, as the storage layer's own merge skips them. Other `_`-prefixed
+/// attributes — an edge's `_from` / `_to` — are data and are merged.
 pub(super) fn merge_patch(
     target: &mut Map<String, Value>,
     patch: &Map<String, Value>,
@@ -97,7 +98,7 @@ pub(super) fn merge_patch(
     top_level: bool,
 ) {
     for (key, value) in patch {
-        if top_level && key.starts_with('_') {
+        if top_level && crate::storage::document::is_system_field(key) {
             continue;
         }
         if value.is_null() && !keep_null {
@@ -738,6 +739,19 @@ mod tests {
             true,
         );
         assert_eq!(Value::Object(t), json!({"a": 1}));
+    }
+
+    #[test]
+    fn edge_endpoints_in_patch_are_merged() {
+        let mut t = obj(json!({"_from": "p/a", "_to": "p/b"}));
+        merge_patch(
+            &mut t,
+            &obj(json!({"_from": "p/c", "_created_at": "x"})),
+            true,
+            false,
+            true,
+        );
+        assert_eq!(Value::Object(t), json!({"_from": "p/c", "_to": "p/b"}));
     }
 
     #[test]

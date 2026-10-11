@@ -477,3 +477,104 @@ fn test_traversal_limited() {
 
     assert!(results.len() <= 3);
 }
+
+// ============================================================================
+// Moving an edge
+// ============================================================================
+
+/// UPDATE used to drop every `_`-prefixed attribute of the patch, so an edge
+/// kept its old `_from` while its other fields changed — and the traversal kept
+/// following the old parent. Only the server-owned attributes are skipped now.
+#[test]
+fn test_update_moves_edge_and_traversal_follows() {
+    let (engine, _tmp) = create_social_graph();
+    let follows = engine.get_collection("follows").unwrap();
+    follows
+        .insert(
+            json!({"_key": "moving", "_from": "people/alice", "_to": "people/eve", "since": 2024}),
+        )
+        .unwrap();
+
+    execute_query(
+        &engine,
+        "UPDATE 'moving' WITH {_from: 'people/diana', since: 2025} IN follows",
+    );
+
+    let edge = execute_query(
+        &engine,
+        "FOR e IN follows FILTER e._key == 'moving' RETURN e",
+    );
+    assert_eq!(edge[0]["_from"], json!("people/diana"));
+    assert_eq!(edge[0]["since"], json!(2025));
+
+    let from_alice = execute_query(
+        &engine,
+        "FOR v IN 1..1 OUTBOUND 'people/alice' follows RETURN v.name",
+    );
+    assert!(
+        !from_alice.contains(&json!("Eve")),
+        "the old parent still reaches Eve"
+    );
+    let from_diana = execute_query(
+        &engine,
+        "FOR v IN 1..1 OUTBOUND 'people/diana' follows RETURN v.name",
+    );
+    assert!(
+        from_diana.contains(&json!("Eve")),
+        "the new parent does not reach Eve"
+    );
+}
+
+#[test]
+fn test_upsert_update_branch_moves_edge() {
+    let (engine, _tmp) = create_social_graph();
+    let follows = engine.get_collection("follows").unwrap();
+    follows
+        .insert(json!({"_key": "up", "_from": "people/alice", "_to": "people/eve"}))
+        .unwrap();
+
+    execute_query(
+        &engine,
+        "UPSERT {_key: 'up'} INSERT {_key: 'up', _from: 'people/bob', _to: 'people/eve'} \
+         UPDATE {_from: 'people/bob'} IN follows",
+    );
+
+    let edge = execute_query(
+        &engine,
+        "FOR e IN follows FILTER e._key == 'up' RETURN e._from",
+    );
+    assert_eq!(edge, vec![json!("people/bob")]);
+}
+
+/// The custom-merge path (OPTIONS keepNull / mergeObjects) merges in the
+/// executor rather than in storage; it must move the edge too.
+#[test]
+fn test_update_with_options_moves_edge() {
+    let (engine, _tmp) = create_social_graph();
+    let follows = engine.get_collection("follows").unwrap();
+    follows
+        .insert(json!({"_key": "opt", "_from": "people/alice", "_to": "people/eve", "note": "x"}))
+        .unwrap();
+
+    execute_query(
+        &engine,
+        "UPDATE 'opt' WITH {_from: 'people/charlie', note: null} IN follows OPTIONS {keepNull: false}",
+    );
+
+    let edge = execute_query(&engine, "FOR e IN follows FILTER e._key == 'opt' RETURN e");
+    assert_eq!(edge[0]["_from"], json!("people/charlie"));
+    assert!(edge[0].get("note").is_none());
+}
+
+#[test]
+fn test_update_cannot_blank_an_edge_endpoint() {
+    let (engine, _tmp) = create_social_graph();
+    let follows = engine.get_collection("follows").unwrap();
+    follows
+        .insert(json!({"_key": "keep", "_from": "people/alice", "_to": "people/eve"}))
+        .unwrap();
+
+    assert!(follows.update("keep", json!({"_from": ""})).is_err());
+    let edge = follows.get("keep").unwrap();
+    assert_eq!(edge.data["_from"], json!("people/alice"));
+}

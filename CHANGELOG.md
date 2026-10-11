@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **UPDATE could not move an edge.** The update merge skipped every attribute
+  whose name starts with `_`, so `UPDATE k WITH {_from: …}` — and the UPDATE
+  branch of an `UPSERT`, `PATCH` over REST, and the `OPTIONS {keepNull,
+  mergeObjects}` path — kept the old `_from` / `_to` while the other fields
+  changed, with no error; traversals went on following the old endpoint.
+  INSERT and REPLACE were never affected. Only the five server-owned
+  attributes (`_key`, `_id`, `_rev`, `_created_at`, `_updated_at`) are skipped
+  now; any other `_`-prefixed attribute, `_from` and `_to` included, is merged
+  like ordinary data, and an edge is still validated after the merge.
+
 ## [2.2.1](https://github.com/solisoft/solidb/compare/v2.2.0...v2.2.1) (2026-10-07)
 
 ### Fixed
