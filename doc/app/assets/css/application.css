@@ -501,6 +501,7 @@ a { color: inherit; text-decoration: none; }
 .release:first-child .release-ver { color: var(--accent-text); font-weight: 500; }
 .release-title { font-family: var(--font-display); font-size: 24px; line-height: 1.25; }
 .release-sum { font-size: 15px; line-height: 1.55; color: var(--text-2); }
+.release-sum code { font-family: var(--font-mono); font-size: 0.9em; }
 @media (max-width: 860px) {
     .release { grid-template-columns: 1fr; row-gap: 6px; }
     .release-title { font-size: 21px; }
