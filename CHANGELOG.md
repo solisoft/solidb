@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed
+
+* **Fulltext results are ranked with BM25.** A hit scored +10 per
+  occurrence of a query word and +5 per word within two edits of one, with
+  no inverse document frequency and no length normalization, so a chunk
+  full of common words ("les", "des", "pour") outranked the one holding the
+  rare word the query was about. Candidates were also pre-selected by how
+  many query words they held, so with `HYBRID_SEARCH` (limit 10, 120
+  candidates scored) the chunk with the rare word could be dropped before
+  scoring. `FULLTEXT()`, `SEARCH_INDEX()`, `HYBRID_SEARCH()` and graph RAG
+  now use BM25 (k1 1.5, b 0.75), with each word's document frequency read
+  from the index's postings and Lucene's non-negative IDF, so words found in
+  most documents weigh next to nothing without a stop-word list; candidates
+  are pre-selected by the IDF of the words they hold. With a distance, a
+  near-miss counts as half an occurrence and short words get fewer edits
+  (none up to 2 letters, 1 up to 5). `matched` lists the query words a hit
+  holds (it was always empty). Scores are on a new scale and only rank the
+  hits of one query; `HYBRID_SEARCH` min-max normalizes them as before.
+
 ## [2.3.1](https://github.com/solisoft/solidb/compare/v2.3.0...v2.3.1) (2026-10-12)
 
 ### Performance

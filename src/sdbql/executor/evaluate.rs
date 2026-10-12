@@ -423,21 +423,21 @@ impl<'a> QueryExecutor<'a> {
 
                 let collection = self.get_collection(collection_name)?;
                 let gate = self.row_policy_gate(collection_name);
-                // The index returns candidates that share a term with the
-                // query; they are re-scored here with the requested distance.
-                // Over-fetch so hits the policy drops do not under-fill.
+                // The index scores with BM25, near-misses within the
+                // requested distance included. Over-fetch so hits the policy
+                // drops do not under-fill.
                 let fetch = if gate.is_some() {
                     limit.saturating_mul(4).min(MAX_SEARCH_K)
                 } else {
                     limit
                 };
-                // Score the way the index matched: an index created with
-                // `fold_accents` found "Hélène" for "helene", and an unfolded
-                // re-score would give that hit 0 and drop it.
-                let fold = collection.fulltext_folds_accents(field);
-                let query_terms = crate::storage::tokenize_folded(query, fold);
                 let matches = collection
-                    .fulltext_search(query, Some(vec![field.to_string()]), fetch)
+                    .fulltext_search_fuzzy(
+                        query,
+                        Some(vec![field.to_string()]),
+                        fetch,
+                        max_distance,
+                    )
                     .map_err(|e| {
                         DbError::ExecutionError(format!("Fulltext search failed: {}", e))
                     })?;
@@ -454,13 +454,7 @@ impl<'a> QueryExecutor<'a> {
                     {
                         continue;
                     }
-                    let score = match get_field_ref(&doc, field).and_then(Value::as_str) {
-                        Some(text) => fulltext_score(&query_terms, text, max_distance, fold),
-                        None => m.score,
-                    };
-                    if score <= 0.0 {
-                        continue;
-                    }
+                    let score = m.score;
                     let mut obj = serde_json::Map::new();
                     obj.insert("doc".to_string(), doc);
                     obj.insert("score".to_string(), json!(score));
@@ -1605,28 +1599,6 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     } else {
         dot(a, b) / (m1 * m2)
     }
-}
-
-/// `FULLTEXT` score of one field: +10 per exact term match, +5 per term
-/// within `max_distance` edits (the index's own scoring, with the distance
-/// the caller asked for instead of a fixed 2).
-fn fulltext_score(query_terms: &[String], text: &str, max_distance: usize, fold: bool) -> f64 {
-    let doc_terms = crate::storage::tokenize_folded(text, fold);
-    let mut score = 0u64;
-    for q in query_terms {
-        let q_len = q.chars().count();
-        for d in &doc_terms {
-            if q == d {
-                score += 10;
-            } else if max_distance > 0
-                && q_len.abs_diff(d.chars().count()) <= max_distance
-                && crate::storage::levenshtein_distance(q, d) <= max_distance
-            {
-                score += 5;
-            }
-        }
-    }
-    score as f64
 }
 
 /// Levenshtein distance, or an error past the input-length cap (it used to

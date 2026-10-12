@@ -431,7 +431,7 @@
           </div>
           <div class="p-8">
             <p class="text-gray-300 mb-6 leading-relaxed">
-              A <strong>Fulltext Index</strong> stores every word of the indexed fields — lowercased, punctuation removed, at least <code>min_length</code> bytes long — and finds documents that contain the words of a query. <code>FULLTEXT()</code>, <code>SEARCH_INDEX()</code> and <code>HYBRID_SEARCH()</code> read it; a distance argument lets near-misses in the matched documents score too.
+              A <strong>Fulltext Index</strong> stores every word of the indexed fields — lowercased, punctuation removed, at least <code>min_length</code> bytes long — and finds documents that contain the words of a query, ranked with BM25: rare words weigh more, words found in most documents next to nothing. <code>FULLTEXT()</code>, <code>SEARCH_INDEX()</code> and <code>HYBRID_SEARCH()</code> read it; a distance argument lets near-misses in the matched documents score too.
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -439,7 +439,7 @@
                     <h4 class="text-white font-bold mb-3">Capabilities</h4>
                     <ul class="space-y-2 text-sm text-gray-400">
                         <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Whole-word matching, case-insensitive</li>
-                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Typo-tolerant scoring (Levenshtein distance)</li>
+                        <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> BM25 ranking, typo-tolerant with a distance</li>
                         <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Optional accent folding: <code>helene</code> finds “Hélène”</li>
                     </ul>
                 </div>

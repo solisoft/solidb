@@ -468,17 +468,31 @@ pub fn bm25_score(
 /// * `doc_freq` - Number of documents containing the term
 ///
 /// # Returns
-/// IDF score using the formula: log((N - df + 0.5) / (df + 0.5))
+/// `ln(1 + (N - df + 0.5) / (df + 0.5))`, Lucene's form. The classic
+/// `ln((N - df + 0.5) / (df + 0.5))` turns negative once a term is in more
+/// than half the documents, so a stop word would *lower* the score of every
+/// document containing it; this one only tends to zero.
 pub fn calculate_idf(total_docs: usize, doc_freq: usize) -> f64 {
     if total_docs == 0 || doc_freq == 0 {
         return 0.0;
     }
 
-    let n = total_docs as f64;
+    let n = total_docs.max(doc_freq) as f64;
     let df = doc_freq as f64;
 
-    // BM25 IDF formula
-    ((n - df + 0.5) / (df + 0.5)).ln()
+    (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
+}
+
+/// Edits a fuzzy match may make to a query term of `len` characters, capped
+/// at `max_distance`: none up to 2 characters, 1 up to 5, 2 beyond (Lucene's
+/// AUTO). At distance 2, `de` would otherwise match `le`, `la`, `se`, `du`…
+pub fn fuzzy_edits_for(len: usize, max_distance: usize) -> usize {
+    let auto = match len {
+        0..=2 => 0,
+        3..=5 => 1,
+        _ => 2,
+    };
+    auto.min(max_distance)
 }
 
 /// Fulltext search result with scoring
@@ -678,12 +692,23 @@ mod tests {
 
     #[test]
     fn test_calculate_idf() {
-        // If term appears in all docs, IDF should be low/negative
         let idf_all = calculate_idf(100, 100);
+        let idf_most = calculate_idf(100, 80);
         let idf_few = calculate_idf(100, 5);
 
         // Term appearing in fewer docs should have higher IDF
-        assert!(idf_few > idf_all);
+        assert!(idf_few > idf_most && idf_most > idf_all);
+        // A term in most documents weighs little, never negatively.
+        assert!(idf_all > 0.0 && idf_all < 0.01);
+    }
+
+    #[test]
+    fn fuzzy_edits_scale_with_term_length() {
+        assert_eq!(fuzzy_edits_for(2, 2), 0);
+        assert_eq!(fuzzy_edits_for(4, 2), 1);
+        assert_eq!(fuzzy_edits_for(8, 2), 2);
+        assert_eq!(fuzzy_edits_for(8, 1), 1);
+        assert_eq!(fuzzy_edits_for(8, 0), 0);
     }
 
     #[test]

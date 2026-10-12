@@ -18,7 +18,7 @@
             Fulltext Search Functions
           </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Fulltext search capabilities with n-gram indexing and BM25 relevance scoring.
+            Fulltext search over word indexes, ranked with BM25.
           </p>
         </div>
       </div>
@@ -36,7 +36,7 @@
           </div>
           <div class="p-8 space-y-8">
             <p class="text-gray-300 leading-relaxed">
-              SDBQL provides fulltext search with n-gram indexing and BM25 scoring. <code class="text-amber-300">SEARCH expr</code> is a scored <code>FILTER</code> (numeric <code>&gt; 0</code> keeps the row; <code>SEARCH_SCORE()</code>). <code>SEARCH_INDEX(coll, field, query [, limit])</code> walks a fulltext index. <code>CREATE_VIEW(name, {collection, fields})</code> registers a <code>type: "search"</code> alias in <code>_views</code> so <code>FOR d IN view</code> scans the backing collection — not an Arango View planner. <code>TOKENS</code>/<code>PHRASE</code>/<code>BOOST</code> use in-memory analyzers (<code>text_en</code>, <code>identity</code>). For embeddings use <code class="text-amber-300">EMBED</code> and <code class="text-amber-300">VECTOR_SEARCH</code>.
+              SDBQL provides fulltext search over word indexes, ranked with BM25. <code class="text-amber-300">SEARCH expr</code> is a scored <code>FILTER</code> (numeric <code>&gt; 0</code> keeps the row; <code>SEARCH_SCORE()</code>). <code>SEARCH_INDEX(coll, field, query [, limit])</code> walks a fulltext index. <code>CREATE_VIEW(name, {collection, fields})</code> registers a <code>type: "search"</code> alias in <code>_views</code> so <code>FOR d IN view</code> scans the backing collection — not an Arango View planner. <code>TOKENS</code>/<code>PHRASE</code>/<code>BOOST</code> use in-memory analyzers (<code>text_en</code>, <code>identity</code>). For embeddings use <code class="text-amber-300">EMBED</code> and <code class="text-amber-300">VECTOR_SEARCH</code>.
             </p>
             <pre class="mt-4"><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">RETURN TOKENS("The Quick Brown Fox", "text_en")  -- ["quick","brown","fox"]
 RETURN PHRASE("the quick brown fox", "quick", "brown")  -- true
@@ -55,7 +55,7 @@ FOR n IN notes
                 </h3>
               </div>
               <div class="p-5 space-y-4">
-                <p class="text-sm text-gray-400">Fuzzy search using n-gram indexing. Returns matching documents with similarity scores.</p>
+                <p class="text-sm text-gray-400">Searches a fulltext index. Returns <code>[{doc, score, matched}]</code>, best first, ranked with BM25; <code>matched</code> lists the query words the document holds.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
                   <code class="text-sm text-gray-300">FULLTEXT(<span class="text-yellow-400">collection</span>, <span class="text-cyan-400">field</span>, <span class="text-emerald-400">query</span>, <span class="text-pink-400">distance?</span>)</code>
                 </div>
@@ -83,9 +83,9 @@ FOR m IN matches
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                   </svg>
                   <div>
-                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">Words, typos and accents</h4>
+                    <h4 class="text-yellow-300 font-bold mb-1 text-sm">Words, ranking, typos and accents</h4>
                     <p class="text-sm text-yellow-200/70">
-                      The index stores whole words, lowercased. A document is found when it contains a word of the query; <code>distance</code> then lets near-misses in that document add to its score. Accents count unless the index was created with <code>"fold_accents": true</code> — then <code>FULLTEXT("clients", "name", "helene")</code> finds “Hélène”. See <a href="/docs/indexes#fulltext" class="underline">fulltext indexes</a>.
+                      The index stores whole words, lowercased. A document is found when it contains a word of the query. It is ranked with BM25: a word weighs more the fewer documents hold it, so words found almost everywhere (<em>les</em>, <em>pour</em>, <em>the</em>) count for next to nothing and no stop-word list is needed; repeating a word helps less and less, and a longer field ranks lower than a shorter one with the same matches. <code>distance</code> then lets near-misses in that document count as half an occurrence, with fewer edits for short words: none up to 2 letters, 1 up to 5. Scores rank the hits of one query; they are not comparable across queries. Accents count unless the index was created with <code>"fold_accents": true</code> — then <code>FULLTEXT("clients", "name", "helene")</code> finds “Hélène”. See <a href="/docs/indexes#fulltext" class="underline">fulltext indexes</a>.
                     </p>
                   </div>
                 </div>

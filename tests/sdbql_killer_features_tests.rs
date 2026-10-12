@@ -1078,7 +1078,8 @@ fn fulltext_and_search_index_fold_accents() {
     let arr = hits.as_array().expect("array");
     assert_eq!(arr.len(), 1, "{hits}");
     assert_eq!(arr[0]["doc"]["_key"], json!("h"));
-    assert_eq!(arr[0]["score"], json!(10.0));
+    assert!(arr[0]["score"].as_f64().unwrap() > 0.0, "{hits}");
+    assert_eq!(arr[0]["matched"], json!(["helene"]));
 
     let hits = exec(&e, r#"RETURN SEARCH_INDEX("clients", "name", "dupre", 10)"#);
     assert_eq!(hits[0]["doc"]["_key"], json!("h"), "{hits}");

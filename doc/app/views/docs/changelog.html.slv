@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Fulltext results are ranked with BM25</strong> &mdash; a hit scored +10 per occurrence of a query word and +5 per word within two edits of one, with no weight for how rare a word is and none for the field&rsquo;s length, so a chunk full of <em>les</em>, <em>des</em>, <em>pour</em> outranked the one holding the word the query was about. Worse, only the candidates holding the most query words were scored at all, so in <code>HYBRID_SEARCH</code> the chunk with the rare word could be dropped before scoring. <code>FULLTEXT()</code>, <code>SEARCH_INDEX()</code>, <code>HYBRID_SEARCH()</code> and graph RAG now rank with BM25, taking each word&rsquo;s document frequency from the index: words found in most documents weigh next to nothing, without a stop-word list. With a distance, a near-miss counts as half an occurrence, and short words get fewer edits (none up to 2 letters, 1 up to 5), so <em>des</em> no longer matches <em>dix</em>. <code>matched</code> now lists the query words a hit holds; it was always empty. Scores are on a new scale and rank the hits of one query.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.3.1 -->
   <section id="v2-3-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

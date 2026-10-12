@@ -1,11 +1,12 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{
-    extract_field_value, generate_ngrams, levenshtein_distance, tokenize_folded, FulltextMatch,
+    calculate_idf, extract_field_value, fuzzy_edits_for, generate_ngrams, levenshtein_distance,
+    tokenize_folded, FulltextMatch, BM25_B, BM25_K1,
 };
 use rust_rocksdb::WriteBatch;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A RocksDB key and value to write.
 type KvPair = (Vec<u8>, Vec<u8>);
@@ -35,13 +36,6 @@ impl Collection {
             .iter()
             .find(|i| i.name == name)
             .cloned()
-    }
-
-    /// Whether the fulltext index covering `field` folds accents — what
-    /// SDBQL `FULLTEXT()` needs to re-score its hits the way the index matched.
-    pub fn fulltext_folds_accents(&self, field: &str) -> bool {
-        self.get_fulltext_index_for_field(field)
-            .is_some_and(|index| index.fold_accents)
     }
 
     /// Get a fulltext index that covers a specific field
@@ -306,12 +300,38 @@ impl Collection {
         self.get_all_fulltext_indexes()
     }
 
-    /// Perform a fulltext search
+    /// Fulltext search ranked by BM25, exact terms only. See
+    /// [`Self::fulltext_search_fuzzy`].
     pub fn fulltext_search(
         &self,
         query: &str,
         fields: Option<Vec<String>>,
         limit: usize,
+    ) -> DbResult<Vec<FulltextMatch>> {
+        self.fulltext_search_fuzzy(query, fields, limit, 0)
+    }
+
+    /// Fulltext search ranked by BM25.
+    ///
+    /// - **IDF** comes from the index: a term's document frequency is the
+    ///   number of its postings (read up to [`MAX_POSTINGS_PER_TERM`]), over
+    ///   the collection's document count. A term in most documents — a stop
+    ///   word — weighs next to nothing, so no stop-word list is needed.
+    /// - **tf** and the field length come from the document's field text.
+    ///   The average length is that of the candidates scored, not of the
+    ///   whole collection, which the index does not record.
+    /// - A document's score is that of its best-scoring indexed field.
+    ///
+    /// Candidates are documents holding at least one query term exactly.
+    /// With `max_distance > 0`, a word of a candidate within
+    /// [`fuzzy_edits_for`] edits of a query term counts as half an
+    /// occurrence of it.
+    pub fn fulltext_search_fuzzy(
+        &self,
+        query: &str,
+        fields: Option<Vec<String>>,
+        limit: usize,
+        max_distance: usize,
     ) -> DbResult<Vec<FulltextMatch>> {
         // 1. Identify relevant indexes
         let all_indexes = self.get_all_fulltext_indexes();
@@ -330,128 +350,171 @@ impl Collection {
 
         // 2. Tokenize the query once per index: an index created with
         // `fold_accents` stores folded terms, so its query terms must be
-        // folded too, and a plain index must keep seeing the raw ones.
+        // folded too, and a plain index must keep seeing the raw ones. A
+        // repeated query word counts once; a word shorter than the index's
+        // `min_length` has no postings and cannot be scored.
         let query_terms: Vec<Vec<String>> = indexes
             .iter()
-            .map(|index| tokenize_folded(query, index.fold_accents))
+            .map(|index| {
+                let mut seen = HashSet::new();
+                tokenize_folded(query, index.fold_accents)
+                    .into_iter()
+                    .filter(|t| t.len() >= index.min_length && seen.insert(t.clone()))
+                    .collect()
+            })
             .collect();
         if query_terms.iter().all(|terms| terms.is_empty()) {
             return Ok(Vec::new());
         }
 
-        // 3. Collect candidate documents (using term matching first)
-        let mut candidate_counts: HashMap<String, usize> = HashMap::new();
+        // 3. Read each term's postings: its document frequency, and the
+        // candidates. A candidate is pre-ranked by the IDF of the terms it
+        // holds, so one rare term outweighs several common ones.
+        let total_docs = self.count();
+        let mut idfs: Vec<HashMap<&str, f64>> = Vec::with_capacity(indexes.len());
+        let mut candidate_weight: HashMap<String, f64> = HashMap::new();
         let db = &self.db;
         let Some(cf) = self.ks.handle(&self.db) else {
             return Ok(Vec::new()); // column family dropped mid-operation
         };
 
         for (index, index_terms) in indexes.iter().zip(&query_terms) {
+            let mut index_idfs = HashMap::new();
             for term in index_terms {
-                if term.len() >= index.min_length {
-                    // Exact term lookup
-                    let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
-                    let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-
-                    for (scanned, result) in iter.flatten().enumerate() {
-                        let (key, _) = result;
-                        if !key.starts_with(prefix.as_bytes()) || scanned >= MAX_POSTINGS_PER_TERM {
-                            break;
-                        }
-                        // Key is "ft_term:<index>:<term>:<doc_key>". Terms are
-                        // alphanumeric, so everything after the exact prefix is
-                        // the doc key — which may itself contain ':' (audit D6;
-                        // `split(':').last()` truncated such keys).
-                        let doc_key = String::from_utf8_lossy(&key[prefix.len()..]).into_owned();
-                        *candidate_counts.entry(doc_key).or_insert(0) += 1;
+                let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
+                let mut doc_keys: Vec<String> = Vec::new();
+                for (key, _) in db.prefix_iterator_ks(&cf, prefix.as_bytes()).flatten() {
+                    if !key.starts_with(prefix.as_bytes())
+                        || doc_keys.len() >= MAX_POSTINGS_PER_TERM
+                    {
+                        break;
                     }
+                    // Key is "ft_term:<index>:<term>:<doc_key>". Terms are
+                    // alphanumeric, so everything after the exact prefix is
+                    // the doc key — which may itself contain ':' (audit D6;
+                    // `split(':').last()` truncated such keys).
+                    doc_keys.push(String::from_utf8_lossy(&key[prefix.len()..]).into_owned());
+                }
+                if doc_keys.is_empty() {
+                    continue;
+                }
+                let idf = calculate_idf(total_docs, doc_keys.len());
+                index_idfs.insert(term.as_str(), idf);
+                for doc_key in doc_keys {
+                    *candidate_weight.entry(doc_key).or_insert(0.0) += idf;
                 }
             }
-
-            // Fuzzy lookup (trigrams) if strict term matching yielded few results?
-            // Or always? A proper implementation combines both.
-            // For now, let's keep it simple: if strict terms found candidates, score them.
-            // If not, maybe use ngrams?
-            // The original implementation might have been more complex.
-            // We'll proceed with term matching + Levenshtein re-scoring.
+            idfs.push(index_idfs);
         }
 
         // 4. Score only the most promising candidates (audit P5): scoring
-        // loads the document and runs Levenshtein over its terms, so doing it
-        // for every posting before applying `limit` scaled with the corpus.
-        // Rank by how many query terms matched; score the top N.
+        // loads the document and tokenizes it, so doing it for every posting
+        // before applying `limit` scaled with the corpus.
         let max_scored = limit
             .saturating_mul(4)
             .clamp(MIN_SCORED_CANDIDATES, MAX_SCORED_CANDIDATES);
-        let mut ranked: Vec<(String, usize)> = candidate_counts.into_iter().collect();
+        let mut ranked: Vec<(String, f64)> = candidate_weight.into_iter().collect();
         if ranked.len() > max_scored {
-            ranked.select_nth_unstable_by(max_scored - 1, |a, b| b.1.cmp(&a.1));
+            ranked.select_nth_unstable_by(max_scored - 1, |a, b| b.1.total_cmp(&a.1));
             ranked.truncate(max_scored);
         }
 
-        let mut matches = Vec::new();
-        for (doc_key, _count) in ranked {
-            // Retrieve document to calculate exact score
-            // Optimization: Only load full document if count is promising?
-            // Here we assume if it matches term, it's relevant.
-
-            if let Ok(doc) = self.get(&doc_key) {
-                let doc_value = doc.to_value();
-                let mut best_score = 0;
-                let mut valid = false;
-
-                for (index, index_terms) in indexes.iter().zip(&query_terms) {
-                    for field in &index.fields {
-                        if let Some(fields_filter) = &fields {
-                            if !fields_filter.contains(field) {
-                                continue;
+        // 5. First pass: per candidate field, its length and how often each
+        // query term occurs in it. BM25 needs the average length before any
+        // score can be computed.
+        struct FieldStats {
+            len: usize,
+            /// (index position, query term position, exact tf, fuzzy tf)
+            hits: Vec<(usize, usize, usize, usize)>,
+        }
+        let mut stats: Vec<(String, Vec<FieldStats>)> = Vec::with_capacity(ranked.len());
+        let (mut len_sum, mut len_count) = (0usize, 0usize);
+        for (doc_key, _) in ranked {
+            let Ok(doc) = self.get(&doc_key) else {
+                continue;
+            };
+            let doc_value = doc.to_value();
+            let mut fields_stats = Vec::new();
+            for (ix, (index, index_terms)) in indexes.iter().zip(&query_terms).enumerate() {
+                for field in &index.fields {
+                    if fields.as_ref().is_some_and(|f| !f.contains(field)) {
+                        continue;
+                    }
+                    let value = extract_field_value(&doc_value, field);
+                    let Some(text) = value.as_str() else {
+                        continue;
+                    };
+                    let doc_terms = tokenize_folded(text, index.fold_accents);
+                    len_sum += doc_terms.len();
+                    len_count += 1;
+                    let mut hits = Vec::new();
+                    for (qx, q_term) in index_terms.iter().enumerate() {
+                        let q_len = q_term.chars().count();
+                        let edits = fuzzy_edits_for(q_len, max_distance);
+                        let (mut exact, mut fuzzy) = (0, 0);
+                        for d_term in &doc_terms {
+                            if d_term == q_term {
+                                exact += 1;
+                            } else if edits > 0
+                                && q_len.abs_diff(d_term.chars().count()) <= edits
+                                && levenshtein_distance(q_term, d_term) <= edits
+                            {
+                                fuzzy += 1;
                             }
                         }
-
-                        let field_value = extract_field_value(&doc_value, field);
-                        if let Some(text) = field_value.as_str() {
-                            // Basic scoring: (matches / total_terms) * 100
-                            // Minus Levenshtein penalty
-                            // This is a simplified version of likely original logic
-
-                            let doc_terms = tokenize_folded(text, index.fold_accents);
-                            let mut field_score = 0;
-
-                            for q_term in index_terms {
-                                for d_term in &doc_terms {
-                                    let dist = levenshtein_distance(q_term, d_term);
-                                    if dist == 0 {
-                                        field_score += 10; // Exact match
-                                    } else if dist <= 2 {
-                                        field_score += 5; // Fuzzy match
-                                    }
-                                }
-                            }
-
-                            if field_score > best_score {
-                                best_score = field_score;
-                                valid = true;
-                            }
+                        if exact + fuzzy > 0 {
+                            hits.push((ix, qx, exact, fuzzy));
                         }
                     }
-                }
-
-                if valid {
-                    matches.push(FulltextMatch {
-                        doc_key: doc_key.to_string(),
-                        score: best_score as f64,
-                        matched_terms: Vec::new(), // Populate if needed or change logic to track terms
+                    fields_stats.push(FieldStats {
+                        len: doc_terms.len(),
+                        hits,
                     });
                 }
             }
+            stats.push((doc_key, fields_stats));
+        }
+        let avg_len = if len_count > 0 {
+            (len_sum as f64 / len_count as f64).max(1.0)
+        } else {
+            1.0
+        };
+
+        // 6. Second pass: BM25 of each field, best field wins.
+        let mut matches = Vec::new();
+        for (doc_key, fields_stats) in stats {
+            let mut best: Option<(f64, Vec<String>)> = None;
+            for field in fields_stats {
+                let norm = BM25_K1 * (1.0 - BM25_B + BM25_B * field.len as f64 / avg_len);
+                let mut score = 0.0;
+                let mut matched = Vec::new();
+                for (ix, qx, exact, fuzzy) in field.hits {
+                    let term = &query_terms[ix][qx];
+                    // A term found only fuzzily has no postings of its own;
+                    // weigh it as a rare one.
+                    let idf = idfs[ix]
+                        .get(term.as_str())
+                        .copied()
+                        .unwrap_or_else(|| calculate_idf(total_docs, 1));
+                    let tf = exact as f64 + 0.5 * fuzzy as f64;
+                    score += idf * tf * (BM25_K1 + 1.0) / (tf + norm);
+                    matched.push(term.clone());
+                }
+                if score > 0.0 && best.as_ref().is_none_or(|(s, _)| score > *s) {
+                    best = Some((score, matched));
+                }
+            }
+            if let Some((score, matched_terms)) = best {
+                matches.push(FulltextMatch {
+                    doc_key,
+                    score,
+                    matched_terms,
+                });
+            }
         }
 
-        // 5. Sort and limit
-        matches.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // 7. Sort and limit
+        matches.sort_by(|a, b| b.score.total_cmp(&a.score));
         matches.truncate(limit);
 
         Ok(matches)
