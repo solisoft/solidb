@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">An index is found in any FILTER after the <code>FOR</code></strong> &mdash; the planner looked only at the FILTER directly after the <code>FOR</code>. In <code>FOR e IN events FILTER e.draft != true AND (e.parent_key == null OR e.parent_key == "") FILTER e.date2 &gt;= @today</code>, nothing in the first FILTER can use an index, so the whole collection was read even with an index on <code>date2</code>. Consecutive FILTERs are now considered together, as one <code>AND</code>; <code>EXPLAIN</code>, auto-indexing and <code>indexHint</code> / <code>forceIndexHint</code> follow. Results are unchanged: every FILTER is still applied to the rows the index returns.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.3.0 -->
   <section id="v2-3-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

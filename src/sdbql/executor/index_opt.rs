@@ -15,6 +15,7 @@
 //! `FOR … OPTIONS { indexHint, forceIndexHint }` is honoured through
 //! [`IndexHint`] and [`QueryExecutor::lookup_index_for_filter_hinted`].
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use crate::storage::keyspace::KsDbExt;
@@ -195,6 +196,37 @@ pub(super) fn field_is_auto_indexable(field: &str) -> bool {
     }) && !field.contains("..")
         && !field.starts_with('.')
         && !field.ends_with('.')
+}
+
+/// The FILTERs that directly follow a FOR — `clauses[from..]` up to the first
+/// clause that is not a FILTER. Consecutive FILTERs are one conjunction, so
+/// the index planner considers all of them, not just the first.
+pub(super) fn leading_filters(clauses: &[BodyClause], from: usize) -> Vec<&Expression> {
+    clauses
+        .get(from..)
+        .unwrap_or_default()
+        .iter()
+        .map_while(|c| match c {
+            BodyClause::Filter(f) => Some(&f.expression),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `a AND b AND …` over `filters`, borrowed when there is only one. Used to
+/// *choose* an index; rows are still re-checked FILTER by FILTER.
+pub(super) fn conjunction<'e>(filters: &[&'e Expression]) -> Option<Cow<'e, Expression>> {
+    let (first, rest) = filters.split_first()?;
+    if rest.is_empty() {
+        return Some(Cow::Borrowed(*first));
+    }
+    Some(Cow::Owned(rest.iter().fold((*first).clone(), |acc, e| {
+        Expression::BinaryOp {
+            left: Box::new(acc),
+            op: BinaryOperator::And,
+            right: Box::new((*e).clone()),
+        }
+    })))
 }
 
 fn collection_bare_name(cf_name: &str) -> &str {

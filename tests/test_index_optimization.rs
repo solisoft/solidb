@@ -225,3 +225,74 @@ fn test_limit_pushdown_range() {
         .unwrap();
     assert_eq!(limited.as_slice(), &all[..10]);
 }
+
+/// `FILTER a FILTER b` is `FILTER a AND b`: when only the *second* FILTER has
+/// an indexable conjunct, the planner must still find it. The first FILTER
+/// here is the shape that used to stop it — `!=` terms and an OR containing
+/// `== null`, none of which an index can serve.
+#[test]
+fn test_index_found_in_second_filter() {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database("evdb".to_string()).unwrap();
+    let db = engine.get_database("evdb").unwrap();
+    db.create_collection("events".to_string(), None).unwrap();
+    let events = db.get_collection("events").unwrap();
+    for i in 0..200 {
+        let date2 = match i % 5 {
+            0 => json!(null),
+            1 => json!(i),
+            _ => json!(format!("2026-{:02}-{:02}", 1 + i % 12, 1 + i % 28)),
+        };
+        let parent = match i % 3 {
+            0 => json!(null),
+            1 => json!(""),
+            _ => json!("p1"),
+        };
+        events
+            .insert(json!({
+                "seq": i, "date2": date2, "parent_key": parent,
+                "atelier": i % 7 == 0, "draft": i % 11 == 0,
+            }))
+            .unwrap();
+    }
+
+    let q = |opts: &str| {
+        format!(
+            "FOR e IN events {opts} \
+             FILTER e.atelier != true AND e.draft != true \
+                AND (e.parent_key == null OR e.parent_key == \"\") \
+             FILTER IS_STRING(e.date2) AND e.date2 >= @today \
+             SORT e.seq RETURN e.seq"
+        )
+    };
+    let binds: std::collections::HashMap<String, serde_json::Value> =
+        [("today".to_string(), json!("2026-06-15"))].into();
+    let executor =
+        QueryExecutor::with_database_and_bind_vars(&engine, "evdb".to_string(), binds.clone());
+
+    let scanned = executor.execute(&parse(&q("")).unwrap()).unwrap();
+    assert!(!scanned.is_empty());
+
+    events
+        .create_index(
+            "date2_idx".to_string(),
+            vec!["date2".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+
+    let explain = executor.explain(&parse(&q("")).unwrap()).unwrap();
+    assert_eq!(explain.collections[0].access_type, "index_lookup");
+    assert_eq!(
+        explain.collections[0].index_used.as_deref(),
+        Some("date2_idx")
+    );
+
+    // Same rows through the index, and the execution path really takes it:
+    // a forced hint is an error when no FILTER can be served by that index.
+    assert_eq!(executor.execute(&parse(&q("")).unwrap()).unwrap(), scanned);
+    let forced = q(r#"OPTIONS { indexHint: "date2_idx", forceIndexHint: true }"#);
+    assert_eq!(executor.execute(&parse(&forced).unwrap()).unwrap(), scanned);
+}

@@ -13,6 +13,7 @@
 use super::super::to_bool;
 use serde_json::{json, Value};
 
+use super::super::index_opt::{conjunction, leading_filters};
 use super::super::types::{Context, MutationStats};
 use super::super::{contains_window_functions, QueryExecutor};
 use super::mutations::{is_document_error, selector_key, RowWrite, ShardedTarget};
@@ -263,8 +264,12 @@ impl<'a> QueryExecutor<'a> {
                     // non-field side against the row context, so a correlated
                     // FILTER (e.g. `rel._key == doc.organisation_id`) can still
                     // hit the index even though it isn't a literal.
-                    let next_is_filter =
-                        i + 1 < clauses.len() && matches!(&clauses[i + 1], BodyClause::Filter(_));
+                    //
+                    // Every FILTER directly after the FOR takes part: `FILTER a
+                    // FILTER b` is `FILTER a AND b`, so an index that serves
+                    // only `b` is found even when `a` has nothing indexable.
+                    let filters = leading_filters(clauses, i + 1);
+                    let index_filter = conjunction(&filters);
                     let is_collection = if let Some(src) = &for_clause.source_variable {
                         src == &for_clause.collection
                     } else {
@@ -273,11 +278,8 @@ impl<'a> QueryExecutor<'a> {
 
                     // The index read returns unfiltered rows; a collection
                     // under a row policy takes the scan below (audit H2).
-                    if next_is_filter
-                        && is_collection
-                        && !self.row_policy_applies(&for_clause.collection)
-                    {
-                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
+                    if is_collection && !self.row_policy_applies(&for_clause.collection) {
+                        if let Some(index_filter) = index_filter.as_deref() {
                             // Index path only if *every* row's filter is
                             // indexable — mixing index and scan per-row would
                             // silently drop rows whose condition couldn't be
@@ -297,7 +299,7 @@ impl<'a> QueryExecutor<'a> {
                                 // every match twice.
                                 if let Some(ctx0) = rows.first() {
                                     if let Some(cond) = self.extract_indexable_condition(
-                                        &filter_clause.expression,
+                                        index_filter,
                                         &for_clause.variable,
                                         ctx0,
                                     ) {
@@ -308,7 +310,7 @@ impl<'a> QueryExecutor<'a> {
                                         ) && self
                                             .lookup_index_for_filter_limited(
                                                 &collection,
-                                                &filter_clause.expression,
+                                                index_filter,
                                                 &for_clause.variable,
                                                 ctx0,
                                                 Some(1),
@@ -330,7 +332,7 @@ impl<'a> QueryExecutor<'a> {
                                     // rows and under-fill the LIMIT.
                                     let lookup_limit = indexed_filter_limit.filter(|_| {
                                         self.filter_fully_covered_by_index(
-                                            &filter_clause.expression,
+                                            index_filter,
                                             &for_clause.variable,
                                             ctx,
                                         )
@@ -349,7 +351,7 @@ impl<'a> QueryExecutor<'a> {
                                     let Some((docs, _name, _ty)) = self
                                         .lookup_index_for_filter_hinted(
                                             &collection,
-                                            &filter_clause.expression,
+                                            index_filter,
                                             &for_clause.variable,
                                             ctx,
                                             lookup_limit,
@@ -382,19 +384,17 @@ impl<'a> QueryExecutor<'a> {
                                 // `extract_indexable_condition` only pulls ONE conjunct
                                 // out of `FILTER a AND b ...` for the index lookup; the
                                 // remaining conjuncts (e.g. `doc._key != @key`) are not
-                                // applied by the index path. Re-evaluate the full FILTER
-                                // expression against the index-loaded rows so multi-term
+                                // applied by the index path. Re-evaluate every FILTER,
+                                // in order, against the index-loaded rows so multi-term
                                 // filters return correct results.
                                 new_rows.retain(|ctx| {
-                                    self.evaluate_filter_with_context(
-                                        &filter_clause.expression,
-                                        ctx,
-                                    )
-                                    .unwrap_or(false)
+                                    filters.iter().all(|f| {
+                                        self.evaluate_filter_with_context(f, ctx).unwrap_or(false)
+                                    })
                                 });
                                 rows = new_rows;
                                 self.check_budget(rows.len())?;
-                                i += 2; // Skip both FOR and FILTER
+                                i += 1 + filters.len(); // Skip the FOR and its FILTERs
                                 continue;
                             }
                             // Otherwise fall through to normal FOR processing

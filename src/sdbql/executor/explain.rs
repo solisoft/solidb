@@ -11,6 +11,7 @@
 use std::time::Instant;
 
 use super::format_expression;
+use super::index_opt::{conjunction, leading_filters};
 use super::types::{
     CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain,
     SortInfo,
@@ -129,61 +130,60 @@ impl<'a> QueryExecutor<'a> {
                     let mut index_type: Option<String> = None;
                     let mut auto_index_candidate: Option<String> = None;
 
-                    // Check if next clause is a FILTER that can use an index
-                    if i + 1 < clauses.len() {
-                        if let BodyClause::Filter(filter_clause) = &clauses[i + 1] {
-                            let is_collection = if let Some(src) = &for_clause.source_variable {
-                                src == &for_clause.collection
-                            } else {
-                                !for_clause.collection.is_empty()
-                            };
+                    // Check if the FILTERs after the FOR can use an index
+                    // (all of them, as execution does).
+                    let filters = leading_filters(clauses, i + 1);
+                    if let Some(index_filter) = conjunction(&filters) {
+                        let is_collection = if let Some(src) = &for_clause.source_variable {
+                            src == &for_clause.collection
+                        } else {
+                            !for_clause.collection.is_empty()
+                        };
 
-                            // Mirror execution: a row-policy collection is
-                            // scanned, not index-read (audit H2).
-                            if is_collection && !self.row_policy_applies(&for_clause.collection) {
-                                if let Ok(collection) = self.get_collection(&for_clause.collection)
-                                {
-                                    // EXPLAIN uses the first row's context (or
-                                    // an empty one) — sufficient for the
-                                    // structural decision of whether an index
-                                    // would be used at runtime.
-                                    let probe_ctx = rows.first().cloned().unwrap_or_default();
-                                    if let Some((docs, name, ty)) = self.lookup_index_for_filter(
+                        // Mirror execution: a row-policy collection is
+                        // scanned, not index-read (audit H2).
+                        if is_collection && !self.row_policy_applies(&for_clause.collection) {
+                            if let Ok(collection) = self.get_collection(&for_clause.collection) {
+                                // EXPLAIN uses the first row's context (or
+                                // an empty one) — sufficient for the
+                                // structural decision of whether an index
+                                // would be used at runtime.
+                                let probe_ctx = rows.first().cloned().unwrap_or_default();
+                                if let Some((docs, name, ty)) = self.lookup_index_for_filter(
+                                    &collection,
+                                    &index_filter,
+                                    &for_clause.variable,
+                                    &probe_ctx,
+                                ) {
+                                    used_index = true;
+                                    index_name = Some(name);
+                                    index_type = Some(ty);
+
+                                    let mut new_rows = Vec::new();
+                                    for ctx in &rows {
+                                        for doc in &docs {
+                                            let mut new_ctx = ctx.clone();
+                                            new_ctx.insert(
+                                                for_clause.variable.clone(),
+                                                doc.to_value(),
+                                            );
+                                            new_rows.push(new_ctx);
+                                        }
+                                    }
+                                    rows = new_rows;
+                                    total_docs_scanned += docs.len();
+                                    i += 1 + filters.len(); // Skip the FOR and its FILTERs
+                                } else if let Some(cond) = self.extract_indexable_condition(
+                                    &index_filter,
+                                    &for_clause.variable,
+                                    &probe_ctx,
+                                ) {
+                                    if self.would_auto_index(
                                         &collection,
-                                        &filter_clause.expression,
-                                        &for_clause.variable,
-                                        &probe_ctx,
+                                        &cond.field,
+                                        Some(&cond.value),
                                     ) {
-                                        used_index = true;
-                                        index_name = Some(name);
-                                        index_type = Some(ty);
-
-                                        let mut new_rows = Vec::new();
-                                        for ctx in &rows {
-                                            for doc in &docs {
-                                                let mut new_ctx = ctx.clone();
-                                                new_ctx.insert(
-                                                    for_clause.variable.clone(),
-                                                    doc.to_value(),
-                                                );
-                                                new_rows.push(new_ctx);
-                                            }
-                                        }
-                                        rows = new_rows;
-                                        total_docs_scanned += docs.len();
-                                        i += 2; // Skip FOR and FILTER
-                                    } else if let Some(cond) = self.extract_indexable_condition(
-                                        &filter_clause.expression,
-                                        &for_clause.variable,
-                                        &probe_ctx,
-                                    ) {
-                                        if self.would_auto_index(
-                                            &collection,
-                                            &cond.field,
-                                            Some(&cond.value),
-                                        ) {
-                                            auto_index_candidate = Some(cond.field);
-                                        }
+                                        auto_index_candidate = Some(cond.field);
                                     }
                                 }
                             }
