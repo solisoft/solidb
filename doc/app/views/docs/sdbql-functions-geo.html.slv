@@ -64,7 +64,6 @@ LET london = {lat: 51.5074, lon: -0.1278}
 RETURN GEO_DISTANCE(paris, london)</code></pre>
                 </div>
               </div>
-              </div>
             </div>
 
             <!-- Geometric Tests -->

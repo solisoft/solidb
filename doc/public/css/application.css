@@ -6545,6 +6545,9 @@ a {
   grid-template-columns: minmax(0, 1fr) !important;
   gap: 0 !important;
 }
+.docs-prose .grid:has(> [id^="fn-"]) > * {
+  grid-column: 1 / -1 !important;
+}
 .docs-prose [id^="fn-"] {
   background: none !important;
   border: 0 !important;
