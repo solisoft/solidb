@@ -1006,8 +1006,6 @@ pub fn create_router(
         .route("/auth/login", post(login_handler))
         // Health check endpoint for cluster node monitoring (no auth required)
         .route("/_api/health", get(health_check_handler))
-        // Prometheus metrics endpoint (no auth required)
-        .route("/metrics", get(super::metrics::metrics_handler))
         // Internal cluster endpoints (use cluster secret, no user auth)
         .route("/_api/cluster/cleanup", post(cluster_cleanup))
         .route("/_api/cluster/reshard", post(cluster_reshard))
@@ -1069,6 +1067,11 @@ pub fn create_router(
             state.clone(),
             crate::server::auth::permissive_auth_middleware,
         ))
+        // Prometheus metrics. Added after the route layer above, so outside
+        // it: the handler authenticates the scrape itself, and the
+        // middleware would reject `Authorization: Bearer <SOLIDB_METRICS_TOKEN>`
+        // — the documented form — as an invalid JWT before it got there.
+        .route("/metrics", get(super::metrics::metrics_handler))
         .merge(api_routes)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
