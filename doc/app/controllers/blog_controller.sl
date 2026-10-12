@@ -69,6 +69,16 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-2-3-1-the-index-in-the-second-filter",
+        "title": "SoliDB 2.3.1: the index in the second FILTER",
+        "date": "2026-10-12",
+        "display_date": "October 12, 2026",
+        "summary": "A query read all 200,000 events although the field that selects one in seven had an index: "
+        + "it sat in the second FILTER, and the planner only looked at the first. Now it reads 27,294.",
+        "tags": ["Performance", "Release 2.3.1"],
+        "read_minutes": 4
+      },
+      {
         "slug": "solidb-2-3-answers-that-outlived-their-data",
         "title": "SoliDB 2.3: answers that outlived their data, and an edge that would not move",
         "date": "2026-10-12",

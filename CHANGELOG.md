@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [2.3.1](https://github.com/solisoft/solidb/compare/v2.3.0...v2.3.1) (2026-10-12)
+
+### Performance
+
+* **An index is found in any FILTER directly after the `FOR`.** The planner
+  looked only at the first one. In `FOR e IN events FILTER e.draft != true
+  AND (e.parent_key == null OR e.parent_key == "") FILTER e.date2 >= @today`
+  nothing in the first FILTER can use an index — `!=`, and an `OR` holding
+  `== null` — so the whole collection was read even with an index on
+  `date2`. Consecutive FILTERs are now combined into one `AND` to choose the
+  index, in execution, `EXPLAIN`, auto-indexing and `indexHint` /
+  `forceIndexHint` alike. Rows the index returns are still checked against
+  every FILTER, in order, so results do not change.
+
 ## [2.3.0](https://github.com/solisoft/solidb/compare/v2.2.1...v2.3.0) (2026-10-12)
 
 ### Removed

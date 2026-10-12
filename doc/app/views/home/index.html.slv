@@ -370,6 +370,11 @@ $ curl -u admin:… 10.0.0.3:6745/_api/cluster/status</pre>
     </div>
 
     <div class="releases">
+      <a class="release" href="/blog/solidb-2-3-1-the-index-in-the-second-filter">
+        <span class="release-ver">2.3.1</span>
+        <span class="release-title">The index in the second FILTER</span>
+        <span class="release-sum">The planner only searched the FILTER right after the <code>FOR</code> for an index. A query whose indexed field sat in the next one read all 200,000 events; on 2.3.1 it reads 27,294.</span>
+      </a>
       <a class="release" href="/blog/solidb-2-3-answers-that-outlived-their-data">
         <span class="release-ver">2.3.0</span>
         <span class="release-title">Answers that outlived their data</span>
@@ -394,11 +399,6 @@ $ curl -u admin:… 10.0.0.3:6745/_api/cluster/status</pre>
         <span class="release-ver">2.0.0</span>
         <span class="release-title">One column family for every collection</span>
         <span class="release-sum">Creating a collection cost 0.2 s on a large instance, because each one rewrote a 6.3 MB OPTIONS file. It now costs a few milliseconds at any size.</span>
-      </a>
-      <a class="release" href="/blog/a-request-must-never-take-the-server-down">
-        <span class="release-ver">1.2.3</span>
-        <span class="release-title">A request must never take the server down</span>
-        <span class="release-sum">An ordinary bulk import copied a 3 MB bind variable into each of 20,200 rows, and the kernel killed the server at about 61 GB.</span>
       </a>
     </div>
   </div>

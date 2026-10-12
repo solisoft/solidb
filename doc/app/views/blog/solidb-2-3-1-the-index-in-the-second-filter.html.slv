@@ -1,0 +1,86 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 2.3.1 · Performance</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">A query on an agenda read all 200,000 events every time, although <code>date2</code>, the field that selects one event in seven, had an index. The index was in the second FILTER, and the planner only looked at the first. 2.3.1 looks at all of them.</p>
+  <p class="post-note">Every response and timing on this page was captured on a throwaway server, from a 2.3.0 and a 2.3.1 release build, with the same 200,000 generated documents and the result cache off.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#query">The query</a></li>
+    <li><a href="#planner">What the planner looked at</a></li>
+    <li><a href="#fix">All the FILTERs, one AND</a></li>
+    <li><a href="#rules">What can use an index</a></li>
+    <li><a href="#upgrading">Upgrading</a></li>
+  </ol>
+</nav>
+
+<section id="query"><h2>The query</h2>
+<p>An app lists upcoming events: not workshops, not drafts, top-level only, from today on. Its query, as the ORM built it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre>FOR e IN events
+  FILTER e.atelier != true AND e.draft != true
+     AND (e.parent_key == null OR e.parent_key == "")
+  FILTER IS_STRING(e.date2) AND e.date2 &gt;= @today
+  SORT e.date, e.time, TO_NUMBER(e._key) DESC
+  RETURN e</pre></div>
+<p>There is a persistent index on <code>date2</code>. On 2.3.0, <code>EXPLAIN</code> shows it is not used:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/agenda/explain   <span class="tok-com"># 2.3.0, index idx_date2 on date2</span>
+{"collections":[{"access_type":"full_scan","index_used":null}],"documents_scanned":200000}</pre></div>
+</section>
+
+<section id="planner"><h2>What the planner looked at</h2>
+<p>When a <code>FOR</code> over a collection is followed by a FILTER, the planner searches that FILTER&rsquo;s <code>AND</code> terms for one an index can answer: an <code>==</code>, an <code>IN</code>, a range, a <code>LIKE "abc%"</code>. It then reads only the documents the index points to and checks the whole FILTER against them.</p>
+<p>&ldquo;That FILTER&rdquo; meant the one directly after the <code>FOR</code>. Here, nothing in it qualifies. <code>!=</code> matches nearly every value, so there is no key range to read. The <code>OR</code> needs two lookups merged, and one side of it is <code>== null</code>, which an index cannot answer: index entries hold no nulls. The planner found nothing, scanned the collection, and never got to <code>e.date2 &gt;= @today</code> one line below.</p>
+<p><code>FILTER a FILTER b</code> keeps the same rows as <code>FILTER a AND b</code>, so the index a query can use should not depend on which one you wrote. You may not have written either. The Soli ORM puts its own FILTERs ahead of yours: one on <code>type</code> for a model subclass, one per <code>joins</code> and <code>has_many :through</code>, one on <code>_key</code> when it iterates in batches. Soft delete adds one after. On 2.3.0 any of the first kind hid the index on the field in your <code>where</code>.</p>
+</section>
+
+<section id="fix"><h2>All the FILTERs, one AND</h2>
+<p>In 2.3.1, the FILTERs that directly follow a <code>FOR</code> are combined into one <code>AND</code> to choose the index. The same query on the same data:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/agenda/explain   <span class="tok-com"># 2.3.1</span>
+{"collections":[{"access_type":"index_lookup","index_used":"idx_date2"}],"documents_scanned":27294}
+
+POST /_api/database/agenda/cursor
+{"count":14155,"cached":false, …}    <span class="tok-com"># 14155 on 2.3.0 too</span></pre></div>
+<table>
+  <thead><tr><th></th><th>2.3.0</th><th>2.3.1</th></tr></thead>
+  <tbody>
+    <tr><td>Access</td><td><code>full_scan</code></td><td><code>index_lookup</code> on <code>idx_date2</code></td></tr>
+    <tr><td>Documents read</td><td>200,000</td><td>27,294</td></tr>
+    <tr><td>Rows returned</td><td>14,155</td><td>14,155</td></tr>
+    <tr><td>Median response, 9 runs</td><td>0.43&nbsp;s</td><td>0.13&nbsp;s</td></tr>
+  </tbody>
+</table>
+<p>The 27,294 are every event dated today or later; the first FILTER then keeps 14,155 of them. The remaining 0.13&nbsp;s is mostly the <code>SORT</code> and sending 14,155 documents back, which the index does not change. Results do not change either: rows read through the index are still checked against every FILTER, in order, exactly as a scan would check them.</p>
+<p><code>EXPLAIN</code>, auto-indexing and <code>OPTIONS { indexHint, forceIndexHint }</code> use the same rule. On 2.3.0, forcing the index on this kind of query was refused, because the FILTER the planner looked at could not use it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>FOR e IN events OPTIONS { indexHint: "idx_date2", forceIndexHint: true }
+  FILTER e.draft != true
+  FILTER e.date2 &gt;= @today
+  RETURN e.date2
+
+<span class="tok-com"># 2.3.0</span>
+could not use index hint to serve query: none of [idx_date2] on 'events' can serve the FILTER (forceIndexHint is set)
+<span class="tok-com"># 2.3.1</span>
+{"result":["2026-10-15","2026-10-16","2026-10-17", …]}</pre></div>
+</section>
+
+<section id="rules"><h2>What can use an index</h2>
+<p>The rule is now the same whether you write one FILTER or several:</p>
+<ul>
+<li>the planner considers every <code>AND</code> term of the FILTERs directly after the <code>FOR</code>. A <code>LET</code> or another clause between the <code>FOR</code> and a FILTER ends the run;</li>
+<li><code>==</code>, <code>IN [&hellip;]</code>, <code>LIKE "abc%"</code> and <code>STARTS_WITH</code> are taken from any term; a range (<code>&lt;</code>, <code>&gt;=</code>, &hellip;) from the first indexable term;</li>
+<li>a term inside an <code>OR</code>, a <code>!=</code>, and <code>== null</code> never use an index. A query made only of those reads the whole collection, so keep one selective term beside them.</li>
+</ul>
+<p><code>EXPLAIN</code> tells you which case you are in: <code>access_type</code>, <code>index_used</code> and <code>documents_scanned</code>.</p>
+</section>
+
+<section id="upgrading"><h2>Upgrading</h2>
+<p>Nothing needs a migration, and nothing in storage or in the API changes. Queries with several FILTERs after a <code>FOR</code> can get faster, and return the same rows. One thing can differ: a collection that has opted in to auto-indexing can now be given an <code>_auto_</code> index for a field it only filtered on in a later FILTER.</p>
+<p>The full list is in the <a href="/docs/changelog#v2-3-1">changelog</a>, and indexes are described in <a href="/docs/indexes">the indexes guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>
