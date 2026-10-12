@@ -21,6 +21,17 @@
   when it is shorter than `width`. Hits now carry `field` and `spans`
   (`[[start, end], …]`, character offsets in that field).
 
+* **`FULLTEXT` option `phrase`.** `{phrase: N}` keeps a hit only when the
+  query's words occur in order, with at most N extra tokens between the
+  first and the last (`0` means adjacent). A repeated word must be repeated,
+  and a word shorter than the index minimum still has to appear. The hit's
+  spans are that one occurrence, so `SNIPPET` quotes the phrase. A fuzzy
+  near-miss can stand in for a word unless `distance` is `0`. The in-memory
+  `PHRASE()` boolean is unchanged, and an existing index needs no rebuild.
+  Candidates are read best first until enough of them hold the phrase, at
+  most 5,000 documents, so documents holding every word out of order do not
+  crowd out the one that holds the phrase.
+
 ### Changed
 
 * **Fulltext results are ranked with BM25.** A hit scored +10 per

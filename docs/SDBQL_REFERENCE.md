@@ -542,7 +542,7 @@ Then simply `INSERT {title: "...", content: "hello world"} INTO docs` and `embed
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
-| `FULLTEXT(coll, field, q, dist)` | Word search over a fulltext index; `dist` lets near-misses in matched documents score. Accent-insensitive when the index has `fold_accents: true`. Hits are `{doc, score, matched, field, spans}` | `FULLTEXT("clients", "name", "helene")` |
+| `FULLTEXT(coll, field, q, dist \| {distance, limit, phrase})` | Word search over a fulltext index; `dist` lets near-misses in matched documents score. `{phrase: N}` keeps the words in order with at most N extra tokens (`0` = adjacent); spans are then that one occurrence. Accent-insensitive when the index has `fold_accents: true`. Hits are `{doc, score, matched, field, spans}` | `FULLTEXT("pages", "body", "base de données", { phrase: 0 })` |
 | `SNIPPET(hit, width)` | `width` characters of a FULLTEXT or SEARCH_INDEX hit, cut around the matched tokens. A short field is returned whole. `…` marks a cut and is not counted | `SNIPPET(h, 160)` |
 | `BM25(field, query)` | Relevance score | `BM25(doc.content, "search term")` |
 | `HYBRID_SEARCH(...)` | Vector + Text search | `HYBRID_SEARCH("docs", "vec_idx", "text", ...)` |

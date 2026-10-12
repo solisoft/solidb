@@ -55,9 +55,9 @@ FOR n IN notes
                 </h3>
               </div>
               <div class="p-5 space-y-4">
-                <p class="text-sm text-gray-400">Searches a fulltext index. Returns <code>[{doc, score, matched, field, spans}]</code>, best first, ranked with BM25. <code>matched</code> lists the query words the document holds. <code>field</code> is the indexed field that scored, and <code>spans</code> is <code>[[start, end], …]</code>, character offsets of the tokens that matched — the stored spelling, including a fuzzy near-miss. <a href="#fn-SNIPPET" class="underline">SNIPPET</a> cuts a passage from those offsets.</p>
+                <p class="text-sm text-gray-400">Searches a fulltext index. Returns <code>[{doc, score, matched, field, spans}]</code>, best first, ranked with BM25. <code>matched</code> lists the query words the document holds. <code>field</code> is the indexed field that scored, and <code>spans</code> is <code>[[start, end], …]</code>, character offsets of the tokens that matched — the stored spelling, including a fuzzy near-miss. With <code>phrase</code>, those spans are only the words of that one occurrence. <a href="#fn-SNIPPET" class="underline">SNIPPET</a> cuts a passage from those offsets.</p>
                 <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
-                  <code class="text-sm text-gray-300">FULLTEXT(<span class="text-yellow-400">collection</span>, <span class="text-cyan-400">field</span>, <span class="text-emerald-400">query</span>, <span class="text-pink-400">distance?</span>)</code>
+                  <code class="text-sm text-gray-300">FULLTEXT(<span class="text-yellow-400">collection</span>, <span class="text-cyan-400">field</span>, <span class="text-emerald-400">query</span>, <span class="text-pink-400">distance? | {distance, limit, phrase}</span>)</code>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -67,14 +67,16 @@ FOR n IN notes
                       <li><code class="text-yellow-300">collection</code> - Name of the collection to search</li>
                       <li><code class="text-yellow-300">field</code> - Field name to search within</li>
                       <li><code class="text-yellow-300">query</code> - Search query string</li>
-                      <li><code class="text-yellow-300">distance</code> - Optional max edit distance (default: 2)</li>
+                      <li><code class="text-yellow-300">distance</code> - Optional max edit distance (default: 2). A number, or <code>distance</code> inside the options object</li>
+                      <li><code class="text-yellow-300">limit</code> - Options only. Caps the hits (default: 100)</li>
+                      <li><code class="text-yellow-300">phrase</code> - Options only. Most extra words allowed inside an ordered match. <code>0</code> means the words are adjacent. Omit it for an unordered search</li>
                     </ul>
                   </div>
                   <div>
                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
-                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR h IN FULLTEXT("articles", "body", @q, 2)
+                    <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">FOR h IN FULLTEXT("pages", "body", "réplication asynchrone", { phrase: 2 })
   LIMIT 10
-  RETURN { title: h.doc.title, score: h.score, passage: SNIPPET(h, 160) }</code></pre>
+  RETURN { score: h.score, passage: SNIPPET(h, 160) }</code></pre>
                   </div>
                 </div>
 
@@ -86,6 +88,9 @@ FOR n IN notes
                     <h4 class="text-yellow-300 font-bold mb-1 text-sm">Words, ranking, typos and accents</h4>
                     <p class="text-sm text-yellow-200/70">
                       The index stores whole words, lowercased. A document is found when it contains a word of the query. It is ranked with BM25: a word weighs more the fewer documents hold it, so words found almost everywhere (<em>les</em>, <em>pour</em>, <em>the</em>) count for next to nothing and no stop-word list is needed; repeating a word helps less and less, and a longer field ranks lower than a shorter one with the same matches. <code>distance</code> then lets near-misses in that document count as half an occurrence, with fewer edits for short words: none up to 2 letters, 1 up to 5. Scores rank the hits of one query; they are not comparable across queries. Accents count unless the index was created with <code>"fold_accents": true</code> — then <code>FULLTEXT("clients", "name", "helene")</code> finds “Hélène”. See <a href="/docs/indexes#fulltext" class="underline">fulltext indexes</a>.
+                    </p>
+                    <p class="text-sm text-yellow-200/70 mt-2">
+                      <code>{phrase: N}</code> keeps a document only when the words of the query occur in that order. <code>N</code> is how many other words may sit inside the match; <code>0</code> means they are next to each other. Out of order does not match, a repeated word has to be repeated (<code>"cluster cluster"</code>), and a word shorter than the index minimum still has to be there — <code>de</code> in <code>base de données</code>. The spans are that one occurrence, the tightest and then the earliest, so <a href="#fn-SNIPPET" class="underline">SNIPPET</a> quotes the phrase rather than every scattered word. A near-miss allowed by <code>distance</code> can stand in for a word, and the span shows the stored spelling; pass <code>distance: 0</code> for the exact words. One query word ignores <code>phrase</code>. This is not the <code>PHRASE()</code> boolean above, which scans text in memory and never reads the index. No rebuild: order is checked while the document is scored.
                     </p>
                   </div>
                 </div>

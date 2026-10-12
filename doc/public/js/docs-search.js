@@ -154,7 +154,7 @@ var SDBQL_FUNCS=[
 ["VECTOR_DISTANCE","VECTOR_DISTANCE(vec1, vec2, metric)","Calculates the distance between two vectors using the specified metric. Supported metrics: \"cosine\", \"euclidean\", \"dot\".","vector"],
 ["VECTOR_NORMALIZE","VECTOR_NORMALIZE(vec)","Normalizes a vector to unit length (magnitude = 1). Useful for preparing vectors for dot product similarity.","vector"],
 ["VECTOR_INDEX_STATS","VECTOR_INDEX_STATS(collection, index_name)","Returns statistics about a vector index including dimension, vector count, quantization status, and memory usage.","vector"],
-["FULLTEXT","FULLTEXT(collection, field, query, distance?)","Word search over a fulltext index, with typo-tolerant scoring; accent-insensitive when the index has fold_accents. Hits carry field and spans for SNIPPET.","search"],
+["FULLTEXT","FULLTEXT(collection, field, query, distance? | {distance, limit, phrase})","Word search over a fulltext index. phrase: N keeps the words in order with at most N extra tokens (0 = adjacent), so SNIPPET quotes that occurrence. Not the PHRASE() boolean.","search"],
 ["SNIPPET","SNIPPET(hit, width)","Passage of width characters around the tokens a FULLTEXT or SEARCH_INDEX hit matched, not the start of the field.","search","/docs/sdbql-functions-search#fn-SNIPPET"],
 ["BM25","BM25(field, query)","BM25 relevance scoring for ranking search results. Returns a numeric score that can be used in SORT clauses.","search"],
 ["HYBRID_SEARCH","HYBRID_SEARCH(collection, vector_index, fulltext_field, query_vector, text_query, [options])","Combines vector similarity search with fulltext search for improved RAG results. Returns documents ranked by combined score.","search"],

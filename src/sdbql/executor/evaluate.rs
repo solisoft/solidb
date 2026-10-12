@@ -357,10 +357,13 @@ impl<'a> QueryExecutor<'a> {
             // this array.
             "NEAR" => self.eval_near(&evaluated_args, ctx),
 
-            // FULLTEXT(collection, field, query [, distance | {distance, limit}])
+            // FULLTEXT(collection, field, query [, distance | {distance, limit, phrase}])
             // Fulltext search. `distance` is the edit distance at which a
             // document term still counts as a (fuzzy) match of a query term
             // when scoring; `limit` caps the result count (default 100).
+            // `phrase` is the most extra tokens allowed inside an ordered
+            // match (0 means the words are adjacent). It is not the
+            // in-memory PHRASE() boolean.
             "FULLTEXT" => {
                 if evaluated_args.len() < 3 || evaluated_args.len() > 4 {
                     return Err(DbError::ExecutionError(
@@ -379,6 +382,7 @@ impl<'a> QueryExecutor<'a> {
                 })?;
                 let mut max_distance: usize = 2;
                 let mut limit = FULLTEXT_DEFAULT_LIMIT;
+                let mut phrase_slop: Option<usize> = None;
                 match evaluated_args.get(3) {
                     None | Some(Value::Null) => {}
                     Some(Value::Number(n)) => {
@@ -408,9 +412,20 @@ impl<'a> QueryExecutor<'a> {
                                     })? as usize)
                                         .min(MAX_SEARCH_K)
                                 }
+                                "phrase" => {
+                                    let n = v.as_u64().ok_or_else(|| {
+                                        DbError::ExecutionError(
+                                            "FULLTEXT: phrase must be a non-negative integer"
+                                                .to_string(),
+                                        )
+                                    })?;
+                                    // A value that does not fit `usize` means
+                                    // "anywhere, still in order".
+                                    phrase_slop = Some(usize::try_from(n).unwrap_or(usize::MAX));
+                                }
                                 other => {
                                     return Err(DbError::ExecutionError(format!(
-                                        "FULLTEXT: unknown option '{}' (expected distance, limit)",
+                                        "FULLTEXT: unknown option '{}' (expected distance, limit, phrase)",
                                         other
                                     )))
                                 }
@@ -444,6 +459,7 @@ impl<'a> QueryExecutor<'a> {
                         Some(vec![field.to_string()]),
                         fetch,
                         max_distance,
+                        phrase_slop,
                     )
                     .map_err(|e| {
                         DbError::ExecutionError(format!("Fulltext search failed: {}", e))

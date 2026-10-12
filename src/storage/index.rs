@@ -590,6 +590,94 @@ pub fn fuzzy_edits_for(len: usize, max_distance: usize) -> usize {
     auto.min(max_distance)
 }
 
+/// One ordered occurrence of the query tokens inside a document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhraseHit {
+    /// Index of the first matched token in the document term list.
+    pub start: usize,
+    /// Index of the last matched token, inclusive.
+    pub end: usize,
+    /// Document-token indexes of the matched query words, in query order.
+    pub tokens: Vec<usize>,
+}
+
+/// Ordered phrase inside `doc_terms`.
+///
+/// `slop` is the most extra tokens allowed inside the match: if the first
+/// matched token is at `i` and the last at `j`, then
+/// `(j - i + 1) - query.len() <= slop`. `0` means the words are adjacent.
+/// Words must appear in order, and a repeated query word must match a
+/// repeated document word. A document token matches a query word exactly, or
+/// within [`fuzzy_edits_for`] edits when `max_distance > 0` — the same rule
+/// scoring uses.
+///
+/// Returns `None` when the query has fewer than two tokens (nothing to
+/// order) or when no window fits. For a fixed start the next word is the
+/// earliest one that still ends inside the window, which is the tightest
+/// match from that start. Across starts, the smallest window wins, then the
+/// earliest.
+pub fn find_phrase(
+    doc_terms: &[String],
+    query: &[String],
+    slop: usize,
+    max_distance: usize,
+) -> Option<PhraseHit> {
+    if query.len() < 2 || doc_terms.is_empty() {
+        return None;
+    }
+    let needles: Vec<(&str, usize, usize)> = query
+        .iter()
+        .map(|term| {
+            let len = term.chars().count();
+            (term.as_str(), len, fuzzy_edits_for(len, max_distance))
+        })
+        .collect();
+    let mut positions: Vec<Vec<usize>> = vec![Vec::new(); needles.len()];
+    for (ti, doc_term) in doc_terms.iter().enumerate() {
+        let doc_len = doc_term.chars().count();
+        for (qi, (query_term, query_len, edits)) in needles.iter().enumerate() {
+            let near = *edits > 0
+                && query_len.abs_diff(doc_len) <= *edits
+                && levenshtein_distance(query_term, doc_term) <= *edits;
+            if doc_term == query_term || near {
+                positions[qi].push(ti);
+            }
+        }
+    }
+    if positions.iter().any(|p| p.is_empty()) {
+        return None;
+    }
+    // `saturating_add`: a slop of `usize::MAX` means "anywhere, still in
+    // order", and `query.len() + slop` must not wrap.
+    let room = (query.len() - 1).saturating_add(slop);
+    let mut best: Option<PhraseHit> = None;
+    for &start in &positions[0] {
+        let end_limit = start.saturating_add(room);
+        let mut prev = start;
+        let mut tokens = Vec::with_capacity(query.len());
+        tokens.push(start);
+        let mut placed = true;
+        for pos in &positions[1..] {
+            let idx = pos.partition_point(|&p| p <= prev);
+            if idx == pos.len() || pos[idx] > end_limit {
+                placed = false;
+                break;
+            }
+            prev = pos[idx];
+            tokens.push(prev);
+        }
+        if !placed {
+            continue;
+        }
+        let end = prev;
+        let width = end - start;
+        if best.as_ref().is_none_or(|hit| width < hit.end - hit.start) {
+            best = Some(PhraseHit { start, end, tokens });
+        }
+    }
+    best
+}
+
 /// Fulltext search result with scoring.
 ///
 /// `field` and `spans` are filled while the document is scored. They are not
@@ -603,7 +691,8 @@ pub struct FulltextMatch {
     #[serde(default)]
     pub field: String,
     /// `[start, end)` char offsets, in `field`'s text, of the tokens that
-    /// matched a query term exactly or within the fuzzy distance. Empty when
+    /// matched a query term exactly or within the fuzzy distance. With a
+    /// phrase slop, only the tokens of the chosen occurrence. Empty when
     /// the span walk did not reproduce the terms used for the score.
     #[serde(default)]
     pub spans: Vec<(usize, usize)>,
@@ -924,6 +1013,88 @@ mod tests {
         assert_eq!(joined[0].term, "helloworld");
         assert_eq!(joined[0].start, 0);
         assert_eq!(joined[0].end, "hello,world".chars().count());
+    }
+
+    fn words(text: &str) -> Vec<String> {
+        text.split_whitespace().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn find_phrase_requires_order_and_counts_slop() {
+        let query = words("replication asynchrone");
+        assert_eq!(
+            find_phrase(&words("replication asynchrone"), &query, 0, 0),
+            Some(PhraseHit {
+                start: 0,
+                end: 1,
+                tokens: vec![0, 1]
+            })
+        );
+        assert!(find_phrase(&words("asynchrone replication"), &query, 0, 0).is_none());
+        // Still in the wrong order, however large the window.
+        assert!(find_phrase(&words("asynchrone replication"), &query, usize::MAX, 0).is_none());
+        let distant = words("replication un deux asynchrone");
+        assert!(find_phrase(&distant, &query, 0, 0).is_none());
+        assert!(find_phrase(&distant, &query, 1, 0).is_none());
+        assert_eq!(
+            find_phrase(&distant, &query, 2, 0).map(|hit| hit.tokens),
+            Some(vec![0, 3])
+        );
+        let one = words("replication un asynchrone");
+        assert!(find_phrase(&one, &query, 0, 0).is_none());
+        assert_eq!(
+            find_phrase(&one, &query, 1, 0).map(|hit| hit.tokens),
+            Some(vec![0, 2])
+        );
+        // A huge slop still requires the words, in order, somewhere.
+        assert_eq!(
+            find_phrase(&one, &query, usize::MAX, 0).map(|hit| hit.tokens),
+            Some(vec![0, 2])
+        );
+    }
+
+    #[test]
+    fn find_phrase_picks_the_tightest_then_the_earliest() {
+        // The later pair is adjacent; the earlier one has a filler.
+        let query = words("a b");
+        assert_eq!(
+            find_phrase(&words("a x b a b"), &query, 1, 0).map(|hit| hit.tokens),
+            Some(vec![3, 4])
+        );
+        // Two adjacent pairs: the earliest start wins.
+        assert_eq!(
+            find_phrase(&words("a b x a b"), &query, 0, 0).map(|hit| hit.tokens),
+            Some(vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn find_phrase_repeated_words_short_words_and_fuzzy() {
+        let repeated = words("cluster cluster");
+        assert!(find_phrase(&words("cluster cluster"), &repeated, 0, 0).is_some());
+        assert!(find_phrase(&words("cluster"), &repeated, 5, 0).is_none());
+        assert!(find_phrase(&words("cluster du cluster"), &repeated, 0, 0).is_none());
+        assert_eq!(
+            find_phrase(&words("cluster du cluster"), &repeated, 1, 0).map(|hit| hit.tokens),
+            Some(vec![0, 2])
+        );
+
+        // "de" is kept. Two letters get no fuzzy edits, so "xx" cannot stand in.
+        let phrase = words("base de donnees");
+        assert!(find_phrase(&words("base de donnees"), &phrase, 0, 0).is_some());
+        assert!(find_phrase(&words("base xx donnees"), &phrase, 0, 2).is_none());
+
+        let fuzzy = words("replicaton cluster");
+        let stored = words("replication cluster");
+        assert!(find_phrase(&stored, &fuzzy, 0, 0).is_none());
+        assert_eq!(
+            find_phrase(&stored, &fuzzy, 0, 1).map(|hit| hit.tokens),
+            Some(vec![0, 1])
+        );
+        assert!(find_phrase(&words("cluster replication"), &fuzzy, 0, 1).is_none());
+
+        // One word has no order. The caller treats that as "no phrase".
+        assert!(find_phrase(&words("replication"), &words("replication"), 0, 0).is_none());
     }
 
     #[test]

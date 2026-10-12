@@ -1,8 +1,8 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{
-    calculate_idf, extract_field_value, fuzzy_edits_for, generate_ngrams, levenshtein_distance,
-    tokenize_folded, tokenize_spans, FulltextMatch, BM25_B, BM25_K1,
+    calculate_idf, extract_field_value, find_phrase, fuzzy_edits_for, generate_ngrams,
+    levenshtein_distance, tokenize_folded, tokenize_spans, FulltextMatch, BM25_B, BM25_K1,
 };
 use rust_rocksdb::WriteBatch;
 use serde_json::Value;
@@ -308,7 +308,7 @@ impl Collection {
         fields: Option<Vec<String>>,
         limit: usize,
     ) -> DbResult<Vec<FulltextMatch>> {
-        self.fulltext_search_fuzzy(query, fields, limit, 0)
+        self.fulltext_search_fuzzy(query, fields, limit, 0, None)
     }
 
     /// Fulltext search ranked by BM25.
@@ -326,12 +326,21 @@ impl Collection {
     /// With `max_distance > 0`, a word of a candidate within
     /// [`fuzzy_edits_for`] edits of a query term counts as half an
     /// occurrence of it.
+    ///
+    /// `phrase_slop`, when set, drops a field unless the query words occur
+    /// in order inside it, with at most that many extra tokens between the
+    /// first and the last (`0` means adjacent). A one-word query is not
+    /// filtered. The phrase keeps every token of the query, repeats and
+    /// words shorter than `min_length` included. A field that fails is not
+    /// scored and does not enter the average length; the hit's spans are
+    /// then that one occurrence.
     pub fn fulltext_search_fuzzy(
         &self,
         query: &str,
         fields: Option<Vec<String>>,
         limit: usize,
         max_distance: usize,
+        phrase_slop: Option<usize>,
     ) -> DbResult<Vec<FulltextMatch>> {
         // 1. Identify relevant indexes
         let all_indexes = self.get_all_fulltext_indexes();
@@ -364,8 +373,20 @@ impl Collection {
             })
             .collect();
         if query_terms.iter().all(|terms| terms.is_empty()) {
+            // A phrase made only of words shorter than `min_length` lands
+            // here too: those words have no postings, so nothing is a candidate.
             return Ok(Vec::new());
         }
+        // The phrase is the query's tokens in order, repeats included and
+        // with no `min_length` cut: "base de données" still requires "de".
+        let phrase_terms: Vec<Vec<String>> = if phrase_slop.is_some() {
+            indexes
+                .iter()
+                .map(|index| tokenize_folded(query, index.fold_accents))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 3. Read each term's postings: its document frequency, and the
         // candidates. A candidate is pre-ranked by the IDF of the terms it
@@ -378,7 +399,28 @@ impl Collection {
             return Ok(Vec::new()); // column family dropped mid-operation
         };
 
-        for (index, index_terms) in indexes.iter().zip(&query_terms) {
+        // With a phrase, a document missing one of its words cannot match,
+        // so it should not take a place among the candidates scored. Only
+        // words that must match exactly can be required this way: a word
+        // with fuzzy edits may be stood in for, and one shorter than
+        // `min_length` has no postings. `None`: some index puts no such
+        // constraint, so nothing is filtered.
+        let mut admitted: Option<HashSet<String>> = phrase_slop.map(|_| HashSet::new());
+
+        for (ix, (index, index_terms)) in indexes.iter().zip(&query_terms).enumerate() {
+            let required: HashSet<&str> = match phrase_terms.get(ix) {
+                Some(seq) if seq.len() >= 2 => seq
+                    .iter()
+                    .filter(|t| {
+                        index_terms.contains(t)
+                            && fuzzy_edits_for(t.chars().count(), max_distance) == 0
+                    })
+                    .map(String::as_str)
+                    .collect(),
+                _ => HashSet::new(),
+            };
+            let mut required_left = required.len();
+            let mut required_hits: HashMap<String, usize> = HashMap::new();
             let mut index_idfs = HashMap::new();
             for term in index_terms {
                 let prefix = format!("{}{}:{}:", FT_TERM_PREFIX, index.name, term);
@@ -400,30 +442,69 @@ impl Collection {
                 }
                 let idf = calculate_idf(total_docs, doc_keys.len());
                 index_idfs.insert(term.as_str(), idf);
+                // A truncated posting list cannot prove a document lacks the
+                // word, so that word stops being required.
+                let counts = required.contains(term.as_str());
+                if counts && doc_keys.len() >= MAX_POSTINGS_PER_TERM {
+                    required_left -= 1;
+                }
+                let counts = counts && doc_keys.len() < MAX_POSTINGS_PER_TERM;
                 for doc_key in doc_keys {
+                    if counts {
+                        *required_hits.entry(doc_key.clone()).or_insert(0) += 1;
+                    }
                     *candidate_weight.entry(doc_key).or_insert(0.0) += idf;
                 }
             }
             idfs.push(index_idfs);
+            if admitted.is_some() && required_left == 0 {
+                admitted = None;
+            } else if let Some(set) = admitted.as_mut() {
+                // A required word without postings leaves this index
+                // admitting nothing.
+                set.extend(
+                    required_hits
+                        .into_iter()
+                        .filter(|(_, n)| *n == required_left)
+                        .map(|(k, _)| k),
+                );
+            }
+        }
+        if let Some(set) = &admitted {
+            candidate_weight.retain(|doc_key, _| set.contains(doc_key));
         }
 
         // 4. Score only the most promising candidates (audit P5): scoring
         // loads the document and tokenizes it, so doing it for every posting
         // before applying `limit` scaled with the corpus.
+        //
+        // `max_scored` documents are scored. Without a phrase that is also
+        // how many are loaded. With one, a candidate can hold every word and
+        // still fail the order, so loading goes on, best weight first, until
+        // `max_scored` documents pass or `MAX_SCORED_CANDIDATES` were read:
+        // otherwise a hundred documents holding "base" and "données" apart
+        // would fill the pool and hide the one that says "base de données".
         let max_scored = limit
             .saturating_mul(4)
             .clamp(MIN_SCORED_CANDIDATES, MAX_SCORED_CANDIDATES);
+        let max_loaded = if phrase_slop.is_some() {
+            MAX_SCORED_CANDIDATES
+        } else {
+            max_scored
+        };
         let mut ranked: Vec<(String, f64)> = candidate_weight.into_iter().collect();
-        if ranked.len() > max_scored {
-            ranked.select_nth_unstable_by(max_scored - 1, |a, b| b.1.total_cmp(&a.1));
-            ranked.truncate(max_scored);
+        if ranked.len() > max_loaded {
+            ranked.select_nth_unstable_by(max_loaded - 1, |a, b| b.1.total_cmp(&a.1));
+            ranked.truncate(max_loaded);
         }
+        ranked.sort_unstable_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         // 5. First pass: per candidate field, its length and how often each
         // query term occurs in it. BM25 needs the average length before any
         // score can be computed. Term strings come from `tokenize_folded`;
         // the span walk only supplies offsets, and only when it emits the
-        // same terms, so a snippet cannot move a score.
+        // same terms, so a snippet cannot move a score. A field that fails
+        // the phrase is left out of this average.
         struct FieldStats {
             name: String,
             len: usize,
@@ -433,7 +514,11 @@ impl Collection {
         }
         let mut stats: Vec<(String, Vec<FieldStats>)> = Vec::with_capacity(ranked.len());
         let (mut len_sum, mut len_count) = (0usize, 0usize);
+        let mut scored = 0usize;
         for (doc_key, _) in ranked {
+            if scored >= max_scored {
+                break;
+            }
             let Ok(doc) = self.get(&doc_key) else {
                 continue;
             };
@@ -455,6 +540,23 @@ impl Collection {
                             .iter()
                             .zip(&doc_terms)
                             .all(|(span, term)| span.term == *term);
+                    // `None` means the phrase is off or vacuous (one word):
+                    // spans stay every match. `Some` is the chosen occurrence.
+                    // A field that fails is skipped, so it cannot win and it
+                    // does not move the average length.
+                    let phrase_tokens = if let Some(slop) = phrase_slop {
+                        let seq = &phrase_terms[ix];
+                        if seq.len() >= 2 {
+                            match find_phrase(&doc_terms, seq, slop, max_distance) {
+                                Some(hit) => Some(hit.tokens),
+                                None => continue,
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
                     len_sum += doc_terms.len();
                     len_count += 1;
                     let mut hits = Vec::new();
@@ -476,13 +578,21 @@ impl Collection {
                             } else {
                                 false
                             };
-                            if matched_token && spans_ok {
+                            if matched_token && spans_ok && phrase_tokens.is_none() {
                                 let span = &located[ti];
                                 spans.push((span.start, span.end));
                             }
                         }
                         if exact + fuzzy > 0 {
                             hits.push((ix, qx, exact, fuzzy));
+                        }
+                    }
+                    if let Some(tokens) = &phrase_tokens {
+                        if spans_ok {
+                            for &ti in tokens {
+                                let span = &located[ti];
+                                spans.push((span.start, span.end));
+                            }
                         }
                     }
                     spans.sort_unstable();
@@ -494,6 +604,9 @@ impl Collection {
                         spans,
                     });
                 }
+            }
+            if !fields_stats.is_empty() {
+                scored += 1;
             }
             stats.push((doc_key, fields_stats));
         }
