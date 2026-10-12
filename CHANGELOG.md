@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.3.0](https://github.com/solisoft/solidb/compare/v2.2.1...v2.3.0) (2026-10-12)
+
 ### Removed
 
 * **The `/_api/distributed/*` endpoints.** They advertised two-phase commit
@@ -33,6 +35,13 @@
   queue worker are not included. Counters are kept per thread, so a query
   does not wait on other cores to count itself.
 
+* **Read a document inside a transaction.**
+  `GET /_api/database/{db}/transaction/{tx_id}/document/{collection}/{key}`
+  returns the document as the transaction sees it: its own staged insert or
+  update, a 404 after its own delete, otherwise the committed document under
+  a shared lock. The route did not exist, so the Soli framework's `find`
+  inside `Model.transaction` got a 405 and read every key as missing.
+
 ### Fixed
 
 * **A cached query result could outlive the data it was computed from.**
@@ -50,6 +59,13 @@
   when the change lands can no longer store its result. The invalidation is
   done in storage, so changes made through the driver, replication or Lua
   are covered too.
+* **`/metrics` refused the documented `Authorization: Bearer` token.** Since
+  1.0, a scraper sending `Authorization: Bearer $SOLIDB_METRICS_TOKEN` — the
+  form in the getting-started guide and the Monitoring page's Prometheus
+  example — got 401: the route sat behind the general auth middleware, which
+  took the token for a JWT and rejected it before the metrics handler could
+  check it. Only `X-Metrics-Token` worked. Both work now; an admin JWT still
+  does, and a wrong token is still refused.
 * **UPDATE could not move an edge.** The update merge skipped every attribute
   whose name starts with `_`, so `UPDATE k WITH {_from: …}` — and the UPDATE
   branch of an `UPSERT`, `PATCH` over REST, and the `OPTIONS {keepNull,

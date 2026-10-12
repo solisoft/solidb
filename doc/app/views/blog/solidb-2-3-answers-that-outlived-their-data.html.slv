@@ -1,0 +1,120 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Release 2.3.0 · Correctness</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">2.3.0 is mostly about answers that were wrong without saying so. A dropped database whose rows a query could still return. An <code>UPDATE</code> of an edge&rsquo;s <code>_from</code> that changed every field but that one. A metrics token that the documented header could not deliver. And a two-phase-commit API that had never written a document. Each is fixed, or in the last case removed, and there are two additions: query latency on <code>/metrics</code>, and reading a document inside a transaction.</p>
+  <p class="post-note">Every response on this page was captured from a 2.3.0 release build on a throwaway server. The behaviour before 2.3.0 is described from the code and the regression tests that reproduce it, not from a captured session.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#cache">A cached answer that outlived its database</a></li>
+    <li><a href="#indexes">Indexes changed the answer, the cache did not</a></li>
+    <li><a href="#edge">An edge that would not move</a></li>
+    <li><a href="#metrics">Query latency on <code>/metrics</code>, and a token that never got through</a></li>
+    <li><a href="#distributed">A two-phase commit that never wrote anything</a></li>
+    <li><a href="#tx-read">Reading inside a transaction</a></li>
+    <li><a href="#upgrading">Upgrading</a></li>
+  </ol>
+</nav>
+
+<section id="cache"><h2>A cached answer that outlived its database</h2>
+<p>SoliDB caches the result of a read-only query, keyed by the database name, the query, its bind variables and the caller. A write to a collection drops every entry that read it. Dropping things did not. Delete a database, create one with the same name, and the identical query was answered from the cache with the dropped database&rsquo;s rows: for up to a minute with the default TTL, or until something wrote to that collection. Test suites that recreate a database between runs are exactly the workload that hits it. Truncating a collection had the same gap, and so did dropping and recreating a single collection.</p>
+<p>In 2.3.0 the drop itself invalidates. Here is the sequence that used to return <code>ghost1</code> from the cache:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># database shop, collection layouts, one document ghost1</span>
+FOR l IN layouts FILTER l.object == @o RETURN l._key
+{"result":["ghost1"],"count":1,"cached":false, …}
+{"result":["ghost1"],"count":1,"cached":true, …}      <span class="tok-com"># second run: from the cache</span>
+
+DELETE /_api/database/shop
+POST   /_api/database {"name":"shop"}
+POST   /_api/database/shop/collection {"name":"layouts"}
+
+FOR l IN layouts FILTER l.object == @o RETURN l._key
+{"result":[],"count":0,"cached":false, …}</pre></div>
+<p>Two details made this more than one line. The database drop invalidates <em>last</em>, after the data and the registry entries are gone: a query that started during the drop could still find the collection, read the old rows, and store them after an earlier invalidation. The cache refuses a result computed before the most recent invalidation, so invalidating at the end closes that window. And it happens in the storage layer, not in the HTTP handler, so a drop that arrives through the driver protocol, replication or Lua is covered by the same code.</p>
+</section>
+
+<section id="indexes"><h2>Indexes changed the answer, the cache did not</h2>
+<p>An index is meant to change how fast a query runs, not what it returns. Two cases broke that. <code>FULLTEXT</code> on a collection with no fulltext index answers an empty list, and that empty list was cached like any other result:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># articles holds a1: "replication lag on the second node"</span>
+FOR r IN FULLTEXT("articles", "body", "replication") RETURN r.doc._key
+{"result":[],"count":0,"cached":false, …}
+{"result":[],"count":0,"cached":true, …}
+
+POST /_api/database/shop/index/articles {"name":"ft_body","field":"body","type":"fulltext"}
+
+FOR r IN FULLTEXT("articles", "body", "replication") RETURN r.doc._key
+{"result":["a1"],"count":1,"cached":false, …}</pre></div>
+<p>Before 2.3.0 the last query answered <code>[]</code> from the cache. The second case was quieter. A new persistent index becomes visible before the documents already in the collection have been added to it, and a query planned against it in that window can come back short. Creating an ordinary index never invalidated the cache at all, so the short answer could stay cached. Every index creation and drop now invalidates when it finishes, whether it succeeds or fails partway, and a result computed while the index was being built cannot be stored afterwards.</p>
+</section>
+
+<section id="edge"><h2>An edge that would not move</h2>
+<p>The update merge skipped every attribute whose name starts with an underscore, to keep a client from overwriting <code>_key</code> or <code>_rev</code>. On an edge, <code>_from</code> and <code>_to</code> start with an underscore too. So <code>UPDATE e WITH {_from: …}</code> changed the other fields, kept the old endpoint, and reported success; a traversal went on following the old parent. The <code>UPDATE</code> branch of an <code>UPSERT</code>, a <code>PATCH</code> over REST, and the <code>keepNull</code> / <code>mergeObjects</code> path all did the same. <code>INSERT</code> and <code>REPLACE</code> were never affected.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># follows/f1: people/alice → people/eve, since 2024</span>
+UPDATE "f1" WITH {_from: "people/diana", since: 2025} IN follows RETURN NEW
+{"result":[{"_from":"people/diana","_to":"people/eve","since":2025, …}], …}
+
+FOR v IN 1..1 OUTBOUND "people/alice" follows RETURN v._key   →  "result":[]
+FOR v IN 1..1 OUTBOUND "people/diana" follows RETURN v._key   →  "result":["eve"]</pre></div>
+<p>Only the five attributes the server owns are skipped now: <code>_key</code>, <code>_id</code>, <code>_rev</code>, <code>_created_at</code> and <code>_updated_at</code>. Any other underscore-prefixed attribute is ordinary data, and the edge is still validated after the merge, so <code>_from: ""</code> is refused rather than stored.</p>
+</section>
+
+<section id="metrics"><h2>Query latency on <code>/metrics</code>, and a token that never got through</h2>
+<p><code>/metrics</code> said how many HTTP requests the server had handled, and nothing about how long queries took. 2.3.0 adds a histogram of client queries on <code>/cursor</code> and the driver, split into reads and writes, a counter of slow ones, and the result cache&rsquo;s hits and misses. Here is a scrape after the sessions above:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>curl -s -H "Authorization: Bearer $SOLIDB_METRICS_TOKEN" localhost:6745/metrics \
+  | grep -E '^solidb_(query_|slow_)'
+solidb_query_duration_seconds_bucket{kind="read",le="0.001"} 6
+<span class="tok-com">…</span>
+solidb_query_duration_seconds_sum{kind="read"} 0.000421
+solidb_query_duration_seconds_count{kind="read"} 6
+solidb_query_duration_seconds_count{kind="write"} 1
+solidb_slow_queries_total 0
+solidb_query_cache_hits_total 2
+solidb_query_cache_misses_total 4
+solidb_query_cache_entries 2</pre></div>
+<p>A cache hit executes nothing, so it is counted in <code>solidb_query_cache_hits_total</code> and kept out of the histogram: counted as a zero-second sample, it would drag every percentile toward zero as the hit rate rose. A query that fails, panics or outlives the client&rsquo;s 30-second timeout is still counted; the last one is counted when the executor finally stops, with its real duration. <code>solidb_slow_queries_total</code> uses the 100&nbsp;ms threshold of the <code>_slow_queries</code> collection. The counters live on the thread that ran the query and are added up at scrape time, so counting a query does not make it wait on other cores.</p>
+<p>The header in that <code>curl</code> is the bug. Our getting-started guide and the Prometheus example both say to send the metrics token as <code>Authorization: Bearer</code>. Since 1.0 that answered <code>401</code>: the route sat behind the general authentication middleware, which read any <code>Bearer</code> value as a JWT and rejected it before the metrics handler, which knows about the token, ever saw the request. Only <code>X-Metrics-Token</code> worked. It surfaced while capturing the output above. Both headers work now, an admin JWT still does, and a wrong token is still refused; a test pins all four.</p>
+</section>
+
+<section id="distributed"><h2>A two-phase commit that never wrote anything</h2>
+<p>The README, the transactions guide and the API reference all described multi-shard transactions with two-phase commit, under <code>/_api/distributed/transaction/*</code>. Reviewing the README for this release, we followed the claim into the code. Nothing behind it worked:</p>
+<ul>
+<li>each coordinator endpoint built a new, empty coordinator, so <code>prepare</code> and <code>commit</code> could never find the transaction <code>begin</code> had opened;</li>
+<li>the participant endpoints on each node answered &ldquo;prepared&rdquo; and &ldquo;committed&rdquo; without staging or writing anything;</li>
+<li>no endpoint let you attach a write to a distributed transaction in the first place.</li>
+</ul>
+<p>Wiring up the shared coordinator would not have made it write anything, and it would have made <code>begin</code>&rsquo;s participant list, addresses chosen by the caller, into a way to make the server send requests anywhere. So 2.3.0 removes the eight routes and the coordinator. They answer <code>404</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/distributed/transaction/begin {"participants":[]}   →  404</pre></div>
+<p>Transactions are ACID on the node that receives them, as they always were in practice. None spans shards or nodes, and the documentation now says so. Since the endpoints never applied a write, nothing that worked stops working, which is why this is a minor release and not a major one.</p>
+</section>
+
+<section id="tx-read"><h2>Reading inside a transaction</h2>
+<p>A transaction could stage inserts, updates and deletes, but there was no way to read one document as the transaction saw it. The Soli framework&rsquo;s <code>find</code> inside <code>Model.transaction</code> asked for exactly that route, got a <code>405</code>, and read every key as missing. 2.3.0 adds it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/shop/transaction/begin
+{"id":"tx:1791784292169113453","isolationLevel":"ReadCommitted","status":"active"}
+
+POST /_api/database/shop/transaction/$TX/document/people {"_key":"frank","name":"frank"}
+
+GET  /_api/database/shop/transaction/$TX/document/people/frank
+{"_key":"frank","name":"frank", …}                          [200]
+GET  /_api/database/shop/document/people/frank
+{"code":404,"error":"frank","type":"DocumentNotFound"}      [404]</pre></div>
+<p>The transactional read returns the transaction&rsquo;s own staged insert or update, a <code>404</code> after its own delete, and otherwise the committed document under a shared lock. Outside the transaction, the staged insert does not exist yet. Queries inside a transaction still read committed data; this route is for a single document by key.</p>
+</section>
+
+<section id="upgrading"><h2>Upgrading</h2>
+<p>Nothing needs a migration, and nothing in storage changes. Three things can differ on the day you upgrade:</p>
+<ul>
+<li><strong>Calls to <code>/_api/distributed/*</code> answer <code>404</code>.</strong> If anything called them, it was getting success responses for writes that never happened.</li>
+<li><strong><code>UPDATE</code> of <code>_from</code>, <code>_to</code> or any other underscore attribute takes effect.</strong> Code that sent one by accident, for example by writing back a whole document with an extra <code>_meta</code> field, now stores it.</li>
+<li><strong>A scraper sending <code>Authorization: Bearer $SOLIDB_METRICS_TOKEN</code> gets <code>200</code>.</strong> If yours was set up that way, it starts collecting data.</li>
+</ul>
+<p>The full list is in the <a href="/docs/changelog#v2-3-0">changelog</a>. The new series are described on the <a href="/docs/api-monitoring">Monitoring</a> page, and transactions in <a href="/docs/transactions">the transactions guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

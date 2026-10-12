@@ -69,6 +69,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-2-3-answers-that-outlived-their-data",
+        "title": "SoliDB 2.3: answers that outlived their data, and an edge that would not move",
+        "date": "2026-10-12",
+        "display_date": "October 12, 2026",
+        "summary": "A dropped database whose rows a query still returned, an UPDATE of _from that "
+        + "changed everything but _from, a metrics token the documented header could not deliver, "
+        + "and a two-phase commit that never wrote: what 2.3.0 fixes, plus query latency on /metrics.",
+        "tags": ["Correctness", "Release 2.3.0"],
+        "read_minutes": 7
+      },
+      {
         "slug": "solidb-2-1-transactions-conflicts-roles",
         "title": "SoliDB 2.1: transactions that mean it, sync conflicts you can see, roles that stop at a database",
         "date": "2026-09-29",

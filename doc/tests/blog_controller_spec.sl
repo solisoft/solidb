@@ -18,6 +18,7 @@ describe("BlogController", fn() {
 
   test("every listed post renders with its title", fn() {
     posts = {
+      "solidb-2-3-answers-that-outlived-their-data": "An edge that would not move",
       "solidb-2-1-transactions-conflicts-roles": "A driver transaction that was not one",
       "solidb-2-0-shared-keyspace": "creating a collection no longer depends",
       "a-request-must-never-take-the-server-down": "20,200 rows",
@@ -38,8 +39,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(12)
-    newest = body.index_of("/blog/solidb-2-1-transactions-conflicts-roles")
+    expect(body.split("class=\"post-card\"").length()).to_equal(13)
+    newest = body.index_of("/blog/solidb-2-3-answers-that-outlived-their-data")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })
