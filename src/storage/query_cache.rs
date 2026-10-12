@@ -561,6 +561,7 @@ const UNCACHEABLE_FUNCTIONS: &[&str] = &[
 /// must be a literal for the query to be cacheable.
 const COLLECTION_ARG_FUNCTIONS: &[&str] = &[
     "FULLTEXT",
+    "NEAR",
     "SAMPLE",
     "COLLECTION_COUNT",
     "HYBRID_SEARCH",
@@ -1051,6 +1052,10 @@ mod tests {
         let mut got = required("FOR u IN users RETURN DOCUMENT(\"teams/t1\")");
         got.sort();
         assert_eq!(got, vec!["teams", "users"]);
+        assert_eq!(
+            required(r#"FOR p IN NEAR("places", {lat: 1, lon: 2}, 100, "loc") RETURN p._key"#),
+            vec!["places"]
+        );
     }
 
     #[test]
@@ -1062,6 +1067,7 @@ mod tests {
         // Collection chosen at run time.
         assert!(refs("FOR d IN docs RETURN DOCUMENT(d.ref)").is_none());
         assert!(refs("RETURN COLLECTION_COUNT(@c)").is_none());
+        assert!(refs(r#"RETURN NEAR(@c, {lat: 1, lon: 2}, 100, "loc")"#).is_none());
         // Graph traversal reads vertex collections by _id.
         assert!(refs("FOR v IN 1..2 OUTBOUND \"users/a\" follows RETURN v").is_none());
     }

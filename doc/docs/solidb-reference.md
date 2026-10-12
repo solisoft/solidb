@@ -506,7 +506,7 @@ authoritative, exhaustive list.
 | String | `CONCAT` · `LOWER` · `UPPER` · `TRIM` · `SUBSTRING` · `SUBSTITUTE` · `SPLIT` · `LIKE` |
 | Date / series | `DATE_NOW` · `NOW` · `DATE_ISO8601` · `DATE_FORMAT` · `TIME_BUCKET` · `DELTA` · `RATE` · `FILL` · `RESAMPLE` |
 | Search / analytics | `VECTOR_SIMILARITY` · `EMBED` · `SEMANTIC` · `TOKENS` · `PHRASE` · `SEARCH` · `CITE` · `GROUNDED` · `APPROX_COUNT_DISTINCT` · `APPROX_PERCENTILE` · `MATCH_SEQ` · `COLLECTION_COUNT` · window `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)` |
-| Geo | `GEO_POINT` · `GEO_POLYGON` · `GEO_CONTAINS` · `GEO_INTERSECTS` · `GEO_IN_RANGE` · `GEO_AREA` |
+| Geo | `NEAR` · `GEO_POINT` · `GEO_POLYGON` · `GEO_CONTAINS` · `GEO_INTERSECTS` · `GEO_IN_RANGE` · `GEO_AREA` |
 | Auth / time-travel | `CURRENT_USER` · `CAN` · `ROW_POLICY` · `DOC_AS_OF` · `DOC_HISTORY` · `SNAPSHOT_DIFF` · `VALID_TIME` · `SYSTEM_TIME` |
 
 > **Safety:** every value that came from outside must travel through a bind

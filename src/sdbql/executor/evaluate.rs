@@ -350,6 +350,13 @@ impl<'a> QueryExecutor<'a> {
                 Ok(Value::Number(number_from_f64(distance as f64)))
             }
 
+            // NEAR(collection, center, radiusMeters, field)
+            // Documents whose geo-indexed field lies within radiusMeters of
+            // center, closest first. The order is load-bearing: a LIMIT with
+            // no SORT is pushed into the FOR source and keeps a prefix of
+            // this array.
+            "NEAR" => self.eval_near(&evaluated_args, ctx),
+
             // FULLTEXT(collection, field, query [, distance | {distance, limit}])
             // Fulltext search. `distance` is the edit distance at which a
             // document term still counts as a (fuzzy) match of a query term
@@ -1380,6 +1387,73 @@ impl<'a> QueryExecutor<'a> {
                 name
             ))),
         }
+    }
+
+    /// `NEAR(collection, center, radiusMeters, field)`.
+    ///
+    /// `center` follows the SDBQL point convention: `{lat, lon}` (also
+    /// `latitude`/`longitude`/`lng`), a GeoJSON `Point`, or a bare
+    /// `[lon, lat]` array. The indexed field is read the way the geo index
+    /// always reads stored values (`GeoPoint::from_value`), which takes a
+    /// bare array as `[lat, lon]`.
+    ///
+    /// No geo index on `field` is an error. A stored value that is not a
+    /// point is skipped. Results are the documents themselves, closest
+    /// first, ties broken by `_key`. The radius is inclusive.
+    fn eval_near(&self, args: &[Value], ctx: &Context) -> DbResult<Value> {
+        if args.len() != 4 {
+            return Err(DbError::ExecutionError(
+                "NEAR requires 4 arguments: collection, center, radius, field".to_string(),
+            ));
+        }
+        let collection_name = args[0].as_str().ok_or_else(|| {
+            DbError::ExecutionError("NEAR: collection must be a string".to_string())
+        })?;
+        let center = crate::storage::GeoPoint::from_value_lonlat(&args[1])
+            .filter(|p| (-90.0..=90.0).contains(&p.lat) && (-180.0..=180.0).contains(&p.lon))
+            .ok_or_else(|| {
+                DbError::ExecutionError(
+                    "NEAR: center must be a point ({lat, lon}, a GeoJSON Point, or [lon, lat])"
+                        .to_string(),
+                )
+            })?;
+        let radius = args[2]
+            .as_f64()
+            .filter(|r| r.is_finite() && *r >= 0.0)
+            .ok_or_else(|| {
+                DbError::ExecutionError(
+                    "NEAR: radius must be a non-negative number of meters".to_string(),
+                )
+            })?;
+        let field = args[3].as_str().filter(|f| !f.is_empty()).ok_or_else(|| {
+            DbError::ExecutionError("NEAR: field must be a non-empty string".to_string())
+        })?;
+
+        let collection = self.get_collection(collection_name)?;
+        let matches = collection
+            .geo_within(field, center.lat, center.lon, radius)
+            .ok_or_else(|| {
+                DbError::ExecutionError(format!(
+                    "NEAR: no geo index on field '{field}' of collection '{collection_name}'"
+                ))
+            })?;
+        // Count every indexed hit, including rows a policy will drop: they
+        // were materialised.
+        self.check_budget(matches.len())?;
+
+        let mut docs: Vec<(f64, String, Value)> = Vec::new();
+        for (doc, dist) in matches {
+            if !dist.is_finite() {
+                continue;
+            }
+            let value = doc.to_value();
+            if !self.row_policy_permits(collection_name, &value, ctx) {
+                continue;
+            }
+            docs.push((dist, doc.key, value));
+        }
+        docs.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        Ok(Value::Array(docs.into_iter().map(|(_, _, v)| v).collect()))
     }
 
     fn apply_dynamic(&self, name: &str, args: &[Value], ctx: &Context) -> DbResult<Value> {

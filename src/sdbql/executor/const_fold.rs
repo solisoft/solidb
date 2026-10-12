@@ -471,6 +471,7 @@ mod tests {
             "DOCUMENT",
             "COLLECTION_COUNT",
             "FULLTEXT",
+            "NEAR",
             "VECTOR_SEARCH",
             "HYBRID_SEARCH",
             "SEARCH_INDEX",

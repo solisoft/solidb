@@ -229,6 +229,7 @@ const HEAVY_FUNCTIONS: &[&str] = &[
     "SHORTEST_PATH",
     "K_PATHS",
     "FULLTEXT",
+    "NEAR",
     "VECTOR_SEARCH",
 ];
 
@@ -1122,6 +1123,7 @@ mod long_running_tests {
             r#"RETURN EMBED("hello")"#,
             r#"RETURN NEIGHBORS("edges", ["a/1"])"#,
             r#"RETURN {p: PAGERANK("edges")}"#,
+            r#"RETURN NEAR("places", {lat: 1, lon: 2}, 100, "loc")"#,
         ] {
             assert!(is_long_running_query(&parse(q).unwrap()), "{q}");
         }

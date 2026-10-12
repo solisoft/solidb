@@ -148,6 +148,7 @@ var SDBQL_FUNCS=[
 ["STDDEV_POPULATION","STDDEV_POPULATION(arr)","Population standard deviation.","numeric"],
 ["DISTANCE","DISTANCE(lat1, lon1, lat2, lon2)","Calculates distance in meters between two coordinate pairs using the Haversine formula.","geo"],
 ["GEO_DISTANCE","GEO_DISTANCE(p1, p2)","Distance in meters between GeoPoint objects (with lat/lon properties).","geo"],
+["NEAR","NEAR(collection, center, radius, field)","Documents within radius meters of a point, closest first, from the geo index on field.","geo","/docs/sdbql-functions-geo#fn-NEAR"],
 ["GEO_WITHIN","GEO_WITHIN(point, polygon)","Returns true if the point is inside the specified polygon (ray casting). Polygon is an array of points (LinearRing).","geo"],
 ["VECTOR_SIMILARITY","VECTOR_SIMILARITY(vec1, vec2)","Calculates cosine similarity between two vectors. Returns a value between -1 and 1, where 1 means identical direction, 0 means orthogonal, and -1 means opposite direction.","vector"],
 ["VECTOR_DISTANCE","VECTOR_DISTANCE(vec1, vec2, metric)","Calculates the distance between two vectors using the specified metric. Supported metrics: \"cosine\", \"euclidean\", \"dot\".","vector"],

@@ -427,6 +427,7 @@ pub const CONTEXT: &[&str] = &[
     "VECTOR_NORMALIZE",
     "VECTOR_DISTANCE",
     "FULLTEXT",
+    "NEAR",
     "SAMPLE",
     "DOCUMENT",
     "LEVENSHTEIN",

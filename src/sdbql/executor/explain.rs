@@ -10,6 +10,8 @@
 
 use std::time::Instant;
 
+use serde_json::Value;
+
 use super::format_expression;
 use super::index_opt::{conjunction, leading_filters};
 use super::types::{
@@ -220,11 +222,29 @@ impl<'a> QueryExecutor<'a> {
                         index_type = Some("Geo".to_string());
                     }
 
+                    // `FOR v IN NEAR(...)` already read the geo index inside
+                    // the function. Name that access; an empty collection
+                    // string would otherwise be reported as a full scan.
+                    let near = self.near_source(for_clause);
+                    let mut access_name = for_clause.collection.clone();
+                    if let Some((coll, idx)) = &near {
+                        if !coll.is_empty() {
+                            access_name = coll.clone();
+                        }
+                        if let Some(idx) = idx {
+                            index_name = Some(idx.clone());
+                            index_type = Some("Geo".to_string());
+                            warnings.push(format!("NEAR served by geo index '{idx}'"));
+                        }
+                    }
+
                     // Record Collection Info
                     collections_info.push(CollectionAccess {
-                        name: for_clause.collection.clone(),
+                        name: access_name,
                         variable: for_clause.variable.clone(),
-                        access_type: if geo_sorted {
+                        access_type: if near.is_some() {
+                            "geo_near".to_string()
+                        } else if geo_sorted {
                             "geo_index_sort".to_string()
                         } else if used_index {
                             "index_lookup".to_string()
@@ -351,5 +371,42 @@ impl<'a> QueryExecutor<'a> {
             documents_returned,
             warnings,
         })
+    }
+
+    /// `FOR v IN NEAR(collection, …, field)`: the collection name, and the
+    /// geo index when both the collection and the field are a literal or a
+    /// bind variable. `None` when the source is not a `NEAR` call.
+    fn near_source(&self, for_clause: &ForClause) -> Option<(String, Option<String>)> {
+        let Expression::FunctionCall { name, args } = for_clause.source_expression.as_ref()? else {
+            return None;
+        };
+        if !name.eq_ignore_ascii_case("NEAR") {
+            return None;
+        }
+        let collection = args.first().and_then(|a| self.static_string(a));
+        let field = args.get(3).and_then(|a| self.static_string(a));
+        let index = match (&collection, &field) {
+            (Some(coll), Some(field)) => self.get_collection(coll).ok().and_then(|c| {
+                c.get_all_geo_indexes()
+                    .into_iter()
+                    .find(|g| g.field == *field)
+                    .map(|g| g.name)
+            }),
+            _ => None,
+        };
+        Some((collection.unwrap_or_default(), index))
+    }
+
+    /// A string literal, or a bind variable bound to a string.
+    fn static_string(&self, expr: &Expression) -> Option<String> {
+        match expr {
+            Expression::Literal(Value::String(s)) => Some(s.clone()),
+            Expression::BindVariable(name) => self
+                .bind_vars
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        }
     }
 }

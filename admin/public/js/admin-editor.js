@@ -84,7 +84,7 @@ window.AdminEditor = window.AdminEditor || (function () {
     "DATE_HOUR", "DATE_MINUTE", "DATE_SECOND", "DATE_ADD", "DATE_SUBTRACT",
     "DATE_DIFF", "DATE_FORMAT", "MERGE", "MERGE_RECURSIVE", "KEEP", "UNSET",
     "ATTRIBUTES", "VALUES", "ZIP", "HAS", "MATCHES", "DOCUMENT", "FULLTEXT",
-    "GEO_DISTANCE", "GEO_NEAR", "GEO_WITHIN", "VECTOR_SEARCH"
+    "GEO_DISTANCE", "NEAR", "GEO_WITHIN", "VECTOR_SEARCH"
   ];
 
   function registerSdbql() {

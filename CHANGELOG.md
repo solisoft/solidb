@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+* **`NEAR(collection, center, radius, field)`.** Documents whose geo-indexed
+  field lies within `radius` meters of `center`, closest first, ties broken
+  by `_key`. `center` is `{lat, lon}` (also `latitude` / `longitude` / `lng`),
+  a GeoJSON Point, or `[lon, lat]`. The radius is inclusive. A stored value
+  that is not a point is skipped. No geo index on `field` is an error, rather
+  than an empty result. `FILTER` applies to that list, and a `LIMIT` with no
+  `SORT` keeps the nearest. `EXPLAIN` reports the access as `geo_near` and
+  names the index. A row policy still hides documents the caller must not see.
+
 ### Changed
 
 * **Fulltext results are ranked with BM25.** A hit scored +10 per

@@ -63,6 +63,15 @@ LET paris = {lat: 48.8566, lon: 2.3522}
 LET london = {lat: 51.5074, lon: -0.1278}
 RETURN GEO_DISTANCE(paris, london)</code></pre>
                 </div>
+                <div id="fn-NEAR" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors md:col-span-2">
+                  <a href="#fn-NEAR" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-green-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
+                  <code class="block text-sm font-bold text-white bg-green-500/20 px-2 py-1 rounded border border-green-500/30 w-fit mb-3">NEAR(collection, center, radius, field)</code>
+                  <p class="text-sm text-gray-400 mb-3">Documents whose geo-indexed <code>field</code> lies within <code>radius</code> meters of <code>center</code>, closest first. Ties break by <code>_key</code>. <code>center</code> is <code>{lat, lon}</code>, a GeoJSON Point, or <code>[lon, lat]</code>. The radius is inclusive. No geo index on <code>field</code> is an error. <code>FILTER</code> and <code>LIMIT</code> apply to that list; a <code>LIMIT</code> with no <code>SORT</code> keeps the nearest.</p>
+                  <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">FOR p IN NEAR("places", @here, 2000, "loc")
+  FILTER p.open
+  LIMIT 20
+  RETURN { name: p.name, m: GEO_DISTANCE(p.loc, @here) }</code></pre>
+                </div>
               </div>
             </div>
 
@@ -115,7 +124,13 @@ RETURN GEO_AREA(zone)</code></pre>
             <!-- Practical Examples -->
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
               <h4 class="text-sm font-bold text-gray-300 mb-3">Practical Examples</h4>
-              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Find places within 10km of a location
+              <pre><code class="language-sql text-xs bg-gray-950/50 p-3 rounded border border-white/5">-- Places within 2km, nearest first, from the geo index on loc
+FOR p IN NEAR("places", @here, 2000, "loc")
+  FILTER p.open
+  LIMIT 20
+  RETURN { name: p.name, m: ROUND(GEO_DISTANCE(p.loc, @here)) }
+
+-- Find places within 10km of a location
 FOR place IN places
   LET dist = DISTANCE(place.lat, place.lon, 48.8566, 2.3522)
   FILTER dist <= 10000
@@ -191,6 +206,7 @@ FOR place IN places
                 <div>
                   <h5 class="text-green-300 font-semibold mb-2">Performance</h5>
                   <ul class="list-disc list-inside space-y-1">
+                    <li><code>NEAR(collection, center, radius, field)</code> reads the geo index and returns the documents within <code>radius</code> meters, closest first</li>
                     <li>Create a geo index on the location field: <code>FILTER DISTANCE(...) &lt;= r</code>, <code>GEO_DISTANCE(...) &lt;= r</code> and <code>SORT DISTANCE(...) LIMIT n</code> then read it instead of scanning</li>
                     <li>A document without coordinates makes <code>DISTANCE</code> null, and null sorts below every number, so <code>DISTANCE(...) &lt;= r</code> matches it. Add a guard such as <code>IS_NUMBER(doc.loc.lat) AND</code> to exclude those documents &mdash; the geo index is only used when the FILTER does</li>
                     <li>Use bounding box pre-filtering for large datasets</li>

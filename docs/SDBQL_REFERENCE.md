@@ -505,6 +505,7 @@ RETURN users[*].name -- Returns array of names
 | `GEO_INTERSECTS(a, b)` | Rings overlap or contain | `GEO_INTERSECTS(a, b)` |
 | `GEO_IN_RANGE(p, origin, lo, hi)` | Distance in meters | `GEO_IN_RANGE(p, o, 0, 1000)` |
 | `GEO_AREA(poly)` | Approx. area m² | `GEO_AREA(zone)` |
+| `NEAR(coll, center, radius, field)` | Documents within `radius` meters of `center`, closest first, from the geo index on `field`. `center` is `{lat, lon}`, a GeoJSON Point, or `[lon, lat]`. No index on `field` is an error. The radius is inclusive; ties break by `_key`. | `FOR p IN NEAR("places", @here, 2000, "loc") FILTER p.open LIMIT 20 RETURN p` |
 
 ### Vector Functions
 
