@@ -90,6 +90,7 @@ const PHONETIC_ALGO: &[&str] = &[
     "NYSIIS",
 ];
 const PHONETIC_STRING: &[&str] = &[
+    "SNIPPET",
     "HIGHLIGHT",
     "SLUGIFY",
     "SANITIZE",

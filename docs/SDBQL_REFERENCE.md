@@ -542,7 +542,8 @@ Then simply `INSERT {title: "...", content: "hello world"} INTO docs` and `embed
 
 | Function | Description | Example |
 | :--- | :--- | :--- |
-| `FULLTEXT(coll, field, q, dist)` | Word search over a fulltext index; `dist` lets near-misses in matched documents score. Accent-insensitive when the index has `fold_accents: true` | `FULLTEXT("clients", "name", "helene")` |
+| `FULLTEXT(coll, field, q, dist)` | Word search over a fulltext index; `dist` lets near-misses in matched documents score. Accent-insensitive when the index has `fold_accents: true`. Hits are `{doc, score, matched, field, spans}` | `FULLTEXT("clients", "name", "helene")` |
+| `SNIPPET(hit, width)` | `width` characters of a FULLTEXT or SEARCH_INDEX hit, cut around the matched tokens. A short field is returned whole. `…` marks a cut and is not counted | `SNIPPET(h, 160)` |
 | `BM25(field, query)` | Relevance score | `BM25(doc.content, "search term")` |
 | `HYBRID_SEARCH(...)` | Vector + Text search | `HYBRID_SEARCH("docs", "vec_idx", "text", ...)` |
 | `HIGHLIGHT(text, terms)` | Wrap matches in `<b>` | `HIGHLIGHT(doc.body, @terms)` |
@@ -656,7 +657,7 @@ Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each p
 | `DROP_GRAPH(name)` / `GRAPH_INFO(name)` | Remove or read a named graph | `GRAPH_INFO("g")` |
 | `CREATE_VIEW(name, spec)` | Search-view alias (`type: "search"` in `_views`) | `CREATE_VIEW("v", {collection:"docs"})` |
 | `DROP_VIEW(name)` | Drop a search view | `DROP_VIEW("v")` |
-| `SEARCH_INDEX(coll, field, q [, n])` | Fulltext index hits `{doc, score, terms}` | `SEARCH_INDEX("n","body","fox")` |
+| `SEARCH_INDEX(coll, field, q [, n])` | Fulltext index hits `{doc, score, terms, field, spans}` | `SEARCH_INDEX("n","body","fox")` |
 | `ROW_POLICY(coll [, pred])` | Get/set collection row predicate | `ROW_POLICY("orders", "orders.tenant == @t")` |
 | `PARSE_IDENTIFIER(id)` | `{collection, key}` | `PARSE_IDENTIFIER("users/ada")` |
 | `PARSE_COLLECTION` / `PARSE_KEY` | Split `_id` | `PARSE_KEY("users/ada")` |

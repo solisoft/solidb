@@ -43,9 +43,10 @@ pub use geo::{distance_meters, GeoIndex, GeoIndexStats, GeoPoint};
 pub use index::{
     bm25_score, calculate_idf, deserialize_fields, extract_field_value, fold_accents,
     generate_ngrams, levenshtein_distance, levenshtein_distance_bounded, ngram_similarity,
-    normalize_text, tokenize, tokenize_folded, FulltextMatch, Index, IndexKind, IndexRef,
-    IndexSpec, IndexStats, IndexType, TtlIndex, TtlIndexStats, VectorIndexConfig, VectorIndexStats,
-    VectorMetric, BM25_B, BM25_K1, LEVENSHTEIN_MAX_CHARS, NGRAM_SIZE,
+    normalize_text, tokenize, tokenize_folded, tokenize_spans, FulltextMatch, Index, IndexKind,
+    IndexRef, IndexSpec, IndexStats, IndexType, TokenSpan, TtlIndex, TtlIndexStats,
+    VectorIndexConfig, VectorIndexStats, VectorMetric, BM25_B, BM25_K1, LEVENSHTEIN_MAX_CHARS,
+    NGRAM_SIZE,
 };
 pub use protected::{
     admin_write_collection_error, check_write_access, is_admin_write_collection,

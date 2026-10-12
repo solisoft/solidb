@@ -3,6 +3,7 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::error::{DbError, DbResult};
 
@@ -17,6 +18,7 @@ static UUID_RE: Lazy<Regex> = Lazy::new(|| {
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "HIGHLIGHT" => highlight(args),
+        "SNIPPET" => snippet(args),
         "SLUGIFY" => {
             if args.len() != 1 {
                 return Err(DbError::ExecutionError(
@@ -54,6 +56,307 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }))),
         _ => Ok(None),
     }
+}
+
+/// How far a passage may grow, in characters, to finish the word it cut.
+const SNIPPET_WORD_SLACK: usize = 16;
+
+/// `SNIPPET(hit, width)` — `width` characters of `hit.doc[hit.field]`, cut
+/// around the tokens that matched. `hit.spans` is `[[start, end], …]` in
+/// characters. Without spans, `matched` or `terms` are sought
+/// case-insensitively; with neither, the passage is the start of the field.
+fn snippet(args: &[Value]) -> DbResult<Option<Value>> {
+    if args.len() != 2 {
+        return Err(DbError::ExecutionError(
+            "SNIPPET requires exactly 2 arguments: hit, width".to_string(),
+        ));
+    }
+    if args[0].is_null() {
+        return Ok(Some(Value::Null));
+    }
+    let Some(hit) = args[0].as_object() else {
+        return Err(DbError::ExecutionError(
+            "SNIPPET: hit must be an object".to_string(),
+        ));
+    };
+    let width = match args.get(1) {
+        Some(Value::Number(n)) => n.as_u64().ok_or_else(|| {
+            DbError::ExecutionError("SNIPPET: width must be a non-negative integer".to_string())
+        })?,
+        _ => {
+            return Err(DbError::ExecutionError(
+                "SNIPPET: width must be a non-negative integer".to_string(),
+            ))
+        }
+    };
+    let width = usize::try_from(width).unwrap_or(usize::MAX);
+    let field = hit.get("field").and_then(Value::as_str).unwrap_or("");
+    let Some(text) = hit.get("doc").and_then(|doc| field_text(doc, field)) else {
+        return Ok(Some(Value::Null));
+    };
+    if width == 0 {
+        return Ok(Some(Value::String(String::new())));
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if width >= chars.len() {
+        return Ok(Some(Value::String(text)));
+    }
+
+    let mut spans = parse_spans(hit.get("spans"), chars.len());
+    if spans.is_empty() {
+        spans = spans_for_terms(&chars, &term_list(hit));
+    }
+    let (start, end) = best_window(chars.len(), width, &spans);
+    let start = snap_start(&chars, start);
+    let end = snap_end(&chars, end);
+    Ok(Some(Value::String(render_window(
+        &text, &chars, start, end,
+    ))))
+}
+
+fn field_text(doc: &Value, path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let mut current = doc;
+    for part in path.split('.') {
+        current = current.get(part)?;
+    }
+    current.as_str().map(str::to_owned)
+}
+
+fn term_list(hit: &serde_json::Map<String, Value>) -> Vec<String> {
+    for key in ["matched", "terms"] {
+        match hit.get(key) {
+            Some(Value::Array(arr)) => {
+                let terms: Vec<String> = arr
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                if !terms.is_empty() {
+                    return terms;
+                }
+            }
+            Some(Value::String(s)) if !s.is_empty() => return vec![s.clone()],
+            _ => {}
+        }
+    }
+    Vec::new()
+}
+
+fn parse_spans(value: Option<&Value>, len: usize) -> Vec<(usize, usize)> {
+    let Some(Value::Array(arr)) = value else {
+        return Vec::new();
+    };
+    let mut spans = Vec::new();
+    for item in arr {
+        let Some(pair) = item.as_array() else {
+            continue;
+        };
+        if pair.len() != 2 {
+            continue;
+        }
+        let (Some(start), Some(end)) = (pair[0].as_u64(), pair[1].as_u64()) else {
+            continue;
+        };
+        let (start, end) = (start as usize, end as usize);
+        if start < end && start < len {
+            spans.push((start, end.min(len)));
+        }
+    }
+    spans
+}
+
+/// Case-insensitive whole-word hits. One-char lowercase, so a position in
+/// the folded text is the same position in the original.
+fn spans_for_terms(chars: &[char], terms: &[String]) -> Vec<(usize, usize)> {
+    if terms.is_empty() {
+        return Vec::new();
+    }
+    let folded: Vec<char> = chars.iter().copied().map(fold).collect();
+    let mut spans = Vec::new();
+    for term in terms {
+        let needle: Vec<char> = term.chars().map(fold).collect();
+        if needle.is_empty() {
+            continue;
+        }
+        let mut i = 0;
+        while i + needle.len() <= folded.len() {
+            let after = i + needle.len();
+            let word = (i == 0 || !folded[i - 1].is_alphanumeric())
+                && (after == folded.len() || !folded[after].is_alphanumeric());
+            if word && folded[i..after] == needle[..] {
+                spans.push((i, after));
+                i = after;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    spans.sort_unstable();
+    spans.dedup();
+    spans
+}
+
+/// Window of `width` characters covering the most spans, then the most
+/// characters of those spans, then the earliest start.
+fn best_window(len: usize, width: usize, spans: &[(usize, usize)]) -> (usize, usize) {
+    if spans.is_empty() || width >= len {
+        return (0, width.min(len));
+    }
+    if spans.len() > 256 {
+        return best_window_counted(len, width, spans);
+    }
+    let max_start = len - width;
+    let mut candidates = Vec::with_capacity(spans.len() * 4 + 1);
+    candidates.push(0);
+    for &(start, end) in spans {
+        candidates.push(start.min(max_start));
+        candidates.push(end.min(max_start));
+        candidates.push(start.saturating_sub(width).min(max_start));
+        candidates.push(end.saturating_sub(width).min(max_start));
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    let mut best_start = 0usize;
+    let mut best: Option<(usize, usize, usize)> = None;
+    for start in candidates {
+        let (count, overlap) = window_score(spans, start, start + width);
+        // Invert the start so the greatest key is the earliest window.
+        let key = (count, overlap, usize::MAX - start);
+        if best.is_none_or(|prev| key > prev) {
+            best = Some(key);
+            best_start = start;
+        }
+    }
+    (best_start, best_start + width)
+}
+
+fn window_score(spans: &[(usize, usize)], start: usize, end: usize) -> (usize, usize) {
+    let mut count = 0usize;
+    let mut overlap = 0usize;
+    for &(a, b) in spans {
+        let lo = a.max(start);
+        let hi = b.min(end);
+        if hi > lo {
+            count += 1;
+            overlap += hi - lo;
+        }
+    }
+    (count, overlap)
+}
+
+/// Same choice as [`best_window`] for a field with hundreds of hits, tracking
+/// how many spans overlap each candidate instead of scoring every pair.
+fn best_window_counted(len: usize, width: usize, spans: &[(usize, usize)]) -> (usize, usize) {
+    let mut spans = spans.to_vec();
+    spans.sort_unstable();
+    let max_start = len - width;
+    let mut candidates = Vec::with_capacity(spans.len() * 2 + 1);
+    candidates.push(0);
+    for &(start, end) in &spans {
+        candidates.push(start.min(max_start));
+        candidates.push(end.saturating_sub(width).min(max_start));
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    let mut active: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut next = 0usize;
+    let mut count = 0usize;
+    let mut best_start = 0usize;
+    let mut best_count = 0usize;
+    let mut seen = false;
+    for start in candidates {
+        let win_end = start + width;
+        while next < spans.len() && spans[next].0 < win_end {
+            *active.entry(spans[next].1).or_insert(0) += 1;
+            count += 1;
+            next += 1;
+        }
+        while let Some((&end, _)) = active.iter().next() {
+            if end > start {
+                break;
+            }
+            count -= active.remove(&end).unwrap_or(0);
+        }
+        if !seen || count > best_count || (count == best_count && start < best_start) {
+            seen = true;
+            best_start = start;
+            best_count = count;
+        }
+    }
+    (best_start, best_start + width)
+}
+
+fn cuts_word(chars: &[char], i: usize) -> bool {
+    i > 0 && i < chars.len() && !chars[i - 1].is_whitespace() && !chars[i].is_whitespace()
+}
+
+fn snap_start(chars: &[char], start: usize) -> usize {
+    if !cuts_word(chars, start) {
+        return start;
+    }
+    let mut i = start;
+    while i > 0 && start - i < SNIPPET_WORD_SLACK && !chars[i - 1].is_whitespace() {
+        i -= 1;
+    }
+    if (i == 0 || chars[i - 1].is_whitespace()) && start - i <= SNIPPET_WORD_SLACK {
+        i
+    } else {
+        start
+    }
+}
+
+fn snap_end(chars: &[char], end: usize) -> usize {
+    if !cuts_word(chars, end) {
+        return end;
+    }
+    let mut j = end;
+    while j < chars.len() && j - end < SNIPPET_WORD_SLACK && !chars[j].is_whitespace() {
+        j += 1;
+    }
+    if (j == chars.len() || chars[j].is_whitespace()) && j - end <= SNIPPET_WORD_SLACK {
+        j
+    } else {
+        end
+    }
+}
+
+fn render_window(text: &str, chars: &[char], mut start: usize, mut end: usize) -> String {
+    if start > end {
+        start = end;
+    }
+    if start == 0 && end == chars.len() {
+        return text.to_string();
+    }
+    let cut_left = start > 0;
+    let cut_right = end < chars.len();
+    if cut_left {
+        while start < end && chars[start].is_whitespace() {
+            start += 1;
+        }
+    }
+    if cut_right {
+        while end > start && chars[end - 1].is_whitespace() {
+            end -= 1;
+        }
+    }
+    if start >= end {
+        return String::new();
+    }
+    let mut out = String::with_capacity((end - start) + 2);
+    if cut_left {
+        out.push('\u{2026}');
+    }
+    out.extend(chars[start..end].iter().copied());
+    if cut_right {
+        out.push('\u{2026}');
+    }
+    out
 }
 
 /// Append `c` HTML-escaped. HIGHLIGHT's output is HTML (`<b>` tags), so the
@@ -338,5 +641,161 @@ mod tests {
         assert_eq!(strip("<<b>script>alert(1)"), json!("alert(1)"));
         // "<scr<script>" is one tag to an HTML tokenizer; what is left is inert.
         assert_eq!(strip("<scr<script>ipt>x"), json!("ipt>x"));
+    }
+
+    fn span_of(text: &str, word: &str) -> (u64, u64) {
+        let chars: Vec<char> = text.chars().collect();
+        let needle: Vec<char> = word.chars().collect();
+        let start = chars
+            .windows(needle.len())
+            .position(|w| w == needle.as_slice())
+            .unwrap_or_else(|| panic!("{word:?} not in {text:?}"));
+        (start as u64, (start + needle.len()) as u64)
+    }
+
+    fn hit(text: &str, words: &[&str]) -> Value {
+        let spans: Vec<(u64, u64)> = words.iter().map(|w| span_of(text, w)).collect();
+        json!({"doc": {"body": text}, "field": "body", "spans": spans})
+    }
+
+    #[test]
+    fn snippet_cuts_around_the_match() {
+        let gap = " filler".repeat(40);
+        let text = format!("PREAMBLE{gap} réplication{gap}ENDING");
+        let out = call("SNIPPET", &[hit(&text, &["réplication"]), json!(40)])
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(out.contains("réplication"), "{out}");
+        assert!(!out.contains("PREAMBLE"), "{out}");
+        assert!(!out.contains("ENDING"), "{out}");
+        assert!(out.contains('\u{2026}'), "{out}");
+    }
+
+    #[test]
+    fn snippet_prefers_two_close_terms_over_an_earlier_one() {
+        let gap = " filler".repeat(40);
+        let text = format!("alpha{gap} beta gamma{gap}");
+        let out = call(
+            "SNIPPET",
+            &[hit(&text, &["alpha", "beta", "gamma"]), json!(24)],
+        )
+        .as_str()
+        .unwrap()
+        .to_string();
+        assert!(out.contains("beta") && out.contains("gamma"), "{out}");
+        assert!(!out.contains("alpha"), "{out}");
+    }
+
+    #[test]
+    fn snippet_returns_a_short_field_unchanged_and_width_zero_empty() {
+        let whole = call(
+            "SNIPPET",
+            &[hit("réplication", &["réplication"]), json!(160)],
+        );
+        assert_eq!(whole, json!("réplication"));
+        let empty = call("SNIPPET", &[hit("réplication", &["réplication"]), json!(0)]);
+        assert_eq!(empty, json!(""));
+    }
+
+    #[test]
+    fn snippet_falls_back_to_matched_terms_and_walks_dotted_fields() {
+        let gap = " pad".repeat(30);
+        let text = format!("PREAMBLE{gap} TARGET{gap}");
+        let out = call(
+            "SNIPPET",
+            &[
+                json!({"doc": {"body": text}, "field": "body", "matched": ["target"]}),
+                json!(20),
+            ],
+        )
+        .as_str()
+        .unwrap()
+        .to_string();
+        assert!(out.contains("TARGET"), "{out}");
+        assert!(!out.contains("PREAMBLE"), "{out}");
+
+        let nested = "xx réplication yy";
+        let (start, end) = span_of(nested, "réplication");
+        let out = call(
+            "SNIPPET",
+            &[
+                json!({
+                    "doc": {"addr": {"note": nested}},
+                    "field": "addr.note",
+                    "spans": [[start, end]],
+                }),
+                json!(160),
+            ],
+        );
+        assert_eq!(out, json!(nested));
+    }
+
+    #[test]
+    fn snippet_leading_window_without_spans_or_terms() {
+        let text = format!("LEADING {}", "z".repeat(80));
+        let out = call(
+            "SNIPPET",
+            &[json!({"doc": {"body": text}, "field": "body"}), json!(10)],
+        )
+        .as_str()
+        .unwrap()
+        .to_string();
+        assert!(out.starts_with("LEADING"), "{out}");
+        assert!(out.ends_with('\u{2026}'), "{out}");
+        assert!(!out.starts_with('\u{2026}'), "{out}");
+    }
+
+    #[test]
+    fn snippet_null_hit_and_bad_arguments() {
+        assert_eq!(call("SNIPPET", &[Value::Null, json!(10)]), Value::Null);
+        let err = |args: &[Value]| evaluate("SNIPPET", args).unwrap_err().to_string();
+        assert!(err(&[]).contains("2 arguments"), "{}", err(&[]));
+        assert!(err(&[json!({}), json!(1.5)]).contains("integer"));
+        assert!(err(&[json!({}), json!(-1)]).contains("integer"));
+        assert!(err(&[json!("nope"), json!(8)]).contains("object"));
+        assert_eq!(
+            call(
+                "SNIPPET",
+                &[json!({"doc": {}, "field": "missing"}), json!(8)]
+            ),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn snippet_many_spans_still_cover_a_hit() {
+        // Sparse hits, then a cluster. The counted path (more than 256
+        // spans) has to prefer the cluster, which is what puts it past the
+        // preamble.
+        let text = format!(
+            "PREAMBLE {}DENSE",
+            "word xxxxxxxxxx ".repeat(260) + "word word word "
+        );
+        let chars: Vec<char> = text.chars().collect();
+        let needle: Vec<char> = "word".chars().collect();
+        let mut spans = Vec::new();
+        let mut i = 0;
+        while i + needle.len() <= chars.len() {
+            if chars[i..i + needle.len()] == needle[..] {
+                spans.push(json!([i, i + needle.len()]));
+                i += needle.len();
+            } else {
+                i += 1;
+            }
+        }
+        assert!(spans.len() > 256, "{}", spans.len());
+        let out = call(
+            "SNIPPET",
+            &[
+                json!({"doc": {"body": text}, "field": "body", "spans": spans}),
+                json!(12),
+            ],
+        )
+        .as_str()
+        .unwrap()
+        .to_string();
+        assert!(out.contains("word"), "{out}");
+        assert!(!out.contains("PREAMBLE"), "{out}");
     }
 }

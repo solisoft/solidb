@@ -302,6 +302,96 @@ pub fn tokenize_folded(text: &str, fold: bool) -> Vec<String> {
     }
 }
 
+/// One word of [`tokenize_folded`], located in the original text.
+///
+/// `start` is inclusive and `end` exclusive, both counted in Unicode scalar
+/// values. `term` is the indexed form (lowercased, accents folded when asked).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenSpan {
+    pub term: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// [`tokenize_folded`] with the original-text range of each term.
+///
+/// Scoring keeps using [`tokenize_folded`] for the term strings, and keeps
+/// these offsets only when the two agree, so a span can never change a BM25
+/// score. Offsets are into `text`, not into the folded string: `ß` folds to
+/// `ss` and stays one character wide.
+pub fn tokenize_spans(text: &str, fold: bool) -> Vec<TokenSpan> {
+    let mut folded = String::with_capacity(text.len());
+    let mut origin = Vec::with_capacity(text.chars().count());
+    for (i, c) in text.chars().enumerate() {
+        let before = folded.len();
+        if fold {
+            push_fold_char(&mut folded, c);
+        } else {
+            folded.push(c);
+        }
+        for _ in folded[before..].chars() {
+            origin.push(i);
+        }
+    }
+
+    // `str::to_lowercase` is what `normalize_text` uses, including the
+    // context-sensitive final sigma. Per-char lowercasing has the same length
+    // for that case, so the origins still line up and the characters come
+    // from the whole-string fold.
+    let (lower, lower_origin) = lowercase_mapped(&folded, &origin);
+
+    let mut out = Vec::new();
+    let mut term = String::new();
+    let mut start = None;
+    let mut end = 0usize;
+    for (ch, orig) in lower.chars().zip(lower_origin) {
+        if ch.is_whitespace() {
+            if let Some(s) = start.take() {
+                out.push(TokenSpan {
+                    term: std::mem::take(&mut term),
+                    start: s,
+                    end,
+                });
+            }
+        } else if ch.is_alphanumeric() {
+            // Punctuation is dropped rather than turned into a gap, so
+            // "hello,world" is one term and the span covers the comma.
+            if start.is_none() {
+                start = Some(orig);
+            }
+            term.push(ch);
+            end = orig + 1;
+        }
+    }
+    if let Some(s) = start {
+        out.push(TokenSpan {
+            term,
+            start: s,
+            end,
+        });
+    }
+    out
+}
+
+/// Whole-string lowercase, with each output character mapped back to an
+/// entry of `origin` (one entry per input character).
+fn lowercase_mapped(s: &str, origin: &[usize]) -> (String, Vec<usize>) {
+    let mut per = String::with_capacity(s.len());
+    let mut per_origin = Vec::with_capacity(origin.len());
+    for (i, c) in s.chars().enumerate() {
+        for ch in c.to_lowercase() {
+            per.push(ch);
+            per_origin.push(origin[i]);
+        }
+    }
+    let full = s.to_lowercase();
+    if full.chars().count() == per_origin.len() {
+        (full, per_origin)
+    } else {
+        (per, per_origin)
+    }
+}
+
 /// Latin letters folded to their unaccented form — `é` → `e`,
 /// `Ç` → `C`, `ß` → `ss`, `Œ` → `OE` — keeping case, and combining accents
 /// dropped. Other scripts are left alone (unlike `SLUGIFY`, which
@@ -313,25 +403,30 @@ pub fn fold_accents(s: &str) -> String {
     }
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
-        let cp = c as u32;
-        let combining = matches!(
-            cp,
-            0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
-        );
-        if combining {
-            continue;
-        }
-        let latin = matches!(
-            cp,
-            0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F | 0x1E00..=0x1EFF
-                | 0x2C60..=0x2C7F | 0xA720..=0xA7FF
-        );
-        match latin.then(|| deunicode::deunicode_char(c)).flatten() {
-            Some(folded) if !folded.is_empty() => out.push_str(folded),
-            _ => out.push(c),
-        }
+        push_fold_char(&mut out, c);
     }
     out
+}
+
+/// One character of [`fold_accents`]. A combining mark appends nothing.
+fn push_fold_char(out: &mut String, c: char) {
+    let cp = c as u32;
+    let combining = matches!(
+        cp,
+        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
+    );
+    if combining {
+        return;
+    }
+    let latin = matches!(
+        cp,
+        0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F | 0x1E00..=0x1EFF | 0x2C60..=0x2C7F
+            | 0xA720..=0xA7FF
+    );
+    match latin.then(|| deunicode::deunicode_char(c)).flatten() {
+        Some(folded) if !folded.is_empty() => out.push_str(folded),
+        _ => out.push(c),
+    }
 }
 
 /// Longest input, in characters, that Levenshtein distance is computed for
@@ -495,12 +590,23 @@ pub fn fuzzy_edits_for(len: usize, max_distance: usize) -> usize {
     auto.min(max_distance)
 }
 
-/// Fulltext search result with scoring
+/// Fulltext search result with scoring.
+///
+/// `field` and `spans` are filled while the document is scored. They are not
+/// stored in the index: postings stay `ft_term:<index>:<term>:<doc_key>`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FulltextMatch {
     pub doc_key: String,
     pub score: f64,
     pub matched_terms: Vec<String>,
+    /// Indexed field the score came from.
+    #[serde(default)]
+    pub field: String,
+    /// `[start, end)` char offsets, in `field`'s text, of the tokens that
+    /// matched a query term exactly or within the fuzzy distance. Empty when
+    /// the span walk did not reproduce the terms used for the score.
+    #[serde(default)]
+    pub spans: Vec<(usize, usize)>,
 }
 
 /// Custom deserializer for backward compatibility with single 'field'
@@ -765,6 +871,62 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_spans_match_tokenize_folded() {
+        let samples = [
+            "",
+            "   ",
+            "plain ascii",
+            "MIXED Case",
+            "hello,world",
+            "hello, world",
+            "foo-bar baz",
+            "Crème brûlée, Hélène!",
+            "Straße Œuvre Øre",
+            "e\u{0301}cole",
+            "e\u{0301} cole",
+            "a:b ǀ c",
+            "İstanbul",
+            "ß",
+            "préambule réplication",
+            "ΣΟΣ ΟΔΥΣΣΕΥΣ",
+            "Москва 東京",
+        ];
+        for &text in &samples {
+            for fold in [false, true] {
+                let terms = tokenize_folded(text, fold);
+                let spans = tokenize_spans(text, fold);
+                let got: Vec<&str> = spans.iter().map(|s| s.term.as_str()).collect();
+                let want: Vec<&str> = terms.iter().map(String::as_str).collect();
+                assert_eq!(got, want, "{text:?} fold={fold}");
+                let chars: Vec<char> = text.chars().collect();
+                for span in &spans {
+                    assert!(span.start < span.end && span.end <= chars.len(), "{span:?}");
+                }
+            }
+        }
+
+        let text = "xxxx Hélène yyyy";
+        let chars: Vec<char> = text.chars().collect();
+        let folded = tokenize_spans(text, true);
+        let helene = folded.iter().find(|s| s.term == "helene").unwrap();
+        assert_eq!(
+            chars[helene.start..helene.end].iter().collect::<String>(),
+            "Hélène"
+        );
+
+        let sharp = tokenize_spans("Straße", true);
+        assert_eq!(sharp[0].term, "strasse");
+        assert_eq!(sharp[0].end - sharp[0].start, "Straße".chars().count());
+
+        // A comma is not a gap: one term, and the span covers it.
+        let joined = tokenize_spans("hello,world", false);
+        assert_eq!(joined.len(), 1);
+        assert_eq!(joined[0].term, "helloworld");
+        assert_eq!(joined[0].start, 0);
+        assert_eq!(joined[0].end, "hello,world".chars().count());
+    }
+
+    #[test]
     fn test_extract_field_value_simple() {
         let doc = json!({"name": "Alice", "age": 30});
 
@@ -793,6 +955,8 @@ mod tests {
             doc_key: "doc1".to_string(),
             score: 2.5,
             matched_terms: vec!["hello".to_string()],
+            field: "body".to_string(),
+            spans: vec![(0, 5)],
         };
 
         assert_eq!(match_result.doc_key, "doc1");

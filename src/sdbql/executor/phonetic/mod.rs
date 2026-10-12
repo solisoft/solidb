@@ -48,7 +48,14 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     }
     if matches!(
         name,
-        "HIGHLIGHT" | "SLUGIFY" | "SANITIZE" | "IS_EMAIL" | "IS_URL" | "IS_UUID" | "IS_BLANK"
+        "HIGHLIGHT"
+            | "SNIPPET"
+            | "SLUGIFY"
+            | "SANITIZE"
+            | "IS_EMAIL"
+            | "IS_URL"
+            | "IS_UUID"
+            | "IS_BLANK"
     ) {
         return string::evaluate(name, args);
     }

@@ -13,6 +13,14 @@
   `SORT` keeps the nearest. `EXPLAIN` reports the access as `geo_near` and
   names the index. A row policy still hides documents the caller must not see.
 
+* **`SNIPPET(hit, width)`.** A passage of `width` characters from a
+  `FULLTEXT` or `SEARCH_INDEX` hit, cut around the words that matched
+  rather than taken from the start of the field. The offsets are recorded
+  while the document is scored, so an existing fulltext index needs no
+  rebuild. A fuzzy match shows the stored word. The whole field is returned
+  when it is shorter than `width`. Hits now carry `field` and `spans`
+  (`[[start, end], …]`, character offsets in that field).
+
 ### Changed
 
 * **Fulltext results are ranked with BM25.** A hit scored +10 per

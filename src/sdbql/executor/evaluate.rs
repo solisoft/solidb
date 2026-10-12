@@ -466,6 +466,8 @@ impl<'a> QueryExecutor<'a> {
                     obj.insert("doc".to_string(), doc);
                     obj.insert("score".to_string(), json!(score));
                     obj.insert("matched".to_string(), json!(m.matched_terms));
+                    obj.insert("field".to_string(), json!(m.field));
+                    obj.insert("spans".to_string(), json!(m.spans));
                     results.push((score, Value::Object(obj)));
                 }
                 results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));

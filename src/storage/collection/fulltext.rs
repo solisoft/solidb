@@ -2,7 +2,7 @@ use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{
     calculate_idf, extract_field_value, fuzzy_edits_for, generate_ngrams, levenshtein_distance,
-    tokenize_folded, FulltextMatch, BM25_B, BM25_K1,
+    tokenize_folded, tokenize_spans, FulltextMatch, BM25_B, BM25_K1,
 };
 use rust_rocksdb::WriteBatch;
 use serde_json::Value;
@@ -421,11 +421,15 @@ impl Collection {
 
         // 5. First pass: per candidate field, its length and how often each
         // query term occurs in it. BM25 needs the average length before any
-        // score can be computed.
+        // score can be computed. Term strings come from `tokenize_folded`;
+        // the span walk only supplies offsets, and only when it emits the
+        // same terms, so a snippet cannot move a score.
         struct FieldStats {
+            name: String,
             len: usize,
             /// (index position, query term position, exact tf, fuzzy tf)
             hits: Vec<(usize, usize, usize, usize)>,
+            spans: Vec<(usize, usize)>,
         }
         let mut stats: Vec<(String, Vec<FieldStats>)> = Vec::with_capacity(ranked.len());
         let (mut len_sum, mut len_count) = (0usize, 0usize);
@@ -445,30 +449,49 @@ impl Collection {
                         continue;
                     };
                     let doc_terms = tokenize_folded(text, index.fold_accents);
+                    let located = tokenize_spans(text, index.fold_accents);
+                    let spans_ok = located.len() == doc_terms.len()
+                        && located
+                            .iter()
+                            .zip(&doc_terms)
+                            .all(|(span, term)| span.term == *term);
                     len_sum += doc_terms.len();
                     len_count += 1;
                     let mut hits = Vec::new();
+                    let mut spans = Vec::new();
                     for (qx, q_term) in index_terms.iter().enumerate() {
                         let q_len = q_term.chars().count();
                         let edits = fuzzy_edits_for(q_len, max_distance);
                         let (mut exact, mut fuzzy) = (0, 0);
-                        for d_term in &doc_terms {
-                            if d_term == q_term {
+                        for (ti, d_term) in doc_terms.iter().enumerate() {
+                            let matched_token = if d_term == q_term {
                                 exact += 1;
+                                true
                             } else if edits > 0
                                 && q_len.abs_diff(d_term.chars().count()) <= edits
                                 && levenshtein_distance(q_term, d_term) <= edits
                             {
                                 fuzzy += 1;
+                                true
+                            } else {
+                                false
+                            };
+                            if matched_token && spans_ok {
+                                let span = &located[ti];
+                                spans.push((span.start, span.end));
                             }
                         }
                         if exact + fuzzy > 0 {
                             hits.push((ix, qx, exact, fuzzy));
                         }
                     }
+                    spans.sort_unstable();
+                    spans.dedup();
                     fields_stats.push(FieldStats {
+                        name: field.clone(),
                         len: doc_terms.len(),
                         hits,
+                        spans,
                     });
                 }
             }
@@ -480,10 +503,17 @@ impl Collection {
             1.0
         };
 
-        // 6. Second pass: BM25 of each field, best field wins.
+        // 6. Second pass: BM25 of each field, best field wins. An equal
+        // score keeps the first field, as it did before spans existed.
+        struct BestField {
+            score: f64,
+            matched: Vec<String>,
+            field: String,
+            spans: Vec<(usize, usize)>,
+        }
         let mut matches = Vec::new();
         for (doc_key, fields_stats) in stats {
-            let mut best: Option<(f64, Vec<String>)> = None;
+            let mut best: Option<BestField> = None;
             for field in fields_stats {
                 let norm = BM25_K1 * (1.0 - BM25_B + BM25_B * field.len as f64 / avg_len);
                 let mut score = 0.0;
@@ -500,15 +530,22 @@ impl Collection {
                     score += idf * tf * (BM25_K1 + 1.0) / (tf + norm);
                     matched.push(term.clone());
                 }
-                if score > 0.0 && best.as_ref().is_none_or(|(s, _)| score > *s) {
-                    best = Some((score, matched));
+                if score > 0.0 && best.as_ref().is_none_or(|b| score > b.score) {
+                    best = Some(BestField {
+                        score,
+                        matched,
+                        field: field.name,
+                        spans: field.spans,
+                    });
                 }
             }
-            if let Some((score, matched_terms)) = best {
+            if let Some(best) = best {
                 matches.push(FulltextMatch {
                     doc_key,
-                    score,
-                    matched_terms,
+                    score: best.score,
+                    matched_terms: best.matched,
+                    field: best.field,
+                    spans: best.spans,
                 });
             }
         }

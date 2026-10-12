@@ -254,6 +254,8 @@ impl<'a> QueryExecutor<'a> {
                 "doc": doc,
                 "score": h.score,
                 "terms": h.matched_terms,
+                "field": h.field,
+                "spans": h.spans,
             }));
         }
         Ok(Value::Array(out))
