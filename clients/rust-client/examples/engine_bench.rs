@@ -181,6 +181,25 @@ async fn main() {
         .create_index(DB, COLL, "by_n", vec!["n".into()], false, false)
         .await
         .expect("index n");
+    // For the SDBQL phases: a small collection to join against, and one
+    // to insert into.
+    for name in ["engine_bench_groups", "engine_bench_ins"] {
+        admin.delete_collection(DB, name).await.ok();
+        admin
+            .create_collection(DB, name, None)
+            .await
+            .expect("create collection");
+    }
+    admin
+        .bulk_insert(
+            DB,
+            "engine_bench_groups",
+            (0..1000u64)
+                .map(|g| json!({"_key": format!("g{g}"), "label": format!("group {g}"), "tier": g % 7}))
+                .collect(),
+        )
+        .await
+        .expect("groups");
 
     // One connection per worker, opened one at a time before any load and
     // kept for every phase.
@@ -303,4 +322,69 @@ async fn main() {
         },
     )
     .await;
+
+    // SDBQL, query cache off. Each query runs once first, so a broken one
+    // stops the run instead of reporting zero operations. Heavy ones (a
+    // scan or an aggregate over many documents) run on 8 connections.
+    type Binder = fn(&mut Rng, u64) -> HashMap<String, Value>;
+    let key: Binder =
+        |r, docs| HashMap::from([("k".to_string(), json!(format!("d{}", r.below(docs))))]);
+    let group: Binder = |r, _| HashMap::from([("g".to_string(), json!(r.below(1000)))]);
+    let score: Binder = |r, _| HashMap::from([("s".to_string(), json!(r.below(10_000)))]);
+    let lo: Binder = |r, docs| {
+        HashMap::from([(
+            "lo".to_string(),
+            json!(docs.saturating_sub(100_000) + r.below(1000)),
+        )])
+    };
+    let update: Binder = |r, docs| {
+        HashMap::from([
+            ("k".to_string(), json!(format!("d{}", r.below(docs)))),
+            ("s".to_string(), json!(r.below(10_000))),
+        ])
+    };
+    let insert: Binder = |r, _| HashMap::from([("n".to_string(), json!(r.next() % 1_000_000_000))]);
+    let none: Binder = |_, _| HashMap::new();
+    let queries: Vec<(&str, &str, Binder, bool)> = vec![
+        ("q_key", "FOR d IN engine_bench FILTER d._key == @k RETURN d", key, false),
+        ("q_eq_limit", "FOR d IN engine_bench FILTER d.group == @g LIMIT 10 RETURN d", group, false),
+        ("q_eq_count", "FOR d IN engine_bench FILTER d.group == @g COLLECT WITH COUNT INTO n RETURN n", group, false),
+        ("q_eq_project", "FOR d IN engine_bench FILTER d.group == @g RETURN {name: d.name, score: d.score}", group, false),
+        ("q_sort_limit", "FOR d IN engine_bench SORT d.n DESC LIMIT 10 RETURN d", none, false),
+        ("q_join", "FOR d IN engine_bench FILTER d.group == @g LIMIT 20 LET label = FIRST(FOR x IN engine_bench_groups FILTER x._key == CONCAT('g', d.group) RETURN x.label) RETURN {name: d.name, label}", group, false),
+        ("q_raw_first100", "FOR v IN engine_bench LIMIT 100 RETURN v", none, false),
+        ("q_update", "FOR d IN engine_bench FILTER d._key == @k UPDATE d WITH {score: @s} IN engine_bench RETURN NEW._key", update, false),
+        ("q_insert", "INSERT {n: @n, name: 'inserted', tags: ['x']} INTO engine_bench_ins RETURN NEW._key", insert, false),
+        ("q_scan_filter", "FOR d IN engine_bench FILTER d.score == @s LIMIT 5 RETURN d._key", score, true),
+        ("q_collect_100k", "FOR d IN engine_bench FILTER d.n >= @lo COLLECT t = d.tags[2] WITH COUNT INTO n RETURN {t, n}", lo, true),
+    ];
+    for (name, sdbql, bind, heavy) in queries {
+        if let Ok(only) = std::env::var("PHASES") {
+            if !only.split(',').any(|p| p.trim() == name) {
+                continue;
+            }
+        }
+        let mut probe = Rng(42);
+        let rows = pool[0]
+            .query_with_cache(DB, sdbql, Some(bind(&mut probe, docs)), false)
+            .await
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        eprintln!("{name}: {} rows on a probe run", rows.len());
+        let mut few: Vec<SoliDBClient> = if heavy {
+            pool.drain(..pool.len().min(8)).collect()
+        } else {
+            Vec::new()
+        };
+        let clients = if heavy { &mut few } else { &mut pool };
+        timed(name, clients, secs, move |mut c, mut r| async move {
+            let vars = bind(&mut r, docs);
+            let ok = c
+                .query_with_cache(DB, sdbql, Some(vars), false)
+                .await
+                .is_ok();
+            (c, r, ok)
+        })
+        .await;
+        pool.extend(few);
+    }
 }
