@@ -43,12 +43,25 @@ fn doc(i: u64) -> Value {
     })
 }
 
+/// Connect, retrying: a server under load drops connections it cannot
+/// dispatch in time ("driver dispatch channel full").
 async fn connect(addr: &str, password: &str) -> SoliDBClient {
-    SoliDBClientBuilder::new(addr)
-        .auth(DB, "admin", password)
-        .build()
-        .await
-        .expect("connect")
+    let mut attempt = 0;
+    loop {
+        match SoliDBClientBuilder::new(addr)
+            .auth(DB, "admin", password)
+            .build()
+            .await
+        {
+            Ok(client) => return client,
+            Err(e) if attempt < 50 => {
+                attempt += 1;
+                eprintln!("connect attempt {attempt}: {e}");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(e) => panic!("connect: {e}"),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -85,9 +98,9 @@ fn report(phase: &str, elapsed: Duration, mut lat: Vec<u32>) {
     );
 }
 
-/// Run `op` on every worker until `secs` have passed; each worker gets its
-/// own connection and random stream.
-async fn timed<F, Fut>(phase: &str, addr: &str, password: &str, workers: usize, secs: u64, op: F)
+/// Run `op` on every pooled connection until `secs` have passed; each
+/// worker keeps its own random stream. The connections go back to the pool.
+async fn timed<F, Fut>(phase: &str, pool: &mut Vec<SoliDBClient>, secs: u64, op: F)
 where
     F: Fn(SoliDBClient, Rng) -> Fut + Send + Sync + Clone + 'static,
     Fut: std::future::Future<Output = (SoliDBClient, Rng, bool)> + Send,
@@ -96,11 +109,9 @@ where
     let errors = Arc::new(AtomicU64::new(0));
     let start = Instant::now();
     let mut handles = Vec::new();
-    for w in 0..workers {
-        let (addr, password) = (addr.to_string(), password.to_string());
+    for (w, mut client) in pool.drain(..).enumerate() {
         let (stop, errors, op) = (stop.clone(), errors.clone(), op.clone());
         handles.push(tokio::spawn(async move {
-            let mut client = connect(&addr, &password).await;
             let mut rng = Rng(0x9e37_79b9_7f4a_7c15 ^ ((w as u64 + 1) << 32));
             let mut lat = Latencies::default();
             while !stop.load(Ordering::Relaxed) {
@@ -114,14 +125,16 @@ where
                     errors.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            lat.0
+            (client, lat.0)
         }));
     }
     tokio::time::sleep(Duration::from_secs(secs)).await;
     stop.store(true, Ordering::Relaxed);
     let mut all = Vec::new();
     for h in handles {
-        all.extend(h.await.unwrap());
+        let (client, lat) = h.await.unwrap();
+        pool.push(client);
+        all.extend(lat);
     }
     let elapsed = start.elapsed();
     let errors = errors.load(Ordering::Relaxed);
@@ -161,14 +174,20 @@ async fn main() {
         .await
         .expect("index n");
 
+    // One connection per worker, opened one at a time before any load and
+    // kept for every phase.
+    let mut pool = Vec::with_capacity(workers);
+    for _ in 0..workers {
+        pool.push(connect(&addr, &password).await);
+    }
+
     // Load: every worker inserts its share of documents, one per request.
     {
         let start = Instant::now();
         let mut handles = Vec::new();
-        for w in 0..workers as u64 {
-            let (addr, password) = (addr.clone(), password.clone());
+        for (w, mut client) in pool.drain(..).enumerate() {
+            let w = w as u64;
             handles.push(tokio::spawn(async move {
-                let mut client = connect(&addr, &password).await;
                 let mut lat = Latencies::default();
                 let mut i = w;
                 while i < docs {
@@ -180,53 +199,39 @@ async fn main() {
                     lat.record(t);
                     i += workers as u64;
                 }
-                lat.0
+                (client, lat.0)
             }));
         }
         let mut all = Vec::new();
         for h in handles {
-            all.extend(h.await.unwrap());
+            let (client, lat) = h.await.unwrap();
+            pool.push(client);
+            all.extend(lat);
         }
         report("insert", start.elapsed(), all);
     }
 
-    timed(
-        "get",
-        &addr,
-        &password,
-        workers,
-        secs,
-        move |mut c, mut r| async move {
-            let key = format!("d{}", r.below(docs));
-            let ok = c.get(DB, COLL, &key).await.is_ok();
-            (c, r, ok)
-        },
-    )
+    timed("get", &mut pool, secs, move |mut c, mut r| async move {
+        let key = format!("d{}", r.below(docs));
+        let ok = c.get(DB, COLL, &key).await.is_ok();
+        (c, r, ok)
+    })
     .await;
 
-    timed(
-        "update",
-        &addr,
-        &password,
-        workers,
-        secs,
-        move |mut c, mut r| async move {
-            let key = format!("d{}", r.below(docs));
-            let score = r.below(10_000);
-            let ok = c
-                .update(DB, COLL, &key, json!({ "score": score }), true)
-                .await
-                .is_ok();
-            (c, r, ok)
-        },
-    )
+    timed("update", &mut pool, secs, move |mut c, mut r| async move {
+        let key = format!("d{}", r.below(docs));
+        let score = r.below(10_000);
+        let ok = c
+            .update(DB, COLL, &key, json!({ "score": score }), true)
+            .await
+            .is_ok();
+        (c, r, ok)
+    })
     .await;
 
     timed(
         "query_index",
-        &addr,
-        &password,
-        workers,
+        &mut pool,
         secs,
         move |mut c, mut r| async move {
             let mut vars = HashMap::new();
@@ -251,9 +256,7 @@ async fn main() {
     // query walks at most 2,000 index entries and returns 100 documents.
     timed(
         "query_range",
-        &addr,
-        &password,
-        workers,
+        &mut pool,
         secs,
         move |mut c, mut r| async move {
             let tail = docs.min(2_000);
@@ -277,9 +280,7 @@ async fn main() {
 
     timed(
         "mixed_90_10",
-        &addr,
-        &password,
-        workers,
+        &mut pool,
         secs,
         move |mut c, mut r| async move {
             let key = format!("d{}", r.below(docs));
