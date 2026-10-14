@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use crate::storage::keyspace::KsDbExt;
-use rust_rocksdb::{Direction, IteratorMode};
+use crate::storage::kv::{Direction, IterMode};
 use serde_json::Value;
 
 use super::types::{Context, IndexableCondition};
@@ -133,7 +133,7 @@ fn index_prefix_scan(
     let db = &collection.db;
     let cf = collection.ks.handle(db)?;
     let mut doc_keys: Vec<Vec<u8>> = Vec::new();
-    let iter = db.iterator_ks(&cf, IteratorMode::From(lo.as_bytes(), Direction::Forward));
+    let iter = db.iterator_ks(&cf, IterMode::From(lo.as_bytes(), Direction::Forward));
     for (k, v) in iter.flatten() {
         if !k.starts_with(base.as_bytes()) || k.as_ref() >= hi.as_bytes() {
             break;

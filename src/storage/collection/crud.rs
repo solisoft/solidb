@@ -1,9 +1,10 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::kv::{Direction, IterMode, KvReadOptions};
 use crate::storage::serializer::{
     deserialize_doc, deserialize_doc_as_value, deserialize_doc_projected, serialize_doc,
 };
-use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
+use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
@@ -1142,8 +1143,7 @@ impl Collection {
         let requested = limit
             .map(|n| n.saturating_add(offset))
             .map(|n| n.min(self.count()));
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match requested {
             Some(n) if n <= 10 => 0,          // Small reads: no readahead
             Some(n) if n <= 100 => 16 * 1024, // Medium: 16KB
@@ -1153,11 +1153,7 @@ impl Collection {
             read_opts.set_readahead_size(readahead);
         }
 
-        let iter = db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter = db.iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
 
         // `limit` is often a safety ceiling rather than an expected size: the
         // executor passes `SOLIDB_MAX_INTERMEDIATE_ROWS + 1` (5,000,001) on
@@ -1201,8 +1197,7 @@ impl Collection {
             return Vec::new();
         };
         let prefix = DOC_PREFIX.as_bytes();
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match limit.map(|n| n.min(self.count())) {
             Some(n) if n <= 10 => 0,
             Some(n) if n <= 100 => 16 * 1024,
@@ -1211,11 +1206,9 @@ impl Collection {
         if readahead > 0 {
             read_opts.set_readahead_size(readahead);
         }
-        let iter = self.db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter =
+            self.db
+                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
         let mut results = Vec::with_capacity(limit.map_or(128, |n| n.min(1024)));
         for (key, value) in iter.flatten() {
             if !key.starts_with(prefix) {
@@ -1252,8 +1245,7 @@ impl Collection {
             return Ok(Some((0, out)));
         };
         let prefix = DOC_PREFIX.as_bytes();
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match limit.map(|n| n.saturating_add(offset).min(self.count())) {
             Some(n) if n <= 10 => 0,
             Some(n) if n <= 100 => 16 * 1024,
@@ -1262,11 +1254,9 @@ impl Collection {
         if readahead > 0 {
             read_opts.set_readahead_size(readahead);
         }
-        let iter = self.db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter =
+            self.db
+                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
         let mut skipped = 0usize;
         let mut rows = 0usize;
         for (key, value) in iter.flatten() {

@@ -25,13 +25,11 @@
 //! still cannot walk into the next collection.
 
 use crate::error::{DbError, DbResult};
+use crate::storage::kv::{Direction, IterMode, KvError, KvPinned, KvReadOptions};
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use rust_rocksdb::{
-    BoundColumnFamily, DBPinnableSlice, Direction, Error as RocksError, IteratorMode, ReadOptions,
-    WriteBatch,
-};
+use rust_rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteBatch};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -322,22 +320,21 @@ impl KsCf<'_> {
     }
 }
 
-/// Iterator over one keyspace yielding logical (prefix-stripped) keys, with the
-/// same item type as RocksDB's own iterator.
+/// Iterator over one keyspace yielding logical (prefix-stripped) keys.
 pub struct KsIter<'a> {
     inner: rust_rocksdb::DBIteratorWithThreadMode<'a, DB>,
     prefix: KsPrefix,
 }
 
 impl Iterator for KsIter<'_> {
-    type Item = Result<(Box<[u8]>, Box<[u8]>), RocksError>;
+    type Item = Result<(Box<[u8]>, Box<[u8]>), KvError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let prefix = self.prefix;
         self.inner
             .next()
-            .map(|r| r.map(|(k, v)| (prefix.strip(k), v)))
+            .map(|r| r.map(|(k, v)| (prefix.strip(k), v)).map_err(KvError::from))
     }
 }
 
@@ -361,65 +358,67 @@ fn bounded_opts(prefix: KsPrefix, lower: Option<&[u8]>, upper: Option<&[u8]>) ->
 
 /// `*_cf` operations of `DBWithThreadMode`, through a keyspace.
 pub trait KsDbExt {
-    fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, RocksError>;
+    fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, KvError>;
     fn get_pinned_ks<K: AsRef<[u8]>>(
         &self,
         cf: &KsCf,
         key: K,
-    ) -> Result<Option<DBPinnableSlice<'_>>, RocksError>;
+    ) -> Result<Option<KvPinned<'_>>, KvError>;
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
         cf: &KsCf,
         key: K,
         value: V,
-    ) -> Result<(), RocksError>;
-    fn delete_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<(), RocksError>;
+    ) -> Result<(), KvError>;
+    fn delete_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<(), KvError>;
     fn multi_get_ks<K: AsRef<[u8]>, I: IntoIterator<Item = K>>(
         &self,
         cf: &KsCf,
         keys: I,
-    ) -> Vec<Result<Option<Vec<u8>>, RocksError>>;
+    ) -> Vec<Result<Option<Vec<u8>>, KvError>>;
     /// Seek to the logical `prefix` and iterate forward to the end of the
     /// keyspace (like `prefix_iterator_cf` without a prefix extractor: the
     /// caller stops when keys no longer start with `prefix`).
     fn prefix_iterator_ks<P: AsRef<[u8]>>(&self, cf: &KsCf, prefix: P) -> KsIter<'_>;
     /// `iterator_cf`, bounded to the keyspace. `From` keys are logical.
-    fn iterator_ks(&self, cf: &KsCf, mode: IteratorMode) -> KsIter<'_>;
+    fn iterator_ks(&self, cf: &KsCf, mode: IterMode) -> KsIter<'_>;
     /// `iterator_ks` with extra logical bounds (`lower` inclusive, `upper`
     /// exclusive) — the replacement for `iterator_cf_opt` with
     /// `set_iterate_*_bound`.
     fn iterator_ks_bounded(
         &self,
         cf: &KsCf,
-        mode: IteratorMode,
+        mode: IterMode,
         lower: Option<&[u8]>,
         upper: Option<&[u8]>,
     ) -> KsIter<'_>;
     /// `iterator_cf_opt`: the caller's read options (readahead, …) with the
     /// keyspace bounds added. Do not set iterate bounds on `opts` — they would
     /// be physical; use [`KsDbExt::iterator_ks_bounded`] for logical bounds.
-    fn iterator_ks_opt(&self, cf: &KsCf, opts: ReadOptions, mode: IteratorMode) -> KsIter<'_>;
+    fn iterator_ks_opt(&self, cf: &KsCf, opts: KvReadOptions, mode: IterMode) -> KsIter<'_>;
     /// Compact `[start, end)` (logical); `None` means the keyspace edge.
     fn compact_range_ks(&self, cf: &KsCf, start: Option<&[u8]>, end: Option<&[u8]>);
 }
 
 impl KsDbExt for DB {
-    fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, RocksError> {
+    fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, KvError> {
         if cf.prefix.is_legacy() {
-            return self.get_cf(&cf.cf, key);
+            return Ok(self.get_cf(&cf.cf, key)?);
         }
-        self.get_cf(&cf.cf, cf.key(key.as_ref()))
+        Ok(self.get_cf(&cf.cf, cf.key(key.as_ref()))?)
     }
 
     fn get_pinned_ks<K: AsRef<[u8]>>(
         &self,
         cf: &KsCf,
         key: K,
-    ) -> Result<Option<DBPinnableSlice<'_>>, RocksError> {
-        if cf.prefix.is_legacy() {
-            return self.get_pinned_cf(&cf.cf, key);
-        }
-        self.get_pinned_cf(&cf.cf, cf.key(key.as_ref()))
+    ) -> Result<Option<KvPinned<'_>>, KvError> {
+        let found = if cf.prefix.is_legacy() {
+            self.get_pinned_cf(&cf.cf, key)?
+        } else {
+            self.get_pinned_cf(&cf.cf, cf.key(key.as_ref()))?
+        };
+        Ok(found.map(KvPinned::Rocks))
     }
 
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(
@@ -427,51 +426,54 @@ impl KsDbExt for DB {
         cf: &KsCf,
         key: K,
         value: V,
-    ) -> Result<(), RocksError> {
+    ) -> Result<(), KvError> {
         if cf.prefix.is_legacy() {
-            return self.put_cf(&cf.cf, key, value);
+            return Ok(self.put_cf(&cf.cf, key, value)?);
         }
-        self.put_cf(&cf.cf, cf.key(key.as_ref()), value)
+        Ok(self.put_cf(&cf.cf, cf.key(key.as_ref()), value)?)
     }
 
-    fn delete_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<(), RocksError> {
+    fn delete_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<(), KvError> {
         if cf.prefix.is_legacy() {
-            return self.delete_cf(&cf.cf, key);
+            return Ok(self.delete_cf(&cf.cf, key)?);
         }
-        self.delete_cf(&cf.cf, cf.key(key.as_ref()))
+        Ok(self.delete_cf(&cf.cf, cf.key(key.as_ref()))?)
     }
 
     fn multi_get_ks<K: AsRef<[u8]>, I: IntoIterator<Item = K>>(
         &self,
         cf: &KsCf,
         keys: I,
-    ) -> Vec<Result<Option<Vec<u8>>, RocksError>> {
+    ) -> Vec<Result<Option<Vec<u8>>, KvError>> {
         let physical: Vec<Vec<u8>> = keys.into_iter().map(|k| cf.key(k.as_ref())).collect();
         self.multi_get_cf(physical.iter().map(|k| (&cf.cf, k)))
+            .into_iter()
+            .map(|r| r.map_err(KvError::from))
+            .collect()
     }
 
     fn prefix_iterator_ks<P: AsRef<[u8]>>(&self, cf: &KsCf, prefix: P) -> KsIter<'_> {
-        self.iterator_ks(cf, IteratorMode::From(prefix.as_ref(), Direction::Forward))
+        self.iterator_ks(cf, IterMode::From(prefix.as_ref(), Direction::Forward))
     }
 
-    fn iterator_ks(&self, cf: &KsCf, mode: IteratorMode) -> KsIter<'_> {
+    fn iterator_ks(&self, cf: &KsCf, mode: IterMode) -> KsIter<'_> {
         self.iterator_ks_bounded(cf, mode, None, None)
     }
 
     fn iterator_ks_bounded(
         &self,
         cf: &KsCf,
-        mode: IteratorMode,
+        mode: IterMode,
         lower: Option<&[u8]>,
         upper: Option<&[u8]>,
     ) -> KsIter<'_> {
         let opts = bounded_opts(cf.prefix, lower, upper);
         let inner = match mode {
-            IteratorMode::From(k, dir) => {
+            IterMode::From(k, dir) => {
                 let physical = cf.key(k);
-                self.iterator_cf_opt(&cf.cf, opts, IteratorMode::From(&physical, dir))
+                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir).to_rocks())
             }
-            other => self.iterator_cf_opt(&cf.cf, opts, other),
+            other => self.iterator_cf_opt(&cf.cf, opts, other.to_rocks()),
         };
         KsIter {
             inner,
@@ -479,17 +481,18 @@ impl KsDbExt for DB {
         }
     }
 
-    fn iterator_ks_opt(&self, cf: &KsCf, mut opts: ReadOptions, mode: IteratorMode) -> KsIter<'_> {
+    fn iterator_ks_opt(&self, cf: &KsCf, read: KvReadOptions, mode: IterMode) -> KsIter<'_> {
+        let mut opts = read.to_rocks();
         if let Some(end) = cf.prefix.upper() {
             opts.set_iterate_lower_bound(cf.prefix.as_bytes().to_vec());
             opts.set_iterate_upper_bound(end);
         }
         let inner = match mode {
-            IteratorMode::From(k, dir) => {
+            IterMode::From(k, dir) => {
                 let physical = cf.key(k);
-                self.iterator_cf_opt(&cf.cf, opts, IteratorMode::From(&physical, dir))
+                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir).to_rocks())
             }
-            other => self.iterator_cf_opt(&cf.cf, opts, other),
+            other => self.iterator_cf_opt(&cf.cf, opts, other.to_rocks()),
         };
         KsIter {
             inner,

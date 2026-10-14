@@ -1,8 +1,9 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::extract_field_value;
+use crate::storage::kv::{Direction, IterMode};
 use crate::storage::serializer::deserialize_doc;
-use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
+use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 
 use hex;
@@ -1200,7 +1201,7 @@ impl Collection {
         let mut doc_keys = Vec::new();
 
         if forward {
-            let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Forward);
+            let mode = IterMode::From(seek_key.as_bytes(), Direction::Forward);
             let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
@@ -1228,7 +1229,7 @@ impl Collection {
             // them instead — `;` is the byte after `:`, and no hex digit sits
             // between the two, so only this value's entries lie in the gap.
             let reverse_seek = format!("{}{};", prefix_base, value_str);
-            let mode = IteratorMode::From(reverse_seek.as_bytes(), Direction::Reverse);
+            let mode = IterMode::From(reverse_seek.as_bytes(), Direction::Reverse);
             let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
@@ -1482,13 +1483,13 @@ impl Collection {
             let prefix = DOC_PREFIX.as_bytes();
 
             let iter = if ascending {
-                let mode = IteratorMode::From(prefix, Direction::Forward);
+                let mode = IterMode::From(prefix, Direction::Forward);
                 db.iterator_ks(&cf, mode)
             } else {
                 // For descending, we seek past the end of the prefix
                 let mut seek_key = prefix.to_vec();
                 seek_key.push(0xFF);
-                let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+                let mode = IterMode::From(&seek_key, Direction::Reverse);
                 db.iterator_ks(&cf, mode)
             };
 
@@ -1511,12 +1512,12 @@ impl Collection {
         let prefix_bytes = prefix.as_bytes();
 
         let iter = if ascending {
-            let mode = IteratorMode::From(prefix_bytes, Direction::Forward);
+            let mode = IterMode::From(prefix_bytes, Direction::Forward);
             db.iterator_ks(&cf, mode)
         } else {
             let mut seek_key = prefix.as_bytes().to_vec();
             seek_key.push(0xFF);
-            let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+            let mode = IterMode::From(&seek_key, Direction::Reverse);
             db.iterator_ks(&cf, mode)
         };
 

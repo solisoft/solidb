@@ -17,8 +17,9 @@
 use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
 use crate::storage::keyspace::{KsBatchExt, KsCf, KsDbExt};
+use crate::storage::kv::{Direction, IterMode};
 use dashmap::DashMap;
-use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
+use rust_rocksdb::WriteBatch;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -197,7 +198,7 @@ impl Collection {
         let upper = Self::version_upper_bound(key);
         let iter = self.db.iterator_ks_bounded(
             &cf,
-            IteratorMode::From(seek.as_bytes(), Direction::Forward),
+            IterMode::From(seek.as_bytes(), Direction::Forward),
             None,
             Some(&upper),
         );
@@ -279,7 +280,7 @@ impl Collection {
         let upper = Self::version_upper_bound(key);
         let iter = self.db.iterator_ks_bounded(
             &cf,
-            IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+            IterMode::From(prefix.as_bytes(), Direction::Forward),
             None,
             Some(&upper),
         );
@@ -316,7 +317,7 @@ impl Collection {
         let upper = Self::version_upper_bound(key);
         let iter = self.db.iterator_ks_bounded(
             &cf,
-            IteratorMode::From(prefix.as_bytes(), Direction::Forward),
+            IterMode::From(prefix.as_bytes(), Direction::Forward),
             None,
             Some(&upper),
         );
