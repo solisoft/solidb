@@ -7,9 +7,9 @@
 //! - LZ4 compression for efficient storage
 
 use super::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
+use crate::storage::kv::KvBatch;
 use fastbloom::BloomFilter;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
-use rust_rocksdb::WriteBatch;
 
 use super::RocksDb as DB;
 use serde::{Deserialize, Serialize};
@@ -418,7 +418,7 @@ impl ColumnarCollection {
     fn stage_meta(
         &self,
         cf: &KsCf,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         meta: &ColumnarCollectionMeta,
     ) -> DbResult<()> {
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
@@ -435,7 +435,7 @@ impl ColumnarCollection {
         &self,
         db: &DB,
         cf: &KsCf,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         uuid_indexes: &mut HashMap<String, Vec<String>>,
         meta: &ColumnarCollectionMeta,
         obj: &serde_json::Map<String, Value>,
@@ -491,7 +491,7 @@ impl ColumnarCollection {
 
     fn stage_uuid_indexes(
         cf: &KsCf,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         uuid_indexes: HashMap<String, Vec<String>>,
     ) -> DbResult<()> {
         for (key, uuids) in uuid_indexes {
@@ -504,7 +504,7 @@ impl ColumnarCollection {
     /// Returns a vector of UUIDs for the inserted rows (for replication)
     ///
     /// All rows, their index entries and the updated metadata land in one
-    /// WriteBatch, so a failure part-way leaves nothing half-written.
+    /// KvBatch, so a failure part-way leaves nothing half-written.
     pub fn insert_rows(&self, rows: Vec<Value>) -> DbResult<Vec<String>> {
         if rows.is_empty() {
             return Ok(Vec::new());
@@ -522,7 +522,7 @@ impl ColumnarCollection {
         })?;
         self.refresh_meta(db, &cf, &mut meta);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut uuid_indexes = HashMap::new();
         let mut inserted_ids = Vec::new();
 
@@ -585,7 +585,7 @@ impl ColumnarCollection {
         }
 
         if let Value::Object(obj) = &row {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             let mut uuid_indexes = HashMap::new();
             self.stage_row(
                 db,
@@ -639,7 +639,7 @@ impl ColumnarCollection {
             return Ok(false); // Doesn't exist
         }
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         // Delete column values
         for col_def in &meta.columns {
@@ -1246,7 +1246,7 @@ impl ColumnarCollection {
         // Row data, full rows and index entries. Each scan stops at the end
         // of its prefix: `col:` sorts right before `col_idx…`/`col_meta:`,
         // and an unbounded walk used to delete the schema along with the data.
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         for prefix in [
             COL_DATA_PREFIX,
             COL_ROW_PREFIX,

@@ -1,10 +1,10 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::kv::KvBatch;
 use crate::storage::serializer::serialize_doc;
 use crate::transaction::lock_manager::LockManager;
 use crate::transaction::wal::WalWriter;
 use crate::transaction::{Operation, Transaction, TransactionId};
-use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid;
@@ -226,7 +226,7 @@ impl Collection {
     /// collection into one batch.
     pub fn apply_transaction_operations(&self, operations: Vec<Operation>) -> DbResult<()> {
         let _guards = self.lock_for_transaction(&operations);
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let staged = self.stage_transaction_operations(&operations, &mut batch)?;
         self.db.write(&batch).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
@@ -276,7 +276,7 @@ impl Collection {
     pub(crate) fn stage_transaction_operations(
         &self,
         operations: &[Operation],
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
     ) -> DbResult<StagedTransaction> {
         let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(

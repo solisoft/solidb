@@ -3,7 +3,7 @@
 //!
 //! Run: cargo run --release --example cf_perf_probe
 
-use solidb::storage::{RocksDb, StorageEngine};
+use solidb::storage::StorageEngine;
 use std::time::Instant;
 
 fn main() {
@@ -50,7 +50,7 @@ fn main() {
     let start = Instant::now();
     let mut n = 0;
     for _ in 0..200 {
-        n = RocksDb::list_cf(&rust_rocksdb::Options::default(), &dir)
+        n = solidb::storage::kv::RawRocks::list_cf(&rust_rocksdb::Options::default(), &dir)
             .unwrap_or_default()
             .len();
     }

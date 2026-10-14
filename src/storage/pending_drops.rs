@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::storage::kv::KvBatch;
 use dashmap::DashMap;
-use rust_rocksdb::WriteBatch;
 
 use super::engine::META_CF;
 use super::RocksDb as DB;
@@ -146,7 +146,7 @@ impl PendingCfDrops {
             .cf_handle(META_CF)
             .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         batch.delete_cf(&meta_cf, db_meta_key.as_bytes());
         for cf in cfs {
             batch.put_cf(
@@ -313,7 +313,11 @@ impl PendingCfDrops {
     /// lock gets through before the next drop takes it again. A request thus
     /// waits for one drop at most, and drops hold the lock half the time at
     /// most. The flag is `false` when shutdown cut the pause short.
-    fn drop_in_background(&self, db: &DB, cf: &str) -> (Result<(), rust_rocksdb::Error>, bool) {
+    fn drop_in_background(
+        &self,
+        db: &DB,
+        cf: &str,
+    ) -> (Result<(), crate::storage::kv::KvError>, bool) {
         // Poisoned only if a drop panicked; the gate guards no data.
         let _gate = DROP_GATE
             .lock()
@@ -544,7 +548,9 @@ mod tests {
         let names: Vec<String> = (0..8).map(|i| format!("gate_test:c{i}")).collect();
         let mut families = vec![META_CF.to_string()];
         families.extend(names.iter().cloned());
-        let db = Arc::new(DB::open_cf(&opts, dir.path(), &families).unwrap());
+        let db = Arc::new(DB::from(
+            crate::storage::kv::RawRocks::open_cf(&opts, dir.path(), &families).unwrap(),
+        ));
         let registry = Arc::new(PendingCfDrops::default());
 
         let threads: Vec<_> = names

@@ -1,9 +1,9 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::extract_field_value;
+use crate::storage::kv::KvBatch;
 use crate::storage::kv::{Direction, IterMode};
 use crate::storage::serializer::deserialize_doc;
-use rust_rocksdb::WriteBatch;
 use serde_json::Value;
 
 use hex;
@@ -250,8 +250,8 @@ impl Collection {
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         let prefix = DOC_PREFIX.as_bytes();
 
-        // Use WriteBatch for atomic, high-performance index creation
-        let mut batch = WriteBatch::default();
+        // Use KvBatch for atomic, high-performance index creation
+        let mut batch = KvBatch::default();
         let mut indexed_count = 0;
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
 
@@ -296,7 +296,7 @@ impl Collection {
                 db.write(&batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to write index batch: {}", e))
                 })?;
-                batch = WriteBatch::default();
+                batch = KvBatch::default();
             }
         }
 
@@ -327,8 +327,8 @@ impl Collection {
             .handle(&self.db)
             .expect("Column family should exist");
 
-        // Use WriteBatch for atomic, high-performance index deletion
-        let mut batch = WriteBatch::default();
+        // Use KvBatch for atomic, high-performance index deletion
+        let mut batch = KvBatch::default();
         let mut deleted_count = 0;
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries
 
@@ -350,7 +350,7 @@ impl Collection {
                     db.write(&batch).map_err(|e| {
                         DbError::InternalError(format!("Failed to write drop batch: {}", e))
                     })?;
-                    batch = WriteBatch::default();
+                    batch = KvBatch::default();
                 }
             } else {
                 break;
@@ -414,7 +414,7 @@ impl Collection {
             return Ok(0);
         }
 
-        // Clear existing index entries using WriteBatch
+        // Clear existing index entries using KvBatch
         let clear_start = std::time::Instant::now();
         {
             let db = &self.db;
@@ -422,7 +422,7 @@ impl Collection {
                 .ks
                 .handle(&self.db)
                 .expect("Column family should exist");
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
 
             // Clear regular indexes
             for index in &indexes {
@@ -505,17 +505,17 @@ impl Collection {
 
         // Initialize batches for each index type
         let mut regular_batch = if !indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
         let mut geo_batch = if !geo_indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
         let mut ft_batch = if !ft_indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
@@ -553,7 +553,7 @@ impl Collection {
                             // Flush batch periodically
                             if regular_count % BATCH_SIZE_LIMIT == 0 {
                                 let _ = db.write(&*batch);
-                                *batch = WriteBatch::default();
+                                *batch = KvBatch::default();
                             }
                         }
                     }
@@ -572,7 +572,7 @@ impl Collection {
                                 // Flush batch periodically
                                 if geo_count % BATCH_SIZE_LIMIT == 0 {
                                     let _ = db.write(&*batch);
-                                    *batch = WriteBatch::default();
+                                    *batch = KvBatch::default();
                                 }
                             }
                         }
@@ -595,7 +595,7 @@ impl Collection {
                                 // Flush batch periodically (check after each field)
                                 if ft_count >= BATCH_SIZE_LIMIT {
                                     let _ = db.write(&*batch);
-                                    *batch = WriteBatch::default();
+                                    *batch = KvBatch::default();
                                     ft_count = 0;
                                 }
                             }
@@ -702,7 +702,7 @@ impl Collection {
 
         // Build regular indexes
         if !indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for index in &indexes {
@@ -733,7 +733,7 @@ impl Collection {
 
         // Build geo indexes
         if !geo_indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for geo_index in &geo_indexes {
@@ -751,7 +751,7 @@ impl Collection {
 
         // Build fulltext indexes
         if !ft_indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for ft_index in &ft_indexes {

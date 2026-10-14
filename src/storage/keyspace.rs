@@ -16,7 +16,7 @@
 //! Collection code keeps building *logical* keys (`doc:…`, `idx:…`). The
 //! `*_ks` methods here are the only place the prefix is added or stripped:
 //! [`KsDbExt`] mirrors the `*_cf` reads, writes and iterators of
-//! `DBWithThreadMode`, [`KsBatchExt`] mirrors `WriteBatch`. A raw `*_cf` call
+//! [`Kv`], [`KsBatchExt`] mirrors [`KvBatch`]. A raw `*_cf` call
 //! does not accept a [`KsCf`], so a site that was not converted fails to
 //! compile rather than writing an unprefixed key into the shared family.
 //!
@@ -25,11 +25,12 @@
 //! still cannot walk into the next collection.
 
 use crate::error::{DbError, DbResult};
-use crate::storage::kv::{Direction, IterMode, KvError, KvPinned, KvReadOptions};
+use crate::storage::kv::{
+    Direction, IterMode, Kv, KvBatch, KvCf, KvError, KvIter, KvPinned, KvReadOptions,
+};
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use rust_rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteBatch};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -271,13 +272,8 @@ impl Keyspace {
             return Some((self.prefix.as_bytes().to_vec(), hi));
         }
         let cf = db.cf_handle(&self.cf_name)?;
-        let first = db.iterator_cf(&cf, IteratorMode::Start).next()?.ok()?.0;
-        let mut last = db
-            .iterator_cf(&cf, IteratorMode::End)
-            .next()?
-            .ok()?
-            .0
-            .to_vec();
+        let first = db.iterator_cf(&cf, IterMode::Start).next()?.ok()?.0;
+        let mut last = db.iterator_cf(&cf, IterMode::End).next()?.ok()?.0.to_vec();
         last.push(0);
         Some((first.to_vec(), last))
     }
@@ -290,28 +286,19 @@ impl Keyspace {
         let Some((lo, hi)) = self.physical_range(db) else {
             return 0;
         };
-        // rust-rocksdb 0.52+ returns a Result; an error reads as size 0, like a
-        // missing column family above.
-        db.get_approximate_sizes_cf(&cf, &[rust_rocksdb::Range::new(&lo, &hi)])
-            .ok()
-            .and_then(|sizes| sizes.first().copied())
-            .unwrap_or(0)
+        db.approximate_size_cf(&cf, &lo, &hi)
     }
 }
 
 /// A column family together with the key prefix of one keyspace.
 pub struct KsCf<'a> {
-    pub(crate) cf: Arc<BoundColumnFamily<'a>>,
+    pub(crate) cf: KvCf<'a>,
     pub(crate) prefix: KsPrefix,
 }
 
 impl KsCf<'_> {
     pub fn prefix(&self) -> KsPrefix {
         self.prefix
-    }
-
-    pub fn raw(&self) -> &Arc<BoundColumnFamily<'_>> {
-        &self.cf
     }
 
     #[inline]
@@ -322,7 +309,7 @@ impl KsCf<'_> {
 
 /// Iterator over one keyspace yielding logical (prefix-stripped) keys.
 pub struct KsIter<'a> {
-    inner: rust_rocksdb::DBIteratorWithThreadMode<'a, DB>,
+    inner: KvIter<'a>,
     prefix: KsPrefix,
 }
 
@@ -334,15 +321,15 @@ impl Iterator for KsIter<'_> {
         let prefix = self.prefix;
         self.inner
             .next()
-            .map(|r| r.map(|(k, v)| (prefix.strip(k), v)).map_err(KvError::from))
+            .map(|r| r.map(|(k, v)| (prefix.strip(k), v)))
     }
 }
 
 impl std::iter::FusedIterator for KsIter<'_> {}
 
 /// Read options bounded to the keyspace, optionally narrowed by logical bounds.
-fn bounded_opts(prefix: KsPrefix, lower: Option<&[u8]>, upper: Option<&[u8]>) -> ReadOptions {
-    let mut opts = ReadOptions::default();
+fn bounded_opts(prefix: KsPrefix, lower: Option<&[u8]>, upper: Option<&[u8]>) -> KvReadOptions {
+    let mut opts = KvReadOptions::default();
     match (lower, prefix.is_legacy()) {
         (Some(lo), _) => opts.set_iterate_lower_bound(prefix.key(lo)),
         (None, false) => opts.set_iterate_lower_bound(prefix.as_bytes().to_vec()),
@@ -356,7 +343,7 @@ fn bounded_opts(prefix: KsPrefix, lower: Option<&[u8]>, upper: Option<&[u8]>) ->
     opts
 }
 
-/// `*_cf` operations of `DBWithThreadMode`, through a keyspace.
+/// `*_cf` operations of [`Kv`], through a keyspace.
 pub trait KsDbExt {
     fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, KvError>;
     fn get_pinned_ks<K: AsRef<[u8]>>(
@@ -400,12 +387,12 @@ pub trait KsDbExt {
     fn compact_range_ks(&self, cf: &KsCf, start: Option<&[u8]>, end: Option<&[u8]>);
 }
 
-impl KsDbExt for DB {
+impl KsDbExt for Kv {
     fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, KvError> {
         if cf.prefix.is_legacy() {
-            return Ok(self.get_cf(&cf.cf, key)?);
+            return self.get_cf(&cf.cf, key);
         }
-        Ok(self.get_cf(&cf.cf, cf.key(key.as_ref()))?)
+        self.get_cf(&cf.cf, cf.key(key.as_ref()))
     }
 
     fn get_pinned_ks<K: AsRef<[u8]>>(
@@ -413,12 +400,10 @@ impl KsDbExt for DB {
         cf: &KsCf,
         key: K,
     ) -> Result<Option<KvPinned<'_>>, KvError> {
-        let found = if cf.prefix.is_legacy() {
-            self.get_pinned_cf(&cf.cf, key)?
-        } else {
-            self.get_pinned_cf(&cf.cf, cf.key(key.as_ref()))?
-        };
-        Ok(found.map(KvPinned::Rocks))
+        if cf.prefix.is_legacy() {
+            return self.get_pinned_cf(&cf.cf, key);
+        }
+        self.get_pinned_cf(&cf.cf, cf.key(key.as_ref()))
     }
 
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(
@@ -428,16 +413,16 @@ impl KsDbExt for DB {
         value: V,
     ) -> Result<(), KvError> {
         if cf.prefix.is_legacy() {
-            return Ok(self.put_cf(&cf.cf, key, value)?);
+            return self.put_cf(&cf.cf, key, value);
         }
-        Ok(self.put_cf(&cf.cf, cf.key(key.as_ref()), value)?)
+        self.put_cf(&cf.cf, cf.key(key.as_ref()), value)
     }
 
     fn delete_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<(), KvError> {
         if cf.prefix.is_legacy() {
-            return Ok(self.delete_cf(&cf.cf, key)?);
+            return self.delete_cf(&cf.cf, key);
         }
-        Ok(self.delete_cf(&cf.cf, cf.key(key.as_ref()))?)
+        self.delete_cf(&cf.cf, cf.key(key.as_ref()))
     }
 
     fn multi_get_ks<K: AsRef<[u8]>, I: IntoIterator<Item = K>>(
@@ -447,9 +432,6 @@ impl KsDbExt for DB {
     ) -> Vec<Result<Option<Vec<u8>>, KvError>> {
         let physical: Vec<Vec<u8>> = keys.into_iter().map(|k| cf.key(k.as_ref())).collect();
         self.multi_get_cf(physical.iter().map(|k| (&cf.cf, k)))
-            .into_iter()
-            .map(|r| r.map_err(KvError::from))
-            .collect()
     }
 
     fn prefix_iterator_ks<P: AsRef<[u8]>>(&self, cf: &KsCf, prefix: P) -> KsIter<'_> {
@@ -471,9 +453,9 @@ impl KsDbExt for DB {
         let inner = match mode {
             IterMode::From(k, dir) => {
                 let physical = cf.key(k);
-                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir).to_rocks())
+                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir))
             }
-            other => self.iterator_cf_opt(&cf.cf, opts, other.to_rocks()),
+            other => self.iterator_cf_opt(&cf.cf, opts, other),
         };
         KsIter {
             inner,
@@ -482,7 +464,7 @@ impl KsDbExt for DB {
     }
 
     fn iterator_ks_opt(&self, cf: &KsCf, read: KvReadOptions, mode: IterMode) -> KsIter<'_> {
-        let mut opts = read.to_rocks();
+        let mut opts = read;
         if let Some(end) = cf.prefix.upper() {
             opts.set_iterate_lower_bound(cf.prefix.as_bytes().to_vec());
             opts.set_iterate_upper_bound(end);
@@ -490,9 +472,9 @@ impl KsDbExt for DB {
         let inner = match mode {
             IterMode::From(k, dir) => {
                 let physical = cf.key(k);
-                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir).to_rocks())
+                self.iterator_cf_opt(&cf.cf, opts, IterMode::From(&physical, dir))
             }
-            other => self.iterator_cf_opt(&cf.cf, opts, other.to_rocks()),
+            other => self.iterator_cf_opt(&cf.cf, opts, other),
         };
         KsIter {
             inner,
@@ -507,11 +489,11 @@ impl KsDbExt for DB {
         }
         let lo = start.map_or_else(|| cf.prefix.as_bytes().to_vec(), |s| cf.key(s));
         let hi = end.map_or_else(|| cf.prefix.upper().unwrap_or_default(), |e| cf.key(e));
-        self.compact_range_cf(&cf.cf, Some(lo), Some(hi));
+        self.compact_range_cf(&cf.cf, Some(&lo), Some(&hi));
     }
 }
 
-/// `WriteBatch` writes through a keyspace.
+/// [`KvBatch`] writes through a keyspace.
 pub trait KsBatchExt {
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, cf: &KsCf, key: K, value: V);
     fn delete_ks<K: AsRef<[u8]>>(&mut self, cf: &KsCf, key: K);
@@ -519,7 +501,7 @@ pub trait KsBatchExt {
     fn delete_range_ks<K: AsRef<[u8]>>(&mut self, cf: &KsCf, from: K, to: K);
 }
 
-impl KsBatchExt for WriteBatch {
+impl KsBatchExt for KvBatch {
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, cf: &KsCf, key: K, value: V) {
         if cf.prefix.is_legacy() {
             self.put_cf(&cf.cf, key, value);

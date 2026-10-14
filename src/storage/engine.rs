@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use rust_rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options};
 
+use super::kv::RawRocks;
 use super::RocksDb as DB;
 use std::collections::HashMap;
 use std::path::Path;
@@ -180,7 +181,7 @@ pub(crate) fn tuned_cf_options() -> Options {
 /// The main storage engine backed by RocksDB
 ///
 /// Uses lock-free reads - RocksDB's DB type is thread-safe for concurrent reads.
-/// Writes are coordinated via RocksDB's internal MVCC and WriteBatch operations.
+/// Writes are coordinated via RocksDB's internal MVCC and KvBatch operations.
 /// Only column family creation/deletion requires explicit locking.
 pub struct StorageEngine {
     /// RocksDB instance - thread-safe for reads, internal locking for writes
@@ -312,7 +313,7 @@ impl StorageEngine {
         opts.set_enable_pipelined_write(true);
 
         // Get existing column families or create default
-        let cf_names = match DB::list_cf(&opts, &path) {
+        let cf_names = match RawRocks::list_cf(&opts, &path) {
             Ok(cfs) => cfs,
             Err(_) => vec!["default".to_string()],
         };
@@ -336,11 +337,11 @@ impl StorageEngine {
             .collect();
 
         // Open database with column families
-        let db = DB::open_cf_descriptors(&opts, &path, cf_descriptors)
+        let db = RawRocks::open_cf_descriptors(&opts, &path, cf_descriptors)
             .map_err(|e| DbError::InternalError(format!("Failed to open RocksDB: {}", e)))?;
 
         Ok(Self {
-            db: Arc::new(db),
+            db: Arc::new(DB::from(db)),
             cf_lock: Arc::new(RwLock::new(())),
             path,
             collections: Arc::new(DashMap::new()),
@@ -423,11 +424,7 @@ impl StorageEngine {
             tracing::warn!("checkpoint: flush before snapshot failed: {}", e);
         }
 
-        let checkpoint = rust_rocksdb::checkpoint::Checkpoint::new(&*self.db).map_err(|e| {
-            DbError::InternalError(format!("Failed to open checkpoint handle: {}", e))
-        })?;
-
-        checkpoint.create_checkpoint(target).map_err(|e| {
+        self.db.checkpoint(target).map_err(|e| {
             DbError::InternalError(format!(
                 "Failed to create checkpoint at '{}': {}",
                 target.display(),
@@ -1103,10 +1100,7 @@ impl StorageEngine {
             .collect();
         out.column_families = cf_names.len() as u64;
 
-        // `AsColumnFamilyRef` is implemented for `&Arc<BoundColumnFamily>`,
-        // which is what `cf_handle` hands back — matching the existing reads in
-        // `collection::core`.
-        let read = |cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>, prop: &str| -> u64 {
+        let read = |cf: &crate::storage::kv::KvCf<'_>, prop: &str| -> u64 {
             self.db
                 .property_int_value_cf(cf, prop)
                 .ok()
@@ -1274,7 +1268,7 @@ impl StorageEngine {
         Ok(complete)
     }
 
-    /// Stage every operation, across all collections, into ONE `WriteBatch`
+    /// Stage every operation, across all collections, into ONE `KvBatch`
     /// and write it. All collections are column families of the same RocksDB
     /// instance, so the batch is atomic across them: either every document,
     /// index entry and version record lands, or none does. In-memory effects
@@ -1302,7 +1296,7 @@ impl StorageEngine {
         // fixed order keeps two commits from deadlocking on them.
         order.sort();
 
-        let mut batch = rust_rocksdb::WriteBatch::default();
+        let mut batch = super::kv::KvBatch::default();
         let mut staged = Vec::with_capacity(order.len());
         let mut guards = Vec::new();
         for coll_name in order {
@@ -1313,7 +1307,7 @@ impl StorageEngine {
             staged.push((collection, plan));
         }
 
-        let mut write_opts = rust_rocksdb::WriteOptions::default();
+        let mut write_opts = crate::storage::kv::KvWriteOptions::default();
         write_opts.set_sync(sync);
         self.db.write_opt(&batch, &write_opts).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))

@@ -25,7 +25,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rust_rocksdb::{IteratorMode, WriteBatch, WriteOptions};
+use crate::storage::kv::{IterMode, KvBatch, KvWriteOptions as WriteOptions};
 
 use super::collection_registry::{self, CollectionRecord};
 use super::engine::META_CF;
@@ -143,7 +143,7 @@ fn wipe_target(db: &DB, ks: KsNum) -> DbResult<()> {
     let p = KsPrefix::shared(ks);
     let lo = p.as_bytes().to_vec();
     let hi = p.upper().expect("shared prefix");
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     batch.delete_range_cf(&shared, &lo, &hi);
     db.write(&batch)
         .map_err(|e| DbError::InternalError(e.to_string()))
@@ -159,9 +159,9 @@ fn copy(db: &DB, cf_name: &str, ks: KsNum, report: &mut MigrationReport) -> DbRe
         .ok_or_else(|| DbError::InternalError("shared column family missing".into()))?;
     let prefix = KsPrefix::shared(ks);
     let mut digest = Digest::new();
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     let (mut batch_bytes, mut batch_keys) = (0usize, 0usize);
-    for item in db.iterator_cf(&legacy, IteratorMode::Start) {
+    for item in db.iterator_cf(&legacy, IterMode::Start) {
         let (key, value) = item.map_err(|e| DbError::InternalError(e.to_string()))?;
         digest.add(&key, &value);
         batch_bytes += key.len() + value.len() + 8;
@@ -171,7 +171,7 @@ fn copy(db: &DB, cf_name: &str, ks: KsNum, report: &mut MigrationReport) -> DbRe
         if batch_bytes >= BATCH_BYTES || batch_keys >= BATCH_KEYS {
             db.write(&batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
-            batch = WriteBatch::default();
+            batch = KvBatch::default();
             batch_bytes = 0;
             batch_keys = 0;
         }
@@ -190,11 +190,11 @@ fn digest_of(db: &DB, ks: KsNum) -> DbResult<Digest> {
         .cf_handle(SHARED_CF)
         .ok_or_else(|| DbError::InternalError("shared column family missing".into()))?;
     let p = KsPrefix::shared(ks);
-    let mut opts = rust_rocksdb::ReadOptions::default();
+    let mut opts = crate::storage::kv::KvReadOptions::default();
     opts.set_iterate_lower_bound(p.as_bytes().to_vec());
     opts.set_iterate_upper_bound(p.upper().expect("shared prefix"));
     let mut digest = Digest::new();
-    for item in db.iterator_cf_opt(&shared, opts, IteratorMode::Start) {
+    for item in db.iterator_cf_opt(&shared, opts, IterMode::Start) {
         let (key, value) = item.map_err(|e| DbError::InternalError(e.to_string()))?;
         digest.add(&key[8..], &value);
     }
@@ -207,8 +207,8 @@ fn free_legacy(db: &DB, cf_name: &str) {
     let Some(cf) = db.cf_handle(cf_name) else {
         return;
     };
-    let first = db.iterator_cf(&cf, IteratorMode::Start).next();
-    let last = db.iterator_cf(&cf, IteratorMode::End).next();
+    let first = db.iterator_cf(&cf, IterMode::Start).next();
+    let last = db.iterator_cf(&cf, IterMode::End).next();
     let (Some(Ok((lo, _))), Some(Ok((hi, _)))) = (first, last) else {
         return;
     };
@@ -218,7 +218,7 @@ fn free_legacy(db: &DB, cf_name: &str) {
     if let Err(e) = db.delete_file_in_range_cf(&cf, &lo, &hi) {
         tracing::debug!("migration: delete_file_in_range on {}: {}", cf_name, e);
     }
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     batch.delete_range_cf(&cf, &lo, &hi);
     let _ = db.write(&batch);
 }
@@ -260,7 +260,7 @@ fn migrate_one(
         }
         None => {
             let _catalog = collection_registry::catalog_lock();
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             let ks = collection_registry::allocate_keyspace(db, cf_name, &mut batch)?;
             db.write_opt(&batch, &synced())
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
@@ -415,7 +415,7 @@ pub fn run(
 
     // Only a run that moved everything movable marks the instance as done;
     // failures are retried at the next start.
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     if report.failed.is_empty() {
         batch.put_cf(&meta, STORAGE_FORMAT_KEY, STORAGE_FORMAT_V2);
     }

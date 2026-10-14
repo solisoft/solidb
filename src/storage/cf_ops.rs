@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use rust_rocksdb::{IteratorMode, WriteBatch};
+use crate::storage::kv::{IterMode, KvBatch};
 
 use super::RocksDb as DB;
 use crate::error::{DbError, DbResult};
@@ -148,12 +148,12 @@ pub fn wipe_cf(db: &DB, cf_name: &str) -> DbResult<()> {
         .ok_or_else(|| DbError::InternalError(format!("column family '{cf_name}' missing")))?;
 
     let first = db
-        .iterator_cf(&cf, IteratorMode::Start)
+        .iterator_cf(&cf, IterMode::Start)
         .next()
         .and_then(|r| r.ok())
         .map(|(k, _)| k);
     let last = db
-        .iterator_cf(&cf, IteratorMode::End)
+        .iterator_cf(&cf, IterMode::End)
         .next()
         .and_then(|r| r.ok())
         .map(|(k, _)| k);
@@ -165,7 +165,7 @@ pub fn wipe_cf(db: &DB, cf_name: &str) -> DbResult<()> {
         let mut end = last.to_vec();
         end.push(0);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         // Both bounds as `&[u8]`: `delete_range_cf` takes one type for the
         // pair, and the iterator hands back a `Box<[u8]>`.
         batch.delete_range_cf(&cf, first.as_ref(), end.as_slice());

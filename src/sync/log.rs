@@ -6,8 +6,9 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
+use crate::storage::kv::{Direction, IterMode, KvBatch, RawRocks};
 use crate::storage::RocksDb as DB;
-use rust_rocksdb::{Direction, IteratorMode, Options, WriteBatch};
+use rust_rocksdb::Options;
 use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};
@@ -147,8 +148,8 @@ impl SyncLog {
         opts.set_keep_log_file_num(5);
         opts.set_recycle_log_file_num(3);
 
-        let db = DB::open(&opts, &log_path).map_err(|e| e.to_string())?;
-        let db = Arc::new(db);
+        let db = RawRocks::open(&opts, &log_path).map_err(|e| e.to_string())?;
+        let db = Arc::new(DB::from(db));
 
         // Load current sequence
         let sequence = match db.get(SEQ_KEY) {
@@ -181,7 +182,7 @@ impl SyncLog {
 
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         let mut count = 0;
 
         for (key, value) in iter.flatten() {
@@ -214,14 +215,14 @@ impl SyncLog {
             entry.node_id = self.node_id.clone();
         }
 
-        // Use a single WriteBatch so the entry and the bumped sequence go
+        // Use a single KvBatch so the entry and the bumped sequence go
         // through one `db.write` (one fsync) instead of two independent
         // `put` calls (two fsyncs). This roughly halves the per-write
         // disk cost on hot insert/update paths.
         let key = format!("sync_log:{:020}", *seq);
         let value = encode_entry(&entry);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         batch.put(key.as_bytes(), &value);
         batch.put(SEQ_KEY, seq.to_be_bytes());
 
@@ -272,7 +273,7 @@ impl SyncLog {
         }
 
         let mut seq = self.sequence.write().unwrap();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         for entry in &mut entries {
             *seq += 1;
@@ -372,7 +373,7 @@ impl SyncLog {
     pub fn oldest_sequence(&self) -> Option<u64> {
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                 continue;
@@ -395,7 +396,7 @@ impl SyncLog {
     pub fn entry_count(&self) -> u64 {
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         let mut count = 0u64;
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
@@ -420,14 +421,14 @@ impl SyncLog {
         let start_key = format!("sync_log:{:020}", 0u64);
         let end_key = format!("sync_log:{:020}", before_sequence);
 
-        // Walk the to-be-pruned range, building a WriteBatch of explicit
+        // Walk the to-be-pruned range, building a KvBatch of explicit
         // deletes. This is portable across rocksdb wrappers and gives an
         // exact removed count for reporting.
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut removed = 0u64;
         let iter = self
             .db
-            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+            .iterator(IterMode::From(start_key.as_bytes(), Direction::Forward));
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                 continue;
@@ -486,7 +487,7 @@ impl SyncLog {
         let start_key = format!("sync_log:{:020}", after_sequence + 1);
         let iter = self
             .db
-            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+            .iterator(IterMode::From(start_key.as_bytes(), Direction::Forward));
 
         let mut entries = Vec::new();
         for (key, value) in iter.flatten() {
@@ -787,7 +788,7 @@ mod tests {
             let log = SyncLog::new("node1".to_string(), path, 0).unwrap();
             let mut legacy = create_test_entry(1);
             legacy.data = Some(br#"{"views":7}"#.to_vec());
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             batch.put(
                 format!("sync_log:{:020}", 1).as_bytes(),
                 serde_json::to_vec(&legacy).unwrap(),

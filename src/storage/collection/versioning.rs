@@ -2,7 +2,7 @@
 //!
 //! When versioning is enabled on a collection, every insert/update/delete also
 //! writes an immutable history record into the collection's column family, in the
-//! *same* atomic `WriteBatch` as the live mutation. History keys are
+//! *same* atomic `KvBatch` as the live mutation. History keys are
 //! `docv:<key>:<inverted_ts>` where `inverted_ts = u64::MAX - ts_micros`, so the
 //! newest version sorts first within a document's prefix and an `AS OF T` read is
 //! a single forward seek to the first version with `ts <= T`.
@@ -17,9 +17,9 @@
 use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
 use crate::storage::keyspace::{KsBatchExt, KsCf, KsDbExt};
+use crate::storage::kv::KvBatch;
 use crate::storage::kv::{Direction, IterMode};
 use dashmap::DashMap;
-use rust_rocksdb::WriteBatch;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -163,11 +163,11 @@ impl Collection {
         Ok(())
     }
 
-    /// Append a version record into the same `WriteBatch` as the mutation (atomic).
+    /// Append a version record into the same `KvBatch` as the mutation (atomic).
     /// `value = None` records a delete tombstone.
     pub(crate) fn append_version_to_batch(
         &self,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         cf: &KsCf,
         key: &str,
         value: Option<&Value>,

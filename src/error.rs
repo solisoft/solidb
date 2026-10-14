@@ -102,12 +102,6 @@ impl serde::Serialize for DbError {
     }
 }
 
-impl From<rust_rocksdb::Error> for DbError {
-    fn from(err: rust_rocksdb::Error) -> Self {
-        DbError::InternalError(err.into())
-    }
-}
-
 impl IntoResponse for DbError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {

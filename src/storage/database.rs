@@ -725,7 +725,7 @@ mod tests {
 
     fn create_test_db() -> (Arc<DB>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        let db = DB::open_default(temp_dir.path()).unwrap();
+        let db = DB::from(crate::storage::kv::RawRocks::open_default(temp_dir.path()).unwrap());
         (Arc::new(db), temp_dir)
     }
 

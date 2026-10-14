@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::{extract_field_value, TtlIndex, TtlIndexStats};
-use rust_rocksdb::WriteBatch;
+use crate::storage::kv::KvBatch;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type TtlExpiryEntry = (Vec<u8>, Vec<u8>);
@@ -93,7 +93,7 @@ impl Collection {
 
         // Drop the index's expiry entries, current and legacy, so a later
         // index of the same name does not inherit them.
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let prefix = Self::ttl_expiry_prefix(name);
         for (key, _) in db.prefix_iterator_ks(&cf, prefix.as_slice()).flatten() {
             if !key.starts_with(prefix.as_slice()) {
@@ -140,7 +140,7 @@ impl Collection {
     // ==================== TTL Expiry Index Management (for efficient cleanup) ====================
 
     /// Compute TTL expiry index entries for a document insert
-    /// Returns Vec<(key, value)> where value is empty - suitable for WriteBatch
+    /// Returns Vec<(key, value)> where value is empty - suitable for KvBatch
     pub(crate) fn compute_ttl_expiry_entries_for_insert(
         &self,
         doc_key: &str,
@@ -307,7 +307,7 @@ impl Collection {
         // value. A non-empty value is a real document whose `_key` merely
         // looks like an entry (the H8 forgery) and is never acted on.
         let legacy_prefix = Self::legacy_ttl_expiry_prefix(&index.name);
-        let mut migrate = WriteBatch::default();
+        let mut migrate = KvBatch::default();
         let mut legacy_seen = 0usize;
         for (key_bytes, value) in db
             .prefix_iterator_ks(&cf, legacy_prefix.as_slice())
