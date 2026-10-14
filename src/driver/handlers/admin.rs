@@ -485,7 +485,10 @@ mod tests {
     use crate::storage::StorageEngine;
     use std::sync::Arc;
 
-    fn handler() -> (tempfile::TempDir, DriverHandler) {
+    /// `user` must be different in every test: role lookups go through
+    /// `USER_ROLES_CACHE`, which is process-wide and keyed by name, so two
+    /// tests sharing one would read each other's assignments.
+    fn handler(user: &str) -> (tempfile::TempDir, DriverHandler) {
         let tmp = tempfile::TempDir::new().unwrap();
         let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
         engine.initialize().unwrap();
@@ -496,7 +499,7 @@ mod tests {
         system
             .get_or_create_system_collection("_admins")
             .unwrap()
-            .insert(serde_json::json!({"_key": "carol", "password_hash": "x"}))
+            .insert(serde_json::json!({"_key": user, "password_hash": "x"}))
             .unwrap();
         let mut h = DriverHandler::new(engine, None);
         h.session_subject = "root".to_string();
@@ -507,16 +510,16 @@ mod tests {
         matches!(r, Response::Error { .. })
     }
 
-    fn can(h: &DriverHandler, action: PermissionAction, db: &str) -> bool {
-        let roles = crate::server::auth::AuthService::get_user_roles(&h.storage, "carol")
-            .unwrap_or_default();
+    fn can(h: &DriverHandler, user: &str, action: PermissionAction, db: &str) -> bool {
+        let roles =
+            crate::server::auth::AuthService::get_user_roles(&h.storage, user).unwrap_or_default();
         let perms = AuthorizationService::load_permissions_from_storage(&h.storage, &roles);
         AuthorizationService::check_permission_raw(&perms, action, Some(db), None).is_ok()
     }
 
     #[tokio::test]
     async fn a_role_created_and_assigned_over_the_driver_grants_its_permissions() {
-        let (_t, h) = handler();
+        let (_t, h) = handler("carol");
         let r = handle_create_role(
             &h,
             "reporter".into(),
@@ -527,24 +530,24 @@ mod tests {
         let r = handle_assign_role(&h, "carol".into(), "reporter".into(), None).await;
         assert!(!is_err(&r), "{:?}", r);
 
-        assert!(can(&h, PermissionAction::Write, "tenant_a"));
-        assert!(can(&h, PermissionAction::Read, "tenant_b"));
-        assert!(!can(&h, PermissionAction::Write, "tenant_b"));
+        assert!(can(&h, "carol", PermissionAction::Write, "tenant_a"));
+        assert!(can(&h, "carol", PermissionAction::Read, "tenant_b"));
+        assert!(!can(&h, "carol", PermissionAction::Write, "tenant_b"));
     }
 
     #[tokio::test]
     async fn a_limited_driver_assignment_stops_at_its_database() {
-        let (_t, h) = handler();
+        let (_t, h) = handler("dave");
         let r =
-            handle_assign_role(&h, "carol".into(), "editor".into(), Some("tenant_a".into())).await;
+            handle_assign_role(&h, "dave".into(), "editor".into(), Some("tenant_a".into())).await;
         assert!(!is_err(&r), "{:?}", r);
-        assert!(can(&h, PermissionAction::Write, "tenant_a"));
-        assert!(!can(&h, PermissionAction::Read, "tenant_b"));
+        assert!(can(&h, "dave", PermissionAction::Write, "tenant_a"));
+        assert!(!can(&h, "dave", PermissionAction::Read, "tenant_b"));
     }
 
     #[tokio::test]
     async fn the_driver_refuses_what_the_http_api_refuses() {
-        let (_t, h) = handler();
+        let (_t, h) = handler("erin");
         // '@' would be read back as a limited assignment of another role.
         assert!(is_err(
             &handle_create_role(&h, "ops@prod".into(), vec!["read".into()]).await
@@ -556,10 +559,10 @@ mod tests {
             &handle_create_role(&h, "x".into(), vec!["fly".into()]).await
         ));
         assert!(is_err(
-            &handle_assign_role(&h, "carol".into(), "editor".into(), Some("typo_db".into())).await
+            &handle_assign_role(&h, "erin".into(), "editor".into(), Some("typo_db".into())).await
         ));
         assert!(is_err(
-            &handle_assign_role(&h, "carol".into(), "no_such_role".into(), None).await
+            &handle_assign_role(&h, "erin".into(), "no_such_role".into(), None).await
         ));
         assert!(is_err(
             &handle_assign_role(&h, "nobody".into(), "editor".into(), None).await
