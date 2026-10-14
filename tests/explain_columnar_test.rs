@@ -1,6 +1,5 @@
 use solidb::storage::columnar::{ColumnDef, ColumnType, ColumnarCollection, CompressionType};
 
-use rust_rocksdb::Options;
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::engine::StorageEngine;
 use tempfile::TempDir;
@@ -28,7 +27,7 @@ fn test_explain_columnar_query() {
     {
         let cf_name = "testdb:_columnar_metrics";
         if db_arc.cf_handle(cf_name).is_none() {
-            db_arc.create_cf(cf_name, &Options::default()).unwrap();
+            db_arc.create_cf(cf_name).unwrap();
         }
     }
 

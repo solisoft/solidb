@@ -513,8 +513,8 @@ mod tests {
     #[test]
     fn backfill_adopts_unregistered_column_families() {
         let (db, _dir) = open();
-        db.create_cf("shop:orders", &Options::default()).unwrap();
-        db.create_cf("shop:edges", &Options::default()).unwrap();
+        db.create_cf("shop:orders").unwrap();
+        db.create_cf("shop:edges").unwrap();
 
         // The type lives in the column family on a pre-registry instance.
         let cf = db.cf_handle("shop:edges").unwrap();
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn backfill_skips_doomed_column_families() {
         let (db, _dir) = open();
-        db.create_cf("shop:doomed", &Options::default()).unwrap();
+        db.create_cf("shop:doomed").unwrap();
 
         assert_eq!(backfill(&db, |cf| cf == "shop:doomed"), 0);
         assert!(list(&db, "shop").is_empty());

@@ -6,9 +6,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use crate::storage::kv::{Direction, IterMode, KvBatch, RawRocks};
+use crate::storage::kv::{Direction, IterMode, KvBatch};
 use crate::storage::RocksDb as DB;
-use rust_rocksdb::Options;
 use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};
@@ -141,15 +140,9 @@ impl SyncLog {
     ) -> Result<Self, String> {
         let log_path = format!("{}/sync_log", data_dir);
 
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.set_max_write_buffer_number(4);
-        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
-        opts.set_keep_log_file_num(5);
-        opts.set_recycle_log_file_num(3);
-
-        let db = RawRocks::open(&opts, &log_path).map_err(|e| e.to_string())?;
-        let db = Arc::new(DB::from(db));
+        let db = crate::storage::kv::rocks::open_sync_log(std::path::Path::new(&log_path))
+            .map_err(|e| e.to_string())?;
+        let db = Arc::new(db);
 
         // Load current sequence
         let sequence = match db.get(SEQ_KEY) {

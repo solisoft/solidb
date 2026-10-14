@@ -135,7 +135,7 @@ pub fn auto_create_enabled() -> bool {
 /// The pair is what a create-after-delete of the same name used to cost: two
 /// full OPTIONS rewrites, each proportional to the *total* CF count of the
 /// instance. Wiping is a pair of seeks and one range tombstone, and every CF
-/// is built from the same `tuned_cf_options()`, so a reused one is
+/// is built from the same tuned options (`kv::rocks`), so a reused one is
 /// indistinguishable from a new one.
 ///
 /// The bounds are taken from the column family's own first and last key

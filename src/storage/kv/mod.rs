@@ -11,6 +11,8 @@ use std::ops::Deref;
 
 use crate::error::DbError;
 
+pub(crate) mod rocks;
+
 /// Which way an iterator walks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -384,11 +386,11 @@ impl Kv {
         }
     }
 
-    /// Create a 1.x per-collection column family. Legacy layout only; goes
-    /// with it.
-    pub fn create_cf(&self, name: &str, opts: &rust_rocksdb::Options) -> Result<(), KvError> {
+    /// Create a column family. Only the 1.x per-collection layout creates
+    /// them at run time; this goes with it.
+    pub fn create_cf(&self, name: &str) -> Result<(), KvError> {
         match &self.engine {
-            Engine::Rocks(db) => Ok(db.create_cf(name, opts)?),
+            Engine::Rocks(db) => Ok(db.create_cf(name, &rocks::tuned_cf_options())?),
         }
     }
 
