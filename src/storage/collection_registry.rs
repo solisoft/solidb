@@ -201,7 +201,7 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
     }
 
     if adopted > 0 {
-        if let Err(e) = db.write(&batch) {
+        if let Err(e) = db.write(batch) {
             tracing::warn!("Collection registry backfill failed: {}", e);
             return 0;
         }
@@ -368,7 +368,7 @@ pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbRes
     use super::keyspace::KsBatchExt;
     batch.put_ks(&data, "_stats:type".as_bytes(), type_.as_bytes());
 
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to create collection: {e}")))?;
     super::cf_ops::record_keyspace_create();
     Ok(keyspace)
@@ -404,7 +404,7 @@ pub(crate) fn drop_shared(db: &Arc<DB>, full_name: &str, ks: KsNum) -> DbResult<
     batch.delete_cf(&meta_cf, entry_key(full_name).as_bytes());
     batch.delete_range_cf(&shared, &lo, &hi);
     mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {e}")))?;
 
     keyspace::mark_dead(db, &keyspace::KsId::Shared(ks));
@@ -437,7 +437,7 @@ pub(crate) fn drop_database_keyspaces(db: &Arc<DB>, db_name: &str) -> DbResult<O
     );
     batch.delete_range_cf(&shared, &lo, &hi);
     mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to delete database data: {e}")))?;
     keyspace::mark_database_dead(db, db_id);
     super::keyspace_gc::wake();

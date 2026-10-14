@@ -140,7 +140,7 @@ impl SyncLog {
     ) -> Result<Self, String> {
         let log_path = format!("{}/sync_log", data_dir);
 
-        let db = crate::storage::kv::rocks::open_sync_log(std::path::Path::new(&log_path))
+        let db = crate::storage::kv::open_sync_log(std::path::Path::new(&log_path))
             .map_err(|e| e.to_string())?;
         let db = Arc::new(db);
 
@@ -216,10 +216,11 @@ impl SyncLog {
         let value = encode_entry(&entry);
 
         let mut batch = KvBatch::default();
-        batch.put(key.as_bytes(), &value);
-        batch.put(SEQ_KEY, seq.to_be_bytes());
+        let default_cf = self.db.default_cf();
+        batch.put_cf(&default_cf, key.as_bytes(), &value);
+        batch.put_cf(&default_cf, SEQ_KEY, seq.to_be_bytes());
 
-        if let Err(e) = self.db.write(&batch) {
+        if let Err(e) = self.db.write(batch) {
             tracing::error!("SyncLog: Failed to write entry {}: {}", *seq, e);
         }
 
@@ -267,6 +268,7 @@ impl SyncLog {
 
         let mut seq = self.sequence.write().unwrap();
         let mut batch = KvBatch::default();
+        let default_cf = self.db.default_cf();
 
         for entry in &mut entries {
             *seq += 1;
@@ -278,11 +280,11 @@ impl SyncLog {
 
             let key = format!("sync_log:{:020}", *seq);
             let value = encode_entry(entry);
-            batch.put(key.as_bytes(), &value);
+            batch.put_cf(&default_cf, key.as_bytes(), &value);
         }
 
-        batch.put(SEQ_KEY, seq.to_be_bytes());
-        if let Err(e) = self.db.write(&batch) {
+        batch.put_cf(&default_cf, SEQ_KEY, seq.to_be_bytes());
+        if let Err(e) = self.db.write(batch) {
             tracing::error!("SyncLog: Failed to write batch ending at {}: {}", *seq, e);
         }
 
@@ -418,6 +420,7 @@ impl SyncLog {
         // deletes. This is portable across rocksdb wrappers and gives an
         // exact removed count for reporting.
         let mut batch = KvBatch::default();
+        let default_cf = self.db.default_cf();
         let mut removed = 0u64;
         let iter = self
             .db
@@ -429,7 +432,7 @@ impl SyncLog {
             if key.as_ref() >= end_key.as_bytes() {
                 break;
             }
-            batch.delete(&key);
+            batch.delete_cf(&default_cf, &key);
             removed += 1;
         }
 
@@ -437,7 +440,7 @@ impl SyncLog {
             return Ok(0);
         }
 
-        self.db.write(&batch).map_err(|e| e.to_string())?;
+        self.db.write(batch).map_err(|e| e.to_string())?;
 
         // Compact the deleted range so SST files actually shrink on disk.
         self.db
@@ -782,12 +785,14 @@ mod tests {
             let mut legacy = create_test_entry(1);
             legacy.data = Some(br#"{"views":7}"#.to_vec());
             let mut batch = KvBatch::default();
-            batch.put(
+            let default_cf = log.db.default_cf();
+            batch.put_cf(
+                &default_cf,
                 format!("sync_log:{:020}", 1).as_bytes(),
                 serde_json::to_vec(&legacy).unwrap(),
             );
-            batch.put(SEQ_KEY, 1u64.to_be_bytes());
-            log.db.write(&batch).unwrap();
+            batch.put_cf(&default_cf, SEQ_KEY, 1u64.to_be_bytes());
+            log.db.write(batch).unwrap();
         }
         for cache in [0, 100] {
             let log = SyncLog::new("node1".to_string(), path, cache).unwrap();

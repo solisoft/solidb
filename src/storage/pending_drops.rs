@@ -161,7 +161,7 @@ impl PendingCfDrops {
                 super::collection_registry::entry_key(cf).as_bytes(),
             );
         }
-        db.write(&batch).map_err(|e| {
+        db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to schedule collection drops: {}", e))
         })?;
 

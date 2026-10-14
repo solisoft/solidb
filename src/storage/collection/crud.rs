@@ -250,7 +250,7 @@ impl Collection {
         }
 
         // Atomic write: document + indexes together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
         // Update vector indexes in-memory (separate from KvBatch)
@@ -512,7 +512,7 @@ impl Collection {
         self.add_update_entries(&mut batch, &cf, key, &old_value, &new_value)?;
 
         // Atomic write: document + all index updates together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
         // Update vector indexes in-memory (separate from KvBatch). Skip the
@@ -584,7 +584,7 @@ impl Collection {
         }
 
         // Atomic write: document deletions + index removals together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
 
         let deleted = docs.len();
@@ -713,7 +713,7 @@ impl Collection {
         let count = written.len();
 
         // Write all documents in one batch operation
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
 
         // Update document count (only for new inserts)
@@ -921,7 +921,7 @@ impl Collection {
         }
 
         // Commit batch atomically: all document updates + index updates together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
 
         // Update vector indexes in-memory (separate from KvBatch), after
@@ -1048,7 +1048,7 @@ impl Collection {
         }
 
         // Atomic write: all documents + indexes together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
 
         // Update vector indexes in-memory (separate from KvBatch)
@@ -1405,7 +1405,7 @@ impl Collection {
         for (start, end) in data_ranges {
             batch.delete_range_ks(&cf, start, end);
         }
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
 
         // Vector indexes answer searches from their in-memory structure, not via

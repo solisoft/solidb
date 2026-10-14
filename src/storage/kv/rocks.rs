@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use rust_rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options};
 
-use super::{Kv, KvError, RawRocks};
+use super::{Kv, KvError, KvMemory, RawRocks};
 use crate::storage::engine::profile;
 
 /// Shared block cache used by all column families (and all DB instances).
@@ -164,5 +164,45 @@ pub(crate) fn open_sync_log(path: &Path) -> Result<Kv, KvError> {
     opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
     opts.set_keep_log_file_num(5);
     opts.set_recycle_log_file_num(3);
-    Ok(Kv::from(RawRocks::open(&opts, path)?))
+    // Listing the default family is what gives `Kv::default_cf` a handle.
+    let families = [rust_rocksdb::DEFAULT_COLUMN_FAMILY_NAME];
+    Ok(Kv::from(RawRocks::open_cf(&opts, path, families)?))
+}
+
+/// Memory figures summed over `cfs`. The block cache is one shared LRU
+/// (`shared_block_cache`) that every column family reports, so it is read
+/// from one handle only.
+pub(super) fn memory(db: &RawRocks, cfs: &[String]) -> KvMemory {
+    let read = |cf: &std::sync::Arc<rust_rocksdb::BoundColumnFamily<'_>>, prop: &str| -> u64 {
+        db.property_int_value_cf(cf, prop)
+            .ok()
+            .flatten()
+            .unwrap_or(0)
+    };
+    let mut out = KvMemory::default();
+    let mut first = None;
+    for name in cfs {
+        let Some(cf) = db.cf_handle(name) else {
+            continue;
+        };
+        // Live memtables, and live + immutable ones still awaiting flush.
+        // The gap between the two is flush backlog.
+        out.memtable_bytes += read(&cf, "rocksdb.cur-size-all-mem-tables");
+        out.memtable_total_bytes += read(&cf, "rocksdb.size-all-mem-tables");
+        // Index and filter blocks of every open SST. With
+        // `cache_index_and_filter_blocks` off and `max_open_files` at -1
+        // (both the prod defaults) this sits *outside* the block cache and
+        // is never evicted, so it is the counter that grows with the
+        // dataset rather than with write traffic.
+        out.table_readers_bytes += read(&cf, "rocksdb.estimate-table-readers-mem");
+        for level in 0..7 {
+            out.table_files += read(&cf, &format!("rocksdb.num-files-at-level{}", level));
+        }
+        first.get_or_insert(cf);
+    }
+    if let Some(cf) = first {
+        out.block_cache_bytes = read(&cf, "rocksdb.block-cache-usage");
+        out.block_cache_pinned_bytes = read(&cf, "rocksdb.block-cache-pinned-usage");
+    }
+    out
 }

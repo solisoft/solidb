@@ -117,7 +117,7 @@ impl Collection {
             }
         }
         if !batch.is_empty() {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to drop TTL expiry entries: {}", e))
             })?;
         }
@@ -337,7 +337,7 @@ impl Collection {
             }
         }
         if !migrate.is_empty() {
-            db.write(&migrate)?;
+            db.write(migrate)?;
         }
         drop(cf);
 

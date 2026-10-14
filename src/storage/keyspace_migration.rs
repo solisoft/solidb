@@ -145,7 +145,7 @@ fn wipe_target(db: &DB, ks: KsNum) -> DbResult<()> {
     let hi = p.upper().expect("shared prefix");
     let mut batch = KvBatch::default();
     batch.delete_range_cf(&shared, &lo, &hi);
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(e.to_string()))
 }
 
@@ -169,7 +169,7 @@ fn copy(db: &DB, cf_name: &str, ks: KsNum, report: &mut MigrationReport) -> DbRe
         report.bytes_copied += (key.len() + value.len()) as u64;
         batch.put_cf(&shared, prefix.key(&key), &value);
         if batch_bytes >= BATCH_BYTES || batch_keys >= BATCH_KEYS {
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             batch = KvBatch::default();
             batch_bytes = 0;
@@ -177,7 +177,7 @@ fn copy(db: &DB, cf_name: &str, ks: KsNum, report: &mut MigrationReport) -> DbRe
         }
     }
     if batch_keys > 0 {
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
     }
     report.keys_copied += digest.1;
@@ -220,7 +220,7 @@ fn free_legacy(db: &DB, cf_name: &str) {
     }
     let mut batch = KvBatch::default();
     batch.delete_range_cf(&cf, &lo, &hi);
-    let _ = db.write(&batch);
+    let _ = db.write(batch);
 }
 
 fn type_of_legacy(db: &DB, cf_name: &str) -> String {
@@ -262,7 +262,7 @@ fn migrate_one(
             let _catalog = collection_registry::catalog_lock();
             let mut batch = KvBatch::default();
             let ks = collection_registry::allocate_keyspace(db, cf_name, &mut batch)?;
-            db.write_opt(&batch, &synced())
+            db.write_opt(batch, &synced())
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             ks
         }
@@ -422,7 +422,7 @@ pub fn run(
     if let Ok(json) = serde_json::to_vec(&report) {
         batch.put_cf(&meta, REPORT_KEY, json);
     }
-    db.write_opt(&batch, &synced())
+    db.write_opt(batch, &synced())
         .map_err(|e| DbError::InternalError(e.to_string()))?;
     tracing::info!(
         "Storage migration done: {} migrated, {} skipped, {} failed, {:.1}s",

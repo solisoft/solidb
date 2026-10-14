@@ -228,7 +228,7 @@ impl Collection {
         let _guards = self.lock_for_transaction(&operations);
         let mut batch = KvBatch::default();
         let staged = self.stage_transaction_operations(&operations, &mut batch)?;
-        self.db.write(&batch).map_err(|e| {
+        self.db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
         })?;
         self.finish_transaction_operations(staged);

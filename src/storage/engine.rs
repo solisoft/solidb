@@ -190,8 +190,8 @@ impl StorageEngine {
     pub fn new<P: AsRef<Path>>(data_dir: P) -> DbResult<Self> {
         let path = data_dir.as_ref().to_path_buf();
 
-        let db = super::kv::rocks::open(&path, &[META_CF, super::keyspace::SHARED_CF])
-            .map_err(|e| DbError::InternalError(format!("Failed to open RocksDB: {}", e)))?;
+        let db = super::kv::open(&path, &[META_CF, super::keyspace::SHARED_CF])
+            .map_err(|e| DbError::InternalError(format!("Failed to open the database: {}", e)))?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -952,41 +952,13 @@ impl StorageEngine {
             .collect();
         out.column_families = cf_names.len() as u64;
 
-        let read = |cf: &crate::storage::kv::KvCf<'_>, prop: &str| -> u64 {
-            self.db
-                .property_int_value_cf(cf, prop)
-                .ok()
-                .flatten()
-                .unwrap_or(0)
-        };
-
-        for name in &cf_names {
-            let Some(cf) = self.db.cf_handle(name) else {
-                continue;
-            };
-            // Live memtables, and live + immutable ones still awaiting flush.
-            // The gap between the two is flush backlog.
-            out.memtable_bytes += read(&cf, "rocksdb.cur-size-all-mem-tables");
-            out.memtable_total_bytes += read(&cf, "rocksdb.size-all-mem-tables");
-            // Index and filter blocks of every open SST. With
-            // `cache_index_and_filter_blocks` off and `max_open_files` at -1
-            // (both the prod defaults) this sits *outside* the block cache and
-            // is never evicted, so it is the counter that grows with the
-            // dataset rather than with write traffic.
-            out.table_readers_bytes += read(&cf, "rocksdb.estimate-table-readers-mem");
-            for level in 0..7 {
-                out.sst_files += read(&cf, &format!("rocksdb.num-files-at-level{}", level));
-            }
-        }
-
-        // The block cache is one shared LRU for every CF
-        // (`shared_block_cache`), and these two properties report that shared
-        // instance. Reading them per CF and summing would multiply it by the
-        // column-family count — take them from one handle only.
-        if let Some(cf) = cf_names.first().and_then(|n| self.db.cf_handle(n)) {
-            out.block_cache_bytes = read(&cf, "rocksdb.block-cache-usage");
-            out.block_cache_pinned_bytes = read(&cf, "rocksdb.block-cache-pinned-usage");
-        }
+        let mem = self.db.memory(&cf_names);
+        out.memtable_bytes = mem.memtable_bytes;
+        out.memtable_total_bytes = mem.memtable_total_bytes;
+        out.table_readers_bytes = mem.table_readers_bytes;
+        out.sst_files = mem.table_files;
+        out.block_cache_bytes = mem.block_cache_bytes;
+        out.block_cache_pinned_bytes = mem.block_cache_pinned_bytes;
 
         // The handles live in each `Database`'s own cache, not in the engine's
         // (`self.collections` is the legacy per-engine one and holds almost
@@ -1161,7 +1133,7 @@ impl StorageEngine {
 
         let mut write_opts = crate::storage::kv::KvWriteOptions::default();
         write_opts.set_sync(sync);
-        self.db.write_opt(&batch, &write_opts).map_err(|e| {
+        self.db.write_opt(batch, &write_opts).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
         })?;
         drop(guards);

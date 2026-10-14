@@ -552,7 +552,7 @@ impl ColumnarCollection {
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
 
@@ -605,7 +605,7 @@ impl ColumnarCollection {
             new_meta.last_updated_at = chrono::Utc::now().timestamp();
             self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             *meta = new_meta;
 
@@ -656,7 +656,7 @@ impl ColumnarCollection {
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
 
@@ -1271,7 +1271,7 @@ impl ColumnarCollection {
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
         *meta = new_meta;
 

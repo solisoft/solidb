@@ -293,7 +293,7 @@ impl Collection {
 
             // Flush batch periodically to avoid excessive memory usage
             if indexed_count % BATCH_SIZE_LIMIT == 0 {
-                db.write(&batch).map_err(|e| {
+                db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to write index batch: {}", e))
                 })?;
                 batch = KvBatch::default();
@@ -302,7 +302,7 @@ impl Collection {
 
         // Write any remaining entries in the batch
         if !batch.is_empty() {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to write final index batch: {}", e))
             })?;
         }
@@ -347,7 +347,7 @@ impl Collection {
 
                 // Flush batch periodically to avoid excessive memory usage
                 if deleted_count % BATCH_SIZE_LIMIT == 0 {
-                    db.write(&batch).map_err(|e| {
+                    db.write(batch).map_err(|e| {
                         DbError::InternalError(format!("Failed to write drop batch: {}", e))
                     })?;
                     batch = KvBatch::default();
@@ -359,7 +359,7 @@ impl Collection {
 
         // Write any remaining entries in the batch
         if deleted_count > 0 || !batch.is_empty() {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to write final drop batch: {}", e))
             })?;
         }
@@ -479,7 +479,7 @@ impl Collection {
                 }
             }
 
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
         tracing::info!(
             "rebuild_all_indexes: Clear phase took {:?}",
@@ -552,8 +552,7 @@ impl Collection {
 
                             // Flush batch periodically
                             if regular_count % BATCH_SIZE_LIMIT == 0 {
-                                let _ = db.write(&*batch);
-                                *batch = KvBatch::default();
+                                let _ = db.write(std::mem::take(batch));
                             }
                         }
                     }
@@ -571,8 +570,7 @@ impl Collection {
 
                                 // Flush batch periodically
                                 if geo_count % BATCH_SIZE_LIMIT == 0 {
-                                    let _ = db.write(&*batch);
-                                    *batch = KvBatch::default();
+                                    let _ = db.write(std::mem::take(batch));
                                 }
                             }
                         }
@@ -594,8 +592,7 @@ impl Collection {
 
                                 // Flush batch periodically (check after each field)
                                 if ft_count >= BATCH_SIZE_LIMIT {
-                                    let _ = db.write(&*batch);
-                                    *batch = KvBatch::default();
+                                    let _ = db.write(std::mem::take(batch));
                                     ft_count = 0;
                                 }
                             }
@@ -608,17 +605,17 @@ impl Collection {
         // Write any remaining entries in batches
         if let Some(batch) = regular_batch {
             if regular_count > 0 && regular_count % BATCH_SIZE_LIMIT != 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
         if let Some(batch) = geo_batch {
             if geo_count > 0 && geo_count % BATCH_SIZE_LIMIT != 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
         if let Some(batch) = ft_batch {
             if ft_count > 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
 
@@ -728,7 +725,7 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         // Build geo indexes
@@ -746,7 +743,7 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         // Build fulltext indexes
@@ -766,7 +763,7 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         tracing::info!("index_documents: Total time {:?}", total_start.elapsed());

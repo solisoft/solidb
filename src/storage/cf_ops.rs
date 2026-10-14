@@ -169,7 +169,7 @@ pub fn wipe_cf(db: &DB, cf_name: &str) -> DbResult<()> {
         // Both bounds as `&[u8]`: `delete_range_cf` takes one type for the
         // pair, and the iterator hands back a `Box<[u8]>`.
         batch.delete_range_cf(&cf, first.as_ref(), end.as_slice());
-        db.write(&batch).map_err(|e| {
+        db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to wipe column family '{cf_name}': {e}"))
         })?;
     }

@@ -98,7 +98,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             // Saturating: a counter that didn't observe the matching inserts
             // must floor at 0, not wrap to u64::MAX.
@@ -181,7 +181,7 @@ impl Collection {
             batch.delete_ks(&cf, tmp_key.as_bytes());
         }
 
-        db.write(&batch).map_err(|e| {
+        db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to finalize blob upload: {}", e))
         })?;
 
@@ -218,7 +218,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 

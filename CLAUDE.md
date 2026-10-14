@@ -328,6 +328,32 @@ size of its key range (flushed data only; memtable and SST count read 0).
 `solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
 `solidb_cf_ops_total` now counts only legacy column-family drops.
 
+### Storage engines: `storage::kv` (RocksDB, and solistore behind a feature)
+
+All storage goes through `storage::kv::Kv` (aliased `RocksDb` for
+history): RocksDB's method names, SoliDB's own types (`KvCf`, `KvBatch`,
+`KvIter`, `KvError`). `rust_rocksdb` is named only under `storage/kv/` and
+in tests that build a 1.x directory by hand — keep it that way. A second
+engine, solistore (github.com/solisoft/solistore, pure Rust), is compiled in
+with `--features engine-solistore`; the plan is
+`solistore/docs/solidb-integration.md` in that repository.
+
+A data directory is opened with the engine recorded in its `ENGINE` file. An
+unmarked directory with RocksDB `OPTIONS-*` files is RocksDB's; anything
+else ambiguous is refused. A `KvBatch` takes its engine from the first
+column family written to it.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_ENGINE` | `rocksdb` | Engine for a *new* data directory (`rocksdb` or `solistore`). Ignored for an existing one. |
+| `SOLIDB_DURABILITY` | eventual | solistore only. `full` fsyncs every commit (concurrent commits share it); eventual fsyncs in the background. `sync` writes (transaction commits) always wait. |
+| `SOLIDB_DURABILITY_INTERVAL_MS` | 100 | solistore only: the eventual mode's fsync interval, i.e. what a power loss can lose. |
+
+To run tests on solistore, build with the feature and set
+`SOLIDB_ENGINE=solistore` (rbuild does not forward the environment: build
+with `rbuild cargo db-kv test --features engine-solistore --no-run`, then run
+the binaries over ssh).
+
 ### Raw rows: driver reads that never decode (2.0.5)
 
 `FOR v IN c [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a plain local
