@@ -206,3 +206,49 @@ pub(super) fn memory(db: &RawRocks, cfs: &[String]) -> KvMemory {
     }
     out
 }
+
+/// Flush and compaction volumes, summed over column families, from the
+/// "Flush(GB): cumulative" and "Cumulative compaction: … GB write, … GB
+/// read" lines of `rocksdb.cfstats`.
+pub(super) fn counters(db: &RawRocks) -> Vec<(&'static str, &'static str, u64)> {
+    let gb = |text: &str, after: &str, unit: &str| -> f64 {
+        text.find(after)
+            .and_then(|at| {
+                let rest = &text[at + after.len()..];
+                let end = rest.find(unit)?;
+                rest[..end].trim().parse::<f64>().ok()
+            })
+            .unwrap_or(0.0)
+    };
+    let (mut flush, mut written, mut read) = (0.0, 0.0, 0.0);
+    for name in db.cf_names() {
+        let Some(cf) = db.cf_handle(&name) else {
+            continue;
+        };
+        let Ok(Some(stats)) = db.property_value_cf(&cf, "rocksdb.cfstats") else {
+            continue;
+        };
+        flush += gb(&stats, "Flush(GB): cumulative ", ",");
+        if let Some(line) = stats
+            .lines()
+            .find(|l| l.starts_with("Cumulative compaction:"))
+        {
+            written += gb(line, "Cumulative compaction: ", " GB write");
+            read += gb(line, "MB/s write, ", " GB read");
+        }
+    }
+    let bytes = |g: f64| (g * 1e9) as u64;
+    vec![
+        ("flush_bytes", "Bytes written by flushes", bytes(flush)),
+        (
+            "compaction_read_bytes",
+            "Bytes read by compactions",
+            bytes(read),
+        ),
+        (
+            "compaction_write_bytes",
+            "Bytes written by compactions",
+            bytes(written),
+        ),
+    ]
+}

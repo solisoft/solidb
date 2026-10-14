@@ -105,6 +105,14 @@ where
     F: Fn(SoliDBClient, Rng) -> Fut + Send + Sync + Clone + 'static,
     Fut: std::future::Future<Output = (SoliDBClient, Rng, bool)> + Send,
 {
+    // `PHASES=update,get` runs only those timed phases (the load always runs).
+    if let Ok(only) = std::env::var("PHASES") {
+        if !only.split(',').any(|p| p.trim() == phase) {
+            return;
+        }
+    }
+    // Mark the phase start for a profiler watching stderr.
+    eprintln!("phase {phase} start");
     let stop = Arc::new(AtomicBool::new(false));
     let errors = Arc::new(AtomicU64::new(0));
     let start = Instant::now();

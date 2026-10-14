@@ -605,6 +605,66 @@ impl Kv {
         }
     }
 
+    /// Cumulative engine counters, for `/metrics`: name, help, value.
+    /// RocksDB's flush and compaction volumes are read from its per-family
+    /// statistics text, so they are in steps of 0.01 GB.
+    pub fn engine_counters(&self) -> Vec<(&'static str, &'static str, u64)> {
+        match &self.engine {
+            Engine::Rocks(db) => rocks::counters(db),
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(db) => {
+                let s = db.stats();
+                vec![
+                    (
+                        "wal_bytes",
+                        "Bytes appended to write-ahead logs",
+                        s.wal_bytes,
+                    ),
+                    ("wal_fsyncs", "Write-ahead log fsyncs", s.wal_fsyncs),
+                    ("commit_groups", "Commit groups written", s.commit_groups),
+                    (
+                        "committed_batches",
+                        "Batches committed",
+                        s.committed_batches,
+                    ),
+                    ("flushes", "Memtable flushes", s.flushes),
+                    ("flush_bytes", "Bytes written by flushes", s.flushed_bytes),
+                    ("compactions", "Compactions", s.compactions),
+                    (
+                        "compaction_read_bytes",
+                        "Bytes read by compactions",
+                        s.compaction_read_bytes,
+                    ),
+                    (
+                        "compaction_write_bytes",
+                        "Bytes written by compactions",
+                        s.compaction_written_bytes,
+                    ),
+                    (
+                        "compaction_micros",
+                        "Time spent compacting",
+                        s.compaction_micros,
+                    ),
+                    (
+                        "l0_slowdowns",
+                        "Commit groups delayed by level-0 backlog",
+                        s.l0_slowdowns,
+                    ),
+                    (
+                        "l0_stop_micros",
+                        "Time writers were stopped by level-0 backlog",
+                        s.l0_stop_micros,
+                    ),
+                    (
+                        "memtable_wait_micros",
+                        "Time writers waited for a memtable flush",
+                        s.memtable_wait_micros,
+                    ),
+                ]
+            }
+        }
+    }
+
     /// A consistent copy of the whole database at `target` (hard links),
     /// with the `ENGINE` file that says how to open it.
     pub fn checkpoint(&self, target: &std::path::Path) -> Result<(), KvError> {

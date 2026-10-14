@@ -941,6 +941,16 @@ impl StorageEngine {
     ///
     /// Costs one FFI property read per column family per counter, so this is
     /// computed on demand at scrape time and never on a timer.
+    /// Cumulative counters of the storage engine (see `Kv::engine_counters`).
+    pub fn engine_counters(&self) -> Vec<(&'static str, &'static str, u64)> {
+        self.db.engine_counters()
+    }
+
+    /// Which storage engine holds this instance's data.
+    pub fn engine_kind(&self) -> super::kv::EngineKind {
+        self.db.engine_kind()
+    }
+
     pub fn memory_breakdown(&self) -> MemoryBreakdown {
         let mut out = MemoryBreakdown::default();
 
