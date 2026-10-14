@@ -110,13 +110,14 @@ impl KsPrefix {
         Some((n + 1).to_be_bytes().to_vec())
     }
 
-    /// Strip the prefix from a physical key read back from RocksDB.
+    /// Strip the prefix from a physical key read back from the engine
+    /// (a slice of the same buffer, no copy).
     #[inline]
-    fn strip(&self, physical: Box<[u8]>) -> Box<[u8]> {
+    fn strip(&self, physical: bytes::Bytes) -> bytes::Bytes {
         if self.len == 0 {
             physical
         } else {
-            physical[self.len as usize..].into()
+            physical.slice(self.len as usize..)
         }
     }
 }
@@ -314,7 +315,7 @@ pub struct KsIter<'a> {
 }
 
 impl Iterator for KsIter<'_> {
-    type Item = Result<(Box<[u8]>, Box<[u8]>), KvError>;
+    type Item = Result<(bytes::Bytes, bytes::Bytes), KvError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

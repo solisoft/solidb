@@ -723,17 +723,17 @@ pub enum KvIter<'a> {
 }
 
 impl Iterator for KvIter<'_> {
-    type Item = Result<(Box<[u8]>, Box<[u8]>), KvError>;
+    type Item = Result<(bytes::Bytes, bytes::Bytes), KvError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            KvIter::Rocks(it) => it.next().map(|r| r.map_err(KvError::from)),
-            #[cfg(feature = "engine-solistore")]
-            KvIter::Solistore(it) => it.next().map(|r| {
-                r.map(|(k, v)| (Box::from(&k[..]), Box::from(&v[..])))
+            KvIter::Rocks(it) => it.next().map(|r| {
+                r.map(|(k, v)| (bytes::Bytes::from(k), bytes::Bytes::from(v)))
                     .map_err(KvError::from)
             }),
+            #[cfg(feature = "engine-solistore")]
+            KvIter::Solistore(it) => it.next().map(|r| r.map_err(KvError::from)),
             #[cfg(feature = "engine-solistore")]
             KvIter::Failed(e) => e.take().map(Err),
         }

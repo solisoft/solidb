@@ -4484,6 +4484,7 @@ dependencies = [
  "base32",
  "base64",
  "bincode",
+ "bytes",
  "chrono",
  "chrono-tz",
  "clap",

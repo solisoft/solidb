@@ -313,7 +313,7 @@ impl Collection {
             return;
         };
         let prefix = Self::version_prefix(key);
-        let mut to_delete: Vec<Box<[u8]>> = Vec::new();
+        let mut to_delete: Vec<bytes::Bytes> = Vec::new();
         let upper = Self::version_upper_bound(key);
         let iter = self.db.iterator_ks_bounded(
             &cf,
