@@ -24,6 +24,13 @@ fn main() {
             for (name, d) in &report.families {
                 println!("{name:>14}: {} entries, {} bytes", d.entries, d.bytes);
             }
+            if !report.skipped.is_empty() {
+                println!(
+                    "left out {} 1.x column families of dropped collections or databases (kept in the backup): {}",
+                    report.skipped.len(),
+                    report.skipped.join(", ")
+                );
+            }
             println!(
                 "{} is now on solistore. The RocksDB directory is kept at {}; remove it \
                  once the server runs well on the new one.",

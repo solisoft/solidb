@@ -34,7 +34,7 @@ use super::RocksDb as DB;
 use crate::error::{DbError, DbResult};
 
 /// `_meta` key prefix for persisted drop markers.
-const MARKER_PREFIX: &str = "pending_drop:";
+pub(crate) const MARKER_PREFIX: &str = "pending_drop:";
 
 /// How long a deleted collection's column family is kept around so a
 /// same-name recreate can reuse it instead of paying `drop_cf` + `create_cf`.
