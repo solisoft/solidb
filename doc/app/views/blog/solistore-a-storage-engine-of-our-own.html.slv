@@ -41,6 +41,7 @@
 <li>bounded iterators in both directions;</li>
 <li>checkpoints and size metrics.</li>
 </ul>
+<p>Four design choices set it apart:</p>
 <ul>
 <li><strong>One tree for every column family.</strong> Since 2.0, all collections share one keyspace (<a href="/blog/solidb-2-0-shared-keyspace">the 2.0 post</a>). solistore goes one step further: a column family is a 4-byte prefix inside one tree, so creating or dropping one is a single MANIFEST record. Opening a database reads no table file, whatever its number of collections.</li>
 <li><strong>Group commit.</strong> Concurrent writers queue behind a leader, which writes the whole group to the write-ahead log with one write and, when asked, one fsync. Members insert into the memtable in parallel. Whichever thread finishes the oldest pending group makes it, and every later finished group, visible at once. Readers see a batch whole or not at all.</li>
@@ -51,13 +52,13 @@
 
 <section id="durability"><h2>Durability</h2>
 <p>solistore has two modes:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Mode</th><th>A commit returns when</th><th>Process crash</th><th>Power loss</th></tr></thead>
   <tbody>
-    <tr><td><code>full</code></td><td>its group&rsquo;s fsync completed</td><td>loses nothing</td><td>loses nothing acknowledged</td></tr>
-    <tr><td><code>eventual</code> (default in SoliDB)</td><td>it reached the OS; a background fsync runs every 100&nbsp;ms</td><td>loses nothing</td><td>at most 100&nbsp;ms of writes, and never a write without every later one</td></tr>
+    <tr><td><pre>full</pre></td><td><pre>its group&rsquo;s fsync completed</pre></td><td><pre>loses nothing</pre></td><td><pre>loses nothing acknowledged</pre></td></tr>
+    <tr><td><pre>eventual (default in SoliDB)</pre></td><td><pre>it reached the OS; a background fsync runs every 100&nbsp;ms</pre></td><td><pre>loses nothing</pre></td><td><pre>at most the last 100&nbsp;ms of writes, and never a write without every earlier one</pre></td></tr>
   </tbody>
-</table>
+</table></div>
 <p><code>eventual</code> is SoliDB&rsquo;s default because it is what SoliDB on RocksDB already gave, and all the comparisons below use it. Transaction commits wait for their own fsync in both modes. <code>SOLIDB_DURABILITY=full</code> fsyncs every write. Group commit makes that affordable: in the engine benchmark, solistore commits fsynced batches at 214,000 a second from 8 threads, against RocksDB&rsquo;s 63,500.</p>
 </section>
 
@@ -74,17 +75,17 @@
 
 <section id="numbers"><h2>Inside SoliDB</h2>
 <p>Engine benchmarks only go so far, so we measured the whole server: the same SoliDB binary, one engine or the other, a client over the native driver. Ratios are solistore over RocksDB; above 1.0, solistore is faster.</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Phase</th><th>64 connections</th><th>256 connections</th></tr></thead>
   <tbody>
-    <tr><td>insert, one document per request</td><td>1.11&times;</td><td>1.07&times;</td></tr>
-    <tr><td>get by key</td><td>1.04&times;</td><td>1.08&times;</td></tr>
-    <tr><td>update (read, merge, write)</td><td>1.07&times;</td><td>1.14&times;</td></tr>
-    <tr><td>query on an index, equality</td><td>1.05&times;</td><td>1.10&times;</td></tr>
-    <tr><td>query on an index, range</td><td>1.05&times;</td><td>1.10&times;</td></tr>
-    <tr><td>mixed, 90% reads</td><td>0.99&times;</td><td>1.00&times;</td></tr>
+    <tr><td><pre>insert, one document per request</pre></td><td><pre>1.11&times;</pre></td><td><pre>1.07&times;</pre></td></tr>
+    <tr><td><pre>get by key</pre></td><td><pre>1.04&times;</pre></td><td><pre>1.08&times;</pre></td></tr>
+    <tr><td><pre>update (read, merge, write)</pre></td><td><pre>1.07&times;</pre></td><td><pre>1.14&times;</pre></td></tr>
+    <tr><td><pre>query on an index, equality</pre></td><td><pre>1.05&times;</pre></td><td><pre>1.10&times;</pre></td></tr>
+    <tr><td><pre>query on an index, range</pre></td><td><pre>1.05&times;</pre></td><td><pre>1.10&times;</pre></td></tr>
+    <tr><td><pre>mixed, 90% reads</pre></td><td><pre>0.99&times;</pre></td><td><pre>1.00&times;</pre></td></tr>
   </tbody>
-</table>
+</table></div>
 <p>solistore also uses less CPU per request, for example 27&nbsp;&micro;s per update against 32. Its peak memory is 1.02&ndash;1.08&times; RocksDB&rsquo;s. Under heavy concurrency the gap widens: at 256 connections, the p99 latency of an update is 3.0&nbsp;ms on solistore and 4.4&nbsp;ms on RocksDB, whose writers spin while they wait.</p>
 <p>It did not start there. The first run had updates at 0.89&times;. Profiling the server found three things:</p>
 <ul>
@@ -97,20 +98,20 @@
 
 <section id="sdbql"><h2>SDBQL queries</h2>
 <p>SDBQL queries run on their own thread pool, so writes through SDBQL put far more writers on the engine than cores. Our first measurement exposed a weakness: <code>INSERT</code> ran at 0.22&times; RocksDB. Commit groups had shrunk to one batch, each waiting for the previous one to be published. Publishing finished groups from whichever thread completes the oldest one fixed it:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Query</th><th>Ratio</th></tr></thead>
   <tbody>
-    <tr><td><code>FILTER d._key == @k</code></td><td>1.02&times;</td></tr>
-    <tr><td>index equality, <code>LIMIT 10</code></td><td>1.08&times;</td></tr>
-    <tr><td><code>COLLECT WITH COUNT</code> over ~1,000 documents</td><td>1.06&times;</td></tr>
-    <tr><td><code>SORT</code> on an index, <code>LIMIT 10</code></td><td>1.05&times;</td></tr>
-    <tr><td>join through a correlated subquery</td><td>1.08&times;</td></tr>
-    <tr><td><code>UPDATE</code></td><td>1.04&times;</td></tr>
-    <tr><td><code>INSERT</code></td><td>1.16&times;</td></tr>
-    <tr><td>filter on an unindexed field (full scan)</td><td>1.12&times;</td></tr>
-    <tr><td><code>COLLECT</code> over 100,000 documents</td><td>1.12&times;</td></tr>
+    <tr><td><pre>FILTER d._key == @k</pre></td><td><pre>1.02&times;</pre></td></tr>
+    <tr><td><pre>index equality, LIMIT 10</pre></td><td><pre>1.08&times;</pre></td></tr>
+    <tr><td><pre>COLLECT WITH COUNT over ~1,000 documents</pre></td><td><pre>1.06&times;</pre></td></tr>
+    <tr><td><pre>SORT on an index, LIMIT 10</pre></td><td><pre>1.05&times;</pre></td></tr>
+    <tr><td><pre>join through a correlated subquery</pre></td><td><pre>1.08&times;</pre></td></tr>
+    <tr><td><pre>UPDATE</pre></td><td><pre>1.04&times;</pre></td></tr>
+    <tr><td><pre>INSERT</pre></td><td><pre>1.16&times;</pre></td></tr>
+    <tr><td><pre>filter on an unindexed field (full scan)</pre></td><td><pre>1.12&times;</pre></td></tr>
+    <tr><td><pre>COLLECT over 100,000 documents</pre></td><td><pre>1.12&times;</pre></td></tr>
   </tbody>
-</table>
+</table></div>
 </section>
 
 <section id="surrealkv"><h2>Against SurrealKV</h2>

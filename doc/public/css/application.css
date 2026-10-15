@@ -7223,6 +7223,30 @@ a {
   color: var(--text);
   font-style: italic;
 }
+.post-body ul, .post-body ol {
+  color: var(--text-2);
+  line-height: 1.75;
+  font-size: 17px;
+  padding-left: 24px;
+  margin: 0 0 22px;
+}
+.post-body ul {
+  list-style: disc;
+}
+.post-body ol {
+  list-style: decimal;
+}
+.post-body li {
+  margin: 0 0 8px;
+  padding-left: 4px;
+}
+.post-body li::marker {
+  color: var(--text-3);
+}
+.post-body li strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .post-toc {
   border-top: 1px solid var(--rule-ink);
   border-bottom: 1px solid var(--rule);
