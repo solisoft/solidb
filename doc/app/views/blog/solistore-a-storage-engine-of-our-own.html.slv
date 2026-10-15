@@ -1,0 +1,137 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Storage · Performance</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">SoliDB has run on RocksDB since its first release. It can now also run on solistore, a storage engine we wrote in Rust for it. In the whole server, against RocksDB with SoliDB&rsquo;s production settings, solistore is ahead on every phase we measured. It is behind a build flag for now, and nothing changes for an existing data directory.</p>
+  <p class="post-note">Every figure on this page comes from the same SoliDB release build running on one engine and then the other, on 8 cores, with 1M documents, over the native driver, and with the query cache off. They are medians of three runs, alternating the engines. The raw results and the scripts are in the <a href="https://github.com/solisoft/solistore">solistore repository</a>.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#why">Why replace RocksDB</a></li>
+    <li><a href="#what">What solistore is</a></li>
+    <li><a href="#durability">Durability</a></li>
+    <li><a href="#tested">How it is tested</a></li>
+    <li><a href="#numbers">Inside SoliDB</a></li>
+    <li><a href="#sdbql">SDBQL queries</a></li>
+    <li><a href="#surrealkv">Against SurrealKV</a></li>
+    <li><a href="#trying">Trying it</a></li>
+  </ol>
+</nav>
+
+<section id="why"><h2>Why replace RocksDB</h2>
+<p>RocksDB is excellent, and it is also a large C++ library that SoliDB drags along. Three of its costs kept coming back:</p>
+<ul>
+<li><strong>Build time.</strong> CI measured 95 minutes of compilation against 18 seconds of tests. Most of the compilation was RocksDB&rsquo;s C++. It needs a cross g++ toolchain for musl and ARM. On Windows, CI only checks that the code compiles.</li>
+<li><strong>Memory you cannot account for.</strong> Memtables, pinned index and filter blocks, and the table cache grow with the number of column families and table files. The <a href="/blog/where-the-memory-goes">memory post</a> tells how much work it took just to see where the memory went.</li>
+<li><strong>Durability.</strong> SoliDB&rsquo;s ordinary writes were never fsynced, because an fsync per write was too slow.</li>
+</ul>
+<p>Before writing our own, we evaluated fjall, an existing Rust LSM. At SoliDB&rsquo;s shape it stalled on reopen with 1,232 collections. It showed half-applied batches to readers. It needed 3&ndash;4&times; RocksDB&rsquo;s memory. Each design choice below answers one of those measurements.</p>
+</section>
+
+<section id="what"><h2>What solistore is</h2>
+<p>solistore is an embedded, ordered key-value store built as an LSM tree, in pure Rust: no C compiler anywhere in its dependency graph, and CI enforces that. Its surface is what SoliDB used of RocksDB and no more:</p>
+<ul>
+<li>column families created and dropped at run time;</li>
+<li>atomic batches across them;</li>
+<li>range deletes;</li>
+<li>bounded iterators in both directions;</li>
+<li>checkpoints and size metrics.</li>
+</ul>
+<ul>
+<li><strong>One tree for every column family.</strong> Since 2.0, all collections share one keyspace (<a href="/blog/solidb-2-0-shared-keyspace">the 2.0 post</a>). solistore goes one step further: a column family is a 4-byte prefix inside one tree, so creating or dropping one is a single MANIFEST record. Opening a database reads no table file, whatever its number of collections.</li>
+<li><strong>Group commit.</strong> Concurrent writers queue behind a leader, which writes the whole group to the write-ahead log with one write and, when asked, one fsync. Members insert into the memtable in parallel. Whichever thread finishes the oldest pending group makes it, and every later finished group, visible at once. Readers see a batch whole or not at all.</li>
+<li><strong>One memory budget.</strong> Index and filter blocks are charged to the block cache, so the cache size bounds them too.</li>
+<li><strong>Range deletes that free space.</strong> A table file wholly covered by a delete is dropped without being read. Dropping a collection gives its disk back.</li>
+</ul>
+</section>
+
+<section id="durability"><h2>Durability</h2>
+<p>solistore has two modes:</p>
+<table>
+  <thead><tr><th>Mode</th><th>A commit returns when</th><th>Process crash</th><th>Power loss</th></tr></thead>
+  <tbody>
+    <tr><td><code>full</code></td><td>its group&rsquo;s fsync completed</td><td>loses nothing</td><td>loses nothing acknowledged</td></tr>
+    <tr><td><code>eventual</code> (default in SoliDB)</td><td>it reached the OS; a background fsync runs every 100&nbsp;ms</td><td>loses nothing</td><td>at most 100&nbsp;ms of writes, and never a write without every later one</td></tr>
+  </tbody>
+</table>
+<p><code>eventual</code> is SoliDB&rsquo;s default because it is what SoliDB on RocksDB already gave, and all the comparisons below use it. Transaction commits wait for their own fsync in both modes. <code>SOLIDB_DURABILITY=full</code> fsyncs every write. Group commit makes that affordable: in the engine benchmark, solistore commits fsynced batches at 214,000 a second from 8 threads, against RocksDB&rsquo;s 63,500.</p>
+</section>
+
+<section id="tested"><h2>How it is tested</h2>
+<p>A storage engine is only as good as its behaviour when the power goes out, so most of the test code is about failure:</p>
+<ul>
+<li><strong>A model.</strong> Random sequences are checked against a sorted map: writes, deletes, range deletes, batches, scans in both directions, flushes, compactions, reopens, column families created and dropped, checkpoints.</li>
+<li><strong>A crash at every I/O operation.</strong> A fault-injecting file system cuts power at each operation of a workload in turn and tears the unsynced tails. The reopened database must hold every acknowledged batch, and the one in flight whole or not at all.</li>
+<li><strong>Process kills.</strong> 100 SIGKILLs during fsynced commits: 14.87M acknowledged writes, none lost, none torn. 42M visibility checks, no reader saw part of a batch.</li>
+<li><strong>Mutation testing.</strong> We break the engine on purpose to check that the tests above notice.</li>
+</ul>
+<p>The suite earned its keep while we tuned performance. One optimisation moved an fsync out of the commit path. On macOS and Windows CI, it let a power loss keep a later write and lose an earlier one. CI caught it. The fix, a header on each log file and a recovery that stops at the first incomplete one (what RocksDB calls point-in-time recovery), came with two new crash tests. Each was checked to fail without the fix.</p>
+</section>
+
+<section id="numbers"><h2>Inside SoliDB</h2>
+<p>Engine benchmarks only go so far, so we measured the whole server: the same SoliDB binary, one engine or the other, a client over the native driver. Ratios are solistore over RocksDB; above 1.0, solistore is faster.</p>
+<table>
+  <thead><tr><th>Phase</th><th>64 connections</th><th>256 connections</th></tr></thead>
+  <tbody>
+    <tr><td>insert, one document per request</td><td>1.11&times;</td><td>1.07&times;</td></tr>
+    <tr><td>get by key</td><td>1.04&times;</td><td>1.08&times;</td></tr>
+    <tr><td>update (read, merge, write)</td><td>1.07&times;</td><td>1.14&times;</td></tr>
+    <tr><td>query on an index, equality</td><td>1.05&times;</td><td>1.10&times;</td></tr>
+    <tr><td>query on an index, range</td><td>1.05&times;</td><td>1.10&times;</td></tr>
+    <tr><td>mixed, 90% reads</td><td>0.99&times;</td><td>1.00&times;</td></tr>
+  </tbody>
+</table>
+<p>solistore also uses less CPU per request, for example 27&nbsp;&micro;s per update against 32. Its peak memory is 1.02&ndash;1.08&times; RocksDB&rsquo;s. Under heavy concurrency the gap widens: at 256 connections, the p99 latency of an update is 3.0&nbsp;ms on solistore and 4.4&nbsp;ms on RocksDB, whose writers spin while they wait.</p>
+<p>It did not start there. The first run had updates at 0.89&times;. Profiling the server found three things:</p>
+<ul>
+<li>block searches that copied every key they looked at;</li>
+<li>fsyncs held under the commit lock at each memtable switch, which parked SoliDB&rsquo;s worker threads and left a quarter of the cores idle;</li>
+<li>memtables that filled up 30% sooner than RocksDB&rsquo;s, and so flushed and compacted more often.</li>
+</ul>
+<p>Each fix was measured before and after on the same machine.</p>
+</section>
+
+<section id="sdbql"><h2>SDBQL queries</h2>
+<p>SDBQL queries run on their own thread pool, so writes through SDBQL put far more writers on the engine than cores. Our first measurement exposed a weakness: <code>INSERT</code> ran at 0.22&times; RocksDB. Commit groups had shrunk to one batch, each waiting for the previous one to be published. Publishing finished groups from whichever thread completes the oldest one fixed it:</p>
+<table>
+  <thead><tr><th>Query</th><th>Ratio</th></tr></thead>
+  <tbody>
+    <tr><td><code>FILTER d._key == @k</code></td><td>1.02&times;</td></tr>
+    <tr><td>index equality, <code>LIMIT 10</code></td><td>1.08&times;</td></tr>
+    <tr><td><code>COLLECT WITH COUNT</code> over ~1,000 documents</td><td>1.06&times;</td></tr>
+    <tr><td><code>SORT</code> on an index, <code>LIMIT 10</code></td><td>1.05&times;</td></tr>
+    <tr><td>join through a correlated subquery</td><td>1.08&times;</td></tr>
+    <tr><td><code>UPDATE</code></td><td>1.04&times;</td></tr>
+    <tr><td><code>INSERT</code></td><td>1.16&times;</td></tr>
+    <tr><td>filter on an unindexed field (full scan)</td><td>1.12&times;</td></tr>
+    <tr><td><code>COLLECT</code> over 100,000 documents</td><td>1.12&times;</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section id="surrealkv"><h2>Against SurrealKV</h2>
+<p>SurrealDB recently replaced RocksDB with its own LSM, SurrealKV, and published large speedups. We added SurrealKV 1.0 to our engine benchmark with the budget the other engines get (512&nbsp;MiB cache, 64&nbsp;MiB memtable). On SoliDB&rsquo;s workload at 1M documents:</p>
+<ul>
+<li>without fsync, SurrealKV was behind both RocksDB and solistore on loads, updates, reads, scans and mixed load, at 1.2&times; their memory;</li>
+<li>with an fsync on every commit, solistore loaded and updated about twice as fast.</li>
+</ul>
+<p>Its published numbers come from 500,000 small keys, which fit in its memtable and cache, compared with a RocksDB whose durable commits ran at 8,568 a second. That is not a statement about SurrealKV in general, only about this workload. The scripts are public if you want to run your own.</p>
+</section>
+
+<section id="trying"><h2>Trying it</h2>
+<p>solistore is not in a release yet, and RocksDB stays the default. It lives on the <a href="https://github.com/solisoft/solidb/tree/feat/storage-kv"><code>feat/storage-kv</code></a> branch. To try it, build that branch with the feature and point a <em>new</em> data directory at it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>git checkout feat/storage-kv
+cargo build --release --features engine-solistore
+SOLIDB_ENGINE=solistore ./target/release/solidb --data-dir ./data-solistore
+SOLIDB_DURABILITY=full …   <span class="tok-com"># an fsync per commit instead of every 100 ms</span></pre></div>
+<p>Every data directory records its engine in an <code>ENGINE</code> file, and a server always opens a directory with the engine that wrote it. Existing RocksDB directories keep working as they are. SoliDB&rsquo;s full test suite runs on both engines.</p>
+<p><code>/metrics</code> now has <code>solidb_storage_*</code> counters on both engines: bytes written to the log, by flushes and by compactions, plus stalls. They show what the engine does with each write.</p>
+<p>Next come a tool that moves an existing RocksDB directory to solistore and verifies the copy, then a trial on long-running servers. Removing RocksDB is the last step, and the 95-minute compile goes with it. solistore itself is open source at <a href="https://github.com/solisoft/solistore">github.com/solisoft/solistore</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>
