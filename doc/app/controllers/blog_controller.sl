@@ -69,6 +69,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solistore-a-storage-engine-of-our-own",
+        "title": "solistore: a storage engine of our own",
+        "date": "2026-10-15",
+        "display_date": "October 15, 2026",
+        "summary": "SoliDB can now run on solistore, a pure-Rust LSM written for it. In the whole server, "
+        + "against RocksDB with SoliDB's production settings, it is ahead on every phase we measured, "
+        + "SDBQL queries included.",
+        "tags": ["Storage", "Performance"],
+        "read_minutes": 8
+      },
+      {
         "slug": "solidb-2-3-1-the-index-in-the-second-filter",
         "title": "SoliDB 2.3.1: the index in the second FILTER",
         "date": "2026-10-12",
