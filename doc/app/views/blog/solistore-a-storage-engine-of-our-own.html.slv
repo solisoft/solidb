@@ -71,6 +71,7 @@
 <li><strong>Mutation testing.</strong> We break the engine on purpose to check that the tests above notice.</li>
 </ul>
 <p>The suite earned its keep while we tuned performance. One optimisation moved an fsync out of the commit path. On macOS and Windows CI, it let a power loss keep a later write and lose an earlier one. CI caught it. The fix, a header on each log file and a recovery that stops at the first incomplete one (what RocksDB calls point-in-time recovery), came with two new crash tests. Each was checked to fail without the fix.</p>
+<p>A second one turned up after this post went out, once, on macOS CI: in <code>eventual</code> mode, a write that asked for an fsync was lost by a crash, with the writes just before it. Its fsync relied on another thread&rsquo;s fsync of an older log file, which had started but not finished. A synced write now fsyncs every older log itself. A new test covers the race; with a pause injected to widen it, the test failed before the fix and passes after.</p>
 </section>
 
 <section id="numbers"><h2>Inside SoliDB</h2>
