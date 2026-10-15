@@ -4607,7 +4607,7 @@ dependencies = [
 [[package]]
 name = "solistore"
 version = "0.1.0"
-source = "git+https://github.com/solisoft/solistore#9ff023f87a0605a312559dca0270fd3d68f7e08f"
+source = "git+https://github.com/solisoft/solistore#83144c2320e48755059df157e3a79e0b8fab53e3"
 dependencies = [
  "arc-swap",
  "bytes",
