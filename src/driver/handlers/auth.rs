@@ -77,9 +77,11 @@ pub async fn handle_auth(
         }
     };
 
-    // Verify password using AuthService (on the blocking pool — Argon2 is
-    // CPU-bound and must not pin the async runtime)
-    if !crate::server::auth::verify_password_blocking(&password, &user.password_hash).await {
+    // Verify the password (Argon2 on the blocking pool, unless this user's
+    // current password was verified in the last minute: Soli reconnects one
+    // connection per worker, and each check cost ~21 ms).
+    if !crate::server::auth::verify_password_cached(&username, &password, &user.password_hash).await
+    {
         crate::server::auth::record_login_failure(&rate_bucket);
         return Response::error(DriverError::AuthError("Invalid credentials".to_string()));
     }

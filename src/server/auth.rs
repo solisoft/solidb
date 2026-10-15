@@ -1297,6 +1297,60 @@ pub(crate) async fn verify_password_blocking(password: &str, hash: &str) -> bool
         .unwrap_or(false)
 }
 
+/// Passwords recently verified on the driver path: a salted digest of user,
+/// password and stored hash, and when the verdict expires.
+///
+/// A driver connection authenticates once, with the password; Soli opens one
+/// per worker and reopens them after any disconnect. Each was a full Argon2
+/// run (~21 ms on a dev box), so the first query of every worker took 22 ms
+/// against 0.2 ms for the next ones. The HTTP path has cached Basic auth for
+/// the same reason ([`BASIC_AUTH_CACHE`]).
+///
+/// Only successes are kept: a wrong password always costs Argon2 and counts
+/// against the login rate limit. The stored hash is part of the key, so a
+/// changed password stops matching at once; a deleted user is refused before
+/// this is asked; roles are read afresh by the caller on every connection.
+static VERIFIED_PASSWORDS: Lazy<Mutex<LruCache<String, Instant>>> = Lazy::new(|| {
+    Mutex::new(LruCache::new(
+        NonZeroUsize::new(BASIC_AUTH_CACHE_CAPACITY).unwrap(),
+    ))
+});
+
+fn verified_password_key(username: &str, password: &str, hash: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(&BASIC_AUTH_CACHE_SALT[..]);
+    for part in [username, password, hash] {
+        hasher.update((part.len() as u64).to_le_bytes());
+        hasher.update(part.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+/// [`verify_password_blocking`], remembering a success for
+/// [`BASIC_AUTH_CACHE_TTL_SECS`] (see [`VERIFIED_PASSWORDS`]).
+pub(crate) async fn verify_password_cached(username: &str, password: &str, hash: &str) -> bool {
+    let key = verified_password_key(username, password, hash);
+    {
+        let mut cache = VERIFIED_PASSWORDS.lock();
+        match cache.get(&key) {
+            Some(expires) if Instant::now() < *expires => return true,
+            Some(_) => {
+                cache.pop(&key);
+            }
+            None => {}
+        }
+    }
+    let ok = verify_password_blocking(password, hash).await;
+    if ok {
+        VERIFIED_PASSWORDS.lock().push(
+            key,
+            Instant::now() + std::time::Duration::from_secs(BASIC_AUTH_CACHE_TTL_SECS),
+        );
+    }
+    ok
+}
+
 /// Spend one Argon2 verification against [`DUMMY_PASSWORD_HASH`] and report
 /// failure. Used when the username does not exist, so an unknown user is as
 /// slow as a wrong password (audit H5).
@@ -1749,6 +1803,32 @@ pub async fn permissive_auth_middleware(
 
 #[cfg(test)]
 mod tests {
+    /// The driver's password cache: a success is remembered, a failure is
+    /// not, and a changed password (another stored hash) is verified again.
+    #[tokio::test]
+    async fn driver_password_verdicts_are_cached_only_for_the_hash_they_matched() {
+        let hash = AuthService::hash_password("right").unwrap();
+        assert!(!verify_password_cached("drv-u", "wrong", &hash).await);
+        assert!(verify_password_cached("drv-u", "right", &hash).await);
+        let key = verified_password_key("drv-u", "right", &hash);
+        assert!(
+            VERIFIED_PASSWORDS.lock().get(&key).is_some(),
+            "success kept"
+        );
+        assert!(VERIFIED_PASSWORDS
+            .lock()
+            .get(&verified_password_key("drv-u", "wrong", &hash))
+            .is_none());
+        // A hit answers without Argon2.
+        let started = Instant::now();
+        assert!(verify_password_cached("drv-u", "right", &hash).await);
+        assert!(started.elapsed() < std::time::Duration::from_millis(5));
+        // After a password change the old one no longer passes.
+        let new_hash = AuthService::hash_password("changed").unwrap();
+        assert!(!verify_password_cached("drv-u", "right", &new_hash).await);
+        assert!(verify_password_cached("drv-u", "changed", &new_hash).await);
+    }
+
     use super::*;
 
     #[test]
