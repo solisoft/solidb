@@ -93,7 +93,8 @@ server and a fleet of app dev servers goes to swap. Runs get killed part-way and
 tell you nothing.
 
 Run the targeted forms above — the specific `--test <name>`, or a pattern — and
-let the `test` job in CI run the whole thing. The other six CI jobs (`fmt`,
+let the `test` job in CI run the whole thing (`test-solistore` runs it again
+on the solistore engine). The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
