@@ -173,6 +173,10 @@ impl<'a> QueryExecutor<'a> {
             if let Some(result) = self.try_geo_sort_limit(query, &initial_bindings)? {
                 return Ok(result);
             }
+            // `FILTER v.f == x COLLECT WITH COUNT` counted from the index.
+            if let Some(result) = self.try_index_count(query, &initial_bindings)? {
+                return Ok(result);
+            }
         }
 
         // Optimization: Streaming bulk INSERT for range-based FOR loops

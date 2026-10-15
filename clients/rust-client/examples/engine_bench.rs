@@ -349,6 +349,7 @@ async fn main() {
         ("q_key", "FOR d IN engine_bench FILTER d._key == @k RETURN d", key, false),
         ("q_eq_limit", "FOR d IN engine_bench FILTER d.group == @g LIMIT 10 RETURN d", group, false),
         ("q_eq_count", "FOR d IN engine_bench FILTER d.group == @g COLLECT WITH COUNT INTO n RETURN n", group, false),
+        ("q_eq_length", "RETURN LENGTH(FOR d IN engine_bench FILTER d.group == @g RETURN 1)", group, false),
         ("q_eq_project", "FOR d IN engine_bench FILTER d.group == @g RETURN {name: d.name, score: d.score}", group, false),
         ("q_sort_limit", "FOR d IN engine_bench SORT d.n DESC LIMIT 10 RETURN d", none, false),
         ("q_join", "FOR d IN engine_bench FILTER d.group == @g LIMIT 20 LET label = FIRST(FOR x IN engine_bench_groups FILTER x._key == CONCAT('g', d.group) RETURN x.label) RETURN {name: d.name, label}", group, false),

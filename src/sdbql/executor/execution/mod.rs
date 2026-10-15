@@ -5,6 +5,7 @@
 //! - streaming: Bulk insert and mutation logging
 //! - clauses: Body clause processing (FOR, FILTER, JOIN, etc.)
 //! - collect: COLLECT grouping and streaming aggregation
+//! - index_count: `FILTER v.f == x COLLECT WITH COUNT` read from an index
 //! - subquery: Correlated subquery execution
 //! - mutations: per-row INSERT / UPDATE / REPLACE / REMOVE with OPTIONS, OLD / NEW
 //! - array_ops: array comparison operators and inline array expressions
@@ -15,6 +16,7 @@ mod collect;
 mod entry;
 mod graph;
 mod graph_rag;
+mod index_count;
 mod mutations;
 mod paths;
 mod raw_scan;

@@ -1324,6 +1324,137 @@ impl Collection {
         Some(docs)
     }
 
+    /// The index-entry prefix of `field == value`, as [`Self::index_lookup_eq`]
+    /// reads it.
+    fn index_eq_prefix(&self, field: &str, value: &Value) -> EqPrefix {
+        if value.is_null() {
+            return EqPrefix::NoIndex;
+        }
+        let Some(index) = self.get_single_field_index_for_field(field) else {
+            return EqPrefix::NoIndex;
+        };
+        if (index.index_type == IndexType::Bloom
+            && !self.bloom_check(&index.name, &value.to_string()))
+            || (index.index_type == IndexType::Cuckoo
+                && !self.cuckoo_check(&index.name, &value.to_string()))
+        {
+            return EqPrefix::Empty;
+        }
+        let value_str = hex::encode(crate::storage::codec::encode_key(value));
+        EqPrefix::Prefix(format!("{}{}:{}:", IDX_PREFIX, index.name, value_str).into_bytes())
+    }
+
+    /// The index entries under `prefix`, in order: `f` gets each entry's
+    /// value (the document key) and returns `false` to stop.
+    fn for_each_index_entry(
+        &self,
+        cf: &KsCf,
+        prefix: &[u8],
+        mut f: impl FnMut(&[u8]) -> DbResult<bool>,
+    ) -> DbResult<()> {
+        // The prefix ends in ':', so ';' is the first key past it.
+        let mut upper = prefix.to_vec();
+        *upper.last_mut().expect("non-empty prefix") += 1;
+        let iter = self.db.iterator_ks_bounded(
+            cf,
+            IterMode::From(prefix, Direction::Forward),
+            None,
+            Some(&upper),
+        );
+        for item in iter {
+            let (k, v) = item.map_err(|e| DbError::InternalError(e.to_string()))?;
+            if !k.starts_with(prefix) || !f(&v)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// How many documents [`Self::index_lookup_eq`] would return, read from
+    /// the index alone: one entry per document, and no document fetched.
+    /// `check` is called every 64k entries so a caller can enforce a
+    /// deadline. `None` when no single-field index serves `field`.
+    pub fn index_count_eq(
+        &self,
+        field: &str,
+        value: &Value,
+        mut check: impl FnMut() -> DbResult<()>,
+    ) -> DbResult<Option<u64>> {
+        let prefix = match self.index_eq_prefix(field, value) {
+            EqPrefix::NoIndex => return Ok(None),
+            EqPrefix::Empty => return Ok(Some(0)),
+            EqPrefix::Prefix(p) => p,
+        };
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut n = 0u64;
+        self.for_each_index_entry(&cf, &prefix, |_| {
+            n += 1;
+            if n.is_multiple_of(65_536) {
+                check()?;
+            }
+            Ok(true)
+        })?;
+        Ok(Some(n))
+    }
+
+    /// [`Self::index_lookup_eq`] then rows `offset..offset + limit`, written
+    /// for `shape` straight from the stored bytes (see
+    /// [`crate::storage::raw_rows`]). `Ok(None)` when no single-field index
+    /// serves `field`, or when a document is missing or cannot be copied
+    /// this way: the caller then runs the query the ordinary way. The flag
+    /// says whether the index holds the value at all, rows skipped by
+    /// `offset` included.
+    pub fn index_raw_eq(
+        &self,
+        field: &str,
+        value: &Value,
+        offset: usize,
+        limit: usize,
+        shape: &crate::storage::raw_rows::RawShape,
+        mut check: impl FnMut(usize) -> DbResult<()>,
+    ) -> DbResult<Option<(usize, Vec<u8>, bool)>> {
+        let prefix = match self.index_eq_prefix(field, value) {
+            EqPrefix::NoIndex => return Ok(None),
+            EqPrefix::Empty => return Ok(Some((0, Vec::new(), false))),
+            EqPrefix::Prefix(p) => p,
+        };
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut keys: Vec<Vec<u8>> = Vec::new();
+        let mut skipped = 0usize;
+        let mut seen = false;
+        self.for_each_index_entry(&cf, &prefix, |doc_key| {
+            seen = true;
+            if limit == 0 {
+                return Ok(false);
+            }
+            if skipped < offset {
+                skipped += 1;
+                return Ok(true);
+            }
+            keys.push(Self::doc_key(&String::from_utf8_lossy(doc_key)));
+            if keys.len().is_multiple_of(4096) {
+                check(keys.len())?;
+            }
+            Ok(keys.len() < limit)
+        })?;
+        let mut out = Vec::new();
+        for doc in self.db.multi_get_ks(&cf, keys.iter().map(|k| k.as_slice())) {
+            // A missing document is dropped by the ordinary path; leave the
+            // whole query to it rather than reproduce that here.
+            let Ok(Some(bytes)) = doc else {
+                return Ok(None);
+            };
+            if crate::storage::raw_rows::write_row(&bytes, shape, &mut out).is_none() {
+                return Ok(None);
+            }
+        }
+        Ok(Some((keys.len(), out, seen)))
+    }
+
     /// Composite-index equality lookup.
     ///
     /// Given a set of `(field, value)` equality conditions, find the multi-field
@@ -1806,4 +1937,14 @@ impl Collection {
 
         Ok((keys_to_remove, geo_keys_to_remove))
     }
+}
+
+/// What an equality reads in a single-field index.
+enum EqPrefix {
+    /// No index serves the field (or the value is null): not answerable here.
+    NoIndex,
+    /// The index's filter rules the value out.
+    Empty,
+    /// The entries of the matching documents share this prefix.
+    Prefix(Vec<u8>),
 }

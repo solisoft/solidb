@@ -357,8 +357,9 @@ the binaries over ssh).
 
 ### Raw rows: driver reads that never decode (2.0.5)
 
-`FOR v IN c [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a plain local
-collection, sent over the driver with the query cache off, is answered by
+`FOR v IN c [FILTER v.f == x] [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a
+plain local collection (the FILTER only when a single-field index on `f`
+serves it), sent over the driver with the query cache off, is answered by
 copying the stored MessagePack bytes into the response
 (`sdbql/executor/execution/raw_scan.rs` plans it, `storage/raw_rows.rs` writes
 the rows, `Response::RawRows` carries them). The output must stay
@@ -368,6 +369,15 @@ or to what `Document::to_value` returns (system fields, timestamp form) has to
 be made in `raw_rows` too. Anything the planner does not recognise, and any
 guard it cannot clear (row policy, search view, columnar, sharded, row
 ceiling), falls back to the ordinary executor.
+
+Counts are read from an index the same way, on every transport:
+`FOR v IN c FILTER v.f == x COLLECT WITH COUNT INTO n RETURN …` and
+`LENGTH(FOR v IN c FILTER v.f == x RETURN 1)` (the Soli ORM's `count` with a
+`where`) count the entries of the single-field index on `f` and read no
+document (`sdbql/executor/execution/index_count.rs`). Both the raw path and
+the count rely on an index holding exactly one entry per document under the
+value's `encode_key` form; anything that changes that (array expansion,
+sparse entries) must change them too.
 
 ### Three tiers of protected collections
 
