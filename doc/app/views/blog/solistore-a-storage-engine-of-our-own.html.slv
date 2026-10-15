@@ -123,8 +123,9 @@
 </section>
 
 <section id="trying"><h2>Trying it</h2>
-<p>solistore is not in a release yet, and RocksDB stays the default. To try it, build SoliDB with the feature and point a <em>new</em> data directory at it:</p>
-<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>cargo build --release --features engine-solistore
+<p>solistore is not in a release yet, and RocksDB stays the default. It lives on the <a href="https://github.com/solisoft/solidb/tree/feat/storage-kv"><code>feat/storage-kv</code></a> branch. To try it, build that branch with the feature and point a <em>new</em> data directory at it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>git checkout feat/storage-kv
+cargo build --release --features engine-solistore
 SOLIDB_ENGINE=solistore ./target/release/solidb --data-dir ./data-solistore
 SOLIDB_DURABILITY=full …   <span class="tok-com"># an fsync per commit instead of every 100 ms</span></pre></div>
 <p>Every data directory records its engine in an <code>ENGINE</code> file, and a server always opens a directory with the engine that wrote it. Existing RocksDB directories keep working as they are. SoliDB&rsquo;s full test suite runs on both engines.</p>
