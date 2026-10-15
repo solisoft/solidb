@@ -57,7 +57,7 @@ fn configured() -> Result<EngineKind, KvError> {
 }
 
 /// The engine recorded for `path`, if the directory already holds a database.
-fn recorded(path: &Path) -> Result<Option<EngineKind>, KvError> {
+pub(super) fn recorded(path: &Path) -> Result<Option<EngineKind>, KvError> {
     match std::fs::read_to_string(path.join(ENGINE_FILE)) {
         Ok(name) => EngineKind::parse(&name).map(Some).ok_or_else(|| {
             KvError::new(format!(

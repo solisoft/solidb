@@ -12,6 +12,8 @@ use std::ops::Deref;
 
 use crate::error::DbError;
 
+#[cfg(feature = "engine-solistore")]
+pub mod migrate;
 pub(crate) mod rocks;
 mod select;
 #[cfg(feature = "engine-solistore")]

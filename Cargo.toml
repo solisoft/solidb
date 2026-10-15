@@ -382,6 +382,11 @@ path = "src/bin/solidb-fuse.rs"
 required-features = ["fuse"]
 
 [[bin]]
+name = "solidb-migrate-engine"
+path = "src/bin/solidb-migrate-engine.rs"
+required-features = ["engine-solistore"]
+
+[[bin]]
 name = "solidb-repl"
 path = "src/bin/solidb-repl.rs"
 
