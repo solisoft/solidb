@@ -37,6 +37,13 @@ ignore = [
     # paste 1.0.15, unmaintained proc-macro, no upgrade path. Compile-time
     # only, via ratatui / tui-textarea / sanitizer.
     "RUSTSEC-2024-0436",
+
+    # basic-toml 0.1.10, unmaintained. Reached only through uniffi_bindgen
+    # 0.28 (askama_derive 0.12), the optional mobile-bindings generator of
+    # clients/rust-client; it reads uniffi.toml at code-generation time and
+    # is not in the server. Goes away with a uniffi upgrade, which changes
+    # the generated bindings and needs its own change.
+    "RUSTSEC-2026-0374",
 ]
 
 [licenses]
@@ -79,3 +86,6 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# solistore, the second storage engine (engine-solistore), is taken from
+# git until it is published on crates.io. Cargo.lock pins the commit.
+allow-git = ["https://github.com/solisoft/solistore"]
