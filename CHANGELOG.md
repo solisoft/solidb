@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Performance
+
+* **`solidb-migrate-engine` builds solistore's tables directly, about 3×
+  faster.** Each column family is loaded with solistore's `Db::ingest` as
+  bottom-level tables, built on up to eight threads, instead of written in
+  4 MiB batches through the WAL, a flush and every compaction. 35.5M entries
+  (39.3 GB): 8 min 45 s → about 3 minutes. The sync log is copied alongside
+  the main database instead of after it, column families are verified in
+  parallel, and a progress line every million entries shows how far the
+  copy has got. (2.4.0 shipped without this: it needed a solistore commit
+  that had not been pushed.)
+
 ## [2.4.0](https://github.com/solisoft/solidb/compare/v2.3.1...v2.4.0) (2026-10-20)
 
 ### Added
