@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+* **solistore comes from crates.io.** It was a git dependency, which
+  crates.io refuses even when optional, so 2.4.0 and 2.4.1 were not
+  published there. solistore 0.1.0 is now on crates.io, solidb depends on
+  it by version, and the next release publishes solidb to crates.io again.
+
 ## [2.4.1](https://github.com/solisoft/solidb/compare/v2.4.0...v2.4.1) (2026-10-20)
 
 ### Performance

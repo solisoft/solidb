@@ -4607,7 +4607,8 @@ dependencies = [
 [[package]]
 name = "solistore"
 version = "0.1.0"
-source = "git+https://github.com/solisoft/solistore#ee5b515fa2f5966f35230fecf192e137ed262ef2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88d1569bfb10e993273cc7b8a42801f1fc493224f0c5ac0804c84dc8b939358a"
 dependencies = [
  "arc-swap",
  "bytes",

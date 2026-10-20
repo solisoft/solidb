@@ -151,7 +151,7 @@ mv ./data.rocksdb-backup-1792059661 ./data</pre>
             RocksDB remains the default and the engine to use for production data. solistore passes SoliDB&rsquo;s full test suite, and is ahead of RocksDB in every phase of the server benchmark, but it has not yet run in production, and its on-disk format may still change before 1.0. Keep the RocksDB backup until you are confident in a migrated directory.
           </p>
           <p class="text-gray-300 leading-relaxed">
-            Why it exists, its design and the measurements: <a href="/blog/solistore-a-storage-engine-of-our-own" class="text-indigo-400 hover:underline">solistore, a storage engine of our own</a>. The source is at <a href="https://github.com/solisoft/solistore" class="text-indigo-400 hover:underline">github.com/solisoft/solistore</a>.
+            Why it exists, its design and the measurements: <a href="/blog/solistore-a-storage-engine-of-our-own" class="text-indigo-400 hover:underline">solistore, a storage engine of our own</a>. The crate is <a href="https://crates.io/crates/solistore" class="text-indigo-400 hover:underline">solistore on crates.io</a> (API documentation on <a href="https://docs.rs/solistore" class="text-indigo-400 hover:underline">docs.rs</a>), and the source is at <a href="https://github.com/solisoft/solistore" class="text-indigo-400 hover:underline">github.com/solisoft/solistore</a>.
           </p>
         </div>
       </section>

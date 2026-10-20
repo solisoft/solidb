@@ -86,6 +86,3 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# solistore, the second storage engine (engine-solistore), is taken from
-# git until it is published on crates.io. Cargo.lock pins the commit.
-allow-git = ["https://github.com/solisoft/solistore"]
