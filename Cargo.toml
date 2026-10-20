@@ -125,7 +125,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 fuser = { version = "0.16", optional = true }
 # The pure-Rust storage engine meant to replace RocksDB (integration step S2,
 # see storage/kv). A data directory records which engine wrote it.
-solistore = { git = "https://github.com/solisoft/solistore", optional = true }
+solistore = { version = "0.1", git = "https://github.com/solisoft/solistore", optional = true }
 
 # Daemon mode (Unix only)
 # daemonize crate removed - using custom implementation in src/daemon.rs
