@@ -82,6 +82,7 @@ def docs_nav()
           { "slug": "offline-sync", "label": "Offline Sync", "icon": "fa-sync-alt" }
         ] },
         { "title": "Storage Engines", "items": [
+          { "slug": "storage-engine", "label": "RocksDB & solistore", "icon": "fa-hdd" },
           { "slug": "documents", "label": "Documents Storage", "icon": "fa-file-alt" },
           { "slug": "timeseries", "label": "Time Series", "icon": "fa-chart-line" },
           { "slug": "columnar", "label": "Columnar Storage", "icon": "fa-chart-bar" },

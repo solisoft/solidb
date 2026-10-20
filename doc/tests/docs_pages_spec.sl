@@ -6,7 +6,7 @@ describe("Docs pages") do
   test("the home page carries the version being released") do
     response = get("/")
     expect(res_status(response)).to_equal(200)
-    expect(res_body(response).include?("v2.3.1")).to_equal(true)
+    expect(res_body(response).include?("v2.4.1")).to_equal(true)
   end
 
   test("a docs page shows the same version as the landing page") do
@@ -32,6 +32,17 @@ describe("Docs pages") do
     expect(body.include?("v2.2.0")).to_equal(true)
     expect(body.include?("RocksDB 11.8.1")).to_equal(true)
     expect(body.include?("Minimum Rust 1.91")).to_equal(true)
+  end
+
+  test("the storage engine page documents choosing, migrating and rolling back") do
+    response = get("/docs/storage-engine")
+    expect(res_status(response)).to_equal(200)
+    body = res_body(response)
+    expect(body.include?("SOLIDB_ENGINE")).to_equal(true)
+    expect(body.include?("SOLIDB_DURABILITY")).to_equal(true)
+    expect(body.include?("solidb-migrate-engine")).to_equal(true)
+    expect(body.include?("rocksdb-backup-")).to_equal(true)
+    expect(body.include?("engine-solistore")).to_equal(true)
   end
 
   test("transactions documents what a writing query can and cannot do") do

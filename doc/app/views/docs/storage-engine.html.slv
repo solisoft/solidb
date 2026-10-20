@@ -1,0 +1,160 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-12 gap-8 lg:gap-12">
+    <main class="col-span-12 lg:col-span-12 space-y-12">
+      <!-- Header Section -->
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 mb-4 tracking-tight">RocksDB &amp; solistore</h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Every SoliDB data directory lives in one ordered key-value engine underneath the documents, indexes and logs. Since 2.4.0 there are two: RocksDB, the default, and solistore, a pure-Rust engine written to replace it. This page covers how a server picks one, how to move an existing directory to solistore, and how to go back.
+          </p>
+        </div>
+      </div>
+
+      <!-- Which engine -->
+      <section id="which-engine" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Which engine a server uses</h2>
+          <p class="text-gray-300 mb-4 leading-relaxed">
+            A data directory records the engine that wrote it in a file named <code class="text-amber-300">ENGINE</code>, and a server always opens it with that engine. You choose only when a directory is created:
+          </p>
+          <ul class="list-disc pl-6 space-y-2 text-gray-300 mb-6">
+            <li>A <strong>new</strong> directory takes <code class="text-amber-300">SOLIDB_ENGINE</code>: <code>rocksdb</code> (the default) or <code>solistore</code>. Any other value refuses to start.</li>
+            <li>An <strong>existing</strong> directory ignores <code class="text-amber-300">SOLIDB_ENGINE</code>. Changing it does not convert anything; use <a href="#migrate" class="text-indigo-400 hover:underline">the migration tool</a>.</li>
+            <li>A directory from before 2.4 has no <code>ENGINE</code> file. If it holds RocksDB's <code>OPTIONS-*</code> files it is opened as RocksDB. Anything else without the file is refused rather than guessed at.</li>
+          </ul>
+          <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto">
+<pre><span class="text-gray-500"># a new directory on solistore</span>
+SOLIDB_ENGINE=solistore solidb --port 6745 --data-dir ./data-solistore
+
+<span class="text-gray-500"># which engine an existing directory uses</span>
+cat ./data/ENGINE</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Getting solistore -->
+      <section id="build" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Getting a build with solistore</h2>
+          <p class="text-gray-300 mb-4 leading-relaxed">
+            The release binaries and the Docker image are built with solistore from 2.4.0 on, and the archives include <code class="text-amber-300">solidb-migrate-engine</code>. Building from source, solistore is a Cargo feature:
+          </p>
+          <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto mb-4">
+<pre>cargo build --release --features engine-solistore</pre>
+          </div>
+          <p class="text-gray-300 leading-relaxed">
+            A binary built without the feature still recognises a solistore directory and refuses it by name (<code class="text-gray-400">… uses the solistore engine; this binary was built without the engine-solistore feature</code>). Before 2.4, the same situation surfaced as a misleading RocksDB error, <code class="text-gray-400">Corruption: checksum mismatch … MANIFEST-… may be corrupted</code>. If you see that on a directory whose <code>ENGINE</code> file says <code>solistore</code>, the data is fine; the binary is the wrong one.
+          </p>
+        </div>
+      </section>
+
+      <!-- Durability -->
+      <section id="durability" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Durability on solistore</h2>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            Concurrent commits are grouped: one write to the log, and one fsync when one is due, covers the whole group. Two variables set when that fsync happens. They have no effect on RocksDB.
+          </p>
+          <div class="overflow-hidden rounded-lg border border-white/10">
+            <table class="min-w-full text-left text-sm">
+              <thead class="bg-white/5 text-gray-400">
+                <tr>
+                  <th class="p-3 font-semibold">Variable</th>
+                  <th class="p-3 font-semibold">Default</th>
+                  <th class="p-3 font-semibold">Effect</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5 text-gray-300">
+                <tr>
+                  <td class="p-3"><code class="text-amber-300">SOLIDB_DURABILITY</code></td>
+                  <td class="p-3">eventual</td>
+                  <td class="p-3"><code>full</code> fsyncs every commit before it returns: a power loss loses nothing acknowledged. Eventual returns once the commit reaches the OS and fsyncs in the background.</td>
+                </tr>
+                <tr>
+                  <td class="p-3"><code class="text-amber-300">SOLIDB_DURABILITY_INTERVAL_MS</code></td>
+                  <td class="p-3">100</td>
+                  <td class="p-3">The background fsync interval in eventual mode, which is what a power loss can lose. A process crash loses nothing in either mode.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-gray-400 text-sm mt-4">Transaction commits wait for their own fsync in both modes. Eventual is the default because it matches what SoliDB on RocksDB already gave.</p>
+        </div>
+      </section>
+
+      <!-- Migration -->
+      <section id="migrate" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Moving a directory to solistore</h2>
+          <p class="text-gray-300 mb-4 leading-relaxed">
+            <code class="text-amber-300">solidb-migrate-engine</code> converts a RocksDB data directory in place. It copies the documents, indexes and system data (the <code>default</code>, <code>_meta</code> and <code>__keyspaces__</code> column families), the replication log in <code>sync_log/</code>, and SoliDB&rsquo;s own files such as the transaction WAL.
+          </p>
+          <ol class="list-decimal pl-6 space-y-2 text-gray-300 mb-6">
+            <li><strong>Stop the server.</strong> The tool opens RocksDB, which takes its lock, so it refuses a directory a server is running on.</li>
+            <li><strong>Check free space.</strong> The copy is built next to the data directory, in <code>&lt;dir&gt;.solistore-tmp</code>, and the original is kept, so plan for as much free space again as the directory uses.</li>
+            <li><strong>Run it</strong>, then start the server on the same directory as before.</li>
+          </ol>
+          <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto mb-6">
+<pre>solidb-migrate-engine ./data
+<span class="text-gray-500">[    0.0s] copying default
+[    0.1s] copying sync_log
+[    1.2s] copying __keyspaces__: 1.0M entries, 1.17 GB, 610 MB/s
+…
+[   40.1s] done</span>
+solidb --port 6745 --data-dir ./data</pre>
+          </div>
+          <p class="text-gray-300 mb-4 leading-relaxed">
+            Each column family is loaded as finished bottom-level tables on up to eight threads, so the data is written once. 35.5M documents (39.3&nbsp;GB) take about 3 minutes from 2.4.1, about 9 with 2.4.0. Before anything is swapped, every copied column family is read back and compared with the source: entry count and a hash of every key and value. If any step fails, the data directory is untouched.
+          </p>
+          <p class="text-gray-300 mb-6 leading-relaxed">
+            On success the RocksDB directory is kept next to the new one as <code class="text-amber-300">&lt;dir&gt;.rocksdb-backup-&lt;unix time&gt;</code>. Remove it once the server has run well on solistore. The tool refuses a directory that is already on solistore, and one that still has 1.x per-collection column families: start a 2.x server on it once to finish that layout migration, then retry.
+          </p>
+          <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6">
+            <h3 class="text-lg font-bold text-amber-300 mb-3">Going back to RocksDB</h3>
+            <p class="text-sm text-gray-300 mb-3">There is no reverse tool. Rolling back means returning to the backup, which does <strong>not</strong> contain anything written after the migration:</p>
+            <div class="bg-gray-950/50 rounded-lg p-3 border border-white/5 font-mono text-xs text-gray-300 overflow-x-auto">
+<pre><span class="text-gray-500"># with the server stopped</span>
+mv ./data ./data.solistore
+mv ./data.rocksdb-backup-1792059661 ./data</pre>
+            </div>
+            <p class="text-sm text-gray-400 mt-3">To move data written on solistore back, export it with <a href="/docs/tooling#solidb-dump" class="text-indigo-400 hover:underline">solidb-dump</a> first and restore it into the RocksDB server.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Operations -->
+      <section id="operations" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Monitoring and backups</h2>
+          <ul class="list-disc pl-6 space-y-3 text-gray-300">
+            <li><strong>Metrics.</strong> <code class="text-amber-300">solidb_storage_engine_info{engine}</code> names the engine in <code>/metrics</code>, and the <code>solidb_storage_*_total</code> counters report flush and compaction bytes on both engines, plus log bytes, fsyncs, commit groups and write stalls on solistore. See <a href="/docs/api-monitoring" class="text-indigo-400 hover:underline">Monitoring</a>.</li>
+            <li><strong>Physical backups</strong> (<code>POST /_api/backup</code>) work on both engines. The checkpoint carries the <code>ENGINE</code> file, so a server pointed at it opens it with the right engine.</li>
+            <li><strong>Logical backups</strong> (<code>solidb-dump</code> / <code>solidb-restore</code>) do not depend on the engine, and are the way to move data between a solistore and a RocksDB server.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <section id="status" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
+          <h2 class="text-2xl font-bold text-white mb-6">Status</h2>
+          <p class="text-gray-300 mb-4 leading-relaxed">
+            RocksDB remains the default and the engine to use for production data. solistore passes SoliDB&rsquo;s full test suite, and is ahead of RocksDB in every phase of the server benchmark, but it has not yet run in production, and its on-disk format may still change before 1.0. Keep the RocksDB backup until you are confident in a migrated directory.
+          </p>
+          <p class="text-gray-300 leading-relaxed">
+            Why it exists, its design and the measurements: <a href="/blog/solistore-a-storage-engine-of-our-own" class="text-indigo-400 hover:underline">solistore, a storage engine of our own</a>. The source is at <a href="https://github.com/solisoft/solistore" class="text-indigo-400 hover:underline">github.com/solisoft/solistore</a>.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

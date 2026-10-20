@@ -76,6 +76,7 @@ class DocsController < Controller
             "documents": "Documents Storage",
             "timeseries": "Time Series",
             "columnar": "Columnar Storage",
+            "storage-engine": "RocksDB & solistore",
             "clients": "Official Clients",
             "clients-nodejs": "Node.js / Bun Client",
             "comparison": "Database Comparison",
@@ -104,7 +105,7 @@ class DocsController < Controller
             "sdbql-functions-date", "sdbql-functions-geo", "sdbql-functions-misc",
             "sdbql-functions-numeric", "sdbql-functions-search", "sdbql-functions-string",
             "sdbql-functions-vector", "sdbql-graphs", "sdbql-mutations", "sdbql-operators",
-            "sdbql-syntax", "security", "sharding", "sql", "streams", "timeseries", "tooling",
+            "sdbql-syntax", "security", "sharding", "sql", "storage-engine", "streams", "timeseries", "tooling",
             "transactions", "triggers", "vector-search", "views", "changelog", "getting-started-changelog"]
     end
 end
