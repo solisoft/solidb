@@ -25,7 +25,7 @@
   column family), and keeps the RocksDB directory beside it as
   `<dir>.rocksdb-backup-<time>`. On failure the data directory is untouched.
   Needs the `engine-solistore` feature. 35.5M entries (39.3 GB) migrate in
-  about 3 minutes.
+  about 9 minutes.
 
 * **Storage engine counters in `/metrics`.** `solidb_storage_*_total` reports
   flush and compaction bytes on both engines, and on solistore also WAL bytes

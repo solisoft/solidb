@@ -269,16 +269,6 @@ fn mixed_engines() -> ! {
 }
 
 impl Kv {
-    /// The solistore database under this one, for what only it can do
-    /// (`Db::ingest`, used by the migration tool).
-    #[cfg(feature = "engine-solistore")]
-    pub(crate) fn as_solistore(&self) -> Option<&::solistore::Db> {
-        match &self.engine {
-            Engine::Solistore(db) => Some(db),
-            Engine::Rocks(_) => None,
-        }
-    }
-
     pub fn engine_kind(&self) -> EngineKind {
         match &self.engine {
             Engine::Rocks(_) => EngineKind::Rocksdb,

@@ -10,7 +10,7 @@ use std::hash::Hasher;
 use std::path::{Path, PathBuf};
 
 use super::select::{record, EngineKind};
-use super::{Direction, IterMode, Kv, KvBatch, KvCf, KvError};
+use super::{Direction, IterMode, Kv, KvBatch, KvError};
 use crate::storage::pending_drops::MARKER_PREFIX;
 
 /// Column families a 2.x data directory holds. Anything else is a 1.x
@@ -74,26 +74,6 @@ fn copy(from: &Kv, to: &Kv, name: &str, skip: &dyn Fn(&[u8]) -> bool) -> Result<
         .ok_or_else(|| KvError::new(format!("target has no column family {name}")))?;
     let mut d = Digest::default();
     let mut hasher = DefaultHasher::new();
-    // On solistore, the column family is built as bottom-level tables in
-    // parallel (`Db::ingest`): each byte written once, where batches went
-    // through the WAL, a flush and every compaction down the tree. The dev
-    // server's 39 GB took 8 min 45 s that way.
-    if let (Some(db), KvCf::Solistore(cf)) = (to.as_solistore(), &dst) {
-        let entries = from
-            .iterator_cf(&src, IterMode::Start)
-            .filter_map(|item| match item {
-                Ok((k, _)) if skip(&k) => None,
-                Ok((k, v)) => {
-                    d.add(&mut hasher, &k, &v);
-                    Some(Ok((k, v)))
-                }
-                Err(e) => Some(Err(e)),
-            });
-        db.ingest(cf, entries, ingest_threads())
-            .map_err(|e| KvError::new(format!("loading {name}: {e}")))?;
-        d.hash = hasher.finish();
-        return Ok(d);
-    }
     let mut batch = KvBatch::default();
     for item in from.iterator_cf(&src, IterMode::Start) {
         let (k, v) = item?;
@@ -157,15 +137,6 @@ fn left_behind(kv: &Kv, cfs: &[String]) -> Result<Vec<String>, KvError> {
         })
         .cloned()
         .collect())
-}
-
-/// Threads building tables: the cores, up to eight (each holds ~200 MB of
-/// entries while it works).
-fn ingest_threads() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .clamp(1, 8)
 }
 
 fn sibling(dir: &Path, suffix: &str) -> PathBuf {
