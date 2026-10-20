@@ -125,14 +125,13 @@
 </section>
 
 <section id="trying"><h2>Trying it</h2>
-<p>solistore is not in a release yet, and RocksDB stays the default. It lives on the <a href="https://github.com/solisoft/solidb/tree/feat/storage-kv"><code>feat/storage-kv</code></a> branch. To try it, build that branch with the feature and point a <em>new</em> data directory at it:</p>
-<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>git checkout feat/storage-kv
-cargo build --release --features engine-solistore
+<p>solistore ships in SoliDB 2.4.0: the release binaries and the Docker image include it, and RocksDB stays the default for a new data directory. To try it, point a <em>new</em> data directory at it (building from source, add the feature), or move an existing one with <code>solidb-migrate-engine &lt;data-dir&gt;</code> (server stopped):</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>cargo build --release --features engine-solistore
 SOLIDB_ENGINE=solistore ./target/release/solidb --data-dir ./data-solistore
 SOLIDB_DURABILITY=full …   <span class="tok-com"># an fsync per commit instead of every 100 ms</span></pre></div>
 <p>Every data directory records its engine in an <code>ENGINE</code> file, and a server always opens a directory with the engine that wrote it. Existing RocksDB directories keep working as they are. SoliDB&rsquo;s full test suite runs on both engines.</p>
 <p><code>/metrics</code> now has <code>solidb_storage_*</code> counters on both engines: bytes written to the log, by flushes and by compactions, plus stalls. They show what the engine does with each write.</p>
-<p>Next come a tool that moves an existing RocksDB directory to solistore and verifies the copy, then a trial on long-running servers. Removing RocksDB is the last step, and the 95-minute compile goes with it. solistore itself is open source at <a href="https://github.com/solisoft/solistore">github.com/solisoft/solistore</a>.</p>
+<p>Next comes a trial on long-running servers. Removing RocksDB is the last step, and the 95-minute compile goes with it. solistore itself is open source at <a href="https://github.com/solisoft/solistore">github.com/solisoft/solistore</a>.</p>
 </section>
 </div>
 <footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>

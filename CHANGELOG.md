@@ -1,8 +1,36 @@
 # Changelog
 
-## [Unreleased]
+## [2.4.0](https://github.com/solisoft/solidb/compare/v2.3.1...v2.4.0) (2026-10-20)
 
 ### Added
+
+* **solistore, a second storage engine, behind `--features engine-solistore`.**
+  A pure-Rust engine (github.com/solisoft/solistore) compiled in beside
+  RocksDB, which stays the default. Every data directory records its engine
+  in an `ENGINE` file and is always opened with the engine that wrote it; an
+  unmarked directory with RocksDB `OPTIONS-*` files is RocksDB's, and any
+  other unmarked one is refused rather than guessed at. `SOLIDB_ENGINE`
+  (`rocksdb` or `solistore`) picks the engine for a *new* directory only.
+  Durability on solistore is eventual by default (a background fsync every
+  `SOLIDB_DURABILITY_INTERVAL_MS`, 100 ms); `SOLIDB_DURABILITY=full` fsyncs
+  every commit, and transaction commits wait for their fsync in both modes.
+  A binary built without the feature refuses a solistore directory by name
+  instead of reporting it as a corrupt RocksDB MANIFEST. The release binaries
+  and the Docker image are built with the feature, and the archives now
+  include `solidb-migrate-engine`.
+
+* **`solidb-migrate-engine <data-dir>`** moves a stopped server's data
+  directory from RocksDB to solistore in place. It copies every column
+  family and the sync log, verifies the copy (entry count and a hash per
+  column family), and keeps the RocksDB directory beside it as
+  `<dir>.rocksdb-backup-<time>`. On failure the data directory is untouched.
+  Needs the `engine-solistore` feature. 35.5M entries (39.3 GB) migrate in
+  about 3 minutes.
+
+* **Storage engine counters in `/metrics`.** `solidb_storage_*_total` reports
+  flush and compaction bytes on both engines, and on solistore also WAL bytes
+  and fsyncs, commit groups and write stalls. `solidb_storage_engine_info`
+  names the engine.
 
 * **`NEAR(collection, center, radius, field)`.** Documents whose geo-indexed
   field lies within `radius` meters of `center`, closest first, ties broken
@@ -50,6 +78,34 @@
   (none up to 2 letters, 1 up to 5). `matched` lists the query words a hit
   holds (it was always empty). Scores are on a new scale and only rank the
   hits of one query; `HYBRID_SEARCH` min-max normalizes them as before.
+
+### Performance
+
+* **Counts through a single-field index read no document.**
+  `FOR v IN c FILTER v.f == x COLLECT WITH COUNT INTO n RETURN …` and
+  `LENGTH(FOR v IN c FILTER v.f == x RETURN 1)` (the Soli ORM's `count` with a
+  `where`) count the entries of the index on `f`: about 220 to over 12,000
+  queries a second on 5M documents. Over the driver with the query cache
+  off, `RETURN v | v.f | {k: v.f}` after the same FILTER copies the stored
+  bytes of the documents the index names.
+
+* **Driver authentication remembers a verified password for 60 s.** Every
+  driver connection ran Argon2 (~21 ms), which showed on the first query of
+  each Soli worker. Only successes are kept, keyed by a salted hash of user,
+  password and stored hash: a wrong password still costs Argon2 and counts
+  against the rate limit, and a changed password stops matching at once.
+
+* **Scans no longer copy their rows.** Iterators yield `Bytes`, and stripping
+  a keyspace prefix is a slice of the same buffer.
+
+### Fixed
+
+* **A server out of file descriptors no longer floods its log.** A failed
+  accept returned at once and was logged every time: 100 GB of "Too many
+  open files" in 12 minutes under 256 connections. The accept loops now wait
+  100 ms after a resource error and log it at most once a second, and on unix
+  the soft open-file limit is raised to the hard limit at startup (capped at
+  2^20; 10,240 on macOS).
 
 ## [2.3.1](https://github.com/solisoft/solidb/compare/v2.3.0...v2.3.1) (2026-10-12)
 

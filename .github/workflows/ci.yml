@@ -356,20 +356,22 @@ jobs:
         shell: pwsh
         run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
+      # solistore is compiled in so a release binary opens either engine's
+      # data directory; RocksDB stays the engine for a new one.
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --features engine-solistore
 
       - name: Package binaries
         if: runner.os != 'Windows'
         run: |
-          tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore
+          tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore solidb-migrate-engine
 
       - name: Package binaries (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $rel = "target/${{ matrix.target }}/release"
-          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe" `
+          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe" `
             -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload to release
@@ -450,7 +452,19 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # crates.io refuses a package with a git dependency, even an optional
+      # one, and solistore is still taken from git. Skip rather than fail
+      # after the GitHub release and the image have already shipped.
+      - name: Check for git dependencies
+        id: gitdeps
+        run: |
+          if grep -Eq '^[a-z0-9_-]+ = \{[^}]*\bgit = ' Cargo.toml; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Cargo.toml has a git dependency; not publishing to crates.io"
+          fi
+
       - name: Publish to crates.io
+        if: steps.gitdeps.outputs.skip != 'true'
         run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
