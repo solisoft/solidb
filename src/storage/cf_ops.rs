@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use rust_rocksdb::{IteratorMode, WriteBatch};
+use crate::storage::kv::{IterMode, KvBatch};
 
 use super::RocksDb as DB;
 use crate::error::{DbError, DbResult};
@@ -135,7 +135,7 @@ pub fn auto_create_enabled() -> bool {
 /// The pair is what a create-after-delete of the same name used to cost: two
 /// full OPTIONS rewrites, each proportional to the *total* CF count of the
 /// instance. Wiping is a pair of seeks and one range tombstone, and every CF
-/// is built from the same `tuned_cf_options()`, so a reused one is
+/// is built from the same tuned options (`kv::rocks`), so a reused one is
 /// indistinguishable from a new one.
 ///
 /// The bounds are taken from the column family's own first and last key
@@ -148,12 +148,12 @@ pub fn wipe_cf(db: &DB, cf_name: &str) -> DbResult<()> {
         .ok_or_else(|| DbError::InternalError(format!("column family '{cf_name}' missing")))?;
 
     let first = db
-        .iterator_cf(&cf, IteratorMode::Start)
+        .iterator_cf(&cf, IterMode::Start)
         .next()
         .and_then(|r| r.ok())
         .map(|(k, _)| k);
     let last = db
-        .iterator_cf(&cf, IteratorMode::End)
+        .iterator_cf(&cf, IterMode::End)
         .next()
         .and_then(|r| r.ok())
         .map(|(k, _)| k);
@@ -165,11 +165,11 @@ pub fn wipe_cf(db: &DB, cf_name: &str) -> DbResult<()> {
         let mut end = last.to_vec();
         end.push(0);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         // Both bounds as `&[u8]`: `delete_range_cf` takes one type for the
         // pair, and the iterator hands back a `Box<[u8]>`.
         batch.delete_range_cf(&cf, first.as_ref(), end.as_slice());
-        db.write(&batch).map_err(|e| {
+        db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to wipe column family '{cf_name}': {e}"))
         })?;
     }

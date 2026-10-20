@@ -11,8 +11,8 @@
 
 use crate::storage::collection::{Collection, Document, DOC_PREFIX};
 use crate::storage::keyspace::KsDbExt;
+use crate::storage::kv::{Direction, IterMode, KvReadOptions};
 use crate::storage::serializer::deserialize_doc;
-use rust_rocksdb::{Direction, IteratorMode, ReadOptions};
 
 /// Documents per page for bulk shard work.
 pub const DEFAULT_PAGE_SIZE: usize = 1000;
@@ -56,14 +56,14 @@ pub fn scan_page(
         None => prefix.to_vec(),
     };
 
-    let mut opts = ReadOptions::default();
+    let mut opts = KvReadOptions::default();
     opts.set_readahead_size(256 * 1024);
     // Keys come back logical (keyspace prefix stripped), so the cursor holds
     // a logical key too.
     let iter = db.iterator_ks_opt(
         &cf,
         opts,
-        IteratorMode::From(start.as_slice(), Direction::Forward),
+        IterMode::From(start.as_slice(), Direction::Forward),
     );
 
     let mut docs = Vec::with_capacity(limit.min(4096));

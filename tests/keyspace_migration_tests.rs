@@ -16,7 +16,14 @@ static SERIAL: Mutex<()> = Mutex::new(());
 const LEGACY: &str = "SOLIDB_LEGACY_COLLECTION_CFS";
 
 /// Run `f` against an engine that writes the 1.x layout, then close it.
+/// The 1.x layout exists only on RocksDB, so the directory is marked as
+/// RocksDB's whatever `SOLIDB_ENGINE` says.
 fn legacy_session(path: &str, f: impl FnOnce(&StorageEngine)) {
+    std::fs::create_dir_all(path).unwrap();
+    let engine_file = std::path::Path::new(path).join("ENGINE");
+    if !engine_file.exists() {
+        std::fs::write(engine_file, "rocksdb\n").unwrap();
+    }
     std::env::set_var(LEGACY, "1");
     {
         let engine = StorageEngine::new(path).unwrap();

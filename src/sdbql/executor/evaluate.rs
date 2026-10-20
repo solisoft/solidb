@@ -51,6 +51,15 @@ impl<'a> QueryExecutor<'a> {
         // Lazy forms: evaluate only the arguments the result depends on, so
         // `IF(c, DOCUMENT(...), null)` does not read when `c` is false.
         match name {
+            // `LENGTH(FOR v IN c FILTER v.f == x RETURN 1)`: counted in the
+            // index on `f` when there is one, without running the subquery.
+            "LENGTH" | "COUNT" if args.len() == 1 => {
+                if let Expression::Subquery(query) = &args[0] {
+                    if let Some(n) = self.try_index_count_rows(query, ctx)? {
+                        return Ok(Value::Number(n.into()));
+                    }
+                }
+            }
             "IF" if args.len() == 3 => {
                 let cond = self.evaluate_expr_with_context(&args[0], ctx)?;
                 let branch = if to_bool(&cond) { &args[1] } else { &args[2] };

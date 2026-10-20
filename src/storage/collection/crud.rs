@@ -1,9 +1,10 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::kv::KvBatch;
+use crate::storage::kv::{Direction, IterMode, KvReadOptions};
 use crate::storage::serializer::{
     deserialize_doc, deserialize_doc_as_value, deserialize_doc_projected, serialize_doc,
 };
-use rust_rocksdb::{Direction, IteratorMode, ReadOptions, WriteBatch};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
@@ -74,7 +75,7 @@ impl Collection {
 
     fn add_insert_entries(
         &self,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         cf: &KsCf,
         key: &str,
         doc_value: &Value,
@@ -94,7 +95,7 @@ impl Collection {
 
     fn add_update_entries(
         &self,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         cf: &KsCf,
         key: &str,
         old_value: &Value,
@@ -133,7 +134,7 @@ impl Collection {
 
     fn add_delete_entries(
         &self,
-        batch: &mut WriteBatch,
+        batch: &mut KvBatch,
         cf: &KsCf,
         key: &str,
         doc_value: &Value,
@@ -234,8 +235,8 @@ impl Collection {
 
         let doc_bytes = serialize_doc(&doc)?;
 
-        // Build WriteBatch with document and all index entries atomically
-        let mut batch = WriteBatch::default();
+        // Build KvBatch with document and all index entries atomically
+        let mut batch = KvBatch::default();
         batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
 
         // Record a version in the same atomic batch (if versioning is enabled).
@@ -249,10 +250,10 @@ impl Collection {
         }
 
         // Atomic write: document + indexes together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
-        // Update vector indexes in-memory (separate from WriteBatch)
+        // Update vector indexes in-memory (separate from KvBatch)
         if update_indexes {
             self.update_vector_indexes_on_upsert(&key, &doc_value);
         }
@@ -497,7 +498,7 @@ impl Collection {
 
         let db = &self.db;
         let cf = self.live_cf()?;
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         // Update document in batch
         batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
@@ -511,10 +512,10 @@ impl Collection {
         self.add_update_entries(&mut batch, &cf, key, &old_value, &new_value)?;
 
         // Atomic write: document + all index updates together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
 
-        // Update vector indexes in-memory (separate from WriteBatch). Skip the
+        // Update vector indexes in-memory (separate from KvBatch). Skip the
         // delete+reinsert entirely when the embedding is unchanged — a document
         // rewritten for non-embedding fields must not pay HNSW churn or dirty
         // the index (which would trigger a full re-serialize on persist).
@@ -569,7 +570,7 @@ impl Collection {
         let db = &self.db;
         let cf = self.live_cf()?;
         let versioned = self.is_versioned();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         for (key, doc_value) in &docs {
             batch.delete_ks(&cf, Self::doc_key(key));
@@ -583,7 +584,7 @@ impl Collection {
         }
 
         // Atomic write: document deletions + index removals together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete document: {}", e)))?;
 
         let deleted = docs.len();
@@ -592,7 +593,7 @@ impl Collection {
         }
 
         // Blob chunks, vector entries and version pruning are separate from
-        // the WriteBatch, and only happen once the documents are really gone.
+        // the KvBatch, and only happen once the documents are really gone.
         let is_blob = self.collection_type.read().as_str() == "blob";
         for (key, _) in &docs {
             if is_blob {
@@ -682,7 +683,7 @@ impl Collection {
         }
 
         let versioned = self.is_versioned();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut insert_count = 0;
         let mut written: Vec<(String, Value, Option<Value>, bool)> =
             Vec::with_capacity(pending.len());
@@ -712,7 +713,7 @@ impl Collection {
         let count = written.len();
 
         // Write all documents in one batch operation
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
 
         // Update document count (only for new inserts)
@@ -893,7 +894,7 @@ impl Collection {
         }
 
         let versioned = self.is_versioned();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut updated_docs = Vec::with_capacity(pending.len());
         let mut change_events = Vec::with_capacity(pending.len());
 
@@ -920,10 +921,10 @@ impl Collection {
         }
 
         // Commit batch atomically: all document updates + index updates together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
 
-        // Update vector indexes in-memory (separate from WriteBatch), after
+        // Update vector indexes in-memory (separate from KvBatch), after
         // the commit. Skip the delete+reinsert when the embedding is
         // unchanged so a bulk update that only rewrites metadata (e.g. an
         // incremental graph sync) pays no HNSW churn and doesn't dirty the
@@ -1005,7 +1006,7 @@ impl Collection {
         let db = &self.db;
         let cf = self.live_cf()?;
         let versioned = self.is_versioned();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut claimed: HashSet<String> = HashSet::new();
 
         for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
@@ -1047,10 +1048,10 @@ impl Collection {
         }
 
         // Atomic write: all documents + indexes together
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
 
-        // Update vector indexes in-memory (separate from WriteBatch)
+        // Update vector indexes in-memory (separate from KvBatch)
         for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
             self.update_vector_indexes_on_upsert(&doc.key, doc_value);
         }
@@ -1142,8 +1143,7 @@ impl Collection {
         let requested = limit
             .map(|n| n.saturating_add(offset))
             .map(|n| n.min(self.count()));
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match requested {
             Some(n) if n <= 10 => 0,          // Small reads: no readahead
             Some(n) if n <= 100 => 16 * 1024, // Medium: 16KB
@@ -1153,11 +1153,7 @@ impl Collection {
             read_opts.set_readahead_size(readahead);
         }
 
-        let iter = db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter = db.iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
 
         // `limit` is often a safety ceiling rather than an expected size: the
         // executor passes `SOLIDB_MAX_INTERMEDIATE_ROWS + 1` (5,000,001) on
@@ -1201,8 +1197,7 @@ impl Collection {
             return Vec::new();
         };
         let prefix = DOC_PREFIX.as_bytes();
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match limit.map(|n| n.min(self.count())) {
             Some(n) if n <= 10 => 0,
             Some(n) if n <= 100 => 16 * 1024,
@@ -1211,11 +1206,9 @@ impl Collection {
         if readahead > 0 {
             read_opts.set_readahead_size(readahead);
         }
-        let iter = self.db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter =
+            self.db
+                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
         let mut results = Vec::with_capacity(limit.map_or(128, |n| n.min(1024)));
         for (key, value) in iter.flatten() {
             if !key.starts_with(prefix) {
@@ -1252,8 +1245,7 @@ impl Collection {
             return Ok(Some((0, out)));
         };
         let prefix = DOC_PREFIX.as_bytes();
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_prefix_same_as_start(true);
+        let mut read_opts = KvReadOptions::default();
         let readahead = match limit.map(|n| n.saturating_add(offset).min(self.count())) {
             Some(n) if n <= 10 => 0,
             Some(n) if n <= 100 => 16 * 1024,
@@ -1262,11 +1254,9 @@ impl Collection {
         if readahead > 0 {
             read_opts.set_readahead_size(readahead);
         }
-        let iter = self.db.iterator_ks_opt(
-            &cf,
-            read_opts,
-            IteratorMode::From(prefix, Direction::Forward),
-        );
+        let iter =
+            self.db
+                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
         let mut skipped = 0usize;
         let mut rows = 0usize;
         for (key, value) in iter.flatten() {
@@ -1411,11 +1401,11 @@ impl Collection {
         // range-deleted, so take them off it while they can still be counted.
         super::vector::release_pending_embed(self.count_embed_pending() as u64);
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         for (start, end) in data_ranges {
             batch.delete_range_ks(&cf, start, end);
         }
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
 
         // Vector indexes answer searches from their in-memory structure, not via

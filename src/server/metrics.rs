@@ -261,6 +261,24 @@ pub async fn metrics_handler(
         output.push_str(&format!("{} {}\n\n", name, value));
     }
 
+    // What the storage engine did for the work it was given: write
+    // amplification is (WAL + flush + compaction writes) over the bytes
+    // the documents themselves took.
+    let engine = state.storage.engine_kind();
+    output.push_str(
+        "# HELP solidb_storage_engine_info The storage engine holding this instance's data\n",
+    );
+    output.push_str("# TYPE solidb_storage_engine_info gauge\n");
+    output.push_str(&format!(
+        "solidb_storage_engine_info{{engine=\"{}\"}} 1\n\n",
+        engine
+    ));
+    for (name, help, value) in state.storage.engine_counters() {
+        output.push_str(&format!("# HELP solidb_storage_{}_total {}\n", name, help));
+        output.push_str(&format!("# TYPE solidb_storage_{}_total counter\n", name));
+        output.push_str(&format!("solidb_storage_{}_total {}\n\n", name, value));
+    }
+
     // Catalog churn. Since 2.0 collections are created and dropped as
     // keyspaces (no column-family operation); `solidb_cf_ops_*` now counts
     // only the drops of legacy 1.x column families after migration — each

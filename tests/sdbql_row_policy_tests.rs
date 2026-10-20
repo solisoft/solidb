@@ -130,6 +130,64 @@ fn index_paths_are_filtered() {
     );
 }
 
+/// Counts read from an index (`COLLECT WITH COUNT`, `LENGTH(subquery)`) and
+/// rows copied through one (the driver's raw path) see the policy too. Those
+/// paths need a database on the executor, so this test makes one.
+#[test]
+fn index_only_counts_and_raw_rows_are_filtered() {
+    let tmp = TempDir::new().unwrap();
+    let e = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    e.create_database("shop".to_string()).unwrap();
+    let db = e.get_database("shop").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders
+        .create_index(
+            "idx_n".into(),
+            vec!["n".into()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    orders
+        .insert(json!({"_key": "1", "tenant": "acme", "n": 1}))
+        .unwrap();
+    orders
+        .insert(json!({"_key": "2", "tenant": "other", "n": 2}))
+        .unwrap();
+    let as_user = |admin: bool| {
+        QueryExecutor::with_database(&e, "shop".to_string()).with_principal(principal(
+            if admin { "root" } else { "ada" },
+            admin,
+            admin,
+        ))
+    };
+    as_user(true)
+        .execute(&parse(r#"RETURN ROW_POLICY("orders", "doc.tenant == \"acme\"")"#).unwrap())
+        .unwrap();
+    let viewer = |q: &str| {
+        as_user(false)
+            .execute(&parse(q).unwrap())
+            .unwrap_or_else(|err| panic!("{q}: {err}"))
+    };
+    assert_eq!(
+        viewer("FOR d IN orders FILTER d.n == 2 COLLECT WITH COUNT INTO c RETURN c"),
+        vec![json!(0)]
+    );
+    assert_eq!(
+        viewer("RETURN LENGTH(FOR d IN orders FILTER d.n == 2 RETURN 1)"),
+        vec![json!(0)]
+    );
+    assert_eq!(
+        viewer("FOR d IN orders FILTER d.n == 1 COLLECT WITH COUNT INTO c RETURN c"),
+        vec![json!(1)]
+    );
+    let raw = as_user(false)
+        .execute_raw_msgpack(&parse("FOR d IN orders FILTER d.n == 2 RETURN d").unwrap())
+        .unwrap();
+    assert!(raw.is_none(), "a policy sends the raw path to the scan");
+}
+
 #[test]
 fn join_side_is_filtered() {
     let (e, _t) = setup();

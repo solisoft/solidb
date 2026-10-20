@@ -93,7 +93,8 @@ server and a fleet of app dev servers goes to swap. Runs get killed part-way and
 tell you nothing.
 
 Run the targeted forms above — the specific `--test <name>`, or a pattern — and
-let the `test` job in CI run the whole thing. The other six CI jobs (`fmt`,
+let the `test` job in CI run the whole thing (`test-solistore` runs it again
+on the solistore engine). The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
@@ -328,10 +329,37 @@ size of its key range (flushed data only; memtable and SST count read 0).
 `solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
 `solidb_cf_ops_total` now counts only legacy column-family drops.
 
+### Storage engines: `storage::kv` (RocksDB, and solistore behind a feature)
+
+All storage goes through `storage::kv::Kv` (aliased `RocksDb` for
+history): RocksDB's method names, SoliDB's own types (`KvCf`, `KvBatch`,
+`KvIter`, `KvError`). `rust_rocksdb` is named only under `storage/kv/` and
+in tests that build a 1.x directory by hand — keep it that way. A second
+engine, solistore (github.com/solisoft/solistore, pure Rust), is compiled in
+with `--features engine-solistore`; the plan is
+`solistore/docs/solidb-integration.md` in that repository.
+
+A data directory is opened with the engine recorded in its `ENGINE` file. An
+unmarked directory with RocksDB `OPTIONS-*` files is RocksDB's; anything
+else ambiguous is refused. A `KvBatch` takes its engine from the first
+column family written to it.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_ENGINE` | `rocksdb` | Engine for a *new* data directory (`rocksdb` or `solistore`). Ignored for an existing one. |
+| `SOLIDB_DURABILITY` | eventual | solistore only. `full` fsyncs every commit (concurrent commits share it); eventual fsyncs in the background. `sync` writes (transaction commits) always wait. |
+| `SOLIDB_DURABILITY_INTERVAL_MS` | 100 | solistore only: the eventual mode's fsync interval, i.e. what a power loss can lose. |
+
+To run tests on solistore, build with the feature and set
+`SOLIDB_ENGINE=solistore` (rbuild does not forward the environment: build
+with `rbuild cargo db-kv test --features engine-solistore --no-run`, then run
+the binaries over ssh).
+
 ### Raw rows: driver reads that never decode (2.0.5)
 
-`FOR v IN c [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a plain local
-collection, sent over the driver with the query cache off, is answered by
+`FOR v IN c [FILTER v.f == x] [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a
+plain local collection (the FILTER only when a single-field index on `f`
+serves it), sent over the driver with the query cache off, is answered by
 copying the stored MessagePack bytes into the response
 (`sdbql/executor/execution/raw_scan.rs` plans it, `storage/raw_rows.rs` writes
 the rows, `Response::RawRows` carries them). The output must stay
@@ -341,6 +369,15 @@ or to what `Document::to_value` returns (system fields, timestamp form) has to
 be made in `raw_rows` too. Anything the planner does not recognise, and any
 guard it cannot clear (row policy, search view, columnar, sharded, row
 ceiling), falls back to the ordinary executor.
+
+Counts are read from an index the same way, on every transport:
+`FOR v IN c FILTER v.f == x COLLECT WITH COUNT INTO n RETURN …` and
+`LENGTH(FOR v IN c FILTER v.f == x RETURN 1)` (the Soli ORM's `count` with a
+`where`) count the entries of the single-field index on `f` and read no
+document (`sdbql/executor/execution/index_count.rs`). Both the raw path and
+the count rely on an index holding exactly one entry per document under the
+value's `encode_key` form; anything that changes that (array expansion,
+sparse entries) must change them too.
 
 ### Three tiers of protected collections
 

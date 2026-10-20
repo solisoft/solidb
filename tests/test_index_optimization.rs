@@ -296,3 +296,166 @@ fn test_index_found_in_second_filter() {
     let forced = q(r#"OPTIONS { indexHint: "date2_idx", forceIndexHint: true }"#);
     assert_eq!(executor.execute(&parse(&forced).unwrap()).unwrap(), scanned);
 }
+
+/// `FILTER v.f == x COLLECT WITH COUNT` is counted from the index without
+/// reading documents. Its answers must be the ordinary path's: a second
+/// `FILTER true` keeps a query off the shortcut, so each count is checked
+/// against the same query run the ordinary way.
+#[test]
+fn test_index_only_count_matches_the_ordinary_path() {
+    let (engine, _tmp) = create_seeded_engine();
+    let executor = QueryExecutor::with_database(&engine, "testdb".to_string());
+    let db = engine.get_database("testdb").unwrap();
+    let users = db.get_collection("users").unwrap();
+    for (name, field, ty) in [
+        ("city_idx", "city", IndexType::Persistent),
+        ("age_idx", "age", IndexType::Hash),
+    ] {
+        users
+            .create_index(name.to_string(), vec![field.to_string()], ty, false)
+            .unwrap();
+    }
+
+    let run = |q: &str| executor.execute(&parse(q).unwrap()).unwrap();
+    let both = |filter: &str, ret: &str| {
+        let fast = run(&format!(
+            "FOR u IN users FILTER {filter} COLLECT WITH COUNT INTO n RETURN {ret}"
+        ));
+        let slow = run(&format!(
+            "FOR u IN users FILTER {filter} FILTER true COLLECT WITH COUNT INTO n RETURN {ret}"
+        ));
+        assert_eq!(fast, slow, "{filter} / {ret}");
+        fast
+    };
+
+    assert_eq!(both("u.city == 'Paris'", "n"), vec![json!(50)]);
+    assert_eq!(
+        both("'London' == u.city", "{total: n}"),
+        vec![json!({"total": 50})]
+    );
+    assert_eq!(both("u.city == 'Rome'", "n"), vec![json!(0)]);
+    assert_eq!(both("u.age == 42", "n"), vec![json!(1)]);
+    assert_eq!(both("u.age == 42.0", "n"), vec![json!(1)]);
+    // No index on `name`: the ordinary path answers.
+    assert_eq!(both("u.name == 'User7'", "n"), vec![json!(1)]);
+    // `null` is not in the index; the ordinary path scans.
+    assert_eq!(both("u.city == null", "n"), vec![json!(0)]);
+
+    // Writes move the index entries with the documents.
+    run("FOR u IN users FILTER u.age < 10 UPDATE u WITH {city: 'Rome'} IN users");
+    run("FOR u IN users FILTER u.age >= 90 REMOVE u IN users");
+    assert_eq!(both("u.city == 'Rome'", "n"), vec![json!(10)]);
+    assert_eq!(both("u.city == 'Paris'", "n"), vec![json!(40)]);
+    assert_eq!(both("u.city == 'London'", "n"), vec![json!(40)]);
+
+    // A bind variable is a value like any other.
+    let query =
+        parse("FOR u IN users FILTER u.city == @c COLLECT WITH COUNT INTO n RETURN n").unwrap();
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("c".to_string(), json!("Rome"));
+    let with_vars = QueryExecutor::with_database_and_bind_vars(&engine, "testdb".to_string(), vars);
+    assert_eq!(with_vars.execute(&query).unwrap(), vec![json!(10)]);
+}
+
+/// `FOR v IN c FILTER v.f == x … RETURN <fields>` copies the stored bytes of
+/// the documents the index names (the driver's raw-rows path). Its bytes must
+/// be what encoding the ordinary path's result gives.
+#[test]
+fn test_index_raw_rows_match_the_ordinary_path() {
+    let (engine, _tmp) = create_seeded_engine();
+    let db = engine.get_database("testdb").unwrap();
+    let users = db.get_collection("users").unwrap();
+    for (name, field) in [("city_idx", "city"), ("age_idx", "age")] {
+        users
+            .create_index(
+                name.to_string(),
+                vec![field.to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
+    let executor = QueryExecutor::with_database(&engine, "testdb".to_string());
+    let same = |q: &str| {
+        let query = parse(q).unwrap();
+        let raw = executor.execute_raw_msgpack(&query).unwrap();
+        let ordinary =
+            rmp_serde::to_vec_named(&serde_json::Value::Array(executor.execute(&query).unwrap()))
+                .unwrap();
+        if let Some(raw) = &raw {
+            assert_eq!(raw, &ordinary, "{q}");
+        }
+        raw.is_some()
+    };
+
+    for q in [
+        "FOR u IN users FILTER u.city == 'Paris' RETURN u",
+        "FOR u IN users FILTER u.city == 'Paris' RETURN {name: u.name, age: u.age}",
+        "FOR u IN users FILTER 'London' == u.city RETURN u.name",
+        "FOR u IN users FILTER u.city == 'Paris' LIMIT 5 RETURN u._key",
+        "FOR u IN users FILTER u.city == 'Paris' LIMIT 45, 10 RETURN u.age",
+        "FOR u IN users FILTER u.city == 'Paris' LIMIT 60, 10 RETURN u.age",
+        "FOR u IN users FILTER u.city == 'Paris' LIMIT 0 RETURN u",
+        "FOR u IN users FILTER u.city == 'Rome' RETURN u",
+        "FOR u IN users FILTER u.age == 42 RETURN u",
+        "FOR u IN users FILTER u.age == 42.0 RETURN u",
+    ] {
+        assert!(same(q), "the index should serve {q}");
+    }
+    // No index on `name`, a null, a range, `_key`: left to the ordinary path.
+    for q in [
+        "FOR u IN users FILTER u.name == 'User7' RETURN u",
+        "FOR u IN users FILTER u.city == null RETURN u",
+        "FOR u IN users FILTER u.age > 90 RETURN u",
+        "FOR u IN users FILTER u._key == 'x' RETURN u",
+    ] {
+        assert!(!same(q), "{q} should take the ordinary path");
+    }
+}
+
+/// `RETURN LENGTH(FOR doc IN c FILTER doc.f == x RETURN 1)` — how the Soli
+/// ORM counts a `where` — is counted in the index too, at top level and as a
+/// correlated subquery. `FILTER true` keeps the reference off the shortcut.
+#[test]
+fn test_index_only_length_of_subquery_matches_the_ordinary_path() {
+    let (engine, _tmp) = create_seeded_engine();
+    let db = engine.get_database("testdb").unwrap();
+    let users = db.get_collection("users").unwrap();
+    users
+        .create_index(
+            "city_idx".to_string(),
+            vec!["city".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    let executor = QueryExecutor::with_database(&engine, "testdb".to_string());
+    let run = |q: &str| executor.execute(&parse(q).unwrap()).unwrap();
+    for (fast, slow, expected) in [
+        (
+            "RETURN LENGTH(FOR doc IN users FILTER doc.city == 'Paris' RETURN 1)",
+            "RETURN LENGTH(FOR doc IN users FILTER doc.city == 'Paris' FILTER true RETURN 1)",
+            json!([50]),
+        ),
+        (
+            "RETURN COUNT(FOR doc IN users FILTER doc.city == 'Rome' RETURN doc)",
+            "RETURN COUNT(FOR doc IN users FILTER doc.city == 'Rome' FILTER true RETURN doc)",
+            json!([0]),
+        ),
+        (
+            "FOR c IN ['Paris', 'London', 'Rome'] \
+             RETURN {c, n: LENGTH(FOR u IN users FILTER u.city == c RETURN u.name)}",
+            "FOR c IN ['Paris', 'London', 'Rome'] \
+             RETURN {c, n: LENGTH(FOR u IN users FILTER u.city == c FILTER true RETURN u.name)}",
+            json!([
+                {"c": "Paris", "n": 50},
+                {"c": "London", "n": 50},
+                {"c": "Rome", "n": 0}
+            ]),
+        ),
+    ] {
+        let got = run(fast);
+        assert_eq!(serde_json::Value::Array(got.clone()), expected, "{fast}");
+        assert_eq!(got, run(slow), "{fast}");
+    }
+}

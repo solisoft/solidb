@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use super::collection::Collection;
 use super::columnar::*;
-use super::engine::tuned_cf_options;
 use super::pending_drops::{Claim, PendingCfDrops};
 use crate::error::{DbError, DbResult};
 
@@ -173,9 +172,9 @@ impl Database {
                 // Use the shared tuned options so collections get LZ4 compression,
                 // the shared block cache, and bloom filters (Options::default()
                 // would silently skip all of that)
-                super::cf_ops::timed(|| self.db.create_cf(&cf_name, &tuned_cf_options())).map_err(
-                    |e| DbError::InternalError(format!("Failed to create collection: {}", e)),
-                )?;
+                super::cf_ops::timed(|| self.db.create_cf(&cf_name)).map_err(|e| {
+                    DbError::InternalError(format!("Failed to create collection: {}", e))
+                })?;
             }
         }
         // A reused CF keeps no state from its previous incarnation, but a
@@ -725,7 +724,7 @@ mod tests {
 
     fn create_test_db() -> (Arc<DB>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
-        let db = DB::open_default(temp_dir.path()).unwrap();
+        let db = DB::from(crate::storage::kv::RawRocks::open_default(temp_dir.path()).unwrap());
         (Arc::new(db), temp_dir)
     }
 

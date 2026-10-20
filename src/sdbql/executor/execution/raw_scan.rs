@@ -1,9 +1,11 @@
 //! Queries answered by copying stored bytes (see `storage::raw_rows`).
 //!
-//! `FOR v IN c [LIMIT …] RETURN v | v.f | {k: v.f, …}` over a plain local
-//! collection needs no evaluation at all: every row is a document, or fields
-//! of it, in the MessagePack the driver sends anyway. This runs such a query
-//! without decoding a single value, under the same guards as the ordinary
+//! `FOR v IN c [FILTER v.f == x] [LIMIT …] RETURN v | v.f | {k: v.f, …}` over
+//! a plain local collection needs no evaluation at all: every row is a
+//! document, or fields of it, in the MessagePack the driver sends anyway. The
+//! FILTER is taken only when a single-field index serves it, whose entries are
+//! then exactly the documents it accepts. This runs such a query without
+//! decoding a single value, under the same guards as the ordinary
 //! path — the protected-collection check, row policies, search views,
 //! columnar and sharded collections, the row and time budget — and hands
 //! anything else, or any document it cannot copy, back to that path.
@@ -11,11 +13,11 @@
 use super::super::types::Context;
 use super::super::QueryExecutor;
 use crate::error::DbResult;
-use crate::sdbql::ast::{BodyClause, Expression, ForClause, Query};
+use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression, ForClause, Query};
 use crate::storage::raw_rows::RawShape;
 
-/// The loop and the row shape of a query this path can answer.
-fn raw_plan(query: &Query) -> Option<(&ForClause, RawShape)> {
+/// The loop, its FILTER and the row shape of a query this path can answer.
+fn raw_plan(query: &Query) -> Option<(&ForClause, Option<&Expression>, RawShape)> {
     if !query.set_operations.is_empty()
         || !query.join_clauses.is_empty()
         || query.with_clause.is_some()
@@ -29,8 +31,22 @@ fn raw_plan(query: &Query) -> Option<(&ForClause, RawShape)> {
     {
         return None;
     }
-    let [BodyClause::For(for_clause)] = query.body_clauses.as_slice() else {
-        return None;
+    let (for_clause, filter) = match query.body_clauses.as_slice() {
+        [BodyClause::For(f)] => (f, None),
+        // One equality, nothing else: the index entries are then exactly
+        // the rows the FILTER accepts.
+        [BodyClause::For(f), BodyClause::Filter(filter)]
+            if matches!(
+                &filter.expression,
+                Expression::BinaryOp {
+                    op: BinaryOperator::Equal,
+                    ..
+                }
+            ) =>
+        {
+            (f, Some(&filter.expression))
+        }
+        _ => return None,
     };
     if for_clause.source_expression.is_some()
         || for_clause.system_time.is_some()
@@ -75,14 +91,14 @@ fn raw_plan(query: &Query) -> Option<(&ForClause, RawShape)> {
         }
         other => RawShape::Single(field_of(other)?),
     };
-    Some((for_clause, shape))
+    Some((for_clause, filter, shape))
 }
 
 impl QueryExecutor<'_> {
     /// The query's result as an encoded MessagePack array, or `Ok(None)` when
     /// it has to be run the ordinary way (the caller then does so).
     pub fn execute_raw_msgpack(&self, query: &Query) -> DbResult<Option<Vec<u8>>> {
-        let Some((for_clause, shape)) = raw_plan(query) else {
+        let Some((for_clause, filter, shape)) = raw_plan(query) else {
             return Ok(None);
         };
         self.reset_query_caches();
@@ -119,9 +135,16 @@ impl QueryExecutor<'_> {
         };
         let ceiling = self.max_intermediate_rows.saturating_add(1);
         let limit = Some(count.map_or(ceiling, |n| n.min(ceiling)));
-        let Some((rows, body)) =
-            collection.scan_raw(offset, limit, &shape, |n| self.check_budget(n))?
-        else {
+        let scanned = match filter {
+            None => collection.scan_raw(offset, limit, &shape, |n| self.check_budget(n))?,
+            Some(filter) => {
+                let Some(limit) = limit else {
+                    return Ok(None);
+                };
+                self.index_raw_eq(&collection, for_clause, filter, offset, limit, &shape)?
+            }
+        };
+        let Some((rows, body)) = scanned else {
             return Ok(None);
         };
         // Over the ceiling: the ordinary path reports it.
@@ -135,6 +158,41 @@ impl QueryExecutor<'_> {
         out.extend_from_slice(&body);
         Ok(Some(out))
     }
+
+    /// The rows of `FOR v IN c FILTER v.f == x` read through the index on
+    /// `f`, or `Ok(None)` when no such index serves the FILTER.
+    fn index_raw_eq(
+        &self,
+        collection: &crate::storage::Collection,
+        for_clause: &ForClause,
+        filter: &Expression,
+        offset: usize,
+        limit: usize,
+        shape: &RawShape,
+    ) -> DbResult<Option<(usize, Vec<u8>)>> {
+        let Some(cond) =
+            self.extract_indexable_condition(filter, &for_clause.variable, &Context::default())
+        else {
+            return Ok(None);
+        };
+        // `_key` and `_id` are served by the primary key, not an index.
+        if cond.op != BinaryOperator::Equal || cond.field == "_key" || cond.field == "_id" {
+            return Ok(None);
+        }
+        // The ordinary path looks a whole number up as an integer first, and
+        // as written only when the index holds nothing under the integer
+        // (see `use_index_for_condition`).
+        let normalized = super::index_count::whole_number_as_integer(&cond.value);
+        let check = |n| self.check_budget(n);
+        let first =
+            collection.index_raw_eq(&cond.field, &normalized, offset, limit, shape, check)?;
+        Ok(match first {
+            Some((_, _, false)) if normalized != cond.value => collection
+                .index_raw_eq(&cond.field, &cond.value, offset, limit, shape, check)?
+                .map(|(rows, body, _)| (rows, body)),
+            other => other.map(|(rows, body, _)| (rows, body)),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -144,7 +202,7 @@ mod tests {
 
     fn plan(q: &str) -> Option<String> {
         let query = parse(q).unwrap();
-        raw_plan(&query).map(|(_, shape)| format!("{shape:?}"))
+        raw_plan(&query).map(|(_, _, shape)| format!("{shape:?}"))
     }
 
     #[test]
@@ -162,12 +220,19 @@ mod tests {
             plan("FOR d IN c LIMIT @o, @n RETURN {z: d.a, b: d._key}").as_deref(),
             Some("Fields([(\"b\", \"_key\"), (\"z\", \"a\")])")
         );
+        assert_eq!(
+            plan("FOR d IN c FILTER d.g == @g RETURN {n: d.name}").as_deref(),
+            Some("Fields([(\"n\", \"name\")])")
+        );
     }
 
     #[test]
     fn everything_else_is_left_to_the_ordinary_path() {
         for q in [
             "FOR d IN c FILTER d.a > 1 RETURN d",
+            "FOR d IN c FILTER d.a == 1 AND d.b == 2 RETURN d",
+            "FOR d IN c FILTER d.a == 1 FILTER d.b == 2 RETURN d",
+            "FOR d IN c FILTER d.a == 1 SORT d.b RETURN d",
             "FOR d IN c SORT d.a RETURN d",
             "FOR d IN c RETURN DISTINCT d.a",
             "FOR d IN c RETURN {a: d.a, a: d.b}",

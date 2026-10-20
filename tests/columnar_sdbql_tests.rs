@@ -12,7 +12,6 @@
 //! grouping, reported the group column under storage's internal `_agg` name,
 //! and double-encoded string group keys as `"\"a\""`.
 
-use rust_rocksdb::Options;
 use serde_json::{json, Value};
 use solidb::sdbql::{parse, QueryExecutor};
 use solidb::storage::columnar::{ColumnDef, ColumnType, ColumnarCollection, CompressionType};
@@ -30,7 +29,7 @@ fn fixture() -> (StorageEngine, TempDir) {
 
     let cf_name = "testdb:_columnar_metrics";
     if db_arc.cf_handle(cf_name).is_none() {
-        db_arc.create_cf(cf_name, &Options::default()).unwrap();
+        db_arc.create_cf(cf_name).unwrap();
     }
 
     let columns = vec![

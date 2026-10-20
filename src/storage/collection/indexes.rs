@@ -1,8 +1,9 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::index::extract_field_value;
+use crate::storage::kv::KvBatch;
+use crate::storage::kv::{Direction, IterMode};
 use crate::storage::serializer::deserialize_doc;
-use rust_rocksdb::{Direction, IteratorMode, WriteBatch};
 use serde_json::Value;
 
 use hex;
@@ -249,8 +250,8 @@ impl Collection {
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
         let prefix = DOC_PREFIX.as_bytes();
 
-        // Use WriteBatch for atomic, high-performance index creation
-        let mut batch = WriteBatch::default();
+        // Use KvBatch for atomic, high-performance index creation
+        let mut batch = KvBatch::default();
         let mut indexed_count = 0;
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries to avoid excessive memory usage
 
@@ -292,16 +293,16 @@ impl Collection {
 
             // Flush batch periodically to avoid excessive memory usage
             if indexed_count % BATCH_SIZE_LIMIT == 0 {
-                db.write(&batch).map_err(|e| {
+                db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to write index batch: {}", e))
                 })?;
-                batch = WriteBatch::default();
+                batch = KvBatch::default();
             }
         }
 
         // Write any remaining entries in the batch
         if !batch.is_empty() {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to write final index batch: {}", e))
             })?;
         }
@@ -326,8 +327,8 @@ impl Collection {
             .handle(&self.db)
             .expect("Column family should exist");
 
-        // Use WriteBatch for atomic, high-performance index deletion
-        let mut batch = WriteBatch::default();
+        // Use KvBatch for atomic, high-performance index deletion
+        let mut batch = KvBatch::default();
         let mut deleted_count = 0;
         const BATCH_SIZE_LIMIT: usize = 10000; // Flush every 10k entries
 
@@ -346,10 +347,10 @@ impl Collection {
 
                 // Flush batch periodically to avoid excessive memory usage
                 if deleted_count % BATCH_SIZE_LIMIT == 0 {
-                    db.write(&batch).map_err(|e| {
+                    db.write(batch).map_err(|e| {
                         DbError::InternalError(format!("Failed to write drop batch: {}", e))
                     })?;
-                    batch = WriteBatch::default();
+                    batch = KvBatch::default();
                 }
             } else {
                 break;
@@ -358,7 +359,7 @@ impl Collection {
 
         // Write any remaining entries in the batch
         if deleted_count > 0 || !batch.is_empty() {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to write final drop batch: {}", e))
             })?;
         }
@@ -413,7 +414,7 @@ impl Collection {
             return Ok(0);
         }
 
-        // Clear existing index entries using WriteBatch
+        // Clear existing index entries using KvBatch
         let clear_start = std::time::Instant::now();
         {
             let db = &self.db;
@@ -421,7 +422,7 @@ impl Collection {
                 .ks
                 .handle(&self.db)
                 .expect("Column family should exist");
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
 
             // Clear regular indexes
             for index in &indexes {
@@ -478,7 +479,7 @@ impl Collection {
                 }
             }
 
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
         tracing::info!(
             "rebuild_all_indexes: Clear phase took {:?}",
@@ -504,17 +505,17 @@ impl Collection {
 
         // Initialize batches for each index type
         let mut regular_batch = if !indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
         let mut geo_batch = if !geo_indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
         let mut ft_batch = if !ft_indexes.is_empty() {
-            Some(WriteBatch::default())
+            Some(KvBatch::default())
         } else {
             None
         };
@@ -551,8 +552,7 @@ impl Collection {
 
                             // Flush batch periodically
                             if regular_count % BATCH_SIZE_LIMIT == 0 {
-                                let _ = db.write(&*batch);
-                                *batch = WriteBatch::default();
+                                let _ = db.write(std::mem::take(batch));
                             }
                         }
                     }
@@ -570,8 +570,7 @@ impl Collection {
 
                                 // Flush batch periodically
                                 if geo_count % BATCH_SIZE_LIMIT == 0 {
-                                    let _ = db.write(&*batch);
-                                    *batch = WriteBatch::default();
+                                    let _ = db.write(std::mem::take(batch));
                                 }
                             }
                         }
@@ -593,8 +592,7 @@ impl Collection {
 
                                 // Flush batch periodically (check after each field)
                                 if ft_count >= BATCH_SIZE_LIMIT {
-                                    let _ = db.write(&*batch);
-                                    *batch = WriteBatch::default();
+                                    let _ = db.write(std::mem::take(batch));
                                     ft_count = 0;
                                 }
                             }
@@ -607,17 +605,17 @@ impl Collection {
         // Write any remaining entries in batches
         if let Some(batch) = regular_batch {
             if regular_count > 0 && regular_count % BATCH_SIZE_LIMIT != 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
         if let Some(batch) = geo_batch {
             if geo_count > 0 && geo_count % BATCH_SIZE_LIMIT != 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
         if let Some(batch) = ft_batch {
             if ft_count > 0 {
-                let _ = db.write(&batch);
+                let _ = db.write(batch);
             }
         }
 
@@ -701,7 +699,7 @@ impl Collection {
 
         // Build regular indexes
         if !indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for index in &indexes {
@@ -727,12 +725,12 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         // Build geo indexes
         if !geo_indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for geo_index in &geo_indexes {
@@ -745,12 +743,12 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         // Build fulltext indexes
         if !ft_indexes.is_empty() {
-            let mut batch = WriteBatch::default();
+            let mut batch = KvBatch::default();
             for doc in docs {
                 let doc_value = doc.to_value();
                 for ft_index in &ft_indexes {
@@ -765,7 +763,7 @@ impl Collection {
                     }
                 }
             }
-            let _ = db.write(&batch);
+            let _ = db.write(batch);
         }
 
         tracing::info!("index_documents: Total time {:?}", total_start.elapsed());
@@ -1200,7 +1198,7 @@ impl Collection {
         let mut doc_keys = Vec::new();
 
         if forward {
-            let mode = IteratorMode::From(seek_key.as_bytes(), Direction::Forward);
+            let mode = IterMode::From(seek_key.as_bytes(), Direction::Forward);
             let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
@@ -1228,7 +1226,7 @@ impl Collection {
             // them instead — `;` is the byte after `:`, and no hex digit sits
             // between the two, so only this value's entries lie in the gap.
             let reverse_seek = format!("{}{};", prefix_base, value_str);
-            let mode = IteratorMode::From(reverse_seek.as_bytes(), Direction::Reverse);
+            let mode = IterMode::From(reverse_seek.as_bytes(), Direction::Reverse);
             let iter = db.iterator_ks(&cf, mode);
 
             for result in iter {
@@ -1324,6 +1322,137 @@ impl Collection {
             .collect();
 
         Some(docs)
+    }
+
+    /// The index-entry prefix of `field == value`, as [`Self::index_lookup_eq`]
+    /// reads it.
+    fn index_eq_prefix(&self, field: &str, value: &Value) -> EqPrefix {
+        if value.is_null() {
+            return EqPrefix::NoIndex;
+        }
+        let Some(index) = self.get_single_field_index_for_field(field) else {
+            return EqPrefix::NoIndex;
+        };
+        if (index.index_type == IndexType::Bloom
+            && !self.bloom_check(&index.name, &value.to_string()))
+            || (index.index_type == IndexType::Cuckoo
+                && !self.cuckoo_check(&index.name, &value.to_string()))
+        {
+            return EqPrefix::Empty;
+        }
+        let value_str = hex::encode(crate::storage::codec::encode_key(value));
+        EqPrefix::Prefix(format!("{}{}:{}:", IDX_PREFIX, index.name, value_str).into_bytes())
+    }
+
+    /// The index entries under `prefix`, in order: `f` gets each entry's
+    /// value (the document key) and returns `false` to stop.
+    fn for_each_index_entry(
+        &self,
+        cf: &KsCf,
+        prefix: &[u8],
+        mut f: impl FnMut(&[u8]) -> DbResult<bool>,
+    ) -> DbResult<()> {
+        // The prefix ends in ':', so ';' is the first key past it.
+        let mut upper = prefix.to_vec();
+        *upper.last_mut().expect("non-empty prefix") += 1;
+        let iter = self.db.iterator_ks_bounded(
+            cf,
+            IterMode::From(prefix, Direction::Forward),
+            None,
+            Some(&upper),
+        );
+        for item in iter {
+            let (k, v) = item.map_err(|e| DbError::InternalError(e.to_string()))?;
+            if !k.starts_with(prefix) || !f(&v)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// How many documents [`Self::index_lookup_eq`] would return, read from
+    /// the index alone: one entry per document, and no document fetched.
+    /// `check` is called every 64k entries so a caller can enforce a
+    /// deadline. `None` when no single-field index serves `field`.
+    pub fn index_count_eq(
+        &self,
+        field: &str,
+        value: &Value,
+        mut check: impl FnMut() -> DbResult<()>,
+    ) -> DbResult<Option<u64>> {
+        let prefix = match self.index_eq_prefix(field, value) {
+            EqPrefix::NoIndex => return Ok(None),
+            EqPrefix::Empty => return Ok(Some(0)),
+            EqPrefix::Prefix(p) => p,
+        };
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut n = 0u64;
+        self.for_each_index_entry(&cf, &prefix, |_| {
+            n += 1;
+            if n.is_multiple_of(65_536) {
+                check()?;
+            }
+            Ok(true)
+        })?;
+        Ok(Some(n))
+    }
+
+    /// [`Self::index_lookup_eq`] then rows `offset..offset + limit`, written
+    /// for `shape` straight from the stored bytes (see
+    /// [`crate::storage::raw_rows`]). `Ok(None)` when no single-field index
+    /// serves `field`, or when a document is missing or cannot be copied
+    /// this way: the caller then runs the query the ordinary way. The flag
+    /// says whether the index holds the value at all, rows skipped by
+    /// `offset` included.
+    pub fn index_raw_eq(
+        &self,
+        field: &str,
+        value: &Value,
+        offset: usize,
+        limit: usize,
+        shape: &crate::storage::raw_rows::RawShape,
+        mut check: impl FnMut(usize) -> DbResult<()>,
+    ) -> DbResult<Option<(usize, Vec<u8>, bool)>> {
+        let prefix = match self.index_eq_prefix(field, value) {
+            EqPrefix::NoIndex => return Ok(None),
+            EqPrefix::Empty => return Ok(Some((0, Vec::new(), false))),
+            EqPrefix::Prefix(p) => p,
+        };
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut keys: Vec<Vec<u8>> = Vec::new();
+        let mut skipped = 0usize;
+        let mut seen = false;
+        self.for_each_index_entry(&cf, &prefix, |doc_key| {
+            seen = true;
+            if limit == 0 {
+                return Ok(false);
+            }
+            if skipped < offset {
+                skipped += 1;
+                return Ok(true);
+            }
+            keys.push(Self::doc_key(&String::from_utf8_lossy(doc_key)));
+            if keys.len().is_multiple_of(4096) {
+                check(keys.len())?;
+            }
+            Ok(keys.len() < limit)
+        })?;
+        let mut out = Vec::new();
+        for doc in self.db.multi_get_ks(&cf, keys.iter().map(|k| k.as_slice())) {
+            // A missing document is dropped by the ordinary path; leave the
+            // whole query to it rather than reproduce that here.
+            let Ok(Some(bytes)) = doc else {
+                return Ok(None);
+            };
+            if crate::storage::raw_rows::write_row(&bytes, shape, &mut out).is_none() {
+                return Ok(None);
+            }
+        }
+        Ok(Some((keys.len(), out, seen)))
     }
 
     /// Composite-index equality lookup.
@@ -1482,13 +1611,13 @@ impl Collection {
             let prefix = DOC_PREFIX.as_bytes();
 
             let iter = if ascending {
-                let mode = IteratorMode::From(prefix, Direction::Forward);
+                let mode = IterMode::From(prefix, Direction::Forward);
                 db.iterator_ks(&cf, mode)
             } else {
                 // For descending, we seek past the end of the prefix
                 let mut seek_key = prefix.to_vec();
                 seek_key.push(0xFF);
-                let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+                let mode = IterMode::From(&seek_key, Direction::Reverse);
                 db.iterator_ks(&cf, mode)
             };
 
@@ -1511,12 +1640,12 @@ impl Collection {
         let prefix_bytes = prefix.as_bytes();
 
         let iter = if ascending {
-            let mode = IteratorMode::From(prefix_bytes, Direction::Forward);
+            let mode = IterMode::From(prefix_bytes, Direction::Forward);
             db.iterator_ks(&cf, mode)
         } else {
             let mut seek_key = prefix.as_bytes().to_vec();
             seek_key.push(0xFF);
-            let mode = IteratorMode::From(&seek_key, Direction::Reverse);
+            let mode = IterMode::From(&seek_key, Direction::Reverse);
             db.iterator_ks(&cf, mode)
         };
 
@@ -1808,4 +1937,14 @@ impl Collection {
 
         Ok((keys_to_remove, geo_keys_to_remove))
     }
+}
+
+/// What an equality reads in a single-field index.
+enum EqPrefix {
+    /// No index serves the field (or the value is null): not answerable here.
+    NoIndex,
+    /// The index's filter rules the value out.
+    Empty,
+    /// The entries of the matching documents share this prefix.
+    Prefix(Vec<u8>),
 }

@@ -647,7 +647,7 @@ impl<'a> QueryExecutor<'a> {
                         let eval_time = eval_start.elapsed();
                         tracing::debug!("INSERT: Document evaluation took {:?}", eval_time);
 
-                        // Batch insert all documents at once (uses RocksDB WriteBatch)
+                        // Batch insert all documents at once (one storage batch)
                         let insert_start = std::time::Instant::now();
                         let inserted_docs = collection.insert_batch(documents)?;
                         let insert_time = insert_start.elapsed();
@@ -680,7 +680,7 @@ impl<'a> QueryExecutor<'a> {
                         }
 
                         // Audit D5: no post-insert indexing pass. `insert_batch`
-                        // writes idx/geo/fulltext entries in the same WriteBatch
+                        // writes idx/geo/fulltext entries in the same batch
                         // as the documents; a second, detached pass re-wrote them
                         // from insert-time values and resurrected entries for rows
                         // updated or removed in between.
@@ -910,7 +910,7 @@ impl<'a> QueryExecutor<'a> {
                         let eval_time = eval_start.elapsed();
                         tracing::debug!("UPDATE: Evaluation took {:?}", eval_time);
 
-                        // Batch update all documents at once (uses RocksDB WriteBatch)
+                        // Batch update all documents at once (one storage batch)
                         let update_start = std::time::Instant::now();
                         let updated_docs = collection.update_batch(&updates)?;
                         let update_time = update_start.elapsed();
@@ -1124,7 +1124,7 @@ impl<'a> QueryExecutor<'a> {
                         let eval_time = eval_start.elapsed();
                         tracing::debug!("REMOVE: Evaluation took {:?}", eval_time);
 
-                        // Batch delete all documents at once (uses RocksDB WriteBatch)
+                        // Batch delete all documents at once (one storage batch)
                         let delete_start = std::time::Instant::now();
                         let deleted_count = collection.delete_batch(keys.clone())?;
                         let delete_time = delete_start.elapsed();

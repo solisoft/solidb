@@ -20,7 +20,7 @@
 //! between `create_cf` and the registry write — or a downgrade to a binary
 //! that never wrote entries — heals itself rather than losing a collection.
 
-use rust_rocksdb::WriteBatch;
+use crate::storage::kv::KvBatch;
 use serde::{Deserialize, Serialize};
 
 use super::engine::META_CF;
@@ -116,7 +116,7 @@ pub fn forget(db: &DB, cf_name: &str) -> DbResult<()> {
 /// Add every `coll:{db}:` deletion for `db_name` to an existing batch, so a
 /// database drop removes its collections' entries atomically with its own
 /// metadata key.
-pub fn forget_database_in_batch(db: &DB, batch: &mut WriteBatch, db_name: &str) {
+pub fn forget_database_in_batch(db: &DB, batch: &mut KvBatch, db_name: &str) {
     let Some(meta_cf) = db.cf_handle(META_CF) else {
         return;
     };
@@ -169,7 +169,7 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
     };
 
     let known: std::collections::HashSet<String> = list_all(db).into_iter().collect();
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     let mut adopted = 0usize;
 
     for cf_name in db.cf_names() {
@@ -201,7 +201,7 @@ pub fn backfill(db: &DB, is_pending: impl Fn(&str) -> bool) -> usize {
     }
 
     if adopted > 0 {
-        if let Err(e) = db.write(&batch) {
+        if let Err(e) = db.write(batch) {
             tracing::warn!("Collection registry backfill failed: {}", e);
             return 0;
         }
@@ -285,7 +285,7 @@ pub fn keyspace_of(
         .map(|_| Keyspace::legacy(db, full_name))
 }
 
-fn read_u32(db: &DB, meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>, key: &str) -> Option<u32> {
+fn read_u32(db: &DB, meta_cf: &crate::storage::kv::KvCf<'_>, key: &str) -> Option<u32> {
     let bytes = db.get_cf(meta_cf, key.as_bytes()).ok()??;
     std::str::from_utf8(&bytes).ok()?.parse().ok()
 }
@@ -299,9 +299,9 @@ fn database_of(full_name: &str) -> Option<&str> {
 /// Id of `db_name`, allocating (into `batch`) when it has none yet.
 fn database_id(
     db: &DB,
-    meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>,
+    meta_cf: &crate::storage::kv::KvCf<'_>,
     db_name: Option<&str>,
-    batch: &mut WriteBatch,
+    batch: &mut KvBatch,
 ) -> DbResult<u32> {
     let Some(name) = db_name else {
         return Ok(BARE_DB_ID);
@@ -327,11 +327,7 @@ pub fn existing_database_id(db: &DB, db_name: &str) -> Option<u32> {
 
 /// Allocate a keyspace for `full_name` and add its counters to `batch`.
 /// Caller holds [`catalog_lock`].
-pub(crate) fn allocate_keyspace(
-    db: &DB,
-    full_name: &str,
-    batch: &mut WriteBatch,
-) -> DbResult<KsNum> {
+pub(crate) fn allocate_keyspace(db: &DB, full_name: &str, batch: &mut KvBatch) -> DbResult<KsNum> {
     let meta_cf = db
         .cf_handle(META_CF)
         .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
@@ -355,7 +351,7 @@ pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbRes
     let meta_cf = db
         .cf_handle(META_CF)
         .ok_or_else(|| DbError::InternalError("_meta column family missing".to_string()))?;
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     let ks = allocate_keyspace(db, full_name, &mut batch)?;
     let record = CollectionRecord {
         type_: type_.to_string(),
@@ -372,7 +368,7 @@ pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbRes
     use super::keyspace::KsBatchExt;
     batch.put_ks(&data, "_stats:type".as_bytes(), type_.as_bytes());
 
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to create collection: {e}")))?;
     super::cf_ops::record_keyspace_create();
     Ok(keyspace)
@@ -381,8 +377,8 @@ pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbRes
 /// Queue `[lo, hi)` of the shared column family for background compaction,
 /// in `batch`.
 fn mark_range_dead(
-    meta_cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>,
-    batch: &mut WriteBatch,
+    meta_cf: &crate::storage::kv::KvCf<'_>,
+    batch: &mut KvBatch,
     lo: &[u8],
     hi: &[u8],
 ) {
@@ -404,11 +400,11 @@ pub(crate) fn drop_shared(db: &Arc<DB>, full_name: &str, ks: KsNum) -> DbResult<
     let lo = prefix.as_bytes().to_vec();
     let hi = prefix.upper().expect("shared prefix has an upper bound");
 
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     batch.delete_cf(&meta_cf, entry_key(full_name).as_bytes());
     batch.delete_range_cf(&shared, &lo, &hi);
     mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to delete collection: {e}")))?;
 
     keyspace::mark_dead(db, &keyspace::KsId::Shared(ks));
@@ -430,7 +426,7 @@ pub(crate) fn drop_database_keyspaces(db: &Arc<DB>, db_name: &str) -> DbResult<O
     let lo = keyspace::ks_num(db_id, 0).to_be_bytes().to_vec();
     let hi = keyspace::ks_num(db_id + 1, 0).to_be_bytes().to_vec();
 
-    let mut batch = WriteBatch::default();
+    let mut batch = KvBatch::default();
     // Its collections' records: the legacy drop path only removes those of
     // the column families it schedules, which shared collections have none of.
     forget_database_in_batch(db, &mut batch, db_name);
@@ -441,7 +437,7 @@ pub(crate) fn drop_database_keyspaces(db: &Arc<DB>, db_name: &str) -> DbResult<O
     );
     batch.delete_range_cf(&shared, &lo, &hi);
     mark_range_dead(&meta_cf, &mut batch, &lo, &hi);
-    db.write(&batch)
+    db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to delete database data: {e}")))?;
     keyspace::mark_database_dead(db, db_id);
     super::keyspace_gc::wake();
@@ -479,7 +475,8 @@ mod tests {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let db = DB::open_cf(&opts, dir.path(), [META_CF]).unwrap();
+        let db =
+            DB::from(crate::storage::kv::RawRocks::open_cf(&opts, dir.path(), [META_CF]).unwrap());
         (db, dir)
     }
 
@@ -516,8 +513,8 @@ mod tests {
     #[test]
     fn backfill_adopts_unregistered_column_families() {
         let (db, _dir) = open();
-        db.create_cf("shop:orders", &Options::default()).unwrap();
-        db.create_cf("shop:edges", &Options::default()).unwrap();
+        db.create_cf("shop:orders").unwrap();
+        db.create_cf("shop:edges").unwrap();
 
         // The type lives in the column family on a pre-registry instance.
         let cf = db.cf_handle("shop:edges").unwrap();
@@ -539,7 +536,7 @@ mod tests {
     #[test]
     fn backfill_skips_doomed_column_families() {
         let (db, _dir) = open();
-        db.create_cf("shop:doomed", &Options::default()).unwrap();
+        db.create_cf("shop:doomed").unwrap();
 
         assert_eq!(backfill(&db, |cf| cf == "shop:doomed"), 0);
         assert!(list(&db, "shop").is_empty());

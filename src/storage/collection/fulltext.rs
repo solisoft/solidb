@@ -4,7 +4,7 @@ use crate::storage::index::{
     calculate_idf, extract_field_value, find_phrase, fuzzy_edits_for, generate_ngrams,
     levenshtein_distance, tokenize_folded, tokenize_spans, FulltextMatch, BM25_B, BM25_K1,
 };
-use rust_rocksdb::WriteBatch;
+use crate::storage::kv::KvBatch;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -108,7 +108,7 @@ impl Collection {
             .handle(&self.db)
             .expect("Column family should exist");
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut count = 0;
 
         for doc in &docs {
@@ -126,16 +126,16 @@ impl Collection {
             }
 
             if count > 1000 {
-                db.write(&batch).map_err(|e| {
+                db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to build fulltext index: {}", e))
                 })?;
-                batch = WriteBatch::default();
+                batch = KvBatch::default();
                 count = 0;
             }
         }
 
         if count > 0 {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to build fulltext index: {}", e))
             })?;
         }
@@ -165,7 +165,7 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to drop fulltext index: {}", e)))?;
         self.invalidate_index_meta();
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut count = 0;
 
         // Delete ngrams
@@ -181,10 +181,10 @@ impl Collection {
                 }
             }
             if count > 1000 {
-                db.write(&batch).map_err(|e| {
+                db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
                 })?;
-                batch = WriteBatch::default();
+                batch = KvBatch::default();
                 count = 0;
             }
         }
@@ -202,16 +202,16 @@ impl Collection {
                 }
             }
             if count > 1000 {
-                db.write(&batch).map_err(|e| {
+                db.write(batch).map_err(|e| {
                     DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
                 })?;
-                batch = WriteBatch::default();
+                batch = KvBatch::default();
                 count = 0;
             }
         }
 
         if count > 0 {
-            db.write(&batch).map_err(|e| {
+            db.write(batch).map_err(|e| {
                 DbError::InternalError(format!("Failed to drop fulltext entries: {}", e))
             })?;
         }
@@ -236,7 +236,7 @@ impl Collection {
             .ks
             .handle(&self.db)
             .expect("Column family should exist");
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         for index in indexes {
             for field in &index.fields {
@@ -250,7 +250,7 @@ impl Collection {
             }
         }
 
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))
     }
 
@@ -271,7 +271,7 @@ impl Collection {
             .ks
             .handle(&self.db)
             .expect("Column family should exist");
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
 
         for index in indexes {
             for field in &index.fields {
@@ -291,7 +291,7 @@ impl Collection {
             }
         }
 
-        db.write(&batch)
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to update fulltext index: {}", e)))
     }
 

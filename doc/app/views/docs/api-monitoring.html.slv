@@ -90,6 +90,10 @@
                     <code class="text-green-400">solidb_slow_queries_total</code>
                     <p class="text-gray-500 mt-1">Executions at or above 100ms, including failures, panics and timeouts (counter)</p>
                   </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_storage_*_total</code>
+                    <p class="text-gray-500 mt-1">What the storage engine wrote for the work it was given (counters): <code>flush_bytes</code>, <code>compaction_read_bytes</code>, <code>compaction_write_bytes</code>, and on the solistore engine also WAL bytes and fsyncs, commit groups, and time writers were held back. <code>solidb_storage_engine_info{engine}</code> names the engine.</p>
+                  </div>
                 </div>
               </div>
               <div class="mt-4 mb-4">

@@ -44,7 +44,7 @@ impl TransactionManager {
     /// to get a `Begin` line here and a fsynced `Commit` line at commit, but
     /// no operation was ever logged, so replay recovered nothing while the
     /// file grew without bound. Atomicity and durability now come from the
-    /// commit being a single RocksDB `WriteBatch` (synced for isolation
+    /// commit being a single storage batch (synced for isolation
     /// levels that `requires_wal`), which RocksDB's own WAL covers.
     pub fn begin(&self, isolation_level: IsolationLevel) -> DbResult<TransactionId> {
         let tx = Transaction::new(isolation_level);

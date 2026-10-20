@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
-use rust_rocksdb::WriteBatch;
+use crate::storage::kv::KvBatch;
 use std::sync::atomic::Ordering;
 
 /// True when `rest` (what follows `blo:<key>:`) is a bare chunk index.
@@ -80,7 +80,7 @@ impl Collection {
 
         let prefix = format!("{}{}:", BLO_PREFIX, key);
         let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut count = 0;
 
         for result in iter.flatten() {
@@ -98,7 +98,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
             // Saturating: a counter that didn't observe the matching inserts
             // must floor at 0, not wrap to u64::MAX.
@@ -139,7 +139,7 @@ impl Collection {
     }
 
     /// Finalize a resumable upload: copy temp chunks to permanent blob storage and delete temps.
-    /// Uses a WriteBatch for atomicity.
+    /// Uses a KvBatch for atomicity.
     ///
     /// Returns each chunk's length, in order. The client chose the chunk
     /// size and nothing forces it to send exactly that much per chunk, so
@@ -160,7 +160,7 @@ impl Collection {
         // Before the batch lands, for the same reason as the other two sites.
         self.ensure_chunk_count();
 
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut sizes = Vec::with_capacity(total_chunks as usize);
 
         for i in 0..total_chunks {
@@ -181,7 +181,7 @@ impl Collection {
             batch.delete_ks(&cf, tmp_key.as_bytes());
         }
 
-        db.write(&batch).map_err(|e| {
+        db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to finalize blob upload: {}", e))
         })?;
 
@@ -202,7 +202,7 @@ impl Collection {
 
         let prefix = format!("{}{}:", BLO_TMP_PREFIX, upload_id);
         let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
         let mut count = 0;
 
         for result in iter.flatten() {
@@ -218,7 +218,7 @@ impl Collection {
         }
 
         if count > 0 {
-            db.write(&batch)
+            db.write(batch)
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 

@@ -6,8 +6,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
+use crate::storage::kv::{Direction, IterMode, KvBatch};
 use crate::storage::RocksDb as DB;
-use rust_rocksdb::{Direction, IteratorMode, Options, WriteBatch};
 use serde::{Deserialize, Serialize};
 
 use super::protocol::{Operation, SyncEntry};
@@ -140,14 +140,8 @@ impl SyncLog {
     ) -> Result<Self, String> {
         let log_path = format!("{}/sync_log", data_dir);
 
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.set_max_write_buffer_number(4);
-        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
-        opts.set_keep_log_file_num(5);
-        opts.set_recycle_log_file_num(3);
-
-        let db = DB::open(&opts, &log_path).map_err(|e| e.to_string())?;
+        let db = crate::storage::kv::open_sync_log(std::path::Path::new(&log_path))
+            .map_err(|e| e.to_string())?;
         let db = Arc::new(db);
 
         // Load current sequence
@@ -181,7 +175,7 @@ impl SyncLog {
 
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         let mut count = 0;
 
         for (key, value) in iter.flatten() {
@@ -214,18 +208,19 @@ impl SyncLog {
             entry.node_id = self.node_id.clone();
         }
 
-        // Use a single WriteBatch so the entry and the bumped sequence go
+        // Use a single KvBatch so the entry and the bumped sequence go
         // through one `db.write` (one fsync) instead of two independent
         // `put` calls (two fsyncs). This roughly halves the per-write
         // disk cost on hot insert/update paths.
         let key = format!("sync_log:{:020}", *seq);
         let value = encode_entry(&entry);
 
-        let mut batch = WriteBatch::default();
-        batch.put(key.as_bytes(), &value);
-        batch.put(SEQ_KEY, seq.to_be_bytes());
+        let mut batch = KvBatch::default();
+        let default_cf = self.db.default_cf();
+        batch.put_cf(&default_cf, key.as_bytes(), &value);
+        batch.put_cf(&default_cf, SEQ_KEY, seq.to_be_bytes());
 
-        if let Err(e) = self.db.write(&batch) {
+        if let Err(e) = self.db.write(batch) {
             tracing::error!("SyncLog: Failed to write entry {}: {}", *seq, e);
         }
 
@@ -272,7 +267,8 @@ impl SyncLog {
         }
 
         let mut seq = self.sequence.write().unwrap();
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
+        let default_cf = self.db.default_cf();
 
         for entry in &mut entries {
             *seq += 1;
@@ -284,11 +280,11 @@ impl SyncLog {
 
             let key = format!("sync_log:{:020}", *seq);
             let value = encode_entry(entry);
-            batch.put(key.as_bytes(), &value);
+            batch.put_cf(&default_cf, key.as_bytes(), &value);
         }
 
-        batch.put(SEQ_KEY, seq.to_be_bytes());
-        if let Err(e) = self.db.write(&batch) {
+        batch.put_cf(&default_cf, SEQ_KEY, seq.to_be_bytes());
+        if let Err(e) = self.db.write(batch) {
             tracing::error!("SyncLog: Failed to write batch ending at {}: {}", *seq, e);
         }
 
@@ -372,7 +368,7 @@ impl SyncLog {
     pub fn oldest_sequence(&self) -> Option<u64> {
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                 continue;
@@ -395,7 +391,7 @@ impl SyncLog {
     pub fn entry_count(&self) -> u64 {
         let iter = self
             .db
-            .iterator(IteratorMode::From(LOG_PREFIX, Direction::Forward));
+            .iterator(IterMode::From(LOG_PREFIX, Direction::Forward));
         let mut count = 0u64;
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
@@ -420,14 +416,15 @@ impl SyncLog {
         let start_key = format!("sync_log:{:020}", 0u64);
         let end_key = format!("sync_log:{:020}", before_sequence);
 
-        // Walk the to-be-pruned range, building a WriteBatch of explicit
+        // Walk the to-be-pruned range, building a KvBatch of explicit
         // deletes. This is portable across rocksdb wrappers and gives an
         // exact removed count for reporting.
-        let mut batch = WriteBatch::default();
+        let mut batch = KvBatch::default();
+        let default_cf = self.db.default_cf();
         let mut removed = 0u64;
         let iter = self
             .db
-            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+            .iterator(IterMode::From(start_key.as_bytes(), Direction::Forward));
         for (key, _) in iter.flatten() {
             if !key.starts_with(LOG_PREFIX) || key.as_ref() == SEQ_KEY {
                 continue;
@@ -435,7 +432,7 @@ impl SyncLog {
             if key.as_ref() >= end_key.as_bytes() {
                 break;
             }
-            batch.delete(&key);
+            batch.delete_cf(&default_cf, &key);
             removed += 1;
         }
 
@@ -443,7 +440,7 @@ impl SyncLog {
             return Ok(0);
         }
 
-        self.db.write(&batch).map_err(|e| e.to_string())?;
+        self.db.write(batch).map_err(|e| e.to_string())?;
 
         // Compact the deleted range so SST files actually shrink on disk.
         self.db
@@ -486,7 +483,7 @@ impl SyncLog {
         let start_key = format!("sync_log:{:020}", after_sequence + 1);
         let iter = self
             .db
-            .iterator(IteratorMode::From(start_key.as_bytes(), Direction::Forward));
+            .iterator(IterMode::From(start_key.as_bytes(), Direction::Forward));
 
         let mut entries = Vec::new();
         for (key, value) in iter.flatten() {
@@ -787,13 +784,15 @@ mod tests {
             let log = SyncLog::new("node1".to_string(), path, 0).unwrap();
             let mut legacy = create_test_entry(1);
             legacy.data = Some(br#"{"views":7}"#.to_vec());
-            let mut batch = WriteBatch::default();
-            batch.put(
+            let mut batch = KvBatch::default();
+            let default_cf = log.db.default_cf();
+            batch.put_cf(
+                &default_cf,
                 format!("sync_log:{:020}", 1).as_bytes(),
                 serde_json::to_vec(&legacy).unwrap(),
             );
-            batch.put(SEQ_KEY, 1u64.to_be_bytes());
-            log.db.write(&batch).unwrap();
+            batch.put_cf(&default_cf, SEQ_KEY, 1u64.to_be_bytes());
+            log.db.write(batch).unwrap();
         }
         for cache in [0, 100] {
             let log = SyncLog::new("node1".to_string(), path, cache).unwrap();

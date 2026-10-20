@@ -1,5 +1,4 @@
 use dashmap::DashMap;
-use rust_rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, DBCompressionType, Options};
 
 use super::RocksDb as DB;
 use std::collections::HashMap;
@@ -127,60 +126,10 @@ pub(crate) fn profile() -> EngineProfile {
     *PROFILE.get_or_init(EngineProfile::prod)
 }
 
-/// Shared block cache used by all column families (and all DB instances).
-/// Without an explicit table factory, each CF gets its own private default
-/// cache and no bloom filter — with thousands of CFs that wastes memory and
-/// bypasses the cache/bloom tuning entirely.
-fn shared_block_cache() -> &'static Cache {
-    static CACHE: OnceLock<Cache> = OnceLock::new();
-    CACHE.get_or_init(|| Cache::new_lru_cache(profile().block_cache_bytes))
-}
-
-/// Create optimized column family options
-/// Used for ALL column families — including those created via `Database` —
-/// to ensure consistent compression, caching, and performance settings
-pub(crate) fn tuned_cf_options() -> Options {
-    let p = profile();
-    let mut opts = Options::default();
-
-    // Enable LZ4 compression for this column family
-    opts.set_compression_type(DBCompressionType::Lz4);
-
-    // Level compaction is the default and works well for most workloads
-    // Optimize for SSD storage with fast sequential I/O
-    opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB base file size
-    opts.set_target_file_size_multiplier(2);
-
-    // Write buffer settings (per-CF memtable; profile-tuned)
-    opts.set_write_buffer_size(p.write_buffer_size);
-    opts.set_max_write_buffer_number(p.max_write_buffer_number);
-    opts.set_min_write_buffer_number_to_merge(1);
-    // One arena block is reserved per CF on its first write, so this is paid
-    // by every collection that exists rather than by every byte stored.
-    opts.set_arena_block_size(p.arena_block_size);
-
-    // Optimize for SSD storage - parallel compactions
-    opts.set_max_subcompactions(4);
-
-    // Shared block cache + bloom filter for faster point lookups
-    let mut block_opts = BlockBasedOptions::default();
-    block_opts.set_block_cache(shared_block_cache());
-    block_opts.set_bloom_filter(10.0, false);
-    if p.cache_index_and_filter_blocks {
-        // Bound index/filter RAM by storing those blocks in the shared cache
-        // rather than pinning them per-CF (matters with thousands of CFs).
-        block_opts.set_cache_index_and_filter_blocks(true);
-        block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
-    }
-    opts.set_block_based_table_factory(&block_opts);
-
-    opts
-}
-
 /// The main storage engine backed by RocksDB
 ///
 /// Uses lock-free reads - RocksDB's DB type is thread-safe for concurrent reads.
-/// Writes are coordinated via RocksDB's internal MVCC and WriteBatch operations.
+/// Writes are coordinated via RocksDB's internal MVCC and KvBatch operations.
 /// Only column family creation/deletion requires explicit locking.
 pub struct StorageEngine {
     /// RocksDB instance - thread-safe for reads, internal locking for writes
@@ -241,103 +190,8 @@ impl StorageEngine {
     pub fn new<P: AsRef<Path>>(data_dir: P) -> DbResult<Self> {
         let path = data_dir.as_ref().to_path_buf();
 
-        // Configure RocksDB options with performance optimizations
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
-
-        // Compression settings - use LZ4 for fast compression/decompression
-        // Reduces storage size by ~40-60% and improves I/O performance
-        opts.set_compression_type(DBCompressionType::Lz4);
-        opts.set_compression_options(-14, -1, 0, 0);
-
-        // Block cache - shared 512MB cache across all CFs and DB instances
-        // Improves read performance by caching frequently accessed blocks
-        let mut block_opts = BlockBasedOptions::default();
-        block_opts.set_block_cache(shared_block_cache());
-        // Enable bloom filter for faster point lookups
-        block_opts.set_bloom_filter(10.0, false);
-        opts.set_block_based_table_factory(&block_opts);
-
-        let p = profile();
-
-        // Write buffer settings - larger memtable reduces flush frequency
-        // Better for write-heavy workloads (profile-tuned)
-        opts.set_write_buffer_size(p.write_buffer_size);
-        opts.set_max_write_buffer_number(p.max_write_buffer_number + 1);
-        opts.set_min_write_buffer_number_to_merge(1);
-        opts.set_arena_block_size(p.arena_block_size);
-
-        // Global cap on total memtable memory across ALL column families.
-        // The single most effective knob when CF count is large: without it,
-        // memtable RAM scales with the number of CFs.
-        if let Some(budget) = p.db_write_buffer_size {
-            opts.set_db_write_buffer_size(budget);
-        }
-
-        // Bound the table cache (pinned index/filter blocks scale with open
-        // SST files, which scale with CF count).
-        opts.set_max_open_files(p.max_open_files);
-
-        // Background jobs - more threads for compaction/flushing
-        // Improves write throughput under heavy load (profile-tuned)
-        opts.set_max_background_jobs(p.max_background_jobs);
-        opts.set_max_subcompactions(4);
-
-        // Target file size for better compaction behavior
-        opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB
-        opts.set_target_file_size_multiplier(2);
-
-        // Level compaction settings
-        opts.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
-        opts.set_max_bytes_for_level_multiplier(10.0);
-        opts.set_num_levels(7);
-
-        // Total WAL budget across all column families (profile-tuned).
-        // This is a flush *trigger*, not just a disk cap — see the field's
-        // documentation on `EngineProfile` for why a small value costs more
-        // than it saves once the CF count is in the hundreds.
-        opts.set_max_total_wal_size(p.max_total_wal_size as u64);
-
-        // Keep fewer LOG files (RocksDB info logs, not WALs). The count is
-        // bounded here and the size below: `keep_log_file_num` alone let
-        // data/LOG reach 118MB on an instance flushing 700 CFs at a time.
-        opts.set_keep_log_file_num(5);
-        opts.set_max_log_file_size(64 * 1024 * 1024);
-
-        // Recycle WAL files instead of deleting them
-        opts.set_recycle_log_file_num(3);
-
-        // Enable parallel memtable writes for better concurrency
-        opts.set_enable_pipelined_write(true);
-
-        // Get existing column families or create default
-        let cf_names = match DB::list_cf(&opts, &path) {
-            Ok(cfs) => cfs,
-            Err(_) => vec!["default".to_string()],
-        };
-
-        // Ensure META_CF exists
-        let mut cf_names: Vec<String> = cf_names.into_iter().collect();
-        if !cf_names.contains(&META_CF.to_string()) {
-            cf_names.push(META_CF.to_string());
-        }
-        // The shared keyspace every 2.x collection lives in. Created once;
-        // after that, creating a collection never touches the CF map.
-        if !cf_names.contains(&super::keyspace::SHARED_CF.to_string()) {
-            cf_names.push(super::keyspace::SHARED_CF.to_string());
-        }
-
-        // Create column family descriptors with optimized options
-        // All column families inherit compression and performance settings
-        let cf_descriptors: Vec<ColumnFamilyDescriptor> = cf_names
-            .iter()
-            .map(|name| ColumnFamilyDescriptor::new(name, tuned_cf_options()))
-            .collect();
-
-        // Open database with column families
-        let db = DB::open_cf_descriptors(&opts, &path, cf_descriptors)
-            .map_err(|e| DbError::InternalError(format!("Failed to open RocksDB: {}", e)))?;
+        let db = super::kv::open(&path, &[META_CF, super::keyspace::SHARED_CF])
+            .map_err(|e| DbError::InternalError(format!("Failed to open the database: {}", e)))?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -423,11 +277,7 @@ impl StorageEngine {
             tracing::warn!("checkpoint: flush before snapshot failed: {}", e);
         }
 
-        let checkpoint = rust_rocksdb::checkpoint::Checkpoint::new(&*self.db).map_err(|e| {
-            DbError::InternalError(format!("Failed to open checkpoint handle: {}", e))
-        })?;
-
-        checkpoint.create_checkpoint(target).map_err(|e| {
+        self.db.checkpoint(target).map_err(|e| {
             DbError::InternalError(format!(
                 "Failed to create checkpoint at '{}': {}",
                 target.display(),
@@ -781,7 +631,6 @@ impl StorageEngine {
         }
 
         // Legacy layout: create the column family - requires exclusive lock
-        let opts = tuned_cf_options();
         {
             let _cf_guard = self.cf_lock.write().unwrap();
 
@@ -839,7 +688,7 @@ impl StorageEngine {
 
             if !reused {
                 // MultiThreaded mode: create_cf takes &self and synchronizes internally
-                super::cf_ops::timed(|| self.db.create_cf(&name, &opts)).map_err(|e| {
+                super::cf_ops::timed(|| self.db.create_cf(&name)).map_err(|e| {
                     DbError::InternalError(format!("Failed to create collection: {}", e))
                 })?;
             }
@@ -1092,6 +941,16 @@ impl StorageEngine {
     ///
     /// Costs one FFI property read per column family per counter, so this is
     /// computed on demand at scrape time and never on a timer.
+    /// Cumulative counters of the storage engine (see `Kv::engine_counters`).
+    pub fn engine_counters(&self) -> Vec<(&'static str, &'static str, u64)> {
+        self.db.engine_counters()
+    }
+
+    /// Which storage engine holds this instance's data.
+    pub fn engine_kind(&self) -> super::kv::EngineKind {
+        self.db.engine_kind()
+    }
+
     pub fn memory_breakdown(&self) -> MemoryBreakdown {
         let mut out = MemoryBreakdown::default();
 
@@ -1103,44 +962,13 @@ impl StorageEngine {
             .collect();
         out.column_families = cf_names.len() as u64;
 
-        // `AsColumnFamilyRef` is implemented for `&Arc<BoundColumnFamily>`,
-        // which is what `cf_handle` hands back — matching the existing reads in
-        // `collection::core`.
-        let read = |cf: &Arc<rust_rocksdb::BoundColumnFamily<'_>>, prop: &str| -> u64 {
-            self.db
-                .property_int_value_cf(cf, prop)
-                .ok()
-                .flatten()
-                .unwrap_or(0)
-        };
-
-        for name in &cf_names {
-            let Some(cf) = self.db.cf_handle(name) else {
-                continue;
-            };
-            // Live memtables, and live + immutable ones still awaiting flush.
-            // The gap between the two is flush backlog.
-            out.memtable_bytes += read(&cf, "rocksdb.cur-size-all-mem-tables");
-            out.memtable_total_bytes += read(&cf, "rocksdb.size-all-mem-tables");
-            // Index and filter blocks of every open SST. With
-            // `cache_index_and_filter_blocks` off and `max_open_files` at -1
-            // (both the prod defaults) this sits *outside* the block cache and
-            // is never evicted, so it is the counter that grows with the
-            // dataset rather than with write traffic.
-            out.table_readers_bytes += read(&cf, "rocksdb.estimate-table-readers-mem");
-            for level in 0..7 {
-                out.sst_files += read(&cf, &format!("rocksdb.num-files-at-level{}", level));
-            }
-        }
-
-        // The block cache is one shared LRU for every CF
-        // (`shared_block_cache`), and these two properties report that shared
-        // instance. Reading them per CF and summing would multiply it by the
-        // column-family count — take them from one handle only.
-        if let Some(cf) = cf_names.first().and_then(|n| self.db.cf_handle(n)) {
-            out.block_cache_bytes = read(&cf, "rocksdb.block-cache-usage");
-            out.block_cache_pinned_bytes = read(&cf, "rocksdb.block-cache-pinned-usage");
-        }
+        let mem = self.db.memory(&cf_names);
+        out.memtable_bytes = mem.memtable_bytes;
+        out.memtable_total_bytes = mem.memtable_total_bytes;
+        out.table_readers_bytes = mem.table_readers_bytes;
+        out.sst_files = mem.table_files;
+        out.block_cache_bytes = mem.block_cache_bytes;
+        out.block_cache_pinned_bytes = mem.block_cache_pinned_bytes;
 
         // The handles live in each `Database`'s own cache, not in the engine's
         // (`self.collections` is the legacy per-engine one and holds almost
@@ -1274,7 +1102,7 @@ impl StorageEngine {
         Ok(complete)
     }
 
-    /// Stage every operation, across all collections, into ONE `WriteBatch`
+    /// Stage every operation, across all collections, into ONE `KvBatch`
     /// and write it. All collections are column families of the same RocksDB
     /// instance, so the batch is atomic across them: either every document,
     /// index entry and version record lands, or none does. In-memory effects
@@ -1302,7 +1130,7 @@ impl StorageEngine {
         // fixed order keeps two commits from deadlocking on them.
         order.sort();
 
-        let mut batch = rust_rocksdb::WriteBatch::default();
+        let mut batch = super::kv::KvBatch::default();
         let mut staged = Vec::with_capacity(order.len());
         let mut guards = Vec::new();
         for coll_name in order {
@@ -1313,9 +1141,9 @@ impl StorageEngine {
             staged.push((collection, plan));
         }
 
-        let mut write_opts = rust_rocksdb::WriteOptions::default();
+        let mut write_opts = crate::storage::kv::KvWriteOptions::default();
         write_opts.set_sync(sync);
-        self.db.write_opt(&batch, &write_opts).map_err(|e| {
+        self.db.write_opt(batch, &write_opts).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
         })?;
         drop(guards);

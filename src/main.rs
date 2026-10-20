@@ -366,6 +366,95 @@ enum Command {
     Update,
 }
 
+/// Raise the soft open-file limit to the hard one. Every connection is a
+/// descriptor, and RocksDB keeps every table file open (`max_open_files`
+/// -1 in the prod profile), so the common 1024 default ran out at 256 driver
+/// connections on a 1M-document database.
+#[cfg(unix)]
+fn raise_fd_limit() {
+    // macOS refuses a soft limit above OPEN_MAX even when the hard limit is
+    // unlimited.
+    #[cfg(target_os = "macos")]
+    const CAP: libc::rlim_t = 10_240;
+    #[cfg(not(target_os = "macos"))]
+    const CAP: libc::rlim_t = 1 << 20;
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit/setrlimit only read and write the struct passed.
+    unsafe {
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+            return;
+        }
+        let target = limit.rlim_max.min(CAP);
+        if limit.rlim_cur >= target {
+            return;
+        }
+        let before = limit.rlim_cur;
+        limit.rlim_cur = target;
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) == 0 {
+            tracing::info!("open-file limit raised from {} to {}", before, target);
+        } else {
+            tracing::warn!(
+                "open-file limit is {} and could not be raised; each connection takes one",
+                before
+            );
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn raise_fd_limit() {}
+
+/// After a failed accept: an accept that failed for lack of a resource
+/// (descriptors, buffers, memory) fails again at once, so pause before the
+/// next one; and log at most once a second. Without either, a full
+/// descriptor table turned the accept loop into a hot loop writing the same
+/// error as fast as the disk took it: 100 GB of log in 12 minutes.
+async fn accept_failed(e: &std::io::Error) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
+    static LAST_LOG: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+    let now = std::time::Instant::now();
+    let due = {
+        let mut last = LAST_LOG.lock().unwrap_or_else(|p| p.into_inner());
+        match *last {
+            Some(t) if now.duration_since(t) < std::time::Duration::from_secs(1) => false,
+            _ => {
+                *last = Some(now);
+                true
+            }
+        }
+    };
+    if due {
+        let suppressed = SUPPRESSED.swap(0, Ordering::Relaxed);
+        if suppressed > 0 {
+            tracing::error!(
+                "Accept error: {} ({} more in the last second)",
+                e,
+                suppressed
+            );
+        } else {
+            tracing::error!("Accept error: {}", e);
+        }
+    } else {
+        SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[cfg(unix)]
+    let exhausted = matches!(
+        e.raw_os_error(),
+        Some(libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM)
+    );
+    #[cfg(not(unix))]
+    let exhausted = true;
+    if exhausted {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // Install JWT crypto provider (aws-lc backend; avoids vulnerable `rsa` crate)
     let _ = jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.install_default();
@@ -615,6 +704,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     }
 
     log_allocator_tuning();
+    raise_fd_limit();
 
     // Select the RocksDB memory/tuning profile BEFORE constructing the engine
     // (the shared block cache and CF options are built lazily on first use).
@@ -1239,7 +1329,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                     let (stream, addr) = match accept_result {
                         Ok(conn) => conn,
                         Err(e) => {
-                            tracing::error!("Accept error: {}", e);
+                            accept_failed(&e).await;
                             continue;
                         }
                     };
@@ -1473,7 +1563,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                             let (tcp, peer) = match accepted {
                                 Ok(conn) => conn,
                                 Err(e) => {
-                                    tracing::error!("Accept error: {}", e);
+                                    accept_failed(&e).await;
                                     continue;
                                 }
                             };

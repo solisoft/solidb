@@ -49,6 +49,9 @@ serde_json = "1.0"
 # Hasher for SDBQL row contexts (per-row map, SipHash showed up at ~5%).
 foldhash = "0.2"
 serde_bytes = "0.11"
+# Iterator items: RocksDB's boxed slices convert without a copy, solistore
+# yields them natively, and stripping a keyspace prefix is a slice.
+bytes = "1"
 bincode = "1.3"
 lz4_flex = "0.12"
 base64 = "0.22"
@@ -120,6 +123,9 @@ reqwest = { version = "0.13", default-features = false, features = [
 
 # FUSE filesystem (requires macFUSE on macOS)
 fuser = { version = "0.16", optional = true }
+# The pure-Rust storage engine meant to replace RocksDB (integration step S2,
+# see storage/kv). A data directory records which engine wrote it.
+solistore = { git = "https://github.com/solisoft/solistore", optional = true }
 
 # Daemon mode (Unix only)
 # daemonize crate removed - using custom implementation in src/daemon.rs
@@ -327,6 +333,9 @@ aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
 fuse = ["dep:fuser"]
+# Build solistore in beside RocksDB; `SOLIDB_ENGINE=solistore` picks it for a
+# new data directory.
+engine-solistore = ["dep:solistore"]
 # The five files in tests/ that are benchmarks rather than tests. Off by
 # default, so `cargo test` does not build them — see the [[test]] blocks below.
 bench-tests = []
@@ -371,6 +380,11 @@ required-features = ["bench-tests"]
 name = "solidb-fuse"
 path = "src/bin/solidb-fuse.rs"
 required-features = ["fuse"]
+
+[[bin]]
+name = "solidb-migrate-engine"
+path = "src/bin/solidb-migrate-engine.rs"
+required-features = ["engine-solistore"]
 
 [[bin]]
 name = "solidb-repl"

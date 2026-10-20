@@ -405,12 +405,13 @@ impl Collection {
                 memtable_size: 0,
             };
         }
-        let cf = cf.raw().clone();
+        // Legacy: the collection is the whole column family.
+        let cf = &cf.cf;
 
         // Get SST files size
         let sst_files_size = self
             .db
-            .property_int_value_cf(&cf, "rocksdb.total-sst-files-size")
+            .property_int_value_cf(cf, "rocksdb.total-sst-files-size")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -418,7 +419,7 @@ impl Collection {
         // Get estimated live data size
         let live_data_size = self
             .db
-            .property_int_value_cf(&cf, "rocksdb.estimate-live-data-size")
+            .property_int_value_cf(cf, "rocksdb.estimate-live-data-size")
             .ok()
             .flatten()
             .unwrap_or(0);
@@ -428,7 +429,7 @@ impl Collection {
         for i in 0..7 {
             num_sst_files += self
                 .db
-                .property_int_value_cf(&cf, &format!("rocksdb.num-files-at-level{}", i))
+                .property_int_value_cf(cf, &format!("rocksdb.num-files-at-level{}", i))
                 .ok()
                 .flatten()
                 .unwrap_or(0);
@@ -437,7 +438,7 @@ impl Collection {
         // Get memtable size
         let memtable_size = self
             .db
-            .property_int_value_cf(&cf, "rocksdb.cur-size-all-mem-tables")
+            .property_int_value_cf(cf, "rocksdb.cur-size-all-mem-tables")
             .ok()
             .flatten()
             .unwrap_or(0);
