@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Dependencies past eight RustSec advisories</strong> &mdash; zstd 0.14.3, zstd-safe 8.2.0 and zstd-sys 2.1.2 (data from an abandoned stream leaking into the next, uninitialized memory on a failed legacy frame), rustls-webpki 0.103.16 and webpki-root-certs 1.0.11 (distrusted intermediates accepted), tokio 1.54.1, libz-sys 1.1.31 and quinn-proto 0.11.19.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.5.0 -->
   <section id="v2-5-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

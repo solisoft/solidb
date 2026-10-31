@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+* **Dependencies past eight RustSec advisories.** zstd 0.14.3 / zstd-safe
+  8.2.0 / zstd-sys 2.1.2 (stream data leaking across a reused context,
+  uninitialized memory on a failed legacy frame, `Seekable::decompress`, the
+  wasm allocator shim), rustls-webpki 0.103.16 and webpki-root-certs 1.0.11
+  (distrusted intermediates accepted), tokio 1.54.1 (`AsyncFd::new` I/O
+  safety), libz-sys 1.1.31 (build script leaking the environment), and
+  quinn-proto 0.11.19. Lockfile only: zstd came in through tower-http's
+  compression, and compression-codecs 0.4.46 moved it to 0.14.
+
 ## [2.5.0](https://github.com/solisoft/solidb/compare/v2.4.1...v2.5.0) (2026-10-31)
 
 ### Performance
