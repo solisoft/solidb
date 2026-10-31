@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.5.0](https://github.com/solisoft/solidb/compare/v2.4.1...v2.5.0) (2026-10-31)
 
 ### Performance
 
