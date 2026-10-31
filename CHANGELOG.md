@@ -9,6 +9,11 @@
   scan of 2k documents after `LET`s holding a few hundred ids and pairs spent
   ~1 s cloning them (4 ms now). Bound values are shared between rows and
   copied only when written. Found on an app's activity feed, 2.2 s on average.
+* **An idle standalone node no longer scans every collection every 5 s.**
+  The shard-healing loop listed every collection of every database looking
+  for orphaned shards, even with no shard table at all, where nothing can be
+  orphaned. It now returns at once in that case; that scan was the node's
+  whole idle CPU cost.
 
 ### Changed
 

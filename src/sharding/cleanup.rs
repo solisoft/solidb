@@ -30,6 +30,18 @@ pub async fn cleanup_orphaned_shards(
 ) -> Result<usize, DbError> {
     let mut cleaned_count = 0usize;
 
+    // A shard with no table is always kept (see below), so with no tables
+    // nothing can be orphaned. Return before listing every collection of
+    // every database: the healing loop calls this every 5s, and on a
+    // standalone node that scan was its whole idle CPU cost.
+    if shard_tables
+        .read()
+        .map_err(|_| DbError::InternalError("Lock poisoned".to_string()))?
+        .is_empty()
+    {
+        return Ok(0);
+    }
+
     // Iterate all databases
     for db_name in storage.list_databases() {
         let db = match storage.get_database(&db_name) {
