@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **A scan no longer deep-copies the variables bound before it.** Every row
+  of a `FOR` clones the query context, and the clone copied each value: a
+  scan of 2k documents after `LET`s holding a few hundred ids and pairs spent
+  ~1 s cloning them (4 ms now). Bound values are shared between rows and
+  copied only when written. Found on an app's activity feed, 2.2 s on average.
+
 ### Changed
 
 * **solistore comes from crates.io.** It was a git dependency, which

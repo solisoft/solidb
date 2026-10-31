@@ -1,15 +1,129 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::super::ast::BinaryOperator;
+
+type ContextHasher = foldhash::fast::RandomState;
 
 /// Execution context holding variable bindings.
 ///
 /// Cloned and extended once per row, with a handful of short variable-name
 /// keys: SipHash (std's default) cost ~5% of an uncached 50-row scan.
 /// foldhash is seeded per process, so keys still do not hash predictably.
-pub type Context = HashMap<String, Value, foldhash::fast::RandomState>;
+///
+/// The values sit behind an `Arc`, so that per-row clone copies pointers, not
+/// documents. With them inline, every row of a `FOR` deep-copied every
+/// variable bound before it: a query whose earlier `LET`s held a few hundred
+/// keys and pairs spent a second cloning them across a 2k-document scan,
+/// where the same subquery alone took 15ms. A write to a shared value copies
+/// it then (`Arc::make_mut`), never a read.
+#[derive(Clone, Default)]
+pub struct Context {
+    vars: HashMap<String, Arc<Value>, ContextHasher>,
+}
+
+impl Context {
+    pub fn with_capacity_and_hasher(capacity: usize, hasher: ContextHasher) -> Self {
+        Self {
+            vars: HashMap::with_capacity_and_hasher(capacity, hasher),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.vars.get(name).map(Arc::as_ref)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
+        self.vars.get_mut(name).map(Arc::make_mut)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.vars.contains_key(name)
+    }
+
+    pub fn insert(&mut self, name: String, value: Value) -> Option<Value> {
+        self.vars.insert(name, Arc::new(value)).map(unshare)
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<Value> {
+        self.vars.remove(name).map(unshare)
+    }
+
+    pub fn len(&self) -> usize {
+        self.vars.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.vars.is_empty()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.vars.keys()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.vars.iter().map(|(name, value)| (name, value.as_ref()))
+    }
+}
+
+/// The value out of its `Arc`, copied only when another context still holds it.
+fn unshare(value: Arc<Value>) -> Value {
+    Arc::try_unwrap(value).unwrap_or_else(|shared| (*shared).clone())
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for Context {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len()
+            && self
+                .iter()
+                .all(|(name, value)| other.get(name) == Some(value))
+    }
+}
+
+/// As the map of its bindings.
+impl Serialize for Context {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.iter())
+    }
+}
+
+impl Extend<(String, Value)> for Context {
+    fn extend<I: IntoIterator<Item = (String, Value)>>(&mut self, iter: I) {
+        for (name, value) in iter {
+            self.insert(name, value);
+        }
+    }
+}
+
+impl FromIterator<(String, Value)> for Context {
+    fn from_iter<I: IntoIterator<Item = (String, Value)>>(iter: I) -> Self {
+        let mut ctx = Self::default();
+        ctx.extend(iter);
+        ctx
+    }
+}
+
+impl IntoIterator for Context {
+    type Item = (String, Value);
+    type IntoIter = std::iter::Map<
+        std::collections::hash_map::IntoIter<String, Arc<Value>>,
+        fn((String, Arc<Value>)) -> (String, Value),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.vars
+            .into_iter()
+            .map(|(name, value)| (name, unshare(value)))
+    }
+}
 
 /// Statistics about mutation operations performed during query execution
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -162,4 +276,52 @@ pub struct IndexableCondition {
     pub field: String,
     pub op: BinaryOperator,
     pub value: Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A row's context is a clone of the one before it: the clone must share
+    /// the values, and a write through either side must not reach the other.
+    #[test]
+    fn a_cloned_context_shares_values_and_copies_on_write() {
+        let mut outer = Context::default();
+        outer.insert("ids".to_string(), json!(["a", "b"]));
+        let mut row = outer.clone();
+        assert!(Arc::ptr_eq(&outer.vars["ids"], &row.vars["ids"]));
+
+        row.get_mut("ids")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(json!("c"));
+        row.insert("doc".to_string(), json!({"_key": "1"}));
+        assert_eq!(outer.get("ids"), Some(&json!(["a", "b"])));
+        assert_eq!(row.get("ids"), Some(&json!(["a", "b", "c"])));
+        assert!(!outer.contains_key("doc"));
+
+        assert_eq!(row.remove("ids"), Some(json!(["a", "b", "c"])));
+        assert_eq!(outer.remove("ids"), Some(json!(["a", "b"])));
+        assert!(outer.is_empty());
+    }
+
+    #[test]
+    fn a_context_serializes_and_iterates_as_its_bindings() {
+        let ctx: Context = [("a".to_string(), json!(1)), ("b".to_string(), json!("x"))]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            serde_json::to_value(&ctx).unwrap(),
+            json!({"a": 1, "b": "x"})
+        );
+        let mut pairs: Vec<(String, Value)> = ctx.clone().into_iter().collect();
+        pairs.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(
+            pairs,
+            vec![("a".to_string(), json!(1)), ("b".to_string(), json!("x"))]
+        );
+        assert_eq!(ctx, ctx.clone());
+    }
 }

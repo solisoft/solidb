@@ -635,7 +635,7 @@ impl<'a> QueryExecutor<'a> {
                 // Window functions are pre-computed and stored in the context
                 // under a key derived from the call.
                 let key = self.window_key(expr, function, arguments, over_clause);
-                if let Some(val) = ctx.get(&*key) {
+                if let Some(val) = ctx.get(&key) {
                     return Ok(val.clone());
                 }
                 Err(DbError::ExecutionError(format!(

@@ -78,7 +78,7 @@ impl<'q> FieldMoves<'q> {
     pub(super) fn take(&self, ctx: &mut Context) -> Option<Value> {
         match self {
             FieldMoves::Single { var, field } => {
-                let map = ctx.get_mut(*var)?.as_object_mut()?;
+                let map = ctx.get_mut(var)?.as_object_mut()?;
                 Some(map.remove(*field).unwrap_or(Value::Null))
             }
             FieldMoves::Object(moves) => {

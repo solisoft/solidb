@@ -188,3 +188,33 @@ fn benchmark_join_hash_vs_nested() {
     // 99: the total==0 order matches no customer (no cid < 0) and INNER drops it
     assert_eq!(len, 99);
 }
+
+/// A scan after `LET`s that bound sizeable arrays: every row of the `FOR`
+/// clones the context, and the clone used to deep-copy those arrays. The
+/// shape is bonfire's activity feed — id lists and key/parent pairs, then a
+/// scan of comments filtered against them.
+#[test]
+#[ignore]
+fn benchmark_scan_under_wide_lets() {
+    let (engine, _tmp) = create_test_db();
+    seed_items(&engine, 2_000);
+    let executor = QueryExecutor::with_database(&engine, "bench_db".to_string());
+
+    let lets = "LET ids = (FOR i IN 0..499 RETURN CONCAT(\"item-\", i)) \
+                LET pairs = (FOR i IN 0..499 RETURN { k: CONCAT(\"item-\", i), p: i % 9 }) \
+                LET more_pairs = (FOR i IN 0..499 RETURN { k: CONCAT(\"x-\", i), col: i }) ";
+    let narrow = run_query(
+        &executor,
+        "LET ids = (FOR i IN 0..499 RETURN CONCAT(\"item-\", i)) \
+         FOR doc IN items FILTER doc.name IN ids SORT doc.val DESC LIMIT 100 RETURN doc.name",
+        "scan, one LET",
+    );
+    let wide = run_query(
+        &executor,
+        &format!(
+            "{lets} FOR doc IN items FILTER doc.name IN ids SORT doc.val DESC LIMIT 100 RETURN doc.name"
+        ),
+        "scan, three LETs",
+    );
+    assert_eq!(narrow, wide);
+}
