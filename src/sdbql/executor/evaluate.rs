@@ -109,6 +109,28 @@ impl<'a> QueryExecutor<'a> {
             _ => {}
         }
 
+        // One argument already in the context (a variable, a field path, a
+        // literal, a bind var) is passed by reference: `LENGTH(cs)` over a
+        // shared 1,079-document LET used to copy it on every call (1.1 s for
+        // 2,022 rows, against 2.6 ms borrowed). The same functions run in the
+        // same order as `call_function`, on an equal value; a name that needs
+        // the executor, and anything not resolvable by reference (which also
+        // reports "Variable not found"), take the owned path below.
+        if let [arg] = args {
+            if let Some(route) = super::builtins::route(name).filter(|r| *r != Route::Context) {
+                if let Some(v) = self.resolve_ref(arg, ctx) {
+                    let arg = std::slice::from_ref(v);
+                    if let Some(value) = super::builtins::call_route(route, name, arg)? {
+                        return Ok(value);
+                    }
+                    if let Some(value) = super::builtins::evaluate_unrouted(name, arg)? {
+                        return Ok(value);
+                    }
+                    return self.call_context_function(name, vec![v.clone()], ctx);
+                }
+            }
+        }
+
         let evaluated_args: Vec<Value> = args
             .iter()
             .map(|arg| self.evaluate_expr_with_context(arg, ctx))

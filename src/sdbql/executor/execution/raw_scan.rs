@@ -112,7 +112,7 @@ impl QueryExecutor<'_> {
         let Ok(database) = self.storage.get_database(db_name) else {
             return Ok(None);
         };
-        if database.is_columnar_collection(name)
+        if self.is_columnar(&database, name)
             || !matches!(self.resolve_search_view_collection(name), Ok(None))
         {
             return Ok(None);

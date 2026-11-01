@@ -81,6 +81,12 @@ pub struct QueryExecutor<'a> {
     pub(super) deadline: Option<std::time::Instant>,
     /// Ceiling on rows held in the intermediate pipeline.
     pub(super) max_intermediate_rows: usize,
+    /// Whether a read-only query may reuse work inside itself: a subquery's
+    /// rows while the bindings it can read are unchanged, and a collection
+    /// read once and hashed for a correlated FILTER no index serves. On by
+    /// default; tests turn it off to compare results against plain per-row
+    /// execution.
+    pub(super) reuse_within_query: bool,
     /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
     caches: ExecCaches,
 }
@@ -125,36 +131,79 @@ struct ExecCaches {
     /// and compared on lookup, so another AST reusing the address cannot
     /// pick up the wrong projection.
     scan_projections: parking_lot::Mutex<HashMap<usize, ScanProjection>>,
-    /// Uncorrelated subquery results, keyed by the address of the subquery
-    /// node (see [`subquery_memo`]).
+    /// The last result of each subquery node and the bindings it was
+    /// computed under, keyed by the node's address (see [`subquery_memo`]).
     subqueries: parking_lot::Mutex<HashMap<usize, subquery_memo::SubqueryMemo>>,
-    /// Whether subqueries may be memoised at all: set by `execute_with_stats`
-    /// for a top-level query that writes nothing; off by default.
-    subquery_memo: std::sync::atomic::AtomicBool,
+    /// Whether the query may reuse work inside itself (memoised subqueries,
+    /// the hash probe):
+    /// set by `execute_with_stats` and `explain` for a query that writes
+    /// nothing; off by default, so anything that bypasses them runs per row.
+    reuse: std::sync::atomic::AtomicBool,
+    /// Subqueries actually executed (memo hits excluded).
+    subquery_runs: std::sync::atomic::AtomicU64,
+    /// Whole-collection reads from storage by a `FOR` (a hash-probe build
+    /// included).
+    collection_scans: std::sync::atomic::AtomicU64,
+    /// Documents the hash probe re-checked against a row's FILTERs.
+    probe_candidates: std::sync::atomic::AtomicU64,
+    /// Collections read whole for the hash probe, their buckets, and the
+    /// FOR clauses that scanned without it (see [`execution::hash_probe`]).
+    hash_probe: parking_lot::Mutex<execution::hash_probe::ProbeCache>,
+    /// Whether a collection name is a columnar collection, per name (an
+    /// executor serves one database). Every FOR over a collection asked
+    /// storage (a registry read, 0.52 µs); with the auto-index flag below,
+    /// that was ~10% of an 11 µs correlated subquery run.
+    columnar: parking_lot::Mutex<HashMap<String, bool>>,
+    /// `Collection::auto_index_enabled` per collection: a storage read
+    /// (0.56 µs) that every index-path FOR made, once per run of a
+    /// correlated subquery.
+    auto_index: parking_lot::Mutex<HashMap<String, bool>>,
 }
 
 impl ExecCaches {
-    fn subquery_memo_enabled(&self) -> bool {
-        self.subquery_memo
-            .load(std::sync::atomic::Ordering::Relaxed)
+    fn reuse_enabled(&self) -> bool {
+        self.reuse.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    fn enable_subquery_memo(&self, on: bool) {
-        self.subquery_memo
-            .store(on, std::sync::atomic::Ordering::Relaxed);
+    fn enable_reuse(&self, on: bool) {
+        self.reuse.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn count_subquery_run(&self) {
+        self.subquery_runs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn count_collection_scan(&self) {
+        self.collection_scans
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn count_probe_candidates(&self, n: u64) {
+        self.probe_candidates
+            .fetch_add(n, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Forget everything memoised. Call between two top-level `execute`s on
     /// the same executor.
     fn clear(&self) {
         self.subqueries.lock().clear();
-        self.enable_subquery_memo(false);
+        self.enable_reuse(false);
+        self.subquery_runs
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.collection_scans
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.probe_candidates
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        *self.hash_probe.lock() = Default::default();
         self.row_policy_gates.lock().clear();
         self.in_sets.lock().clear();
         self.window_keys.lock().clear();
         self.graph_results.lock().clear();
         *self.bm25_query.lock() = None;
         self.scan_projections.lock().clear();
+        self.columnar.lock().clear();
+        self.auto_index.lock().clear();
     }
 }
 
@@ -171,6 +220,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            reuse_within_query: true,
             caches: ExecCaches::default(),
         }
     }
@@ -187,6 +237,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            reuse_within_query: true,
             caches: ExecCaches::default(),
         }
     }
@@ -203,6 +254,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            reuse_within_query: true,
             caches: ExecCaches::default(),
         }
     }
@@ -223,6 +275,7 @@ impl<'a> QueryExecutor<'a> {
             principal: None,
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
+            reuse_within_query: true,
             caches: ExecCaches::default(),
         }
     }
@@ -267,6 +320,66 @@ impl<'a> QueryExecutor<'a> {
     pub fn with_max_intermediate_rows(mut self, rows: usize) -> Self {
         self.max_intermediate_rows = rows.max(1);
         self
+    }
+
+    /// Allow or forbid reuse of work inside a read-only query (see
+    /// `reuse_within_query`). Results are the same either way; only the
+    /// amount of work differs.
+    pub fn with_reuse_within_query(mut self, on: bool) -> Self {
+        self.reuse_within_query = on;
+        self
+    }
+
+    /// Subqueries executed (memo hits excluded) in the last query this
+    /// executor ran; for tests and benchmarks.
+    pub fn subquery_runs(&self) -> u64 {
+        self.caches
+            .subquery_runs
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whole-collection reads from storage by a `FOR` in the last query this
+    /// executor ran; for tests and benchmarks.
+    pub fn collection_scans(&self) -> u64 {
+        self.caches
+            .collection_scans
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Documents the hash probe re-checked against a row's FILTERs in the
+    /// last query this executor ran; for tests and benchmarks.
+    pub fn probe_candidates(&self) -> u64 {
+        self.caches
+            .probe_candidates
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether `name` is a columnar collection of `database`, read from
+    /// storage once per query.
+    pub(super) fn is_columnar(&self, database: &crate::storage::Database, name: &str) -> bool {
+        if let Some(&known) = self.caches.columnar.lock().get(name) {
+            return known;
+        }
+        let columnar = database.is_columnar_collection(name);
+        self.caches
+            .columnar
+            .lock()
+            .insert(name.to_string(), columnar);
+        columnar
+    }
+
+    /// [`crate::storage::Collection::auto_index_enabled`], read from storage
+    /// once per query.
+    pub(super) fn auto_index_enabled(&self, collection: &crate::storage::Collection) -> bool {
+        if let Some(&known) = self.caches.auto_index.lock().get(&collection.name) {
+            return known;
+        }
+        let enabled = collection.auto_index_enabled();
+        self.caches
+            .auto_index
+            .lock()
+            .insert(collection.name.clone(), enabled);
+        enabled
     }
 
     /// Drop every per-query memo (row-policy gates, IN sets, window keys,

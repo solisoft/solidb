@@ -14,6 +14,10 @@
 //!
 //! `FOR … OPTIONS { indexHint, forceIndexHint }` is honoured through
 //! [`IndexHint`] and [`QueryExecutor::lookup_index_for_filter_hinted`].
+//!
+//! A stage those leave to the scan gets a second, narrower try:
+//! [`QueryExecutor::try_subquery_index_stage`] serves `==` / `IN` whose value
+//! comes from a reusable subquery, only where the result equals the scan's.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -926,8 +930,12 @@ impl<'a> QueryExecutor<'a> {
     /// Does not create. EXPLAIN uses the same predicate.
     ///
     /// Cheap checks first: this runs on the FILTER path of every query against
-    /// a collection, so the storage reads (`auto_index_enabled`, the index
-    /// list, the shard config) must sit behind the in-memory ones.
+    /// a collection, so the storage reads must sit behind the in-memory ones.
+    /// The opt-in flag comes next: it is off by default, so it ends nearly
+    /// every call, and it is read once per query (a correlated subquery calls
+    /// this once per run). Then the shard config, the document count, and the
+    /// index list, borrowed from the cached snapshot (`get_all_indexes` would
+    /// clone every definition).
     pub(super) fn would_auto_index(
         &self,
         collection: &Collection,
@@ -954,7 +962,7 @@ impl<'a> QueryExecutor<'a> {
         {
             return false;
         }
-        if !collection.auto_index_enabled() {
+        if !self.auto_index_enabled(collection) {
             return false;
         }
         if collection
@@ -967,7 +975,8 @@ impl<'a> QueryExecutor<'a> {
         if max_docs > 0 && collection.count() > max_docs {
             return false;
         }
-        let indexes = collection.get_all_indexes();
+        let meta = collection.index_meta();
+        let indexes = meta.as_deref().map_or(&[][..], |m| m.indexes.as_slice());
         if indexes
             .iter()
             .any(|i| i.fields.len() == 1 && i.fields[0] == field)
@@ -1048,6 +1057,324 @@ impl<'a> QueryExecutor<'a> {
                 payload,
             ));
         }
+    }
+}
+
+/// A FILTER conjunct the subquery pass can serve: `v.f == S`, `S == v.f` or
+/// `v.f IN S`, where `S` holds a subquery and does not read `v`, and `f` has
+/// an index that answers exactly what the scan's `==` does.
+struct SubqueryKeyTerm<'e> {
+    field: String,
+    in_list: bool,
+    /// `S`, borrowed from the FILTER the re-check evaluates, so planner and
+    /// re-check share one memo entry. A copy (what [`conjunction`] makes of
+    /// two FILTERs) is a new node address, hence a new entry and a second
+    /// run of the subquery on every run of the stage.
+    value: &'e Expression,
+}
+
+/// A FOR stage served by [`QueryExecutor::try_subquery_index_stage`].
+pub(super) struct SubqueryIndexStage {
+    /// The stage's rows, every leading FILTER applied.
+    pub rows: Vec<Context>,
+    pub index_name: String,
+    pub index_type: String,
+    /// Documents read from the index, before the FILTER re-check.
+    pub docs_read: usize,
+}
+
+/// `filter`'s AND chain, in order, borrowed.
+pub(super) fn push_conjuncts<'e>(filter: &'e Expression, out: &mut Vec<&'e Expression>) {
+    match filter {
+        Expression::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            push_conjuncts(left, out);
+            push_conjuncts(right, out);
+        }
+        other => out.push(other),
+    }
+}
+
+/// `v.a.b` as the path `a.b`: a chain of plain field accesses on `var`, no
+/// segment holding a dot. The index splits its field on dots, so a `"a.b"`
+/// segment would be read there as `a` then `b`.
+fn plain_field_path(expr: &Expression, var: &str) -> Option<String> {
+    let mut segments = Vec::new();
+    let mut cur = expr;
+    loop {
+        match cur {
+            Expression::FieldAccess(base, field) if !field.contains('.') => {
+                segments.push(field.as_str());
+                cur = base;
+            }
+            Expression::Variable(name) if name == var && !segments.is_empty() => break,
+            _ => return None,
+        }
+    }
+    segments.reverse();
+    Some(segments.join("."))
+}
+
+/// A key for which an index lookup returns every document the scan's `==`
+/// accepts. Not null: null is never indexed. Not a numeric zero: `encode_key`
+/// keeps `-0.0` apart from `0`, which `==` equates. Not an array or object:
+/// those are encoded as JSON text, where `1` and `1.0` differ. Every other
+/// number is encoded as its f64, so `2` and `2.0` share a key.
+fn exact_index_key(value: &Value) -> bool {
+    match value {
+        Value::Null | Value::Array(_) | Value::Object(_) => false,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::Bool(_) | Value::String(_) => true,
+    }
+}
+
+/// Whether the first single-field index on `field` (the one the equality
+/// lookup reads) is exact. Bloom and Cuckoo answer a definite miss from a
+/// filter of `value.to_string()`, where `2` and `2.0` differ, and that filter
+/// is filled only when the index is built, so a miss can be wrong; the other
+/// types do not serve `==`.
+fn exactly_indexed(indexes: &[crate::storage::index::Index], field: &str) -> bool {
+    if matches!(field, "_key" | "_id") {
+        return true;
+    }
+    indexes
+        .iter()
+        .find(|i| i.fields.len() == 1 && i.fields[0] == field)
+        .is_some_and(|i| matches!(i.index_type, IndexType::Persistent | IndexType::Hash))
+}
+
+impl QueryExecutor<'_> {
+    /// Subquery-valued equality and `IN` served by an index: a second pass, tried
+    /// only after the planner above has given the stage to the scan.
+    ///
+    /// The planner never evaluates a subquery (`expression_references_var`
+    /// counts every subquery as reading the loop variable), so
+    /// `FOR m IN comments FILTER m.card_id IN (FOR c IN cards ... RETURN c._key)`
+    /// scanned all 2,022 comments where its hoisted `LET ids = (...)` form read 8
+    /// from the index on `card_id`. A subquery the memo can reuse, and that does
+    /// not read the loop variable, has one value for the whole stage row, so it
+    /// can be a lookup key like a `LET` variable.
+    ///
+    /// This pass only ever replaces a scan, and returns what the scan returns,
+    /// order included: each row's documents are sorted by `_key`, the scan's
+    /// `doc:<key>` order, and no LIMIT is pushed into the lookup (which would keep
+    /// different rows than the scan without a SORT). So it is limited to what an
+    /// index answers exactly as the scan's comparison does: `==` and `IN` (a range
+    /// read misses documents whose field is null or missing, and returns index
+    /// order), on `_key`, `_id` or a single-field Persistent or Hash index, with
+    /// keys [`exact_index_key`] accepts. Servability is decided from the AST and
+    /// the index list before anything is evaluated, so a stage that will scan
+    /// never runs the subquery here. Every row of the stage is served, or none.
+    pub(super) fn try_subquery_index_stage(
+        &self,
+        for_clause: &ForClause,
+        filters: &[&Expression],
+        rows: &[Context],
+        scan_limit: Option<usize>,
+    ) -> DbResult<Option<SubqueryIndexStage>> {
+        let name = &for_clause.collection;
+        // Writing queries keep reading per row, so the planner never runs a
+        // subquery that could write. A pushed-down scan limit applies before
+        // the FILTER, which no lookup can reproduce.
+        if !self.caches.reuse_enabled()
+            || filters.is_empty()
+            || rows.is_empty()
+            || scan_limit.is_some()
+            || name.is_empty()
+            || for_clause.source_expression.is_some()
+            || for_clause
+                .source_variable
+                .as_ref()
+                .is_some_and(|s| s != name)
+            || for_clause.system_time.is_some()
+            || for_clause.valid_time.is_some()
+        {
+            return Ok(None);
+        }
+        // A LET-bound array of that name is iterated, not the collection; a
+        // row policy, a columnar layout or shards all change what the scan
+        // reads.
+        if rows.iter().any(|r| r.contains_key(name)) || self.row_policy_applies(name) {
+            return Ok(None);
+        }
+        if let Some(database) = self
+            .database
+            .as_deref()
+            .and_then(|db| self.storage.get_database(db).ok())
+        {
+            if self.is_columnar(&database, name) {
+                return Ok(None);
+            }
+        }
+        let Ok(collection) = self.get_collection(name) else {
+            return Ok(None);
+        };
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return Ok(None);
+        }
+
+        let var = for_clause.variable.as_str();
+        let meta = collection.index_meta();
+        let indexes = meta.as_deref().map_or(&[][..], |m| m.indexes.as_slice());
+        let mut parts = Vec::new();
+        for filter in filters {
+            push_conjuncts(filter, &mut parts);
+        }
+        let mut terms: Vec<SubqueryKeyTerm<'_>> = parts
+            .into_iter()
+            .filter_map(|part| self.subquery_key_term(part, var))
+            .filter(|t| exactly_indexed(indexes, &t.field))
+            .collect();
+        if terms.is_empty() {
+            return Ok(None);
+        }
+        // `==` first: one key, where an `IN` list is a lookup per key.
+        terms.sort_by_key(|t| t.in_list);
+
+        let mut new_rows = Vec::new();
+        let mut used: Option<&str> = None;
+        let mut docs_read = 0;
+        for ctx in rows {
+            let Some((field, mut docs)) = self.serve_subquery_key_row(&collection, &terms, ctx)
+            else {
+                return Ok(None);
+            };
+            used.get_or_insert(field);
+            docs.sort_by(|a, b| a.key.cmp(&b.key));
+            docs.dedup_by(|a, b| a.key == b.key);
+            docs_read += docs.len();
+            for doc in docs {
+                let mut new_ctx = ctx.clone();
+                new_ctx.insert(for_clause.variable.clone(), doc.into_value());
+                new_rows.push(new_ctx);
+                if new_rows.len() % super::execution::BUDGET_CHECK_INTERVAL == 0 {
+                    self.check_budget(new_rows.len())?;
+                }
+            }
+        }
+        new_rows.retain(|ctx| {
+            filters
+                .iter()
+                .all(|f| self.evaluate_filter_with_context(f, ctx).unwrap_or(false))
+        });
+        // Reported as the planner reports a single-field lookup.
+        let (index_name, index_type) = used
+            .and_then(|field| {
+                indexes
+                    .iter()
+                    .find(|i| i.fields.len() == 1 && i.fields[0] == field)
+            })
+            .map(|i| (i.name.clone(), format!("{:?}", i.index_type)))
+            .unwrap_or_default();
+        Ok(Some(SubqueryIndexStage {
+            rows: new_rows,
+            index_name,
+            index_type,
+            docs_read,
+        }))
+    }
+
+    /// `part` as a [`SubqueryKeyTerm`], from the AST alone.
+    fn subquery_key_term<'e>(
+        &self,
+        part: &'e Expression,
+        var: &str,
+    ) -> Option<SubqueryKeyTerm<'e>> {
+        let Expression::BinaryOp { left, op, right } = part else {
+            return None;
+        };
+        let (field, value, in_list) = match op {
+            BinaryOperator::Equal => match plain_field_path(left, var) {
+                Some(field) => (field, right.as_ref(), false),
+                None => (plain_field_path(right, var)?, left.as_ref(), false),
+            },
+            BinaryOperator::In => (plain_field_path(left, var)?, right.as_ref(), true),
+            _ => return None,
+        };
+        let holds_subquery = expression_any(value, &mut |e| matches!(e, Expression::Subquery(_)));
+        // Evaluated once per stage row where the scan evaluates it per
+        // document: it must give the same value each time.
+        if !holds_subquery
+            || expression_any(value, &mut super::subquery_memo::is_nondeterministic)
+            || self.value_reads_var(value, var)
+        {
+            return None;
+        }
+        Some(SubqueryKeyTerm {
+            field,
+            in_list,
+            value,
+        })
+    }
+
+    /// Whether `expr` may read `var`: a reference outside any subquery, or a
+    /// subquery that the memo's analysis says may read it (or cannot tell).
+    pub(super) fn value_reads_var(&self, expr: &Expression, var: &str) -> bool {
+        match expr {
+            Expression::Variable(name) => name == var,
+            Expression::Subquery(q) => self.subquery_may_read(q, var),
+            other => {
+                let mut reads = false;
+                other.for_each_child(&mut |child| {
+                    reads = reads || self.value_reads_var(child, var);
+                });
+                reads
+            }
+        }
+    }
+
+    /// The documents for one stage row from the first term that can serve
+    /// it, and that term's field. A bare subquery's rows come from the memo,
+    /// shared; a value that is unusable or fails to evaluate passes to the
+    /// next term.
+    fn serve_subquery_key_row<'t>(
+        &self,
+        collection: &Collection,
+        terms: &'t [SubqueryKeyTerm<'_>],
+        ctx: &Context,
+    ) -> Option<(&'t str, Vec<crate::storage::Document>)> {
+        for term in terms {
+            let value = match term.value {
+                Expression::Subquery(q) => self.planner_subquery_rows(q, ctx),
+                other => self
+                    .evaluate_expr_with_context(other, ctx)
+                    .ok()
+                    .map(std::sync::Arc::new),
+            };
+            let Some(value) = value else {
+                continue;
+            };
+            let usable = if term.in_list {
+                matches!(&*value, Value::Array(items)
+                    if items.len() <= MAX_INDEXED_IN_KEYS && items.iter().all(exact_index_key))
+            } else {
+                exact_index_key(&value)
+            };
+            if !usable {
+                continue;
+            }
+            // The one copy of a memoised list, made only for a list about to
+            // be read key by key, which costs more than copying it.
+            let condition = IndexableCondition {
+                field: term.field.clone(),
+                op: if term.in_list {
+                    BinaryOperator::In
+                } else {
+                    BinaryOperator::Equal
+                },
+                value: std::sync::Arc::unwrap_or_clone(value),
+            };
+            if let Some(docs) = self.use_index_for_condition(collection, &condition, None) {
+                return Some((term.field.as_str(), docs));
+            }
+        }
+        None
     }
 }
 

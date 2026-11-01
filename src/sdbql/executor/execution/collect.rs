@@ -206,14 +206,21 @@ fn keys_equal(a: &[Value], b: &[Value]) -> bool {
 }
 
 /// The object stored for one row under `INTO`: every variable in scope, or
-/// only those named by `KEEP`. Takes the row apart rather than copying it.
-fn project_into(keep_vars: &[String], ctx: Context) -> Value {
+/// only those named by `KEEP`. Takes the row apart rather than copying it;
+/// with `KEEP`, only the kept bindings are taken, so a shared one it drops (a
+/// memoised subquery's rows) is never copied.
+fn project_into(keep_vars: &[String], mut ctx: Context) -> Value {
     let obj: serde_json::Map<String, Value> = if keep_vars.is_empty() {
         ctx.into_iter().collect()
     } else {
-        ctx.into_iter()
-            .filter(|(k, _)| keep_vars.contains(k))
-            .collect()
+        let mut obj = serde_json::Map::with_capacity(keep_vars.len());
+        for k in keep_vars {
+            // A name kept twice was taken the first time.
+            if let Some(v) = ctx.remove(k) {
+                obj.insert(k.clone(), v);
+            }
+        }
+        obj
     };
     Value::Object(obj)
 }

@@ -218,3 +218,166 @@ fn benchmark_scan_under_wide_lets() {
     );
     assert_eq!(narrow, wide);
 }
+
+/// The card board: 168 columns, 1,079 cards with a `column_id`, 2,022
+/// comments with a `card_id`, in a database, read as an admin.
+fn seed_board(engine: &StorageEngine) {
+    let db = engine.get_database("bench_db").unwrap();
+    for c in ["card_columns", "cards", "comments"] {
+        db.create_collection(c.to_string(), None).unwrap();
+    }
+    let insert = |coll: &str, docs: Vec<serde_json::Value>| {
+        db.get_collection(coll).unwrap().insert_batch(docs).unwrap();
+    };
+    insert(
+        "card_columns",
+        (0..168)
+            .map(|i| json!({"_key": format!("col{i:03}"), "position": i}))
+            .collect(),
+    );
+    insert(
+        "cards",
+        (0..1_079)
+            .map(|i| {
+                json!({
+                    "_key": format!("card{i:04}"),
+                    "column_id": format!("col{:03}", i % 168),
+                    "title": format!("card {i}"),
+                })
+            })
+            .collect(),
+    );
+    insert(
+        "comments",
+        (0..2_022)
+            .map(|i| {
+                let card = format!("card{:04}", (i * 7) % 1_079);
+                json!({
+                    "_key": format!("m{i:04}"),
+                    "card_id": card,
+                    "commentable_type": "card",
+                    "commentable_id": card,
+                    "body": format!("{i:04} {}", "lorem ipsum dolor sit amet ".repeat(3)),
+                })
+            })
+            .collect(),
+    );
+}
+
+/// One shape's time with reuse on and off, each on a fresh executor with a
+/// 30 s budget: best of three when a run is quick, else the one run.
+fn time_shape(engine: &StorageEngine, label: &str, query: &str) {
+    let ast = solidb::sdbql::parse(query).unwrap();
+    let admin = solidb::sdbql::QueryPrincipal::from_roles("admin", vec!["admin".to_string()]);
+    for reuse in [true, false] {
+        let mut best: Option<std::time::Duration> = None;
+        let mut line = String::new();
+        for _ in 0..3 {
+            let executor = QueryExecutor::with_database(engine, "bench_db".to_string())
+                .with_principal(admin.clone())
+                .with_timeout(std::time::Duration::from_secs(30))
+                .with_reuse_within_query(reuse);
+            let start = Instant::now();
+            let result = executor.execute(&ast);
+            let elapsed = start.elapsed();
+            match result {
+                Ok(rows) => {
+                    if best.is_none_or(|b| elapsed < b) {
+                        best = Some(elapsed);
+                        line = format!(
+                            "{} rows, {} scans, {} subquery runs, {} probe candidates",
+                            rows.len(),
+                            executor.collection_scans(),
+                            executor.subquery_runs(),
+                            executor.probe_candidates()
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "{label} [reuse {}]: TIMED OUT or failed after {elapsed:?}: {e}",
+                        if reuse { "on" } else { "off" }
+                    );
+                    best = None;
+                    break;
+                }
+            }
+            if elapsed > std::time::Duration::from_secs(1) {
+                break;
+            }
+        }
+        if let Some(best) = best {
+            println!(
+                "{label} [reuse {}]: {best:?} ({line})",
+                if reuse { "on" } else { "off" }
+            );
+        }
+    }
+}
+
+/// The subquery shapes measured on the board (2.5.1 timings in the spec):
+/// an inner subquery reading only an outer row, a LET shared by every row
+/// inside and before a FOR, `IN (subquery)` over an index, and a correlated
+/// FILTER with no index.
+#[test]
+#[ignore]
+fn benchmark_subquery_shapes() {
+    let (engine, _tmp) = create_test_db();
+    seed_board(&engine);
+    let shapes: &[(&str, &str, bool)] = &[
+        (
+            "#2 inner subquery reads the outer row",
+            "FOR col IN card_columns LET ms = (FOR m IN comments FILTER m.card_id IN (FOR c IN cards FILTER c.column_id == col._key RETURN c._key) RETURN m) RETURN ms",
+            true,
+        ),
+        (
+            "#3 shared LET inside the FOR",
+            "FOR m IN comments LET cs = (FOR c IN cards RETURN c) RETURN 1",
+            false,
+        ),
+        (
+            "#4 shared LET before the FOR",
+            "LET cs = (FOR c IN cards RETURN c) FOR m IN comments RETURN LENGTH(cs)",
+            false,
+        ),
+        (
+            "#5 IN (subquery)",
+            r#"FOR m IN comments FILTER m.card_id IN (FOR c IN cards FILTER c.column_id == "col001" RETURN c._key) RETURN m"#,
+            true,
+        ),
+        (
+            "#6 correlated FILTER",
+            "FOR card IN cards LET ms = (FOR m IN comments FILTER m.card_id == card._key RETURN m) RETURN ms",
+            true,
+        ),
+        (
+            "#6b correlated FILTER, discriminator first",
+            r#"FOR card IN cards LET ms = (FOR m IN comments FILTER m.commentable_type == "card" AND m.commentable_id == card._key RETURN m._key) RETURN ms"#,
+            true,
+        ),
+    ];
+    for (label, query, _) in shapes {
+        time_shape(&engine, &format!("{label}, no index"), query);
+    }
+    let db = engine.get_database("bench_db").unwrap();
+    for (coll, field) in [
+        ("cards", "column_id"),
+        ("comments", "card_id"),
+        ("comments", "commentable_id"),
+    ] {
+        db.get_collection(coll)
+            .unwrap()
+            .create_index(
+                format!("idx_{field}"),
+                vec![field.to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
+    for (label, query, indexed) in shapes {
+        if *indexed {
+            time_shape(&engine, &format!("{label}, indexed"), query);
+        }
+    }
+}

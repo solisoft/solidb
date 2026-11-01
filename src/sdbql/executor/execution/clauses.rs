@@ -74,7 +74,7 @@ fn recv_sharded_with<T>(
 ///
 /// Every row would put an `Instant::now()` on the hot path; every stage is too
 /// coarse to stop a runaway cartesian product before it exhausts memory.
-pub(super) const BUDGET_CHECK_INTERVAL: usize = 4096;
+pub(in crate::sdbql::executor) const BUDGET_CHECK_INTERVAL: usize = 4096;
 
 impl<'a> QueryExecutor<'a> {
     /// For each row, the indices (in scan order) of `docs` matching the join
@@ -401,6 +401,29 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A subquery-valued `==` / `IN` the planner above does
+                    // not consider, served only where it returns exactly
+                    // what the scan below would.
+                    if let Some(stage) =
+                        self.try_subquery_index_stage(for_clause, &filters, &rows, scan_limit)?
+                    {
+                        rows = stage.rows;
+                        self.check_budget(rows.len())?;
+                        i += 1 + filters.len();
+                        continue;
+                    }
+
+                    // No index at all: a FOR that would scan again reads its
+                    // collection once per query and probes a hash of it.
+                    if let Some(new_rows) =
+                        self.try_hash_probe(for_clause, &filters, &rows, scan_limit)?
+                    {
+                        rows = new_rows;
+                        self.check_budget(rows.len())?;
+                        i += 1 + filters.len();
+                        continue;
+                    }
+
                     // Normal FOR processing (no index)
                     let mut new_rows = Vec::new();
                     for ctx in &rows {
@@ -433,8 +456,7 @@ impl<'a> QueryExecutor<'a> {
                     }
                     // Evaluate LET expression for EACH row (correlated subquery support)
                     for ctx in &mut rows {
-                        let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                        ctx.insert(let_clause.variable.clone(), value);
+                        self.bind_let(let_clause, ctx)?;
                     }
                 }
                 BodyClause::Filter(filter_clause) => {

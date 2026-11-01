@@ -138,7 +138,7 @@ impl<'a> QueryExecutor<'a> {
         let Ok(database) = self.storage.get_database(db_name) else {
             return Ok(None);
         };
-        if !database.is_columnar_collection(name) {
+        if !self.is_columnar(&database, name) {
             return Ok(None);
         }
 
@@ -165,7 +165,12 @@ impl<'a> QueryExecutor<'a> {
         );
     }
 
-    fn scan_projection_for(&self, for_clause: &ForClause) -> Option<std::sync::Arc<[String]>> {
+    /// The fields recorded for `for_clause`'s scan, if any; the hash probe
+    /// reads its documents with the same projection.
+    pub(super) fn scan_projection_for(
+        &self,
+        for_clause: &ForClause,
+    ) -> Option<std::sync::Arc<[String]>> {
         self.caches
             .scan_projections
             .lock()
@@ -273,6 +278,9 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // Every branch below scans the local collection (a pushed-down LIMIT
+        // may stop it early).
+        self.caches.count_collection_scan();
         let filtered =
             for_clause.valid_time.is_some() || self.row_policy_applies(&for_clause.collection);
 

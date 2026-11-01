@@ -49,17 +49,19 @@ impl<'a> QueryExecutor<'a> {
             _ => return Ok(None),
         };
 
-        // Check if collection is columnar
-        let collection_name = &for_clause.collection;
-        if !database.is_columnar_collection(collection_name) {
-            return Ok(None);
-        }
-
-        // Second clause must be COLLECT with AGGREGATE
+        // Second clause must be COLLECT with AGGREGATE. Checked before the
+        // columnar lookup, which is a storage read, so the common shapes
+        // never pay for it.
         let collect_clause = match &query.body_clauses[1] {
             BodyClause::Collect(cc) if !cc.aggregates.is_empty() => cc,
             _ => return Ok(None),
         };
+
+        // Check if collection is columnar
+        let collection_name = &for_clause.collection;
+        if !self.is_columnar(&database, collection_name) {
+            return Ok(None);
+        }
 
         // Must have a return clause
         if query.return_clause.is_none() {

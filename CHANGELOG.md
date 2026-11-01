@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **Truncating an empty collection writes nothing.** A truncate wrote
+  twelve range tombstones, one per data prefix, whether or not the
+  collection held anything. Each one costs every later read of the shared
+  keyspace column family until compaction retires it, and test runners
+  truncate every collection, mostly empty ones, on every run: a dev server
+  took 101k tombstones in twenty minutes. A collection with nothing in any
+  data range now gets none. A collection holding data still gets all
+  twelve: skipping only its empty ranges could split a concurrent insert's
+  batch (its document kept, its index entries deleted, or the reverse).
+* **solistore 0.1.1: range tombstones are indexed instead of scanned.**
+  Every read on the solistore engine tested each range tombstone in turn,
+  and each new iterator copied all of them. They are now looked up by binary
+  search (2.64 ms → 435 ns per lookup at 100k tombstones over 2,400 ranges),
+  and a memtable is flushed once it holds 4,096 of them.
+* **A subquery runs once per distinct set of outer values it reads.** 2.5.1
+  reused only subqueries that read nothing from the row. An inner subquery
+  that read an outer loop's row (`FOR col … (FOR m IN comments FILTER
+  m.card_id IN (FOR c IN cards FILTER c.column_id == col._key …))`) still
+  ran once per comment: 7.2 s on 168 columns, 1,079 cards and 2,022
+  comments, now 15 ms. The ORM's habit of naming every loop variable `doc`
+  no longer defeats the reuse.
+* **A reused subquery result is shared, not copied, into each row.**
+  `FOR m IN comments LET cs = (FOR c IN cards RETURN c)` deep-copied the
+  1,079 cards into each of 2,022 rows: 2.1 s, now 3.3 ms. One-argument
+  builtins such as `LENGTH(ids)` also read their argument in place instead
+  of copying it on every call (1.1 s → 1.7 ms).
+* **`x IN (subquery)` and `x == FIRST(subquery)` can use an index.** Only
+  where the plan would otherwise scan, only for `_key`, `_id` and Persistent
+  or Hash indexes, and with rows returned in scan order, so results and
+  `LIMIT` without `SORT` are unchanged.
+* **A correlated FILTER with no index reads its collection once per query.**
+  `FOR card IN cards LET ms = (FOR m IN comments FILTER m.card_id ==
+  card._key …)` scanned comments once per card (2.9 s); a read-only query
+  now hashes them once on the filtered field and probes per row (10 ms).
+  Applies to nested `FOR … FOR … FILTER b.k == a.k` joins too, only to
+  deterministic keys, and within the row ceiling.
+* **Two metadata reads per subquery run are cached per query** (the columnar
+  check and the auto-index flag, about 10% of a correlated subquery run).
+
+### Bug Fixes
+
+* **2.5.1 returned wrong groups from a subquery using `COLLECT … INTO g`
+  without `KEEP`.** Each group member holds every variable in scope, the
+  outer row's included, but the memo judged the subquery from the names
+  written in it and reused the first row's result for every row. Such a
+  subquery is now never reused.
+
 ## [2.5.1](https://github.com/solisoft/solidb/compare/v2.5.0...v2.5.1) (2026-11-01)
 
 ### Performance

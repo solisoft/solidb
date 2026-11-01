@@ -510,15 +510,13 @@ impl<'a> QueryExecutor<'a> {
         for clause in query.body_clauses.iter().skip(1) {
             if let BodyClause::Let(let_clause) = clause {
                 for ctx in &mut rows {
-                    let v = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                    ctx.insert(let_clause.variable.clone(), v);
+                    self.bind_let(let_clause, ctx)?;
                 }
             }
         }
         for let_clause in &query.post_limit_lets {
             for ctx in &mut rows {
-                let v = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                ctx.insert(let_clause.variable.clone(), v);
+                self.bind_let(let_clause, ctx)?;
             }
         }
 

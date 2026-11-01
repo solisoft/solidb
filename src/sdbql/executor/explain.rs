@@ -31,6 +31,11 @@ impl<'a> QueryExecutor<'a> {
         let mut folded_query = query.clone();
         let folded = self.fold_constants(&mut folded_query);
         let query = &folded_query;
+        // Reuse as execution does, so the plan and its timings are the work
+        // the query actually does.
+        self.reset_query_caches();
+        self.caches
+            .enable_reuse(self.reuse_within_query && !query.has_mutations());
         if folded > 0 {
             warnings.push(format!(
                 "optimizer: folded {} constant expression(s)",
@@ -56,9 +61,7 @@ impl<'a> QueryExecutor<'a> {
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();
             let is_subquery = matches!(let_clause.expression, Expression::Subquery(_));
-            let value =
-                self.evaluate_expr_with_context(&let_clause.expression, &initial_bindings)?;
-            initial_bindings.insert(let_clause.variable.clone(), value);
+            self.bind_let(let_clause, &mut initial_bindings)?;
             let clause_time = clause_start.elapsed();
 
             let_bindings_info.push(LetBinding {
@@ -192,6 +195,21 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // The second pass execution makes when the planner
+                    // leaves the stage to the scan.
+                    if !used_index {
+                        if let Some(stage) =
+                            self.try_subquery_index_stage(for_clause, &filters, &rows, scan_limit)?
+                        {
+                            used_index = true;
+                            index_name = Some(stage.index_name);
+                            index_type = Some(stage.index_type);
+                            rows = stage.rows;
+                            total_docs_scanned += stage.docs_read;
+                            i += 1 + filters.len();
+                        }
+                    }
+
                     if !used_index {
                         // Full Scan or Range
                         let mut new_rows = Vec::new();
@@ -283,8 +301,7 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::Let(let_clause) => {
                     let let_start = Instant::now();
                     for ctx in &mut rows {
-                        let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                        ctx.insert(let_clause.variable.clone(), value);
+                        self.bind_let(let_clause, ctx)?;
                     }
                     let_clauses_us += let_start.elapsed().as_micros() as u64;
                     i += 1;

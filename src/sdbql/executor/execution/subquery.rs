@@ -25,6 +25,7 @@ impl<'a> QueryExecutor<'a> {
         // Start with parent context (enables correlation with outer query).
         // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
         let initial_bindings = parent_ctx.clone();
+        self.caches.count_subquery_run();
 
         Ok(self
             .execute_query_with_bindings(query, initial_bindings)?

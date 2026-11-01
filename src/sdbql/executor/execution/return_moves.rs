@@ -12,6 +12,11 @@
 //! `v.f` / `v?.f`, with distinct keys and distinct `(v, f)`, and no dotted
 //! field name (a dotted name has its own lookup rule). Anything else, or a
 //! row where a variable is missing or not an object, is evaluated as before.
+//!
+//! A field is moved only out of a binding the row owns alone. One it shares
+//! (a memoised subquery's rows, an outer variable shared by sibling rows) is
+//! evaluated instead: moving would copy the whole value to take one field
+//! out of the copy, where the evaluator clones only the field.
 
 use serde_json::{Map, Value};
 
@@ -74,11 +79,12 @@ impl<'q> FieldMoves<'q> {
     }
 
     /// The `RETURN` value for `ctx`, built by moving fields out of it. `None`
-    /// — with `ctx` untouched — when a variable is missing or not an object.
+    /// — with `ctx` untouched — when a variable is missing, not an object, or
+    /// shared with something else.
     pub(super) fn take(&self, ctx: &mut Context) -> Option<Value> {
         match self {
             FieldMoves::Single { var, field } => {
-                let map = ctx.get_mut(var)?.as_object_mut()?;
+                let map = ctx.get_mut_unique(var)?.as_object_mut()?;
                 Some(map.remove(*field).unwrap_or(Value::Null))
             }
             FieldMoves::Object(moves) => {
@@ -91,9 +97,12 @@ impl<'q> FieldMoves<'q> {
                 if let Some(whole) = self.whole_document(ctx) {
                     return Some(whole);
                 }
+                if !moves.iter().all(|m| ctx.get_mut_unique(m.var).is_some()) {
+                    return None;
+                }
                 let mut out = Map::new();
                 for m in moves {
-                    let map = ctx.get_mut(m.var)?.as_object_mut()?;
+                    let map = ctx.get_mut_unique(m.var)?.as_object_mut()?;
                     match map.remove_entry(m.field) {
                         // The key string is reused when the name is kept.
                         Some((k, v)) if k == m.key => out.insert(k, v),
@@ -213,6 +222,27 @@ mod tests {
             moves.take(&mut c),
             Some(json!({"id": 1, "title": "t", "views": null}))
         );
+    }
+
+    /// A binding held elsewhere too is read, not moved: moving would copy
+    /// the whole document.
+    #[test]
+    fn shared_bindings_are_left_to_the_evaluator() {
+        for q in ["FOR d IN c RETURN d.a", "FOR d IN c RETURN {a: d.a}"] {
+            let query = parse(q).unwrap();
+            let moves = FieldMoves::of(&query.return_clause.as_ref().unwrap().expression).unwrap();
+            let held = std::sync::Arc::new(json!({"a": 1, "b": 2}));
+            let mut c = Context::default();
+            c.insert_shared("d".to_string(), held.clone());
+            assert_eq!(moves.take(&mut c), None, "{q}");
+            assert!(
+                std::sync::Arc::ptr_eq(c.get_shared("d").unwrap(), &held),
+                "{q}"
+            );
+
+            let mut owned = ctx("d", json!({"a": 1, "b": 2}));
+            assert!(moves.take(&mut owned).is_some(), "{q}");
+        }
     }
 
     #[test]

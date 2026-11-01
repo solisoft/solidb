@@ -81,16 +81,19 @@ impl<'a> QueryExecutor<'a> {
     /// field. `None` means "not resolvable by reference" and the caller falls
     /// back to the owned evaluation path (which also reproduces its error
     /// semantics, e.g. the "Variable not found" error).
-    fn resolve_ref<'v>(&'v self, expr: &'v Expression, ctx: &'v Context) -> Option<&'v Value> {
+    pub(super) fn resolve_ref<'v>(
+        &'v self,
+        expr: &'v Expression,
+        ctx: &'v Context,
+    ) -> Option<&'v Value> {
         static NULL: Value = Value::Null;
         match expr {
             Expression::Variable(name) => ctx.get(name),
             // Literals are borrowed from the AST: `x IN ["a", ..., "z"]` used
             // to copy the array for every row (audit P5).
             Expression::Literal(v) => Some(v),
-            // The executor's bind vars are what entry points copy into the
-            // context under "@name"; reading them first avoids building that
-            // key on every access.
+            // A bind var not passed in falls back to an "@name" context key,
+            // which only a backtick identifier (`` LET `@ids` = ... ``) binds.
             Expression::BindVariable(name) => self
                 .bind_vars
                 .get(name)
@@ -119,6 +122,61 @@ impl<'a> QueryExecutor<'a> {
                     .map(|v| v.unwrap_or(&NULL))
             }
             _ => None,
+        }
+    }
+
+    /// Evaluate a `LET` into `ctx`. A subquery the memo can reuse is bound to
+    /// the memoised rows themselves: every row shares one array, where
+    /// evaluating it copied the result into each row (2.1 s for 2,022
+    /// comments × 1,079 cards, against 2.6 ms shared).
+    pub(super) fn bind_let(&self, let_clause: &LetClause, ctx: &mut Context) -> DbResult<()> {
+        let variable = let_clause.variable.clone();
+        if let Expression::Subquery(q) = &let_clause.expression {
+            match self.memoized_subquery(q, ctx)? {
+                Some(rows) => ctx.insert_shared(variable, rows),
+                None => {
+                    let rows = self.execute_with_parent_context(q, ctx)?;
+                    ctx.insert(variable, Value::Array(rows))
+                }
+            };
+            return Ok(());
+        }
+        let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
+        ctx.insert(variable, value);
+        Ok(())
+    }
+
+    /// `left IN (subquery)` / `NOT IN`, with the generic path's order: the
+    /// left operand first (its error wins), then the subquery, looked up in
+    /// the memo once. Memoised rows are tested where they are, by hash set
+    /// when large, never copied.
+    fn evaluate_in_subquery(
+        &self,
+        left: &Expression,
+        op: &BinaryOperator,
+        q: &Query,
+        ctx: &Context,
+    ) -> DbResult<Value> {
+        let left_owned;
+        let left_val = match self.resolve_ref(left, ctx) {
+            Some(v) => v,
+            None => {
+                left_owned = self.evaluate_expr_with_context(left, ctx)?;
+                &left_owned
+            }
+        };
+        match self.memoized_subquery(q, ctx)? {
+            Some(rows) => {
+                if let Some(set) = self.memoized_subquery_set(q, &rows) {
+                    let found = set.contains(left_val);
+                    return Ok(Value::Bool(found != matches!(op, BinaryOperator::NotIn)));
+                }
+                evaluate_binary_op(left_val, op, &rows)
+            }
+            None => {
+                let rows = Value::Array(self.execute_with_parent_context(q, ctx)?);
+                evaluate_binary_op(left_val, op, &rows)
+            }
         }
     }
 
@@ -259,7 +317,7 @@ impl<'a> QueryExecutor<'a> {
                 if let Some(value) = self.bind_vars.get(name) {
                     return Ok(value.clone());
                 }
-                // Contexts built by the entry points carry them as "@name".
+                // Or a backtick identifier bound it: `` LET `@ids` = ... ``.
                 ctx.get(&format!("@{}", name)).cloned().ok_or_else(|| {
                     DbError::ExecutionError(format!(
                         "Bind variable '@{}' not found. Did you forget to pass it in bindVars?",
@@ -383,9 +441,11 @@ impl<'a> QueryExecutor<'a> {
                 }
                 _ => {
                     if matches!(op, BinaryOperator::In | BinaryOperator::NotIn) {
+                        if let Expression::Subquery(q) = right.as_ref() {
+                            return self.evaluate_in_subquery(left, op, q, ctx);
+                        }
                         let set = match right.as_ref() {
                             Expression::BindVariable(name) => self.bind_var_set(name),
-                            Expression::Subquery(q) => self.memoized_subquery_set(q, ctx)?,
                             _ => None,
                         };
                         if let Some(set) = set {
@@ -527,9 +587,11 @@ impl<'a> QueryExecutor<'a> {
 
             Expression::Subquery(subquery) => {
                 if let Some(rows) = self.memoized_subquery(subquery, ctx)? {
-                    return Ok(Value::Array((*rows).clone()));
+                    return Ok((*rows).clone());
                 }
-                // Execute the subquery with parent context (enables correlated subqueries)
+                // Not reusable here: run it directly, never through a second
+                // lookup (see `memoized_subquery`). The parent context enables
+                // correlated subqueries.
                 let results = self.execute_with_parent_context(subquery, ctx)?;
                 Ok(Value::Array(results))
             }

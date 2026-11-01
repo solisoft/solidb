@@ -24,10 +24,11 @@ impl<'a> QueryExecutor<'a> {
         // Memo tables and the Argon2 budget are per query: an executor reused
         // for a second query must not see the first one's row-policy gates.
         self.reset_query_caches();
-        // A read-only query may run each uncorrelated subquery once; a
-        // writing one re-reads per row, since its own writes can change what
-        // the subquery sees.
-        self.caches.enable_subquery_memo(!query.has_mutations());
+        // A read-only query may reuse a subquery's rows while the bindings it
+        // reads are unchanged; a writing one re-reads per row, since its own
+        // writes can change what the subquery sees.
+        self.caches
+            .enable_reuse(self.reuse_within_query && !query.has_mutations());
         crate::sdbql::executor::builtins::crypto::reset_query_budget();
         // Handle CREATE MATERIALIZED VIEW
         if let Some(ref clause) = query.create_materialized_view_clause {
@@ -98,8 +99,7 @@ impl<'a> QueryExecutor<'a> {
     /// Evaluate the `LET`s that precede the first `FOR` (evaluated once).
     fn bind_pre_for_lets(&self, query: &Query, bindings: &mut Context) -> DbResult<()> {
         for let_clause in &query.let_clauses {
-            let value = self.evaluate_expr_with_context(&let_clause.expression, bindings)?;
-            bindings.insert(let_clause.variable.clone(), value);
+            self.bind_let(let_clause, bindings)?;
         }
         Ok(())
     }
@@ -306,15 +306,9 @@ impl<'a> QueryExecutor<'a> {
                                                                 doc.to_value(),
                                                             );
                                                             for let_clause in &lets {
-                                                                let v = self
-                                                                    .evaluate_expr_with_context(
-                                                                        &let_clause.expression,
-                                                                        &ctx,
-                                                                    )?;
-                                                                ctx.insert(
-                                                                    let_clause.variable.clone(),
-                                                                    v,
-                                                                );
+                                                                self.bind_let(
+                                                                    let_clause, &mut ctx,
+                                                                )?;
                                                             }
                                                             self.evaluate_expr_with_context(
                                                                 &return_clause.expression,
@@ -461,6 +455,7 @@ impl<'a> QueryExecutor<'a> {
                                     // its own: `FOR d IN huge RETURN d` was the
                                     // one shape that still read everything.
                                     let collection = self.get_collection(&for_clause.collection)?;
+                                    self.caches.count_collection_scan();
                                     let results = match scan_limit {
                                         Some((offset, count)) => collection.scan_values_range(
                                             offset,
@@ -584,8 +579,7 @@ impl<'a> QueryExecutor<'a> {
                     rows = self.apply_window_functions(rows, &let_clause.expression)?;
                 }
                 for ctx in &mut rows {
-                    let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                    ctx.insert(let_clause.variable.clone(), value);
+                    self.bind_let(let_clause, ctx)?;
                 }
             }
         }
@@ -615,8 +609,7 @@ impl<'a> QueryExecutor<'a> {
         if !lets_before_limit {
             for let_clause in &query.post_limit_lets {
                 for ctx in &mut rows {
-                    let value = self.evaluate_expr_with_context(&let_clause.expression, ctx)?;
-                    ctx.insert(let_clause.variable.clone(), value);
+                    self.bind_let(let_clause, ctx)?;
                 }
             }
         }

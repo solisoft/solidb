@@ -18,7 +18,9 @@ type ContextHasher = foldhash::fast::RandomState;
 /// variable bound before it: a query whose earlier `LET`s held a few hundred
 /// keys and pairs spent a second cloning them across a 2k-document scan,
 /// where the same subquery alone took 15ms. A write to a shared value copies
-/// it then (`Arc::make_mut`), never a read.
+/// it then (`Arc::make_mut`), never a read; and a write to a value only a
+/// `Weak` also points at moves it to a new allocation. The subquery memo
+/// relies on both: an unchanged address means an unchanged binding.
 #[derive(Clone, Default)]
 pub struct Context {
     vars: HashMap<String, Arc<Value>, ContextHasher>,
@@ -39,12 +41,33 @@ impl Context {
         self.vars.get_mut(name).map(Arc::make_mut)
     }
 
+    /// The binding itself, so a caller can compare it by address or bind the
+    /// same allocation elsewhere without copying the value.
+    pub fn get_shared(&self, name: &str) -> Option<&Arc<Value>> {
+        self.vars.get(name)
+    }
+
+    /// The value for in-place editing only when this context is its sole
+    /// owner (no other `Arc`, no `Weak`); `None` when it is shared, where
+    /// [`Self::get_mut`] would copy it first. For code that takes values out
+    /// of a row and would rather evaluate than pay for a whole-value copy.
+    pub fn get_mut_unique(&mut self, name: &str) -> Option<&mut Value> {
+        self.vars.get_mut(name).and_then(Arc::get_mut)
+    }
+
     pub fn contains_key(&self, name: &str) -> bool {
         self.vars.contains_key(name)
     }
 
     pub fn insert(&mut self, name: String, value: Value) -> Option<Value> {
         self.vars.insert(name, Arc::new(value)).map(unshare)
+    }
+
+    /// As [`Self::insert`], binding an allocation another holder keeps (a
+    /// memoised subquery's rows), so every row shares it instead of getting
+    /// its own copy.
+    pub fn insert_shared(&mut self, name: String, value: Arc<Value>) -> Option<Value> {
+        self.vars.insert(name, value).map(unshare)
     }
 
     pub fn remove(&mut self, name: &str) -> Option<Value> {
