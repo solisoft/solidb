@@ -24,6 +24,10 @@ impl<'a> QueryExecutor<'a> {
         // Memo tables and the Argon2 budget are per query: an executor reused
         // for a second query must not see the first one's row-policy gates.
         self.reset_query_caches();
+        // A read-only query may run each uncorrelated subquery once; a
+        // writing one re-reads per row, since its own writes can change what
+        // the subquery sees.
+        self.caches.enable_subquery_memo(!query.has_mutations());
         crate::sdbql::executor::builtins::crypto::reset_query_budget();
         // Handle CREATE MATERIALIZED VIEW
         if let Some(ref clause) = query.create_materialized_view_clause {

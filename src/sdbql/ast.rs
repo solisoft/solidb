@@ -455,6 +455,39 @@ pub fn expression_references_variable(expr: &Expression, name: &str) -> bool {
     }
 }
 
+/// True when `pred` holds for some expression node anywhere in `query`,
+/// subqueries, CTE bodies and set-operation operands included.
+pub fn query_any_expression(query: &Query, pred: &mut dyn FnMut(&Expression) -> bool) -> bool {
+    query.expressions().any(|e| expression_any(e, pred))
+        || query
+            .set_operations
+            .iter()
+            .any(|op| query_any_expression(&op.query, pred))
+        || query.with_clause.as_ref().is_some_and(|with| {
+            with.ctes
+                .iter()
+                .any(|cte| query_any_expression(&cte.query, pred))
+        })
+}
+
+/// True when `pred` holds for `expr` or any node below it, descending into
+/// subqueries.
+pub fn expression_any(expr: &Expression, pred: &mut dyn FnMut(&Expression) -> bool) -> bool {
+    if pred(expr) {
+        return true;
+    }
+    match expr {
+        Expression::Subquery(q) => query_any_expression(q, pred),
+        other => {
+            let mut found = false;
+            other.for_each_child(&mut |child| {
+                found = found || expression_any(child, pred);
+            });
+            found
+        }
+    }
+}
+
 /// A clause that can appear in the query body (preserves order for correlated subqueries)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BodyClause {

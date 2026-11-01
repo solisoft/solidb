@@ -383,18 +383,17 @@ impl<'a> QueryExecutor<'a> {
                 }
                 _ => {
                     if matches!(op, BinaryOperator::In | BinaryOperator::NotIn) {
-                        if let Expression::BindVariable(name) = right.as_ref() {
-                            if let Some(set) = self.bind_var_set(name) {
-                                let found = match self.resolve_ref(left, ctx) {
-                                    Some(v) => set.contains(v),
-                                    None => {
-                                        set.contains(&self.evaluate_expr_with_context(left, ctx)?)
-                                    }
-                                };
-                                return Ok(Value::Bool(
-                                    found != matches!(op, BinaryOperator::NotIn),
-                                ));
-                            }
+                        let set = match right.as_ref() {
+                            Expression::BindVariable(name) => self.bind_var_set(name),
+                            Expression::Subquery(q) => self.memoized_subquery_set(q, ctx)?,
+                            _ => None,
+                        };
+                        if let Some(set) = set {
+                            let found = match self.resolve_ref(left, ctx) {
+                                Some(v) => set.contains(v),
+                                None => set.contains(&self.evaluate_expr_with_context(left, ctx)?),
+                            };
+                            return Ok(Value::Bool(found != matches!(op, BinaryOperator::NotIn)));
                         }
                     }
                     // Borrow operands that are simple variable/field paths so
@@ -527,6 +526,9 @@ impl<'a> QueryExecutor<'a> {
             Expression::FunctionCall { name, args } => self.evaluate_function(name, args, ctx),
 
             Expression::Subquery(subquery) => {
+                if let Some(rows) = self.memoized_subquery(subquery, ctx)? {
+                    return Ok(Value::Array((*rows).clone()));
+                }
                 // Execute the subquery with parent context (enables correlated subqueries)
                 let results = self.execute_with_parent_context(subquery, ctx)?;
                 Ok(Value::Array(results))

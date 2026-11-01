@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **An uncorrelated subquery runs once per query, not once per row.**
+  `FOR m IN comments FILTER m.card_id IN (FOR c IN cards FILTER c.column_id IN
+  (FOR col IN card_columns …) RETURN c._key)` re-executed the inner `FOR` for
+  every comment, and the second level multiplied again: on 2k comments, 1k
+  cards and 168 columns one such query held a core for about two minutes,
+  where the same query with the subquery bound by a `LET` took 0.18 s. A
+  subquery that reads nothing from the current row now runs the first time it
+  is needed and its rows are reused, and `x IN (subquery)` gets the hash-set
+  lookup `x IN @bindVar` already had. Only in a read-only query, and only for
+  a subquery that writes nothing and calls only deterministic functions;
+  anything else still runs per row. Found on a live card board whose six live
+  queries were re-run by every browser tab at each write.
+
 ### Security
 
 * **Dependencies past eight RustSec advisories.** zstd 0.14.3 / zstd-safe

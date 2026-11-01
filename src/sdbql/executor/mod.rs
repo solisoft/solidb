@@ -24,6 +24,7 @@ mod index_opt;
 mod materialized_views;
 pub mod phonetic;
 mod projection;
+mod subquery_memo;
 pub mod types;
 pub mod utils;
 mod window;
@@ -124,12 +125,30 @@ struct ExecCaches {
     /// and compared on lookup, so another AST reusing the address cannot
     /// pick up the wrong projection.
     scan_projections: parking_lot::Mutex<HashMap<usize, ScanProjection>>,
+    /// Uncorrelated subquery results, keyed by the address of the subquery
+    /// node (see [`subquery_memo`]).
+    subqueries: parking_lot::Mutex<HashMap<usize, subquery_memo::SubqueryMemo>>,
+    /// Whether subqueries may be memoised at all: set by `execute_with_stats`
+    /// for a top-level query that writes nothing; off by default.
+    subquery_memo: std::sync::atomic::AtomicBool,
 }
 
 impl ExecCaches {
+    fn subquery_memo_enabled(&self) -> bool {
+        self.subquery_memo
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn enable_subquery_memo(&self, on: bool) {
+        self.subquery_memo
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Forget everything memoised. Call between two top-level `execute`s on
     /// the same executor.
     fn clear(&self) {
+        self.subqueries.lock().clear();
+        self.enable_subquery_memo(false);
         self.row_policy_gates.lock().clear();
         self.in_sets.lock().clear();
         self.window_keys.lock().clear();
