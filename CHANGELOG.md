@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.5.1](https://github.com/solisoft/solidb/compare/v2.5.0...v2.5.1) (2026-11-01)
+
 ### Performance
 
 * **An uncorrelated subquery runs once per query, not once per row.**
