@@ -1401,12 +1401,34 @@ impl Collection {
         // range-deleted, so take them off it while they can still be counted.
         super::vector::release_pending_embed(self.count_embed_pending() as u64);
 
-        let mut batch = KvBatch::default();
-        for (start, end) in data_ranges {
-            batch.delete_range_ks(&cf, start, end);
+        // A collection with nothing in any data range gets no tombstones at
+        // all. Each one is a cost every later read of the shared keyspace CF
+        // pays until compaction retires it (solistore checks every read
+        // against every unretired range tombstone), and test runners truncate
+        // every collection, mostly empty ones, at each run: 101k tombstones in
+        // 20 minutes on a dev box. All-or-nothing on purpose: skipping only
+        // the empty ranges of a non-empty collection could split a concurrent
+        // insert's batch (its `doc:` entry kept, its `idx:` entries deleted,
+        // or the reverse). When everything was empty, a concurrent insert
+        // simply lands after the truncate. A failed probe counts as data.
+        let holds_data = data_ranges.iter().any(|(start, end)| {
+            db.iterator_ks_bounded(
+                &cf,
+                IterMode::From(start, Direction::Forward),
+                Some(start),
+                Some(end),
+            )
+            .next()
+            .is_some()
+        });
+        if holds_data {
+            let mut batch = KvBatch::default();
+            for (start, end) in data_ranges {
+                batch.delete_range_ks(&cf, start, end);
+            }
+            db.write(batch)
+                .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
         }
-        db.write(batch)
-            .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
 
         // Vector indexes answer searches from their in-memory structure, not via
         // the `idx:` entries we just dropped — leaving stale vectors would keep
@@ -1550,5 +1572,58 @@ impl Collection {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+
+    /// Entries in the active memtable, range tombstones included; `None` on
+    /// an engine that does not report it (solistore).
+    fn memtable_entries(coll: &super::Collection) -> Option<u64> {
+        let cf = coll.ks.handle(&coll.db).unwrap();
+        coll.db
+            .property_int_value_cf(&cf.cf, "rocksdb.num-entries-active-mem-table")
+            .unwrap()
+    }
+
+    #[test]
+    fn truncating_an_empty_collection_writes_no_tombstones() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let engine = StorageEngine::new(dir.path().to_str().unwrap()).unwrap();
+        engine.create_collection("empty".to_string(), None).unwrap();
+        let coll = engine.get_collection("empty").unwrap();
+        let Some(_) = memtable_entries(&coll) else {
+            return; // the engine has no such figure
+        };
+        let memtable_entries = |c: &super::Collection| memtable_entries(c).unwrap();
+
+        // Each truncate persists the zeroed count (one put); a write of the
+        // range tombstones would add 12 more.
+        let before = memtable_entries(&coll);
+        assert_eq!(coll.truncate().unwrap(), 0);
+        assert_eq!(coll.truncate().unwrap(), 0);
+        assert!(
+            memtable_entries(&coll) <= before + 2,
+            "an empty collection's truncate must not add range tombstones"
+        );
+
+        // A collection holding data still gets them, and loses its rows.
+        coll.insert(json!({"_key": "a", "n": 1})).unwrap();
+        let with_doc = memtable_entries(&coll);
+        assert_eq!(coll.truncate().unwrap(), 1);
+        assert!(
+            memtable_entries(&coll) >= with_doc + 12,
+            "a non-empty truncate writes its 12 range tombstones"
+        );
+        assert!(coll.get("a").is_err());
+        assert_eq!(coll.count(), 0);
+
+        // Emptied by the truncate above: the next one is free again.
+        let after = memtable_entries(&coll);
+        coll.truncate().unwrap();
+        assert!(memtable_entries(&coll) <= after + 1);
     }
 }
