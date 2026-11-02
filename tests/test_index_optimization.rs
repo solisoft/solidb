@@ -109,6 +109,100 @@ fn test_index_usage_composite() {
     );
 }
 
+/// Seed for the null-in-composite tests: `archived_at` is a date on some
+/// rows, an explicit null on others, and missing on the rest.
+fn create_archive_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("arcdb".to_string()).unwrap();
+    let db = engine.get_database("arcdb").unwrap();
+    db.create_collection("parcels".to_string(), None).unwrap();
+    let parcels = db.get_collection("parcels").unwrap();
+    for i in 0..120 {
+        let company = if i % 2 == 0 { "acme" } else { "globex" };
+        let doc = match i % 3 {
+            0 => json!({ "seq": i, "company": company, "archived_at": "2026-01-01" }),
+            1 => json!({ "seq": i, "company": company, "archived_at": null }),
+            _ => json!({ "seq": i, "company": company }),
+        };
+        parcels.insert(doc).unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+fn sorted_seqs(rows: Vec<serde_json::Value>) -> Vec<i64> {
+    let mut seqs: Vec<i64> = rows.iter().map(|v| v.as_i64().unwrap()).collect();
+    seqs.sort();
+    seqs
+}
+
+/// `company == X AND archived_at == null` is served by the composite index,
+/// and returns exactly what the full scan returns: explicit nulls AND rows
+/// where the field is missing.
+#[test]
+fn test_composite_index_serves_equality_on_null() {
+    let (engine, _tmp) = create_archive_engine();
+    let executor = QueryExecutor::with_database(&engine, "arcdb".to_string());
+    let query =
+        parse("FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null RETURN p.seq")
+            .unwrap();
+
+    let scanned = sorted_seqs(executor.execute(&query).unwrap());
+    assert_eq!(scanned.len(), 40);
+    assert_eq!(
+        executor.explain(&query).unwrap().collections[0].access_type,
+        "full_scan"
+    );
+
+    let db = engine.get_database("arcdb").unwrap();
+    db.get_collection("parcels")
+        .unwrap()
+        .create_index(
+            "company_archived_idx".to_string(),
+            vec!["company".to_string(), "archived_at".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+
+    let explain = executor.explain(&query).unwrap();
+    assert_eq!(explain.collections[0].access_type, "index_lookup");
+    assert_eq!(
+        explain.collections[0].index_used.as_deref(),
+        Some("company_archived_idx")
+    );
+    assert_eq!(sorted_seqs(executor.execute(&query).unwrap()), scanned);
+}
+
+/// Every index field null: those rows are never indexed, so the lookup must
+/// not be used — the scan still finds them.
+#[test]
+fn test_composite_index_not_used_when_every_field_is_null() {
+    let (engine, _tmp) = create_archive_engine();
+    let executor = QueryExecutor::with_database(&engine, "arcdb".to_string());
+    let db = engine.get_database("arcdb").unwrap();
+    let parcels = db.get_collection("parcels").unwrap();
+    parcels.insert(json!({ "seq": 500 })).unwrap();
+    parcels
+        .create_index(
+            "company_archived_idx".to_string(),
+            vec!["company".to_string(), "archived_at".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+
+    let query =
+        parse("FOR p IN parcels FILTER p.company == null AND p.archived_at == null RETURN p.seq")
+            .unwrap();
+    assert_eq!(
+        executor.explain(&query).unwrap().collections[0].access_type,
+        "full_scan"
+    );
+    assert_eq!(sorted_seqs(executor.execute(&query).unwrap()), vec![500]);
+}
+
 #[test]
 fn test_index_usage_unique_constraint() {
     let (engine, _tmp) = create_seeded_engine();

@@ -1471,12 +1471,6 @@ impl Collection {
         if conditions.len() < 2 {
             return None;
         }
-        // Skip if any value is null (composite index entries skip all-null rows
-        // and we'd have to fall back to a scan anyway).
-        if conditions.iter().any(|(_, v)| v.is_null()) {
-            return None;
-        }
-
         // Pick the multi-field index whose fields are all covered by the
         // provided conditions. Prefer the most selective (most fields covered).
         let mut best: Option<crate::storage::index::Index> = None;
@@ -1498,19 +1492,34 @@ impl Collection {
         }
         let index = best?;
 
-        // Build value_part = hex(v1)_hex(v2)... in the index's field order
-        // (matching `idx_entry_key`).
-        let encoded: Vec<String> = index
+        // The condition values in the index's field order.
+        let values: Vec<&Value> = index
             .fields
             .iter()
             .map(|f| {
-                let v = conditions
+                conditions
                     .iter()
                     .find(|(cf, _)| cf == f)
                     .map(|(_, v)| v)
-                    .expect("coverage check ensures field is present");
-                hex::encode(crate::storage::codec::encode_key(v))
+                    .expect("coverage check ensures field is present")
             })
+            .collect();
+
+        // A row whose index fields are ALL null is never written (see the
+        // `!field_values.iter().all(|v| v.is_null())` guards on insert), so
+        // such a lookup cannot be served. Any other mix is indexed — a missing
+        // field is extracted as `Value::Null` and encoded like an explicit
+        // null — so `company == X AND archived_at == null` finds exactly the
+        // rows the scan's `==` accepts.
+        if values.iter().all(|v| v.is_null()) {
+            return None;
+        }
+
+        // Build value_part = hex(v1)_hex(v2)... in the index's field order
+        // (matching `idx_entry_key`).
+        let encoded: Vec<String> = values
+            .iter()
+            .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
             .collect();
         let value_part = encoded.join("_");
 
