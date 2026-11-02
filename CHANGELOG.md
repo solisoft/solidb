@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.6.0](https://github.com/solisoft/solidb/compare/v2.5.1...v2.6.0) (2026-11-02)
+
 ### Performance
 
 * **Truncating an empty collection writes nothing.** A truncate wrote
@@ -13,7 +15,7 @@
   data range now gets none. A collection holding data still gets all
   twelve: skipping only its empty ranges could split a concurrent insert's
   batch (its document kept, its index entries deleted, or the reverse).
-* **solistore 0.1.1: range tombstones are indexed instead of scanned.**
+* **solistore 0.2.0: range tombstones are indexed instead of scanned.**
   Every read on the solistore engine tested each range tombstone in turn,
   and each new iterator copied all of them. They are now looked up by binary
   search (2.64 ms → 435 ns per lookup at 100k tombstones over 2,400 ranges),

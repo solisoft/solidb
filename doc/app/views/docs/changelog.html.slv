@@ -9,16 +9,16 @@
     </p>
   </div>
 
-  <!-- Unreleased -->
-  <section id="unreleased" class="mb-16 scroll-mt-24">
+  <!-- 2.6.0 -->
+  <section id="v2-6-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
-      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
-      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+      <h2 class="text-3xl font-bold text-white">v2.6.0</h2>
+      <span class="text-sm font-medium text-gray-400">November 2, 2026</span>
     </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
         <li><strong class="text-white">Truncating an empty collection writes nothing</strong> &mdash; a truncate wrote twelve range tombstones, one per data prefix, whether or not the collection held anything, and each costs every later read until compaction retires it. Test runners truncate every collection, mostly empty ones, on every run: a dev server took 101k tombstones in twenty minutes. An empty collection now gets none; one holding data still gets all twelve, so a concurrent insert is never half deleted.</li>
-        <li><strong class="text-white">solistore 0.1.1: range tombstones are indexed</strong> &mdash; every read on the solistore engine tested each range tombstone in turn, and each new iterator copied them all. They are now found by binary search (2.64&nbsp;ms &rarr; 435&nbsp;ns per lookup at 100k tombstones over 2,400 ranges), and a memtable is flushed once it holds 4,096 of them.</li>
+        <li><strong class="text-white">solistore 0.2.0: range tombstones are indexed</strong> &mdash; every read on the solistore engine tested each range tombstone in turn, and each new iterator copied them all. They are now found by binary search (2.64&nbsp;ms &rarr; 435&nbsp;ns per lookup at 100k tombstones over 2,400 ranges), and a memtable is flushed once it holds 4,096 of them.</li>
         <li><strong class="text-white">A subquery runs once per distinct set of outer values it reads</strong> &mdash; 2.5.1 reused only subqueries that read nothing from the row, so an inner subquery reading an outer loop&rsquo;s row still ran once per inner row: 7.2&nbsp;s on 168 columns, 1,079 cards and 2,022 comments, now 15&nbsp;ms. Naming every loop variable <code>doc</code>, as the ORM does, no longer defeats the reuse.</li>
         <li><strong class="text-white">A reused subquery result is shared, not copied</strong> &mdash; <code>LET cs = (subquery)</code> inside a <code>FOR</code> deep-copied the result into every row (2.1&nbsp;s &rarr; 3.3&nbsp;ms), and one-argument builtins such as <code>LENGTH(ids)</code> now read their argument in place (1.1&nbsp;s &rarr; 1.7&nbsp;ms).</li>
         <li><strong class="text-white"><code>x IN (subquery)</code> can use an index</strong> &mdash; only where the plan would otherwise scan, only for <code>_key</code>, <code>_id</code> and Persistent or Hash indexes, with rows in scan order so results and an unsorted <code>LIMIT</code> are unchanged.</li>

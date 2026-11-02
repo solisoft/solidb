@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 
 [package]
 name = "solidb"
-version = "2.5.1"
+version = "2.6.0"
 edition = "2021"
 # Floor imposed by the dependency tree (rust-rocksdb 0.53 declares 1.91.0).
 # Enforced by the `msrv` CI job, which builds with exactly this toolchain.
@@ -125,7 +125,7 @@ reqwest = { version = "0.13", default-features = false, features = [
 fuser = { version = "0.16", optional = true }
 # The pure-Rust storage engine meant to replace RocksDB (integration step S2,
 # see storage/kv). A data directory records which engine wrote it.
-solistore = { version = "0.1", optional = true }
+solistore = { version = "0.2", optional = true }
 
 # Daemon mode (Unix only)
 # daemonize crate removed - using custom implementation in src/daemon.rs
