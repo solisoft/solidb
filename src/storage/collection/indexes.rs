@@ -1352,7 +1352,8 @@ impl Collection {
         prefix: &[u8],
         mut f: impl FnMut(&[u8]) -> DbResult<bool>,
     ) -> DbResult<()> {
-        // The prefix ends in ':', so ';' is the first key past it.
+        // The prefix ends in ':' (or '_'), so ';' (or '`') is the first key
+        // past it.
         let mut upper = prefix.to_vec();
         *upper.last_mut().expect("non-empty prefix") += 1;
         let iter = self.db.iterator_ks_bounded(
@@ -1397,6 +1398,82 @@ impl Collection {
             Ok(true)
         })?;
         Ok(Some(n))
+    }
+
+    /// How many documents match every `field == value` of `conditions`,
+    /// read from a composite index alone. The index's leading fields must be
+    /// exactly the condition fields, in any order: its entries
+    /// `idx:<name>:hex(v1)_…_hex(vn)[_…]:<key>` then share one prefix — `:`
+    /// after it when the index has no other field, `_` when it has more — and
+    /// there is one entry per matching document.
+    ///
+    /// `None` (the caller scans) when no index fits, when a field appears
+    /// twice, when every value is null (such rows are not indexed) or when a
+    /// value is an array or object (the codec compares those as JSON text,
+    /// not as `==` does). `check` is called every 64k entries.
+    pub fn index_count_eq_composite(
+        &self,
+        conditions: &[(String, Value)],
+        mut check: impl FnMut() -> DbResult<()>,
+    ) -> DbResult<Option<u64>> {
+        let distinct_fields = conditions
+            .iter()
+            .enumerate()
+            .all(|(i, (f, _))| conditions[..i].iter().all(|(g, _)| g != f));
+        if conditions.len() < 2
+            || !distinct_fields
+            || conditions.iter().all(|(_, v)| v.is_null())
+            || conditions
+                .iter()
+                .any(|(_, v)| matches!(v, Value::Array(_) | Value::Object(_)))
+        {
+            return Ok(None);
+        }
+        let n = conditions.len();
+        // An index with exactly these fields first, else the shortest longer one.
+        let Some(index) = self
+            .get_all_indexes()
+            .into_iter()
+            .filter(|index| {
+                matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+                    && index.fields.len() >= n
+                    && index.fields[..n]
+                        .iter()
+                        .all(|f| conditions.iter().any(|(cf, _)| cf == f))
+            })
+            .min_by_key(|index| index.fields.len())
+        else {
+            return Ok(None);
+        };
+        let values: Vec<Value> = index.fields[..n]
+            .iter()
+            .filter_map(|f| {
+                conditions
+                    .iter()
+                    .find(|(cf, _)| cf == f)
+                    .map(|(_, v)| v.clone())
+            })
+            .collect();
+        let separator = if index.fields.len() == n { ':' } else { '_' };
+        let prefix = format!(
+            "{}{}:{}{}",
+            IDX_PREFIX,
+            index.name,
+            Self::encode_index_values(&values),
+            separator
+        );
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut count = 0u64;
+        self.for_each_index_entry(&cf, prefix.as_bytes(), |_| {
+            count += 1;
+            if count.is_multiple_of(65_536) {
+                check()?;
+            }
+            Ok(true)
+        })?;
+        Ok(Some(count))
     }
 
     /// [`Self::index_lookup_eq`] then rows `offset..offset + limit`, written

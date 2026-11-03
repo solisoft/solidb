@@ -4,7 +4,9 @@
 //! `LENGTH(FOR v IN c FILTER v.f == x RETURN 1)` (how the Soli ORM counts a
 //! `where`), need no document when a single-field index serves `v.f`: the
 //! index holds one entry per matching document, so counting the entries under
-//! `x` is the answer.
+//! `x` is the answer. Several equalities joined by AND
+//! (`v.tenant == x AND v.archived == null`) are counted the same way in a
+//! composite index whose leading fields are exactly theirs.
 //! The ordinary path reads every matching document and evaluates the FILTER
 //! on it again; at 5,000 matches that is 5,000 reads and decodes for one
 //! number. Same guards as that path — the protected-collection check, row
@@ -13,6 +15,7 @@
 
 use serde_json::Value;
 
+use super::super::index_opt::push_conjuncts;
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
 use super::super::QueryExecutor;
 use crate::error::DbResult;
@@ -43,15 +46,28 @@ fn indexed_loop(for_clause: &ForClause, filter: &Expression) -> bool {
             .source_variable
             .as_ref()
             .is_none_or(|s| s == &for_clause.collection)
-        // One equality, nothing else: the index entries are then exactly
+        // Equalities and nothing else: the index entries are then exactly
         // the rows the FILTER accepts.
-        && matches!(
-            filter,
-            Expression::BinaryOp {
-                op: BinaryOperator::Equal,
-                ..
-            }
-        )
+        && equalities(filter).is_some()
+}
+
+/// The conjuncts of `a == x AND b == y AND …`, or `None` when one of them
+/// is anything but an equality.
+fn equalities(filter: &Expression) -> Option<Vec<&Expression>> {
+    let mut conjuncts = Vec::new();
+    push_conjuncts(filter, &mut conjuncts);
+    conjuncts
+        .iter()
+        .all(|c| {
+            matches!(
+                c,
+                Expression::BinaryOp {
+                    op: BinaryOperator::Equal,
+                    ..
+                }
+            )
+        })
+        .then_some(conjuncts)
 }
 
 /// The loop, the FILTER expression and the count variable of
@@ -197,6 +213,10 @@ impl QueryExecutor<'_> {
         {
             return Ok(None);
         }
+        let conjuncts = equalities(filter).unwrap_or_default();
+        if conjuncts.len() > 1 {
+            return self.composite_index_count(&collection, &conjuncts, for_clause, bindings);
+        }
         let Some(cond) = self.extract_indexable_condition(filter, &for_clause.variable, bindings)
         else {
             return Ok(None);
@@ -217,6 +237,33 @@ impl QueryExecutor<'_> {
                 other => other,
             },
         )
+    }
+}
+
+impl QueryExecutor<'_> {
+    /// `a == x AND b == y …` counted in a composite index. Every conjunct
+    /// must be a `v.field == value` the index can read, or a condition would
+    /// be left out of the count.
+    fn composite_index_count(
+        &self,
+        collection: &crate::storage::Collection,
+        conjuncts: &[&Expression],
+        for_clause: &ForClause,
+        bindings: &Context,
+    ) -> DbResult<Option<u64>> {
+        let mut conditions = Vec::with_capacity(conjuncts.len());
+        for conjunct in conjuncts {
+            let Some(cond) =
+                self.extract_indexable_condition(conjunct, &for_clause.variable, bindings)
+            else {
+                return Ok(None);
+            };
+            if cond.op != BinaryOperator::Equal || cond.field == "_key" || cond.field == "_id" {
+                return Ok(None);
+            }
+            conditions.push((cond.field, cond.value));
+        }
+        collection.index_count_eq_composite(&conditions, || self.check_budget(0))
     }
 }
 
@@ -262,6 +309,15 @@ mod tests {
         assert!(plans(
             "FOR d IN c FILTER 3 == d.a.b COLLECT WITH COUNT INTO n RETURN {total: n}"
         ));
+        assert!(plans(
+            "FOR d IN c FILTER d.g == 1 AND d.h == null COLLECT WITH COUNT INTO n RETURN n"
+        ));
+        assert!(!plans(
+            "FOR d IN c FILTER d.g == 1 AND d.h > 2 COLLECT WITH COUNT INTO n RETURN n"
+        ));
+        assert!(!plans(
+            "FOR d IN c FILTER d.g == 1 OR d.h == 2 COLLECT WITH COUNT INTO n RETURN n"
+        ));
     }
 
     #[test]
@@ -269,7 +325,6 @@ mod tests {
         for q in [
             "FOR d IN c COLLECT WITH COUNT INTO n RETURN n",
             "FOR d IN c FILTER d.g > 1 COLLECT WITH COUNT INTO n RETURN n",
-            "FOR d IN c FILTER d.g == 1 AND d.h == 2 COLLECT WITH COUNT INTO n RETURN n",
             "FOR d IN c FILTER d.g == 1 FILTER d.h == 2 COLLECT WITH COUNT INTO n RETURN n",
             "FOR d IN c FILTER d.g == 1 COLLECT a = d.a WITH COUNT INTO n RETURN n",
             "FOR d IN c FILTER d.g == 1 COLLECT AGGREGATE s = SUM(d.x) RETURN s",

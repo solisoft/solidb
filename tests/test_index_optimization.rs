@@ -630,3 +630,150 @@ fn test_filter_sort_limit_falls_back_on_array_sort_values() {
     assert_eq!(rows, expected);
     assert!(scans > 0);
 }
+
+// ==================== Counts read from a composite index ====================
+
+/// 300 parcels over two companies; `archived_at` set, null or missing;
+/// three statuses.
+fn create_count_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("countdb".to_string()).unwrap();
+    let db = engine.get_database("countdb").unwrap();
+    db.create_collection("parcels".to_string(), None).unwrap();
+    let parcels = db.get_collection("parcels").unwrap();
+    for i in 0..300 {
+        let company = if i % 2 == 0 { "acme" } else { "globex" };
+        let status = ["open", "transit", "done"][i % 3];
+        let mut doc = json!({ "seq": i, "company": company, "status": status, "created": i });
+        match i % 5 {
+            0 => doc["archived_at"] = json!("2026-02-01"),
+            1 | 2 => doc["archived_at"] = json!(null),
+            _ => {}
+        }
+        parcels.insert(doc).unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+fn add_count_index(engine: &StorageEngine, name: &str, fields: &[&str]) {
+    engine
+        .get_database("countdb")
+        .unwrap()
+        .get_collection("parcels")
+        .unwrap()
+        .create_index(
+            name.to_string(),
+            fields.iter().map(|f| f.to_string()).collect(),
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+}
+
+/// The result and the number of full collection scans the query took.
+fn run_count(engine: &StorageEngine, sdbql: &str) -> (Vec<serde_json::Value>, u64) {
+    let executor = QueryExecutor::with_database(engine, "countdb".to_string());
+    let rows = executor.execute(&parse(sdbql).unwrap()).unwrap();
+    (rows, executor.collection_scans())
+}
+
+const COUNT_QUERIES: &[&str] = &[
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null \
+     COLLECT WITH COUNT INTO n RETURN n",
+    // The fields in the other order.
+    "FOR p IN parcels FILTER p.archived_at == null AND p.company == 'globex' \
+     COLLECT WITH COUNT INTO n RETURN n",
+    // How the Soli ORM counts a `where`.
+    "RETURN LENGTH(FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null RETURN 1)",
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == '2026-02-01' \
+     COLLECT WITH COUNT INTO n RETURN n",
+    // A value no document has.
+    "FOR p IN parcels FILTER p.company == 'initech' AND p.archived_at == null \
+     COLLECT WITH COUNT INTO n RETURN n",
+];
+
+/// With an index on exactly `[company, archived_at]`, or one that starts with
+/// them, every count is read from the index and equals the scan's.
+#[test]
+fn test_composite_count_matches_the_scan() {
+    for fields in [
+        &["company", "archived_at"][..],
+        &["archived_at", "company"][..],
+        &["company", "archived_at", "created"][..],
+    ] {
+        let (engine, _tmp) = create_count_engine();
+        let expected: Vec<_> = COUNT_QUERIES
+            .iter()
+            .map(|q| run_count(&engine, q).0)
+            .collect();
+        // Explicit nulls and missing fields both count as `== null`.
+        assert_eq!(expected[0], vec![json!(120)]);
+
+        add_count_index(&engine, "count_idx", fields);
+        for (query, expected) in COUNT_QUERIES.iter().zip(&expected) {
+            let (rows, scans) = run_count(&engine, query);
+            assert_eq!(&rows, expected, "{fields:?} {query}");
+            assert_eq!(scans, 0, "{fields:?} {query}");
+        }
+    }
+}
+
+/// Three equalities over a three-field index.
+#[test]
+fn test_composite_count_with_three_fields() {
+    let (engine, _tmp) = create_count_engine();
+    let query = "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null \
+                 AND p.status == 'transit' COLLECT WITH COUNT INTO n RETURN n";
+    let (expected, _) = run_count(&engine, query);
+    add_count_index(
+        &engine,
+        "company_archived_status",
+        &["company", "archived_at", "status"],
+    );
+    let (rows, scans) = run_count(&engine, query);
+    assert_eq!(rows, expected);
+    assert_eq!(scans, 0);
+}
+
+/// What the index cannot count exactly is left to the scan: a condition that
+/// is not an equality, one field twice, an index that does not start with
+/// the condition fields, or only nulls (rows with every field null are not
+/// indexed).
+#[test]
+fn test_composite_count_falls_back_to_the_scan() {
+    let (engine, _tmp) = create_count_engine();
+    add_count_index(&engine, "company_archived", &["company", "archived_at"]);
+    add_count_index(
+        &engine,
+        "status_company_archived",
+        &["status", "company", "archived_at"],
+    );
+    for (query, expected) in [
+        (
+            "FOR p IN parcels FILTER p.company == 'acme' AND p.created > 100 \
+             COLLECT WITH COUNT INTO n RETURN n",
+            99,
+        ),
+        (
+            "FOR p IN parcels FILTER p.company == 'acme' AND p.company == 'globex' \
+             COLLECT WITH COUNT INTO n RETURN n",
+            0,
+        ),
+        (
+            "FOR p IN parcels FILTER p.company == 'acme' AND p.created == 4 \
+             COLLECT WITH COUNT INTO n RETURN n",
+            1,
+        ),
+        (
+            "FOR p IN parcels FILTER p.archived_at == null AND p.missing == null \
+             COLLECT WITH COUNT INTO n RETURN n",
+            240,
+        ),
+    ] {
+        let (rows, scans) = run_count(&engine, query);
+        assert_eq!(rows, vec![json!(expected)], "{query}");
+        assert!(scans > 0, "{query}");
+    }
+}
