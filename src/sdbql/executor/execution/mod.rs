@@ -6,6 +6,7 @@
 //! - clauses: Body clause processing (FOR, FILTER, JOIN, etc.)
 //! - collect: COLLECT grouping and streaming aggregation
 //! - index_count: `FILTER v.f == x COLLECT WITH COUNT` read from an index
+//! - index_sort: `FILTER v.a == x SORT v.b LIMIT n` read in order from a composite index
 //! - hash_probe: a correlated FILTER no index serves, probed in a per-query hash
 //! - subquery: Correlated subquery execution
 //! - mutations: per-row INSERT / UPDATE / REPLACE / REMOVE with OPTIONS, OLD / NEW
@@ -19,6 +20,7 @@ mod graph;
 mod graph_rag;
 pub(super) mod hash_probe;
 mod index_count;
+mod index_sort;
 mod mutations;
 mod paths;
 mod raw_scan;

@@ -335,6 +335,14 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
+        // `FILTER v.a == x SORT v.b LIMIT n` read in order from an index on
+        // `[a, b]`, stopping at the n-th row (see `index_sort`).
+        if !has_windows {
+            if let Some(result) = self.try_index_sort_limit(query, &initial_bindings)? {
+                return Ok(result);
+            }
+        }
+
         // Optimization: Use index for SORT (without LIMIT) if available
         // Check if query is: FOR var IN collection SORT var.field RETURN ...
         if let Some(sort) = &query.sort_clause {

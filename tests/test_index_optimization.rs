@@ -459,3 +459,174 @@ fn test_index_only_length_of_subquery_matches_the_ordinary_path() {
         assert_eq!(got, run(slow), "{fast}");
     }
 }
+
+// ==================== FILTER … SORT … LIMIT served by an index ====================
+
+/// 300 parcels over two companies, each archived / null / missing. Only 40
+/// `created` values, so rows tie on the sort field; one row has none (it
+/// sorts first).
+fn create_sorted_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("sortdb".to_string()).unwrap();
+    let db = engine.get_database("sortdb").unwrap();
+    db.create_collection("parcels".to_string(), None).unwrap();
+    let parcels = db.get_collection("parcels").unwrap();
+    for i in 0..300 {
+        let company = if i % 2 == 0 { "acme" } else { "globex" };
+        let status = if i % 5 == 0 { "open" } else { "done" };
+        // Not in insertion order, so the index order is the one being tested.
+        let created = format!("2026-01-01T{:05}", (i * 7919) % 40);
+        let mut doc = json!({ "seq": i, "company": company, "status": status, "created": created });
+        match i % 3 {
+            0 => doc["archived_at"] = json!("2026-02-01"),
+            1 => doc["archived_at"] = json!(null),
+            _ => {}
+        }
+        if i == 4 {
+            doc.as_object_mut().unwrap().remove("created");
+        }
+        parcels.insert(doc).unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+fn add_index(engine: &StorageEngine, name: &str, fields: &[&str]) {
+    engine
+        .get_database("sortdb")
+        .unwrap()
+        .get_collection("parcels")
+        .unwrap()
+        .create_index(
+            name.to_string(),
+            fields.iter().map(|f| f.to_string()).collect(),
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+}
+
+/// The rows and the number of full collection scans the query took.
+fn run_sorted(engine: &StorageEngine, sdbql: &str) -> (Vec<serde_json::Value>, u64) {
+    let executor = QueryExecutor::with_database(engine, "sortdb".to_string());
+    let rows = executor.execute(&parse(sdbql).unwrap()).unwrap();
+    (rows, executor.collection_scans())
+}
+
+const SORTED_QUERIES: &[&str] = &[
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null \
+     SORT p.created DESC LIMIT 10 RETURN p.seq",
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null \
+     SORT p.created ASC LIMIT 3, 5 RETURN p.seq",
+    // Two FILTERs are one conjunction.
+    "FOR p IN parcels FILTER p.company == 'globex' FILTER p.archived_at == null \
+     SORT p.created DESC LIMIT 7 RETURN p.seq",
+    // A condition outside the index is re-checked on each row.
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null AND p.status == 'open' \
+     SORT p.created DESC LIMIT 4 RETURN p.seq",
+    // LETs after the FILTER, evaluated on the rows kept.
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null LET s = p.seq * 2 \
+     SORT p.created DESC LIMIT 5 RETURN s",
+    // More rows asked for than exist: every match, in order.
+    "FOR p IN parcels FILTER p.company == 'acme' AND p.archived_at == null \
+     SORT p.created ASC LIMIT 1000 RETURN p.seq",
+];
+
+/// With `[company, archived_at, created]` the queries read the index range
+/// (no collection scan) and return exactly what the scan and sort returned.
+#[test]
+fn test_filter_sort_limit_served_by_composite_index() {
+    let (engine, _tmp) = create_sorted_engine();
+    let expected: Vec<_> = SORTED_QUERIES
+        .iter()
+        .map(|q| run_sorted(&engine, q).0)
+        .collect();
+    assert_eq!(expected[5].len(), 100);
+    // The row without `created` sorts first, as SORT puts null first.
+    assert_eq!(expected[5][0], json!(4));
+    // Ties inside the page, so their order is part of what is compared.
+    let created = |q: &str| run_sorted(&engine, &q.replace("RETURN p.seq", "RETURN p.created")).0;
+    let first_page = created(SORTED_QUERIES[0]);
+    assert!(first_page.windows(2).any(|w| w[0] == w[1]));
+
+    add_index(
+        &engine,
+        "company_archived_created",
+        &["company", "archived_at", "created"],
+    );
+    for (query, expected) in SORTED_QUERIES.iter().zip(&expected) {
+        let (rows, scans) = run_sorted(&engine, query);
+        assert_eq!(&rows, expected, "{query}");
+        assert_eq!(scans, 0, "{query}");
+    }
+}
+
+/// An index whose prefix covers only some conditions still serves the sort;
+/// the others are checked per row.
+#[test]
+fn test_filter_sort_limit_uses_a_shorter_prefix() {
+    let (engine, _tmp) = create_sorted_engine();
+    let query = SORTED_QUERIES[0];
+    let (expected, _) = run_sorted(&engine, query);
+
+    add_index(&engine, "company_created", &["company", "created"]);
+    let (rows, scans) = run_sorted(&engine, query);
+    assert_eq!(rows, expected);
+    assert_eq!(scans, 0);
+}
+
+/// No index ends with the sort field after the condition fields, or every
+/// prefix value is null: the ordinary scan and sort answer.
+#[test]
+fn test_filter_sort_limit_falls_back_without_a_fitting_index() {
+    let (engine, _tmp) = create_sorted_engine();
+    add_index(&engine, "company_archived", &["company", "archived_at"]);
+    add_index(&engine, "archived_created", &["archived_at", "created"]);
+
+    let query = "FOR p IN parcels FILTER p.company == 'acme' SORT p.seq DESC LIMIT 3 RETURN p.seq";
+    let (rows, scans) = run_sorted(&engine, query);
+    assert_eq!(rows, vec![json!(298), json!(296), json!(294)]);
+    assert!(scans > 0);
+
+    // The sort field followed by another field: ties would come out in that
+    // field's order, not in the scan's.
+    add_index(&engine, "company_seq_status", &["company", "seq", "status"]);
+    let (rows, scans) = run_sorted(&engine, query);
+    assert_eq!(rows, vec![json!(298), json!(296), json!(294)]);
+    assert!(scans > 0);
+
+    // `archived_at == null` alone: those rows are in `archived_created` only
+    // when `created` is set, so the index cannot be trusted with it.
+    let query =
+        "FOR p IN parcels FILTER p.archived_at == null SORT p.created ASC LIMIT 2 RETURN p.seq";
+    let (rows, scans) = run_sorted(&engine, query);
+    assert_eq!(rows[0], json!(4));
+    assert!(scans > 0);
+}
+
+/// Arrays and objects are ordered by the codec as JSON text, not as SORT
+/// orders them: the read gives up and the scan answers.
+#[test]
+fn test_filter_sort_limit_falls_back_on_array_sort_values() {
+    let (engine, _tmp) = create_sorted_engine();
+    let parcels = engine
+        .get_database("sortdb")
+        .unwrap()
+        .get_collection("parcels")
+        .unwrap();
+    for (seq, created) in [(900, json!([10])), (901, json!([9, 1])), (902, json!([2]))] {
+        parcels
+            .insert(json!({ "seq": seq, "company": "initech", "created": created }))
+            .unwrap();
+    }
+    let query =
+        "FOR p IN parcels FILTER p.company == 'initech' SORT p.created ASC LIMIT 3 RETURN p.seq";
+    let (expected, _) = run_sorted(&engine, query);
+    assert_eq!(expected, vec![json!(902), json!(901), json!(900)]);
+
+    add_index(&engine, "company_created", &["company", "created"]);
+    let (rows, scans) = run_sorted(&engine, query);
+    assert_eq!(rows, expected);
+    assert!(scans > 0);
+}

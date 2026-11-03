@@ -1676,6 +1676,142 @@ impl Collection {
         Some(result)
     }
 
+    /// Documents matching `conditions` (field equalities) in `sort_field`
+    /// order, read from a composite index that ends with `sort_field` and
+    /// whose other fields are all equal to a condition value — the index with
+    /// the longest such prefix wins. Inside the exact prefix
+    /// `idx:<name>:hex(v1)_…_hex(vk)_` the entries are ordered by the sort
+    /// value (the codec is order-preserving and prefix-free), then by
+    /// document key, so the read walks that range — backwards for a
+    /// descending sort — and stops once `accept` has kept `want` documents.
+    ///
+    /// Rows with equal sort values come out in key order both ways, as the
+    /// stable sort of a key-ordered scan leaves them: a backward read puts
+    /// each run of equal values back in key order. That is why the sort field
+    /// must be the index's last one.
+    ///
+    /// `accept` re-checks each document against the whole FILTER: the index
+    /// only narrows the candidates, and conditions outside the prefix are
+    /// left to it. Returns `None` when no index fits, when every prefix value
+    /// is null (such rows are not indexed), when a sort value is an array or
+    /// object (the codec orders those as JSON text, not as SORT does) or when
+    /// more than `max_scan` entries would be read; the caller then falls back
+    /// to the scan.
+    pub fn index_sorted_with_prefix(
+        &self,
+        conditions: &[(String, Value)],
+        sort_field: &str,
+        ascending: bool,
+        want: usize,
+        max_scan: usize,
+        accept: &mut dyn FnMut(&Document) -> bool,
+    ) -> Option<(crate::storage::index::Index, Vec<Document>)> {
+        const BATCH: usize = 256;
+
+        let condition_value = |field: &str| {
+            conditions
+                .iter()
+                .find(|(cf, _)| cf == field)
+                .map(|(_, v)| v)
+        };
+        let (index, values) = self
+            .get_all_indexes()
+            .into_iter()
+            .filter(|index| matches!(index.index_type, IndexType::Persistent | IndexType::Hash))
+            .filter_map(|index| {
+                let (last, leading) = index.fields.split_last()?;
+                if last != sort_field {
+                    return None;
+                }
+                let values: Vec<Value> = leading
+                    .iter()
+                    .map(|f| condition_value(f).cloned())
+                    .collect::<Option<_>>()?;
+                (!values.is_empty() && !values.iter().all(|v| v.is_null()))
+                    .then_some((index, values))
+            })
+            .max_by_key(|(_, values)| values.len())?;
+
+        let prefix = format!(
+            "{}{}:{}_",
+            IDX_PREFIX,
+            index.name,
+            Self::encode_index_values(&values)
+        );
+        let prefix_bytes = prefix.as_bytes();
+        let cf = self.ks.handle(&self.db)?;
+        let iter = if ascending {
+            self.db
+                .iterator_ks(&cf, IterMode::From(prefix_bytes, Direction::Forward))
+        } else {
+            let mut seek_key = prefix_bytes.to_vec();
+            seek_key.push(0xFF);
+            self.db
+                .iterator_ks(&cf, IterMode::From(&seek_key, Direction::Reverse))
+        };
+        // `<prefix><hex(sort value)>:<doc key>`: the hex part is the tie group.
+        let mut entries = iter
+            .filter_map(|r| r.ok())
+            .take_while(|(k, _)| k.starts_with(prefix_bytes))
+            .map(|(k, v)| {
+                let rest = &k[prefix_bytes.len()..];
+                let group = rest.split(|b| *b == b':').next().unwrap_or(rest).to_vec();
+                (group, Self::doc_key(&String::from_utf8_lossy(&v)))
+            })
+            .peekable();
+        let mut ties = std::collections::VecDeque::new();
+        let mut keys = std::iter::from_fn(|| {
+            if ties.is_empty() {
+                let (group, first) = entries.next()?;
+                ties.push_back(first);
+                while let Some((_, key)) = entries.next_if(|(g, _)| *g == group) {
+                    ties.push_back(key);
+                }
+                if !ascending {
+                    ties.make_contiguous().reverse();
+                }
+            }
+            ties.pop_front()
+        });
+
+        let mut kept = Vec::new();
+        let mut scanned = 0usize;
+        while kept.len() < want {
+            let batch: Vec<Vec<u8>> = keys.by_ref().take(BATCH).collect();
+            if batch.is_empty() {
+                break;
+            }
+            scanned += batch.len();
+            if scanned > max_scan {
+                return None;
+            }
+            for bytes in self
+                .db
+                .multi_get_ks(&cf, batch.iter().map(|k| k.as_slice()))
+                .into_iter()
+                .filter_map(|r| r.ok())
+                .flatten()
+            {
+                let Ok(doc) = deserialize_doc(&bytes) else {
+                    continue;
+                };
+                if matches!(
+                    extract_field_value(&doc.to_value(), sort_field),
+                    Value::Array(_) | Value::Object(_)
+                ) {
+                    return None;
+                }
+                if accept(&doc) {
+                    kept.push(doc);
+                }
+                if kept.len() == want {
+                    break;
+                }
+            }
+        }
+        Some((index, kept))
+    }
+
     // ==================== Bloom/Cuckoo Filter Support ====================
 
     pub(crate) fn get_or_create_bloom_filter(&self, index_name: &str) -> DbResult<BloomFilter> {
