@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [2.6.1](https://github.com/solisoft/solidb/compare/v2.6.0...v2.6.1) (2026-11-03)
+
+### Performance
+
+* **`FILTER … SORT … LIMIT` is served from a composite index.** With an
+  index `[a, b]`, `FOR d IN c FILTER d.a == x SORT d.b DESC LIMIT n` read
+  every matching document, sorted them all and kept n. It now walks the
+  index range under `a == x` in `b` order (backwards for DESC), re-checks
+  every FILTER per document and stops at offset + n, with results identical
+  to the ordinary path (ties in key order). Measured on 500k documents: 1.9 s
+  → 3 ms for the first page of a 497k-row tenant sorted by creation date.
+* **AND'd equalities are counted from a composite index.** `FILTER d.a == x
+  AND d.b == y COLLECT WITH COUNT INTO n` (and the `LENGTH(FOR … RETURN 1)`
+  form) read every matching document; a composite index whose leading fields
+  are exactly the condition fields now answers it from its entries. Measured
+  on 500k documents: 1.6 s → 0.15 s for a 497k-row count, 0.66 s → 7 ms for a
+  15k-row one.
+
 ## [2.6.0](https://github.com/solisoft/solidb/compare/v2.5.1...v2.6.0) (2026-11-02)
 
 ### Performance

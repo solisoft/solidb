@@ -9,6 +9,20 @@
     </p>
   </div>
 
+  <!-- 2.6.1 -->
+  <section id="v2-6-1" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.6.1</h2>
+      <span class="text-sm font-medium text-gray-400">November 3, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>FILTER &hellip; SORT &hellip; LIMIT</code> is served from a composite index</strong> &mdash; with an index <code>[a, b]</code>, <code>FOR d IN c FILTER d.a == x SORT d.b DESC LIMIT n</code> read every matching document and sorted them all. It now walks the index range under <code>a == x</code> in <code>b</code> order, re-checks every FILTER and stops at offset + n, with identical results: 1.9&nbsp;s &rarr; 3&nbsp;ms for the first page of a 497k-row tenant on 500k documents.</li>
+        <li><strong class="text-white">AND&rsquo;d equalities are counted from a composite index</strong> &mdash; <code>FILTER d.a == x AND d.b == y COLLECT WITH COUNT INTO n</code> read every matching document; a composite index whose leading fields are exactly the condition fields now answers it from its entries: 1.6&nbsp;s &rarr; 0.15&nbsp;s for a 497k-row count, 0.66&nbsp;s &rarr; 7&nbsp;ms for a 15k-row one.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.6.0 -->
   <section id="v2-6-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
