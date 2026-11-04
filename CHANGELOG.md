@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.6.4](https://github.com/solisoft/solidb/compare/v2.6.3...v2.6.4) (2026-11-04)
+
 ### Performance
 
 * **A composite index serves its first field alone.** With no single-field
