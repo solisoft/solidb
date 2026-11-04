@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **A composite index serves its first field alone.** With no single-field
+  index on `a`, `FILTER d.a == x` (or `IN`) scanned the collection even when
+  a composite index `[a, …]` existed; it now reads that index's `a` prefix,
+  and `COLLECT WITH COUNT` / `LENGTH(…)` count it from the index. On 200k
+  documents: 174 ms → 19 ms for 5,000 rows, a count 407 ms → 0.9 ms.
+* **`!=` and `NOT IN` after the fixed fields of a composite index.**
+  `FILTER d.owner_id == @me AND d.status != "Completed"` with an index
+  `[owner_id, status]` reads the ranges on each side of the excluded value
+  instead of scanning; rows whose `status` is null or missing are still
+  returned (188 ms → 2.8 ms).
+* **`IN` lists holding `null` in a composite index.** `d.opportunity_id IN
+  [null, ""] AND d.account_id IN @keys` with `[opportunity_id, account_id]`
+  is read from the index (208 ms → 0.4 ms). A lookup where some combination
+  of the fixed values is all null still falls back: such rows are not
+  indexed.
+* **`OR` is read as a union of indexes** when every branch has one, for a
+  FILTER that is an `OR` or has one among its AND'd terms (186 ms → 12 ms);
+  rows are deduplicated and the FILTER re-checked.
+
+### Features
+
+* **EXPLAIN shows the paths execution takes.** Subquery loops (`LET`,
+  `FILTER`, `RETURN`, nested) are listed after the query's own with a
+  `subquery` label, explained against the first row that reaches them.
+  `access_type` reports `index_sort` (rows read in SORT order, with
+  `sort.index`) and `index_count`, which showed as `full_scan`; a `_key` read
+  names `"primary key"`. The admin console shows them.
+
 ## [2.6.3](https://github.com/solisoft/solidb/compare/v2.6.2...v2.6.3) (2026-11-04)
 
 ### Performance

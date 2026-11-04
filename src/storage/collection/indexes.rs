@@ -1401,8 +1401,9 @@ impl Collection {
     }
 
     /// How many documents match every `field == value` of `conditions`,
-    /// read from a composite index alone. The index's leading fields must be
-    /// exactly the condition fields, in any order: its entries
+    /// read from a composite (multi-field) index alone — one condition is
+    /// enough, read as the index's first field. The index's leading fields
+    /// must be exactly the condition fields, in any order: its entries
     /// `idx:<name>:hex(v1)_…_hex(vn)[_…]:<key>` then share one prefix — `:`
     /// after it when the index has no other field, `_` when it has more — and
     /// there is one entry per matching document.
@@ -1420,7 +1421,7 @@ impl Collection {
             .iter()
             .enumerate()
             .all(|(i, (f, _))| conditions[..i].iter().all(|(g, _)| g != f));
-        if conditions.len() < 2
+        if conditions.is_empty()
             || !distinct_fields
             || conditions.iter().all(|(_, v)| v.is_null())
             || conditions
@@ -1435,8 +1436,10 @@ impl Collection {
             .get_all_indexes()
             .into_iter()
             .filter(|index| {
+                // A single-field index may hold several entries per
+                // document (array values); a composite one holds exactly one.
                 matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
-                    && index.fields.len() >= n
+                    && index.fields.len() >= n.max(2)
                     && index.fields[..n]
                         .iter()
                         .all(|f| conditions.iter().any(|(cf, _)| cf == f))

@@ -507,7 +507,7 @@
                     A compound index on <code>["a", "b", "c"]</code> can accelerate queries filtering on:
                 </p>
                 <ul class="space-y-1 text-sm text-gray-400">
-                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> alone, when an <code>indexHint</code> names the index (otherwise a single-field index on <code>a</code> is used)</li>
+                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> alone (a single-field index on <code>a</code>, when there is one, is used first)</li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code></li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code> AND <code>c</code></li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg><code>b</code> or <code>c</code> alone (must include leading field)</li>
@@ -519,8 +519,19 @@
 FOR j IN jobs
   FILTER j.state IN ["pending", "scheduled", "failed"] AND j.run_at &lt;= @now
   RETURN j</code></pre>
+                <p class="text-sm text-gray-400 mt-4 mb-2">
+                    The field after the fixed ones may also be excluded with <code>!=</code> or <code>NOT IN</code>: the read skips those values, and rows where the field is <code>null</code> or missing are still returned, as <code>null != x</code> is true. An <code>IN</code> list on a fixed field may hold <code>null</code>:
+                </p>
+                <pre><code class="language-sql text-sm">// index ["owner_id", "status"]: only the owner's open tasks are read
+FOR t IN tasks FILTER t.owner_id == @me AND t.status != "Completed" RETURN t
+
+// index ["opportunity_id", "account_id"]
+FOR d IN invoices FILTER d.opportunity_id IN [null, ""] AND d.account_id IN @accounts RETURN d</code></pre>
                 <p class="text-sm text-gray-400 mt-2">
-                    Conditions past the range, and any other FILTER, are checked on each document read. A lookup whose fixed values are all <code>null</code>, or whose value is an array or object, falls back to the ordinary path.
+                    Conditions past the range, and any other FILTER, are checked on each document read. A row whose index fields are all <code>null</code> is not indexed, so a lookup where some combination of the fixed values is all <code>null</code> (<code>a == null</code>, <code>a IN [null, "x"]</code>), or whose value is an array or object, falls back to the ordinary path. So does <code>!=</code> on a field with nothing fixed before it.
+                </p>
+                <p class="text-sm text-gray-400 mt-2">
+                    A FILTER that is an <code>OR</code>, or has an <code>OR</code> among its AND'd terms, is read as the union of what an index returns for each branch, when every branch has one; otherwise it is scanned.
                 </p>
             </div>
           </div>

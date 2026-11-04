@@ -678,17 +678,19 @@ fn test_filter_sort_limit_falls_back_without_a_fitting_index() {
     add_index(&engine, "company_archived", &["company", "archived_at"]);
     add_index(&engine, "archived_created", &["archived_at", "created"]);
 
+    // The FILTER is still read from the `company` prefix of
+    // `company_archived` (no scan); the sort runs over those rows.
     let query = "FOR p IN parcels FILTER p.company == 'acme' SORT p.seq DESC LIMIT 3 RETURN p.seq";
     let (rows, scans) = run_sorted(&engine, query);
     assert_eq!(rows, vec![json!(298), json!(296), json!(294)]);
-    assert!(scans > 0);
+    assert_eq!(scans, 0);
 
     // The sort field followed by another field: ties would come out in that
     // field's order, not in the scan's.
     add_index(&engine, "company_seq_status", &["company", "seq", "status"]);
     let (rows, scans) = run_sorted(&engine, query);
     assert_eq!(rows, vec![json!(298), json!(296), json!(294)]);
-    assert!(scans > 0);
+    assert_eq!(scans, 0);
 
     // `archived_at == null` alone: those rows are in `archived_created` only
     // when `created` is set, so the index cannot be trusted with it.
@@ -719,10 +721,12 @@ fn test_filter_sort_limit_falls_back_on_array_sort_values() {
     let (expected, _) = run_sorted(&engine, query);
     assert_eq!(expected, vec![json!(902), json!(901), json!(900)]);
 
+    // Read in index order the rows would come out as 900, 902, 901. The
+    // FILTER is read from the `company` prefix and the rows sorted after.
     add_index(&engine, "company_created", &["company", "created"]);
     let (rows, scans) = run_sorted(&engine, query);
     assert_eq!(rows, expected);
-    assert!(scans > 0);
+    assert_eq!(scans, 0);
 }
 
 // ==================== Counts read from a composite index ====================
@@ -844,31 +848,38 @@ fn test_composite_count_falls_back_to_the_scan() {
         "status_company_archived",
         &["status", "company", "archived_at"],
     );
-    for (query, expected) in [
+    // Not counted from the index alone. The first three still read their
+    // rows from the `company` prefix of `company_archived` and check the
+    // rest per row; the last has nothing an index can read.
+    for (query, expected, scanned) in [
         (
             "FOR p IN parcels FILTER p.company == 'acme' AND p.created > 100 \
              COLLECT WITH COUNT INTO n RETURN n",
             99,
+            false,
         ),
         (
             "FOR p IN parcels FILTER p.company == 'acme' AND p.company == 'globex' \
              COLLECT WITH COUNT INTO n RETURN n",
             0,
+            false,
         ),
         (
             "FOR p IN parcels FILTER p.company == 'acme' AND p.created == 4 \
              COLLECT WITH COUNT INTO n RETURN n",
             1,
+            false,
         ),
         (
             "FOR p IN parcels FILTER p.archived_at == null AND p.missing == null \
              COLLECT WITH COUNT INTO n RETURN n",
             240,
+            true,
         ),
     ] {
         let (rows, scans) = run_count(&engine, query);
         assert_eq!(rows, vec![json!(expected)], "{query}");
-        assert!(scans > 0, "{query}");
+        assert_eq!(scans > 0, scanned, "{query}");
     }
 }
 
@@ -1016,8 +1027,6 @@ fn test_composite_range_falls_back() {
         // Leading values all null and a range that admits null: a row with
         // every index field null would match and is not in the index.
         "FOR j IN jobs FILTER j.state == null AND j.run_at <= \"2026-11-14\" RETURN j.seq",
-        // An array bound: the codec orders arrays as JSON text.
-        "FOR j IN jobs FILTER j.state == \"pending\" AND j.run_at <= [\"x\"] RETURN j.seq",
         // Not a leading field.
         "FOR j IN jobs FILTER j.run_at <= \"2026-11-14\" AND j.priority == 1 RETURN j.seq",
     ];
@@ -1025,6 +1034,9 @@ fn test_composite_range_falls_back() {
         .iter()
         .map(|q| sorted_if_unsorted(q, run_jobs(&engine, q).0))
         .collect();
+    let array_bound =
+        "FOR j IN jobs FILTER j.state == \"pending\" AND j.run_at <= [\"x\"] RETURN j.seq";
+    let array_expected = sorted_if_unsorted(array_bound, run_jobs(&engine, array_bound).0);
     add_jobs_index(
         &engine,
         "idx_jobs_claim",
@@ -1036,6 +1048,14 @@ fn test_composite_range_falls_back() {
         assert_eq!(&sorted_if_unsorted(q, rows), want, "{q}");
         assert_eq!(used, None, "{q}");
     }
+
+    // An array bound is not used (the codec orders arrays as JSON text), but
+    // the `state` prefix still is; the bound is checked per row.
+    let (rows, used, scans) = run_jobs(&engine, array_bound);
+    assert!(!array_expected.is_empty());
+    assert_eq!(sorted_if_unsorted(array_bound, rows), array_expected);
+    assert_eq!(used.as_deref(), Some("idx_jobs_claim"));
+    assert_eq!(scans, 0);
 }
 
 /// `indexHint` naming a composite index uses it, even for a FILTER that
@@ -1092,5 +1112,364 @@ fn test_index_hint_names_a_composite_index() {
     assert!(
         err.to_string().contains("could not use index hint"),
         "{err}"
+    );
+}
+
+// ======= Composite prefixes, `!=` / `NOT IN`, `IN` with null, `OR` unions =======
+
+/// The same 480 rows in `plain` (no index) and `indexed`. Fields are set,
+/// null, missing, empty or of another type on some rows, so a read that
+/// leaves a row out shows up as a difference.
+fn create_planner_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("plandb".to_string()).unwrap();
+    let db = engine.get_database("plandb").unwrap();
+    let owners = [
+        json!("u1"),
+        json!("u2"),
+        json!("u3"),
+        json!(""),
+        json!(null),
+    ];
+    let statuses = [
+        json!("Open"),
+        json!("Working"),
+        json!("Closed"),
+        json!("Completed"),
+        json!(null),
+        json!(1),
+    ];
+    let objects = ["accounts", "contacts", "leads"];
+    let opportunities = [json!("o1"), json!("o2"), json!(""), json!(null)];
+    for name in ["plain", "indexed"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        let coll = db.get_collection(name).unwrap();
+        for i in 0..480i64 {
+            let mut doc = json!({
+                "seq": i,
+                "object": objects[(i % 3) as usize],
+                "sort_order": i % 7,
+                "account_id": format!("a{}", i % 4),
+                "a": i % 5,
+                "b": i % 9,
+                "amount": if i % 4 == 0 { json!(1) } else if i % 4 == 1 { json!(1.0) } else { json!(i % 3) },
+            });
+            if i % 11 != 0 {
+                doc["owner_id"] = owners[(i % 5) as usize].clone();
+            }
+            if i % 13 != 0 {
+                doc["status"] = statuses[(i % 6) as usize].clone();
+            }
+            if i % 7 != 0 {
+                doc["opportunity_id"] = opportunities[(i % 4) as usize].clone();
+            }
+            coll.insert(doc).unwrap();
+        }
+    }
+    let indexed = db.get_collection("indexed").unwrap();
+    for (name, fields, ty) in [
+        (
+            "idx_object_sort",
+            vec!["object", "sort_order"],
+            IndexType::Hash,
+        ),
+        (
+            "idx_owner_status",
+            vec!["owner_id", "status"],
+            IndexType::Persistent,
+        ),
+        (
+            "idx_status_amount",
+            vec!["status", "amount"],
+            IndexType::Persistent,
+        ),
+        (
+            "idx_opp_account",
+            vec!["opportunity_id", "account_id"],
+            IndexType::Persistent,
+        ),
+        ("idx_a", vec!["a"], IndexType::Hash),
+        ("idx_b", vec!["b"], IndexType::Persistent),
+    ] {
+        indexed
+            .create_index(
+                name.to_string(),
+                fields.into_iter().map(String::from).collect(),
+                ty,
+                false,
+            )
+            .unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+/// `query` (written over `C`) on `plain` then on `indexed`: the rows of each
+/// (sorted), the index EXPLAIN names on `indexed`, and its collection scans.
+fn run_planner(
+    engine: &StorageEngine,
+    query: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Option<String>,
+    u64,
+) {
+    let run = |coll: &str| {
+        let executor = QueryExecutor::with_database(engine, "plandb".to_string());
+        let ast = parse(&query.replace(" C ", &format!(" {coll} "))).unwrap();
+        let mut rows = executor.execute(&ast).unwrap();
+        rows.sort_by_key(|v| v.as_i64());
+        let used = executor
+            .explain(&ast)
+            .ok()
+            .and_then(|e| e.collections.first().and_then(|c| c.index_used.clone()));
+        (rows, used, executor.collection_scans())
+    };
+    let (expected, _, _) = run("plain");
+    let (rows, used, scans) = run("indexed");
+    (expected, rows, used, scans)
+}
+
+/// Each query returns what the scan returns, from the index named, with no
+/// collection scan.
+#[test]
+fn test_composite_planner_serves_new_shapes() {
+    let (engine, _tmp) = create_planner_engine();
+    let f = |filter: &str| format!("FOR d IN C FILTER {filter} RETURN d.seq");
+    let cases: Vec<(String, &str)> = vec![
+        // A composite index read for its first field alone.
+        (f("d.object == \"accounts\""), "idx_object_sort"),
+        (
+            f("d.object IN [\"accounts\", \"leads\"]"),
+            "idx_object_sort",
+        ),
+        (
+            "FOR d IN C FILTER d.object == \"leads\" SORT d.sort_order, d.seq RETURN d.seq"
+                .to_string(),
+            "idx_object_sort",
+        ),
+        // `!=` and `NOT IN` after a fixed prefix: null, missing and numeric
+        // statuses are not "Completed" and must come back.
+        (
+            f("d.owner_id == \"u1\" AND d.status != \"Completed\""),
+            "idx_owner_status",
+        ),
+        (
+            f("d.owner_id == \"u1\" AND d.status NOT IN [\"Completed\", \"Closed\"]"),
+            "idx_owner_status",
+        ),
+        (
+            f("d.owner_id == \"u2\" AND d.status != null"),
+            "idx_owner_status",
+        ),
+        (
+            f("d.owner_id IN [\"u1\", \"u3\"] AND \"Closed\" != d.status"),
+            "idx_owner_status",
+        ),
+        (
+            f("d.owner_id == \"u1\" AND d.status >= \"Closed\" AND d.status != \"Open\""),
+            "idx_owner_status",
+        ),
+        (
+            f("d.owner_id == \"\" AND d.status != \"Open\""),
+            "idx_owner_status",
+        ),
+        // 1 and 1.0 are equal for `!=` and for the index.
+        (
+            f("d.status == \"Open\" AND d.amount != 1"),
+            "idx_status_amount",
+        ),
+        (
+            f("d.status == \"Open\" AND d.amount NOT IN [0, 2]"),
+            "idx_status_amount",
+        ),
+        // `IN` holding null, beside a field that is never null.
+        (
+            f("d.opportunity_id IN [null, \"\"] AND d.account_id IN [\"a1\", \"a2\"]"),
+            "idx_opp_account",
+        ),
+        (
+            f("d.owner_id IN [null, \"u1\"] AND d.status == \"Open\""),
+            "idx_owner_status",
+        ),
+        // `OR`: the union of what each branch's index returns.
+        (f("d.a == 1 OR d.b == 2"), "idx_a | idx_b"),
+        (f("d.seq > 10 AND (d.a == 1 OR d.b == 2)"), "idx_a | idx_b"),
+        (
+            f("(d.object == \"accounts\" AND d.sort_order > 3) OR d.a IN [1, 2]"),
+            "idx_object_sort | idx_a",
+        ),
+        (
+            f("d.opportunity_id IN [\"o1\", \"o2\"] \
+               OR (d.opportunity_id IN [null, \"\"] AND d.account_id IN [\"a1\"])"),
+            "idx_opp_account",
+        ),
+    ];
+    for (q, index) in &cases {
+        let (expected, rows, used, scans) = run_planner(&engine, q);
+        assert!(
+            !expected.is_empty() || q.contains("IN []"),
+            "seed covers {q}"
+        );
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(used.as_deref(), Some(*index), "{q}");
+        assert_eq!(scans, 0, "{q}");
+    }
+}
+
+/// What the index cannot answer exactly is left to the scan, with the same
+/// rows.
+#[test]
+fn test_composite_planner_falls_back() {
+    let (engine, _tmp) = create_planner_engine();
+    let f = |filter: &str| format!("FOR d IN C FILTER {filter} RETURN d.seq");
+    for q in [
+        // A combination that is all null: rows with every index field null
+        // are not indexed.
+        f("d.opportunity_id IN [null, \"\"]"),
+        f("d.owner_id == null AND d.status != \"Closed\""),
+        f("d.owner_id IN [null] AND d.status IN [null, \"Open\"]"),
+        // `!=` with nothing fixed before it: null and missing values match it
+        // and a single-field index does not hold them.
+        f("d.status != \"Closed\""),
+        // One branch has no index.
+        f("d.a == 1 OR d.seq == 2"),
+    ] {
+        let (expected, rows, used, scans) = run_planner(&engine, &q);
+        assert!(!expected.is_empty(), "seed covers {q}");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(used, None, "{q}");
+        assert!(scans > 0, "{q}");
+    }
+}
+
+/// Counts over a composite index's first field are read from the index.
+#[test]
+fn test_composite_prefix_counts() {
+    let (engine, _tmp) = create_planner_engine();
+    for q in [
+        "FOR d IN C FILTER d.object == \"accounts\" COLLECT WITH COUNT INTO n RETURN n",
+        "RETURN LENGTH(FOR d IN C FILTER d.object == \"contacts\" RETURN 1)",
+        "FOR d IN C FILTER d.owner_id == \"u2\" COLLECT WITH COUNT INTO n RETURN n",
+    ] {
+        let (expected, rows, _, scans) = run_planner(&engine, q);
+        assert!(expected[0].as_i64().unwrap() > 0, "{q}");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(scans, 0, "{q}");
+    }
+}
+
+/// A hint naming a composite index serves `!=` after its prefix.
+#[test]
+fn test_hint_serves_exclusions() {
+    let (engine, _tmp) = create_planner_engine();
+    let q = "FOR d IN C OPTIONS { indexHint: \"idx_owner_status\", forceIndexHint: true } \
+             FILTER d.owner_id == \"u3\" AND d.status != \"Working\" RETURN d.seq";
+    let executor = QueryExecutor::with_database(&engine, "plandb".to_string());
+    let mut rows = executor
+        .execute(&parse(&q.replace(" C ", " indexed ")).unwrap())
+        .unwrap();
+    rows.sort_by_key(|v| v.as_i64());
+    assert_eq!(executor.collection_scans(), 0);
+    let unhinted =
+        "FOR d IN plain FILTER d.owner_id == \"u3\" AND d.status != \"Working\" RETURN d.seq";
+    let mut expected = executor.execute(&parse(unhinted).unwrap()).unwrap();
+    expected.sort_by_key(|v| v.as_i64());
+    assert!(!expected.is_empty());
+    assert_eq!(rows, expected);
+}
+
+/// EXPLAIN names the paths execution takes: rows read in SORT order, counts
+/// read from the index, and the loops of subqueries.
+#[test]
+fn test_explain_reports_index_paths_and_subqueries() {
+    let (engine, _tmp) = create_planner_engine();
+    let executor = QueryExecutor::with_database(&engine, "plandb".to_string());
+    let explain = |q: &str| executor.explain(&parse(q).unwrap()).unwrap();
+
+    // FILTER == prefix, SORT on the next field, LIMIT: read in index order.
+    let e = explain(
+        "FOR d IN indexed FILTER d.object == \"leads\" SORT d.sort_order LIMIT 3 RETURN d.seq",
+    );
+    assert_eq!(e.collections[0].access_type, "index_sort");
+    assert_eq!(
+        e.collections[0].index_used.as_deref(),
+        Some("idx_object_sort")
+    );
+    assert_eq!(
+        e.sort.as_ref().unwrap().index.as_deref(),
+        Some("idx_object_sort")
+    );
+
+    // A bare SORT + LIMIT over an indexed field.
+    let e = explain("FOR d IN indexed SORT d.a DESC LIMIT 5 RETURN d.seq");
+    assert_eq!(e.collections[0].access_type, "index_sort");
+    assert_eq!(e.collections[0].index_used.as_deref(), Some("idx_a"));
+    // Not when no index leads with the sort field.
+    let e = explain("FOR d IN indexed SORT d.seq DESC LIMIT 5 RETURN d.seq");
+    assert_ne!(e.collections[0].access_type, "index_sort");
+    assert!(e.sort.as_ref().unwrap().index.is_none());
+
+    // A count read from index entries.
+    let e = explain(
+        "FOR d IN indexed FILTER d.object == \"accounts\" COLLECT WITH COUNT INTO n RETURN n",
+    );
+    assert_eq!(e.collections[0].access_type, "index_count");
+
+    // A correlated LET subquery, explained against the first row.
+    let e = explain(
+        "FOR d IN indexed FILTER d.a == 1 \
+         LET o = (FOR x IN indexed FILTER x.b == d.b LIMIT 1 RETURN x.seq) RETURN o",
+    );
+    assert_eq!(e.collections.len(), 2);
+    assert_eq!(e.collections[0].subquery, None);
+    assert_eq!(e.collections[1].subquery.as_deref(), Some("LET o"));
+    assert_eq!(e.collections[1].index_used.as_deref(), Some("idx_b"));
+    // A primary-key read is named as one.
+    let e = explain(
+        "FOR d IN indexed FILTER d.a == 1 \
+         LET o = (FOR x IN indexed FILTER x._key == d._key RETURN x.seq) RETURN o",
+    );
+    assert_eq!(e.collections[1].access_type, "index_lookup");
+    assert_eq!(e.collections[1].index_used.as_deref(), Some("primary key"));
+    // ... and a full scan inside one is visible too.
+    let e = explain(
+        "FOR d IN indexed FILTER d.a == 1 \
+         LET o = (FOR x IN plain FILTER x.b == d.b RETURN 1) RETURN o",
+    );
+    assert_eq!(e.collections[1].access_type, "full_scan");
+    assert_eq!(e.collections[1].name, "plain");
+
+    // `LENGTH(subquery)` counted from the index, nested two deep.
+    let e = explain("RETURN LENGTH(FOR d IN indexed FILTER d.a == 2 RETURN 1)");
+    assert_eq!(e.collections[0].subquery.as_deref(), Some("RETURN"));
+    assert_eq!(e.collections[0].access_type, "index_count");
+    let e = explain(
+        "LET n = FIRST(FOR d IN indexed FILTER d.a == 3 \
+                 RETURN LENGTH(FOR x IN indexed FILTER x.b == d.b RETURN 1)) RETURN n",
+    );
+    let nested: Vec<_> = e.collections.iter().map(|c| c.subquery.clone()).collect();
+    assert_eq!(
+        nested,
+        vec![
+            Some("LET n".to_string()),
+            Some("LET n > RETURN".to_string())
+        ]
+    );
+
+    // No row reaches the subquery: said so, not guessed.
+    let e = explain(
+        "FOR d IN indexed FILTER d.a == 99 \
+         LET o = (FOR x IN indexed FILTER x.b == d.b RETURN 1) RETURN o",
+    );
+    assert_eq!(e.collections.len(), 1);
+    assert!(
+        e.warnings
+            .iter()
+            .any(|w| w.contains("LET o: subquery not explained")),
+        "{:?}",
+        e.warnings
     );
 }

@@ -163,6 +163,7 @@ impl<'a> QueryExecutor<'a> {
             BodyClause::Let(l) => contains_window_functions(&l.expression),
             _ => false,
         });
+        // Same test as `has_window_functions`, which EXPLAIN uses.
         let has_windows = return_has_windows || late_lets_have_windows || body_has_windows;
 
         if let Some((for_clause, fields)) =
@@ -793,6 +794,77 @@ impl<'a> QueryExecutor<'a> {
         }
 
         Ok(accumulated)
+    }
+}
+
+/// Window functions need every row that reaches them, so they rule out the
+/// fast paths that stop reading early or skip the pipeline. They may sit in
+/// RETURN, in a body LET, or in a LET after SORT/LIMIT.
+pub(in crate::sdbql::executor) fn has_window_functions(query: &Query) -> bool {
+    query
+        .return_clause
+        .as_ref()
+        .is_some_and(|rc| contains_window_functions(&rc.expression))
+        || query
+            .post_limit_lets
+            .iter()
+            .any(|l| contains_window_functions(&l.expression))
+        || query.body_clauses.iter().any(|c| match c {
+            BodyClause::Let(l) => contains_window_functions(&l.expression),
+            _ => false,
+        })
+}
+
+impl QueryExecutor<'_> {
+    /// The index [`Self::execute_pipeline`] reads a bare `FOR v IN c [LET …]
+    /// SORT v.f [LIMIT …]` from in sorted order (`"primary key"` for `_key`
+    /// and `_id`), or `None` when that query takes another path. EXPLAIN
+    /// reports it; the guards are those of the two index-sorted paths there
+    /// and must change with them.
+    pub(in crate::sdbql::executor) fn bare_sort_index(
+        &self,
+        query: &Query,
+        bindings: &Context,
+    ) -> Option<String> {
+        let sort = query.sort_clause.as_ref()?;
+        if sort.fields.len() != 1
+            || has_window_functions(query)
+            || !query.post_limit_lets.is_empty()
+        {
+            return None;
+        }
+        let (BodyClause::For(for_clause), rest) = query.body_clauses.split_first()? else {
+            return None;
+        };
+        let lets_only = rest.iter().all(|c| matches!(c, BodyClause::Let(_)));
+        let shape = match query.limit_clause {
+            // SORT + LIMIT: LETs may follow, the loop must read a collection.
+            Some(_) => {
+                lets_only
+                    && for_clause.source_expression.is_none()
+                    && for_clause
+                        .source_variable
+                        .as_ref()
+                        .is_none_or(|s| s == &for_clause.collection)
+                    && !bindings.contains_key(&for_clause.collection)
+            }
+            // SORT alone: the FOR and nothing else.
+            None => rest.is_empty(),
+        };
+        if !shape || self.row_policy_applies(&for_clause.collection) {
+            return None;
+        }
+        let Expression::FieldAccess(base, field) = &sort.fields[0].0 else {
+            return None;
+        };
+        if !matches!(base.as_ref(), Expression::Variable(v) if v == &for_clause.variable) {
+            return None;
+        }
+        let collection = self.get_collection(&for_clause.collection).ok()?;
+        if field == "_key" || field == "_id" {
+            return Some("primary key".to_string());
+        }
+        collection.get_index_for_field(field).map(|i| i.name)
     }
 }
 

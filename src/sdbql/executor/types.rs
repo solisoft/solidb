@@ -249,6 +249,11 @@ pub struct CollectionAccess {
     /// FILTER field that would get `_auto_{field}` on this run (flag on, Write).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_index_candidate: Option<String>,
+    /// Where this access sits when it belongs to a subquery: the clause that
+    /// holds it (`LET owner`, `FILTER`, `RETURN`), nested ones joined by
+    /// ` > `. Absent for the query's own loops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subquery: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +278,10 @@ pub struct SortInfo {
     pub field: String,
     pub direction: String,
     pub time_us: u64,
+    /// The index the rows are read from in sorted order, when one serves the
+    /// SORT (and LIMIT): the sort then costs nothing and reading stops early.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

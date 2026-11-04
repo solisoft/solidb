@@ -108,6 +108,18 @@ impl QueryExecutor<'_> {
         query: &Query,
         bindings: &Context,
     ) -> DbResult<Option<QueryExecutionResult>> {
+        Ok(self
+            .index_sort_limit(query, bindings)?
+            .map(|(result, _)| result))
+    }
+
+    /// [`Self::try_index_sort_limit`] with the name of the index it read, for
+    /// EXPLAIN.
+    pub(in crate::sdbql::executor) fn index_sort_limit(
+        &self,
+        query: &Query,
+        bindings: &Context,
+    ) -> DbResult<Option<(QueryExecutionResult, String)>> {
         let Some(plan) = sort_plan(query) else {
             return Ok(None);
         };
@@ -179,7 +191,7 @@ impl QueryExecutor<'_> {
                 .iter()
                 .all(|f| self.evaluate_filter_with_context(f, &ctx).unwrap_or(false))
         };
-        let Some((_, docs)) = collection.index_sorted_with_prefix(
+        let Some((index, docs)) = collection.index_sorted_with_prefix(
             &conditions,
             plan.sort_field,
             plan.ascending,
@@ -201,9 +213,12 @@ impl QueryExecutor<'_> {
                 results.push(self.evaluate_expr_with_context(&ret.expression, &ctx)?);
             }
         }
-        Ok(Some(QueryExecutionResult {
-            results,
-            mutations: MutationStats::new(),
-        }))
+        Ok(Some((
+            QueryExecutionResult {
+                results,
+                mutations: MutationStats::new(),
+            },
+            index.name,
+        )))
     }
 }

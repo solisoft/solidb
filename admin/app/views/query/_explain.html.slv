@@ -38,15 +38,21 @@
         </thead>
         <tbody>
           <% for access in accesses %>
-            <% uses_index = (access["access_type"] ?? "") == "index_lookup" %>
+            <% access_type = access["access_type"] ?? "full_scan" %>
+            <% uses_index = access_type != "full_scan" && access_type != "limited_scan" %>
             <tr>
-              <td class="font-mono text-zinc-200"><%= access["name"] ?? "" %></td>
+              <td class="font-mono text-zinc-200">
+                <%= access["name"] ?? "" %>
+                <% if access["subquery"] %>
+                  <span class="block text-xs text-zinc-500">in <%= access["subquery"] %></span>
+                <% end %>
+              </td>
               <td class="font-mono text-zinc-500"><%= access["variable"] ?? "" %></td>
               <td>
                 <% if uses_index %>
-                  <span class="console-label border border-teal-800 px-1.5 py-0.5 text-teal-400">index lookup</span>
+                  <span class="console-label border border-teal-800 px-1.5 py-0.5 text-teal-400"><%= access_type.replace("_", " ") %></span>
                 <% else %>
-                  <span class="console-label border border-amber-800 px-1.5 py-0.5 text-amber-400">full scan</span>
+                  <span class="console-label border border-amber-800 px-1.5 py-0.5 text-amber-400"><%= access_type.replace("_", " ") %></span>
                 <% end %>
               </td>
               <td class="font-mono text-zinc-300">

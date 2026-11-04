@@ -91,7 +91,15 @@
                  <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                  <code class="text-gray-300">/_api/database/:db/explain</code>
                </div>
-               <p class="text-sm text-gray-400 mb-4">Explain query execution plan.</p>
+               <p class="text-sm text-gray-400 mb-4">Explain query execution plan, with the time each step took.</p>
+               <p class="text-sm text-gray-400 mb-4">
+                 Each entry of <code>collections</code> is one loop. <code>access_type</code> is
+                 <code>index_lookup</code> (the FILTER read from <code>index_used</code>),
+                 <code>index_sort</code> (rows read in SORT order from <code>index_used</code>, stopping at the LIMIT),
+                 <code>index_count</code> (a count read from the index without loading documents),
+                 <code>full_scan</code> or <code>limited_scan</code>, or <code>geo_near</code> / <code>geo_index_sort</code>.
+                 Loops of subqueries (<code>LET</code>, <code>FILTER</code>, <code>RETURN</code>, an <code>includes</code>) follow the query's own, with <code>subquery</code> naming the clause that holds them, for example <code>"LET owner"</code> or <code>"RETURN &gt; LET x"</code>. A subquery is explained against the first row that reaches it; when none does, <code>warnings</code> says so. <code>sort.index</code> names the index that serves the SORT.
+               </p>
                <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body Options</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5">

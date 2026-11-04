@@ -22,8 +22,87 @@ use super::QueryExecutor;
 use crate::error::DbResult;
 use crate::sdbql::ast::*;
 
+/// Subqueries nested deeper than this are not explained.
+const MAX_EXPLAIN_DEPTH: usize = 4;
+
+/// The subqueries under `expr` (not inside another subquery), each with
+/// whether it is the argument of `LENGTH` / `COUNT`, which may count it from
+/// an index without running it.
+fn direct_subqueries(expr: &Expression, out: &mut Vec<(Query, bool)>) {
+    match expr {
+        Expression::FunctionCall { name, args }
+            if (name == "LENGTH" || name == "COUNT")
+                && args.len() == 1
+                && matches!(args[0], Expression::Subquery(_)) =>
+        {
+            if let Expression::Subquery(q) = &args[0] {
+                out.push(((**q).clone(), true));
+            }
+        }
+        Expression::Subquery(q) => out.push(((**q).clone(), false)),
+        other => other.for_each_child(&mut |child| direct_subqueries(child, out)),
+    }
+}
+
 impl<'a> QueryExecutor<'a> {
     pub fn explain(&self, query: &Query) -> DbResult<QueryExplain> {
+        self.explain_in(query, &Context::default(), 0)
+    }
+
+    /// The plans of the subqueries under `expr`, evaluated against `ctx`
+    /// (the row they would see first), added to `out` labelled with `label`.
+    /// A subquery that fails is reported in `warnings`, not as an error: the
+    /// plan of the rest still stands.
+    #[allow(clippy::too_many_arguments)]
+    fn explain_subqueries(
+        &self,
+        expr: &Expression,
+        ctx: Option<&Context>,
+        label: &str,
+        depth: usize,
+        out: &mut Vec<CollectionAccess>,
+        warnings: &mut Vec<String>,
+    ) {
+        let mut subs = Vec::new();
+        direct_subqueries(expr, &mut subs);
+        if subs.is_empty() {
+            return;
+        }
+        if depth >= MAX_EXPLAIN_DEPTH {
+            warnings.push(format!(
+                "{label}: subqueries nested more than {MAX_EXPLAIN_DEPTH} deep are not explained"
+            ));
+            return;
+        }
+        let Some(ctx) = ctx else {
+            warnings.push(format!(
+                "{label}: subquery not explained, no row reached it"
+            ));
+            return;
+        };
+        for (sub, under_length) in subs {
+            let counted =
+                under_length && matches!(self.try_index_count_rows(&sub, ctx), Ok(Some(_)));
+            match self.explain_in(&sub, ctx, depth + 1) {
+                Ok(plan) => {
+                    for (n, mut access) in plan.collections.into_iter().enumerate() {
+                        access.subquery = Some(match access.subquery.take() {
+                            Some(inner) => format!("{label} > {inner}"),
+                            None => label.to_string(),
+                        });
+                        if counted && n == 0 {
+                            access.access_type = "index_count".to_string();
+                        }
+                        out.push(access);
+                    }
+                    warnings.extend(plan.warnings.into_iter().map(|w| format!("{label}: {w}")));
+                }
+                Err(e) => warnings.push(format!("{label}: subquery not explained: {e}")),
+            }
+        }
+    }
+
+    fn explain_in(&self, query: &Query, outer: &Context, depth: usize) -> DbResult<QueryExplain> {
         let total_start = Instant::now();
         let mut warnings: Vec<String> = Vec::new();
 
@@ -32,10 +111,13 @@ impl<'a> QueryExecutor<'a> {
         let folded = self.fold_constants(&mut folded_query);
         let query = &folded_query;
         // Reuse as execution does, so the plan and its timings are the work
-        // the query actually does.
-        self.reset_query_caches();
-        self.caches
-            .enable_reuse(self.reuse_within_query && !query.has_mutations());
+        // the query actually does. A subquery's plan keeps the caches of the
+        // query that holds it.
+        if depth == 0 {
+            self.reset_query_caches();
+            self.caches
+                .enable_reuse(self.reuse_within_query && !query.has_mutations());
+        }
         if folded > 0 {
             warnings.push(format!(
                 "optimizer: folded {} constant expression(s)",
@@ -43,6 +125,8 @@ impl<'a> QueryExecutor<'a> {
             ));
         }
         let mut collections_info: Vec<CollectionAccess> = Vec::new();
+        // Accesses made by subqueries, listed after the query's own loops.
+        let mut subquery_accesses: Vec<CollectionAccess> = Vec::new();
         let mut let_bindings_info: Vec<LetBinding> = Vec::new();
         let mut filters_info: Vec<FilterInfo> = Vec::new();
 
@@ -56,7 +140,7 @@ impl<'a> QueryExecutor<'a> {
         // First, evaluate all LET clauses
         let let_start = Instant::now();
         // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
-        let mut initial_bindings = Context::default();
+        let mut initial_bindings = outer.clone();
 
         for let_clause in &query.let_clauses {
             let clause_start = Instant::now();
@@ -72,6 +156,34 @@ impl<'a> QueryExecutor<'a> {
         }
         let let_clauses_time = let_start.elapsed();
         let mut let_clauses_us = let_clauses_time.as_micros() as u64;
+        for let_clause in &query.let_clauses {
+            self.explain_subqueries(
+                &let_clause.expression,
+                Some(&initial_bindings),
+                &format!("LET {}", let_clause.variable),
+                depth,
+                &mut subquery_accesses,
+                &mut warnings,
+            );
+        }
+
+        // Paths that answer the whole query from an index before the
+        // pipeline below runs: a count read from index entries, or rows read
+        // in SORT order with an early stop.
+        let counted = matches!(self.try_index_count(query, &initial_bindings), Ok(Some(_)));
+        let sort_index = if counted || super::execution::has_window_functions(query) {
+            None
+        } else {
+            match self.index_sort_limit(query, &initial_bindings) {
+                Ok(Some((_, name))) => Some(name),
+                _ => self.bare_sort_index(query, &initial_bindings),
+            }
+        };
+        if let Some(name) = &sort_index {
+            warnings.push(format!(
+                "optimizer: rows read in SORT order from index '{name}'"
+            ));
+        }
 
         // `FOR … SORT DISTANCE(…) LIMIT n` served by a geo index (P11).
         let geo_sort_index = self
@@ -256,6 +368,14 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // The first loop is the one an index count or an
+                    // index-ordered read answers.
+                    let first = collections_info.is_empty();
+                    let sorted_by_index = first && !counted && sort_index.is_some();
+                    if sorted_by_index {
+                        index_name = sort_index.clone();
+                    }
+
                     // Record Collection Info
                     collections_info.push(CollectionAccess {
                         name: access_name,
@@ -264,6 +384,10 @@ impl<'a> QueryExecutor<'a> {
                             "geo_near".to_string()
                         } else if geo_sorted {
                             "geo_index_sort".to_string()
+                        } else if first && counted {
+                            "index_count".to_string()
+                        } else if sorted_by_index {
+                            "index_sort".to_string()
                         } else if used_index {
                             "index_lookup".to_string()
                         } else if scan_limit.is_some() {
@@ -275,9 +399,18 @@ impl<'a> QueryExecutor<'a> {
                         index_type,
                         documents_count: 0, // Simplified
                         auto_index_candidate,
+                        subquery: None,
                     });
                 }
                 BodyClause::Filter(filter_clause) => {
+                    self.explain_subqueries(
+                        &filter_clause.expression,
+                        rows.first(),
+                        "FILTER",
+                        depth,
+                        &mut subquery_accesses,
+                        &mut warnings,
+                    );
                     let filter_start = Instant::now();
                     let before_count = rows.len();
                     rows.retain(|ctx| {
@@ -299,6 +432,14 @@ impl<'a> QueryExecutor<'a> {
                     i += 1;
                 }
                 BodyClause::Let(let_clause) => {
+                    self.explain_subqueries(
+                        &let_clause.expression,
+                        rows.first(),
+                        &format!("LET {}", let_clause.variable),
+                        depth,
+                        &mut subquery_accesses,
+                        &mut warnings,
+                    );
                     let let_start = Instant::now();
                     for ctx in &mut rows {
                         self.bind_let(let_clause, ctx)?;
@@ -342,6 +483,37 @@ impl<'a> QueryExecutor<'a> {
             limit_us = limit_start.elapsed().as_micros() as u64;
         }
 
+        // LETs after LIMIT, then RETURN: their subqueries see the first row
+        // left.
+        for let_clause in &query.post_limit_lets {
+            self.explain_subqueries(
+                &let_clause.expression,
+                rows.first(),
+                &format!("LET {}", let_clause.variable),
+                depth,
+                &mut subquery_accesses,
+                &mut warnings,
+            );
+        }
+        if let Some(ref return_clause) = query.return_clause {
+            let first_row = rows.first().or_else(|| {
+                // A query with no loop returns one row: its bindings.
+                query
+                    .body_clauses
+                    .iter()
+                    .all(|c| !matches!(c, BodyClause::For(_)))
+                    .then_some(&initial_bindings)
+            });
+            self.explain_subqueries(
+                &return_clause.expression,
+                first_row,
+                "RETURN",
+                depth,
+                &mut subquery_accesses,
+                &mut warnings,
+            );
+        }
+
         // Apply RETURN Projection
         if let Some(ref return_clause) = query.return_clause {
             let proj_start = Instant::now();
@@ -353,6 +525,7 @@ impl<'a> QueryExecutor<'a> {
 
         let total_us = total_start.elapsed().as_micros() as u64;
 
+        collections_info.extend(subquery_accesses);
         Ok(QueryExplain {
             collections: collections_info,
             let_bindings: let_bindings_info,
@@ -370,6 +543,7 @@ impl<'a> QueryExecutor<'a> {
                     "DESC".to_string()
                 },
                 time_us: sort_us,
+                index: sort_index.clone(),
             }),
             limit: query.limit_clause.as_ref().map(|_l| LimitInfo {
                 offset: limit_offset_val,

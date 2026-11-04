@@ -502,3 +502,109 @@ fn benchmark_job_claim() {
     .unwrap();
     measure("[state, run_at, priority]");
 }
+
+/// The planner shapes added after 2.6.3, on 200k documents: a composite index
+/// read for its first field alone (rows and count), `!=` / `NOT IN` after a
+/// fixed prefix, `IN` holding null, and an `OR` of two indexed fields.
+#[test]
+#[ignore]
+fn benchmark_planner_shapes() {
+    let (engine, _tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("rows".to_string(), None).unwrap();
+    let rows = db.get_collection("rows").unwrap();
+    for start in (0..200_000usize).step_by(5000) {
+        let batch: Vec<_> = (start..start + 5000)
+            .map(|i| {
+                let mut doc = json!({
+                    "status": match (i / 50) % 10 { 0 => "Open", 1 => "Working", _ => "Completed" },
+                    "object": format!("o{}", i % 40),
+                    "sort_order": i % 20,
+                    "account_id": format!("a{}", i % 2000),
+                    "a": i % 100,
+                    "b": i % 250,
+                    "padding": "x".repeat(100),
+                });
+                if i % 97 != 0 {
+                    doc["owner_id"] = json!(format!("u{}", i % 50));
+                }
+                doc["opportunity_id"] = match i % 5 {
+                    0 => json!(null),
+                    1 => json!(""),
+                    _ => json!(format!("p{}", i % 1000)),
+                };
+                doc
+            })
+            .collect();
+        rows.insert_batch(batch).unwrap();
+    }
+    for (name, fields, ty) in [
+        (
+            "idx_owner_status",
+            vec!["owner_id", "status"],
+            IndexType::Persistent,
+        ),
+        (
+            "idx_object_sort",
+            vec!["object", "sort_order"],
+            IndexType::Hash,
+        ),
+        (
+            "idx_opp_account",
+            vec!["opportunity_id", "account_id"],
+            IndexType::Persistent,
+        ),
+        ("idx_a", vec!["a"], IndexType::Hash),
+        ("idx_b", vec!["b"], IndexType::Hash),
+    ] {
+        rows.create_index(
+            name.to_string(),
+            fields.into_iter().map(String::from).collect(),
+            ty,
+            false,
+        )
+        .unwrap();
+    }
+    let queries = [
+        ("composite, first field only", "FOR d IN rows FILTER d.object == \"o7\" RETURN d._key"),
+        (
+            "composite, first field, count",
+            "FOR d IN rows FILTER d.object == \"o7\" COLLECT WITH COUNT INTO n RETURN n",
+        ),
+        (
+            "!= after the prefix",
+            "FOR d IN rows FILTER d.owner_id == \"u7\" AND d.status != \"Completed\" RETURN d._key",
+        ),
+        (
+            "NOT IN after the prefix",
+            "FOR d IN rows FILTER d.owner_id == \"u7\" AND d.status NOT IN [\"Completed\", \"Working\"] RETURN d._key",
+        ),
+        (
+            "IN holding null",
+            "FOR d IN rows FILTER d.opportunity_id IN [null, \"\"] AND d.account_id IN [\"a1\", \"a2\", \"a3\"] RETURN d._key",
+        ),
+        ("OR of two indexes", "FOR d IN rows FILTER d.a == 3 OR d.b == 7 RETURN d._key"),
+    ];
+    for (label, q) in queries {
+        let ast = solidb::sdbql::parse(q).unwrap();
+        let executor = QueryExecutor::with_database(&engine, "bench_db".to_string());
+        let used = executor.explain(&ast).unwrap().collections[0]
+            .index_used
+            .clone()
+            .unwrap_or_else(|| "full scan".into());
+        executor.execute(&ast).unwrap();
+        let mut best = std::time::Duration::MAX;
+        let mut n = 0;
+        for _ in 0..5 {
+            let start = Instant::now();
+            let result = executor.execute(&ast).unwrap();
+            best = best.min(start.elapsed());
+            n = if result.len() == 1 {
+                result[0].as_u64().unwrap_or(1) as usize
+            } else {
+                result.len()
+            };
+        }
+        println!("BENCH|{label}|{n}|{used}|{:.3}", best.as_secs_f64() * 1e3);
+    }
+}

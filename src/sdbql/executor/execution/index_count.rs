@@ -140,7 +140,7 @@ pub(super) fn whole_number_as_integer(value: &Value) -> Value {
 impl QueryExecutor<'_> {
     /// The query's result, or `Ok(None)` when it has to be run the ordinary
     /// way.
-    pub(super) fn try_index_count(
+    pub(in crate::sdbql::executor) fn try_index_count(
         &self,
         query: &Query,
         bindings: &Context,
@@ -229,14 +229,19 @@ impl QueryExecutor<'_> {
         // as written (see `use_index_for_condition`); so does this one.
         let normalized = whole_number_as_integer(&cond.value);
         let check = || self.check_budget(0);
-        Ok(
-            match collection.index_count_eq(&cond.field, &normalized, check)? {
-                Some(0) if normalized != cond.value => {
-                    collection.index_count_eq(&cond.field, &cond.value, check)?
-                }
-                other => other,
-            },
-        )
+        let single = match collection.index_count_eq(&cond.field, &normalized, check)? {
+            Some(0) if normalized != cond.value => {
+                collection.index_count_eq(&cond.field, &cond.value, check)?
+            }
+            other => other,
+        };
+        if single.is_some() {
+            return Ok(single);
+        }
+        // No single-field index: a composite one whose first field it is.
+        // Its codec compares numbers as f64, like `==`, so the value is
+        // looked up as written.
+        collection.index_count_eq_composite(&[(cond.field, cond.value)], check)
     }
 }
 

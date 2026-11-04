@@ -9,6 +9,23 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A composite index serves its first field alone</strong> &mdash; with no single-field index on <code>a</code>, <code>FILTER d.a == x</code> (or <code>IN</code>) scanned the collection even when a composite index <code>[a, &hellip;]</code> existed. It now reads that index's prefix, and counts it from the index: on 200k documents 174&nbsp;ms became 19&nbsp;ms for 5,000 rows, and a count 407&nbsp;ms became 0.9&nbsp;ms.</li>
+        <li><strong class="text-white"><code>!=</code> and <code>NOT IN</code> after the fixed fields of a composite index</strong> &mdash; <code>d.owner_id == @me AND d.status != "Completed"</code> with <code>[owner_id, status]</code> reads the ranges on each side of the excluded value (188&nbsp;ms &rarr; 2.8&nbsp;ms); rows whose <code>status</code> is null or missing are still returned.</li>
+        <li><strong class="text-white"><code>IN</code> lists holding <code>null</code></strong> are read from a composite index when no combination of the fixed values is all null (208&nbsp;ms &rarr; 0.4&nbsp;ms).</li>
+        <li><strong class="text-white"><code>OR</code> is read as a union of indexes</strong> when every branch has one (186&nbsp;ms &rarr; 12&nbsp;ms).</li>
+        <li><strong class="text-white">EXPLAIN shows the paths execution takes</strong> &mdash; subquery loops are listed with a <code>subquery</code> label, and <code>access_type</code> reports <code>index_sort</code> and <code>index_count</code>, which showed as <code>full_scan</code>. The admin console shows them.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.6.3 -->
   <section id="v2-6-3" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

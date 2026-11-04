@@ -32,3 +32,4 @@ mod subquery;
 // in the submodules; the one re-export is a constant the index planner's
 // row-building loop shares.
 pub(super) use clauses::BUDGET_CHECK_INTERVAL;
+pub(super) use entry::has_window_functions;

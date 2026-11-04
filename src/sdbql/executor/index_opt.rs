@@ -106,52 +106,190 @@ fn is_range_op(op: &BinaryOperator) -> bool {
     )
 }
 
+/// One AND'd conjunct as the composite planner reads it.
+enum CompositeTerm {
+    Eq(Value),
+    /// `IN` list; unlike the single-field path it may hold `null`, which a
+    /// composite index stores like any other value.
+    In(Vec<Value>),
+    Range(BinaryOperator, Value),
+    /// `!=` (one value) or `NOT IN` (several).
+    Not(Vec<Value>),
+}
+
+/// A bound of a key interval: `(value, inclusive)`, `None` when open.
+type IntervalBound = Option<(Value, bool)>;
+
 /// A read of a multi-field index planned by [`composite_plan`].
 struct CompositePlan {
     index: crate::storage::index::Index,
     /// The values each leading field may take, distinct by index encoding.
     eq_lists: Vec<Vec<Value>>,
-    /// Bounds on the field after them: `(value, inclusive)`.
-    lower: Option<(Value, bool)>,
-    upper: Option<(Value, bool)>,
+    /// Disjoint, ordered intervals of the field after them, from its range
+    /// and `!=` / `NOT IN` conditions. `None` when that field has none (one
+    /// unbounded read); empty when they leave nothing (no read at all).
+    next: Option<Vec<(IntervalBound, IntervalBound)>>,
 }
 
 impl CompositePlan {
     fn fields_used(&self) -> usize {
-        self.eq_lists.len() + usize::from(self.lower.is_some() || self.upper.is_some())
+        self.eq_lists.len() + usize::from(self.next.is_some())
     }
 }
 
-/// Plan a read of `index` from the AND'd conditions `conds`: the longest run
-/// of leading fields each fixed by an `==` or an `IN`, then the range
-/// conditions on the next field. `None` when the index is not a regular
-/// multi-field one, when no leading field is fixed, when every fixed value
-/// is null (such rows are not indexed), or when the `IN` lists multiply out
-/// to more than [`MAX_INDEXED_IN_KEYS`] reads.
+fn complex(v: &Value) -> bool {
+    matches!(v, Value::Array(_) | Value::Object(_))
+}
+
+/// `a` against `b` in index order (the key codec's byte order).
+fn key_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
+    crate::storage::codec::encode_key(a).cmp(&crate::storage::codec::encode_key(b))
+}
+
+/// Does `v` lie within `(lo, hi)`?
+fn within(v: &Value, lo: &IntervalBound, hi: &IntervalBound) -> bool {
+    use std::cmp::Ordering::*;
+    let above = match lo {
+        None => true,
+        Some((l, inc)) => match key_cmp(v, l) {
+            Greater => true,
+            Equal => *inc,
+            Less => false,
+        },
+    };
+    let below = match hi {
+        None => true,
+        Some((h, inc)) => match key_cmp(v, h) {
+            Less => true,
+            Equal => *inc,
+            Greater => false,
+        },
+    };
+    above && below
+}
+
+/// An interval no value lies in.
+fn empty_interval(lo: &IntervalBound, hi: &IntervalBound) -> bool {
+    match (lo, hi) {
+        (Some((l, li)), Some((h, hi))) => match key_cmp(l, h) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Equal => !(*li && *hi),
+            std::cmp::Ordering::Less => false,
+        },
+        _ => false,
+    }
+}
+
+/// The intervals of the field after the fixed ones: the tightest range
+/// bounds, split around every excluded value. `None` when the field has no
+/// usable condition.
+fn next_field_intervals(
+    field: &str,
+    terms: &[(String, CompositeTerm)],
+) -> Option<Vec<(IntervalBound, IntervalBound)>> {
+    use std::cmp::Ordering::*;
+    let mut lower: IntervalBound = None;
+    let mut upper: IntervalBound = None;
+    let mut excluded: Vec<&Value> = Vec::new();
+    let mut constrained = false;
+    for (f, term) in terms {
+        if f != field {
+            continue;
+        }
+        match term {
+            CompositeTerm::Range(op, v) if !complex(v) => {
+                constrained = true;
+                let inclusive = matches!(
+                    op,
+                    BinaryOperator::GreaterThanOrEqual | BinaryOperator::LessThanOrEqual
+                );
+                let is_lower = matches!(
+                    op,
+                    BinaryOperator::GreaterThan | BinaryOperator::GreaterThanOrEqual
+                );
+                // Keep the tighter of two bounds; on a tie, the exclusive one.
+                let slot = if is_lower { &mut lower } else { &mut upper };
+                let tighter = match slot {
+                    None => true,
+                    Some((cur, cur_inc)) => match (key_cmp(v, cur), is_lower) {
+                        (Greater, true) | (Less, false) => true,
+                        (Equal, _) => *cur_inc && !inclusive,
+                        _ => false,
+                    },
+                };
+                if tighter {
+                    *slot = Some((v.clone(), inclusive));
+                }
+            }
+            CompositeTerm::Not(values) => {
+                for v in values.iter().filter(|v| !complex(v)) {
+                    constrained = true;
+                    excluded.push(v);
+                }
+            }
+            _ => {}
+        }
+    }
+    if !constrained {
+        return None;
+    }
+    excluded.sort_by(|a, b| key_cmp(a, b));
+    excluded.dedup_by(|a, b| key_cmp(a, b) == Equal);
+    let mut intervals = vec![(lower, upper)];
+    if empty_interval(&intervals[0].0, &intervals[0].1) {
+        return Some(Vec::new());
+    }
+    for x in excluded {
+        let mut split = Vec::with_capacity(intervals.len() + 1);
+        for (lo, hi) in intervals {
+            if within(x, &lo, &hi) {
+                let left = (lo, Some((x.clone(), false)));
+                let right = (Some((x.clone(), false)), hi);
+                for part in [left, right] {
+                    if !empty_interval(&part.0, &part.1) {
+                        split.push(part);
+                    }
+                }
+            } else {
+                split.push((lo, hi));
+            }
+        }
+        intervals = split;
+    }
+    Some(intervals)
+}
+
+/// Plan a read of `index` from the AND'd `terms`: the longest run of leading
+/// fields each fixed by an `==` or an `IN`, then the range and `!=` / `NOT
+/// IN` conditions on the next field as key intervals.
+///
+/// `None` when the index is not a regular multi-field one, when no leading
+/// field is fixed, when some combination of the fixed values is all null (a
+/// row whose index fields are all null is not indexed, and such a row could
+/// match), or when the reads multiply out past [`MAX_INDEXED_IN_KEYS`].
+///
+/// Because every combination has a non-null value, every row it matches is
+/// indexed whatever its other fields hold, which is what lets `!=` and a
+/// range that admits null be read from the index.
 fn composite_plan(
     index: crate::storage::index::Index,
-    conds: &[IndexableCondition],
+    terms: &[(String, CompositeTerm)],
 ) -> Option<CompositePlan> {
     if index.fields.len() < 2
         || !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
     {
         return None;
     }
-    let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
     let mut eq_lists: Vec<Vec<Value>> = Vec::new();
     for field in &index.fields {
-        let on_field = || conds.iter().filter(|c| c.field == *field);
-        let list = if let Some(eq) =
-            on_field().find(|c| matches!(c.op, BinaryOperator::Equal) && !complex(&c.value))
+        let on_field = || terms.iter().filter(|(f, _)| f == field).map(|(_, t)| t);
+        let list = if let Some(CompositeTerm::Eq(v)) =
+            on_field().find(|t| matches!(t, CompositeTerm::Eq(v) if !complex(v)))
         {
-            vec![eq.value.clone()]
-        } else if let Some(Value::Array(items)) = on_field()
-            .find(|c| matches!(c.op, BinaryOperator::In))
-            .map(|c| &c.value)
+            vec![v.clone()]
+        } else if let Some(CompositeTerm::In(items)) =
+            on_field().find(|t| matches!(t, CompositeTerm::In(items) if !items.iter().any(complex)))
         {
-            if items.iter().any(complex) {
-                break;
-            }
             let mut seen = HashSet::with_capacity(items.len());
             items
                 .iter()
@@ -163,43 +301,25 @@ fn composite_plan(
         };
         eq_lists.push(list);
     }
-    if eq_lists.is_empty() || eq_lists.iter().all(|l| l.len() == 1 && l[0].is_null()) {
+    if eq_lists.is_empty() || eq_lists.iter().all(|l| l.iter().any(Value::is_null)) {
         return None;
     }
+    let next = index
+        .fields
+        .get(eq_lists.len())
+        .and_then(|field| next_field_intervals(field, terms));
     let reads = eq_lists
         .iter()
-        .try_fold(1usize, |acc, l| acc.checked_mul(l.len().max(1)))?;
+        .map(Vec::len)
+        .chain(next.as_ref().map(Vec::len))
+        .try_fold(1usize, |acc, n| acc.checked_mul(n.max(1)))?;
     if reads > MAX_INDEXED_IN_KEYS {
         return None;
-    }
-    let (mut lower, mut upper) = (None, None);
-    if let Some(field) = index.fields.get(eq_lists.len()) {
-        for c in conds
-            .iter()
-            .filter(|c| c.field == *field && !complex(&c.value))
-        {
-            match c.op {
-                BinaryOperator::GreaterThan if lower.is_none() => {
-                    lower = Some((c.value.clone(), false))
-                }
-                BinaryOperator::GreaterThanOrEqual if lower.is_none() => {
-                    lower = Some((c.value.clone(), true))
-                }
-                BinaryOperator::LessThan if upper.is_none() => {
-                    upper = Some((c.value.clone(), false))
-                }
-                BinaryOperator::LessThanOrEqual if upper.is_none() => {
-                    upper = Some((c.value.clone(), true))
-                }
-                _ => {}
-            }
-        }
     }
     Some(CompositePlan {
         index,
         eq_lists,
-        lower,
-        upper,
+        next,
     })
 }
 
@@ -574,38 +694,178 @@ impl<'a> QueryExecutor<'a> {
             return None;
         }
 
-        // 1. Composite path: `==` / `IN` on leading fields, then one range
-        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, limit) {
+        // 1. Composite path: `==` / `IN` on leading fields, then the next
+        //    field's range or exclusions — two fields at least.
+        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, 2, limit)
+        {
             return Some(hit);
         }
 
-        // 2. Single-field: the first conjunct an index can serve
-        for cond in self.ordered_index_candidates(filter, var_name, ctx) {
-            if let Some(docs) = self.use_index_for_condition(collection, &cond, limit) {
-                let (name, type_str) = collection
-                    .get_all_indexes()
-                    .into_iter()
-                    .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
-                    .map(|i| (i.name, format!("{:?}", i.index_type)))
-                    .unwrap_or_default();
-                return Some((docs, name, type_str));
+        // 2. Single-field: the first conjunct an index can serve, equalities
+        //    and `IN` first. Between those and the prefix and range reads, a
+        //    composite index fixed on its first field alone — the only index
+        //    on that field, often.
+        let (equalities, others): (Vec<_>, Vec<_>) = self
+            .ordered_index_candidates(filter, var_name, ctx)
+            .into_iter()
+            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
+        for cond in &equalities {
+            if let Some(hit) = self.single_field_hit(collection, cond, limit) {
+                return Some(hit);
+            }
+        }
+        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, 1, limit)
+        {
+            return Some(hit);
+        }
+        for cond in &others {
+            if let Some(hit) = self.single_field_hit(collection, cond, limit) {
+                return Some(hit);
             }
         }
 
         // 3. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
-        self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
+        if let Some(hit) =
+            self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
+        {
+            return Some(hit);
+        }
+
+        // 4. An `OR` whose every branch an index serves: the union of them.
+        self.lookup_or_union(collection, filter, var_name, ctx)
     }
 
-    /// Serve `filter` from a multi-field index: every conjunct that is `==`
-    /// or `IN` on a leading field of the index extends the key prefix, and
-    /// range conjuncts on the field after them bound the read. `IN` lists
-    /// expand to one bounded read per combination of values.
+    /// [`Self::use_index_for_condition`] with the name and type of the
+    /// single-field index it read, for EXPLAIN.
+    fn single_field_hit(
+        &self,
+        collection: &Collection,
+        cond: &IndexableCondition,
+        limit: Option<usize>,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        let docs = self.use_index_for_condition(collection, cond, limit)?;
+        if cond.field == "_key" || cond.field == "_id" {
+            return Some((docs, "primary key".to_string(), "Primary".to_string()));
+        }
+        let (name, type_str) = collection
+            .get_all_indexes()
+            .into_iter()
+            .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
+            .map(|i| (i.name, format!("{:?}", i.index_type)))
+            .unwrap_or_default();
+        Some((docs, name, type_str))
+    }
+
+    /// A FILTER that is an `OR`, or an AND with an `OR` conjunct, served as
+    /// the union of what an index returns for each branch. Every branch must
+    /// be served — one that is not would need the scan anyway. The rows are
+    /// a superset of the matches (each branch's are), deduplicated by key;
+    /// the caller re-checks every FILTER.
+    fn lookup_or_union(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        conjuncts.into_iter().find_map(|conjunct| {
+            let mut branches = Vec::new();
+            push_disjuncts(conjunct, &mut branches);
+            if branches.len() < 2 {
+                return None;
+            }
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut out = Vec::new();
+            let mut names: Vec<String> = Vec::new();
+            for branch in branches {
+                let (docs, name, _) =
+                    self.lookup_index_for_filter_limited(collection, branch, var_name, ctx, None)?;
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+                out.extend(docs.into_iter().filter(|d| seen.insert(d.key.clone())));
+                if out.len() > self.max_intermediate_rows() {
+                    break; // the caller's budget check reports it
+                }
+            }
+            Some((out, names.join(" | "), "Union".to_string()))
+        })
+    }
+
+    /// Every AND'd conjunct of `filter` the composite planner can use:
+    /// `==` and ranges (as [`Self::extract_indexable_condition`] reads them,
+    /// the field on either side), `IN` lists (nulls kept), `!=` and `NOT IN`.
+    fn composite_terms(
+        &self,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<(String, CompositeTerm)> {
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        let mut out = Vec::new();
+        for conjunct in conjuncts {
+            let Expression::BinaryOp { left, op, right } = conjunct else {
+                continue;
+            };
+            match op {
+                BinaryOperator::In | BinaryOperator::NotIn => {
+                    let Some(field) = self.extract_field_path(left, var_name) else {
+                        continue;
+                    };
+                    let Some(Value::Array(items)) =
+                        self.extract_indexable_value(right, var_name, ctx)
+                    else {
+                        continue;
+                    };
+                    if items.len() > MAX_INDEXED_IN_KEYS {
+                        continue;
+                    }
+                    let term = if matches!(op, BinaryOperator::In) {
+                        CompositeTerm::In(items)
+                    } else {
+                        CompositeTerm::Not(items)
+                    };
+                    out.push((field, term));
+                }
+                BinaryOperator::NotEqual => {
+                    let side = |f: &Expression, v: &Expression| {
+                        Some((
+                            self.extract_field_path(f, var_name)?,
+                            self.extract_indexable_value(v, var_name, ctx)?,
+                        ))
+                    };
+                    if let Some((field, value)) = side(left, right).or_else(|| side(right, left)) {
+                        out.push((field, CompositeTerm::Not(vec![value])));
+                    }
+                }
+                _ => {
+                    let Some(c) = self.extract_indexable_condition(conjunct, var_name, ctx) else {
+                        continue;
+                    };
+                    let term = match c.op {
+                        BinaryOperator::Equal => CompositeTerm::Eq(c.value),
+                        ref r if is_range_op(r) => CompositeTerm::Range(c.op, c.value),
+                        _ => continue,
+                    };
+                    out.push((c.field, term));
+                }
+            }
+        }
+        out
+    }
+
+    /// Serve `filter` from a multi-field index (see [`composite_plan`]):
+    /// one bounded read per combination of the fixed fields' values and
+    /// interval of the next field.
     ///
-    /// Without `only`, the index whose plan uses the most fields wins, and
-    /// a plan must use at least two (one field is the single-field path's
-    /// job). With `only`, that index is used if it can serve any field. The
-    /// rows returned are a superset of the matches; the caller re-checks
+    /// Without `only`, the index whose plan uses the most fields wins, if it
+    /// uses at least `min_fields`. With `only`, that index alone is tried.
+    /// The rows returned are a superset of the matches; the caller re-checks
     /// every FILTER.
+    #[allow(clippy::too_many_arguments)]
     fn lookup_composite(
         &self,
         collection: &Collection,
@@ -613,18 +873,18 @@ impl<'a> QueryExecutor<'a> {
         var_name: &str,
         ctx: &Context,
         only: Option<&str>,
+        min_fields: usize,
         limit: Option<usize>,
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
-        let conds = self.extract_indexable_conditions(filter, var_name, ctx);
-        if conds.is_empty() {
+        let terms = self.composite_terms(filter, var_name, ctx);
+        if terms.is_empty() {
             return None;
         }
-        let min_fields = if only.is_some() { 1 } else { 2 };
         let plan = collection
             .get_all_indexes()
             .into_iter()
             .filter(|i| only.is_none_or(|name| i.name == name))
-            .filter_map(|i| composite_plan(i, &conds))
+            .filter_map(|i| composite_plan(i, &terms))
             .filter(|p| p.fields_used() >= min_fields)
             .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))?;
 
@@ -632,35 +892,37 @@ impl<'a> QueryExecutor<'a> {
             .or(self.scan_cap())
             .unwrap_or(usize::MAX)
             .min(self.max_intermediate_rows().saturating_add(1));
-        let lower = plan.lower.as_ref().map(|(v, inc)| (v, *inc));
-        let upper = plan.upper.as_ref().map(|(v, inc)| (v, *inc));
+        let unbounded = [(None, None)];
+        let intervals: &[(IntervalBound, IntervalBound)] = match &plan.next {
+            Some(intervals) => intervals,
+            None => &unbounded,
+        };
         let mut out = Vec::new();
-        // Odometer over the IN lists: one read per combination.
+        // Odometer over the IN lists: one read per combination and interval.
         let mut at = vec![0usize; plan.eq_lists.len()];
         if plan.eq_lists.iter().all(|l| !l.is_empty()) {
-            loop {
+            'combos: loop {
                 let combo: Vec<Value> = plan
                     .eq_lists
                     .iter()
                     .zip(&at)
                     .map(|(l, &i)| l[i].clone())
                     .collect();
-                let docs = collection.index_scan_composite(
-                    &plan.index,
-                    &combo,
-                    lower,
-                    upper,
-                    cap - out.len(),
-                )?;
-                out.extend(docs);
-                if out.len() >= cap {
-                    break; // the caller's budget check reports an overflow
+                for (lo, hi) in intervals {
+                    let docs = collection.index_scan_composite(
+                        &plan.index,
+                        &combo,
+                        lo.as_ref().map(|(v, inc)| (v, *inc)),
+                        hi.as_ref().map(|(v, inc)| (v, *inc)),
+                        cap - out.len(),
+                    )?;
+                    out.extend(docs);
+                    if out.len() >= cap {
+                        break 'combos; // the caller's budget check reports an overflow
+                    }
                 }
                 let mut d = at.len();
-                loop {
-                    if d == 0 {
-                        break;
-                    }
+                while d > 0 {
                     d -= 1;
                     at[d] += 1;
                     if at[d] < plan.eq_lists[d].len() {
@@ -735,7 +997,7 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                 } else if let Some(hit) =
-                    self.lookup_composite(collection, filter, var_name, ctx, Some(name), limit)
+                    self.lookup_composite(collection, filter, var_name, ctx, Some(name), 1, limit)
                 {
                     return Some(hit);
                 }
@@ -1247,6 +1509,22 @@ pub(super) struct SubqueryIndexStage {
 }
 
 /// `filter`'s AND chain, in order, borrowed.
+/// The branches of an `OR` chain, in order; any other expression is one
+/// branch.
+fn push_disjuncts<'e>(expr: &'e Expression, out: &mut Vec<&'e Expression>) {
+    match expr {
+        Expression::BinaryOp {
+            left,
+            op: BinaryOperator::Or,
+            right,
+        } => {
+            push_disjuncts(left, out);
+            push_disjuncts(right, out);
+        }
+        other => out.push(other),
+    }
+}
+
 pub(super) fn push_conjuncts<'e>(filter: &'e Expression, out: &mut Vec<&'e Expression>) {
     match filter {
         Expression::BinaryOp {
