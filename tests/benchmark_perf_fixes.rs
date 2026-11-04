@@ -607,6 +607,10 @@ fn benchmark_planner_shapes() {
             "  same, scanned",
             "FOR d IN rows FILTER NOT (d.status == \"Completed\") RETURN d._key",
         ),
+        // A sparse index on a field every row has: the ascending read must
+        // first establish that no row is missing from it.
+        ("sorted ASC, sparse, no nulls", "FOR d IN rows SORT d.a ASC LIMIT 10 RETURN d._key"),
+        ("sorted DESC, sparse", "FOR d IN rows SORT d.a DESC LIMIT 10 RETURN d._key"),
         ("non-sparse: == null", "FOR d IN rows FILTER d.owner_id == null RETURN d._key"),
         (
             "  same, scanned",

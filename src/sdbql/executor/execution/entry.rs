@@ -270,9 +270,12 @@ impl<'a> QueryExecutor<'a> {
                                                     self.max_intermediate_rows() + 1,
                                                     |n| n.min(self.max_intermediate_rows() + 1),
                                                 ));
-                                            if let Some(docs) =
-                                                collection.index_sorted(field, *sort_asc, max_fetch)
-                                            {
+                                            if let Some(docs) = self.complete_index_sorted(
+                                                &collection,
+                                                field,
+                                                *sort_asc,
+                                                max_fetch,
+                                            ) {
                                                 self.check_budget(docs.len())?;
                                                 let start = limit_offset.min(docs.len());
                                                 let end = match limit_count {
@@ -363,7 +366,8 @@ impl<'a> QueryExecutor<'a> {
                                     if let Ok(collection) =
                                         self.get_collection(&for_clause.collection)
                                     {
-                                        if let Some(docs) = collection.index_sorted(
+                                        if let Some(docs) = self.complete_index_sorted(
+                                            &collection,
                                             field,
                                             *sort_asc,
                                             self.scan_cap(),
@@ -864,7 +868,56 @@ impl QueryExecutor<'_> {
         if field == "_key" || field == "_id" {
             return Some("primary key".to_string());
         }
-        collection.get_index_for_field(field).map(|i| i.name)
+        let index = collection.get_index_for_field(field)?;
+        if index.sparse {
+            // As `complete_index_sorted` decides it, from the entry count
+            // instead of the rows read.
+            let total = collection.count();
+            let entries = collection.index_entry_count(&index);
+            let wanted = query.limit_clause.as_ref().and_then(|l| {
+                let (offset, count) = self.eval_limit(l, bindings);
+                offset.checked_add(count?)
+            });
+            let complete =
+                entries >= total || (!sort.fields[0].1 && wanted.is_some_and(|k| entries >= k));
+            if !complete {
+                return None;
+            }
+        }
+        Some(index.name)
+    }
+
+    /// [`Collection::index_sorted`] when the rows it returns are exactly the
+    /// first `limit` rows the SORT would give; `None`, so that the scan and
+    /// sort run instead, when a sparse index could be missing some.
+    ///
+    /// A sparse index has no entry for a document whose index fields are all
+    /// null, and SORT ranks null below everything. Ascending, those rows come
+    /// first, so the read is exact only when the index holds every document.
+    /// Descending, they come last: the read is exact unless it falls short of
+    /// `limit` without having read every document. A non-sparse index, and
+    /// the primary key, hold every document.
+    pub(in crate::sdbql::executor) fn complete_index_sorted(
+        &self,
+        collection: &crate::storage::Collection,
+        field: &str,
+        ascending: bool,
+        limit: Option<usize>,
+    ) -> Option<Vec<crate::storage::Document>> {
+        if field == "_key" || field == "_id" {
+            return collection.index_sorted(field, ascending, limit);
+        }
+        let index = collection.get_index_for_field(field)?;
+        if !index.sparse {
+            return collection.index_sorted(field, ascending, limit);
+        }
+        let total = collection.count();
+        if ascending && collection.index_entry_count(&index) < total {
+            return None;
+        }
+        let docs = collection.index_sorted(field, ascending, limit)?;
+        let enough = docs.len() >= total || limit.is_some_and(|k| docs.len() >= k);
+        enough.then_some(docs)
     }
 }
 

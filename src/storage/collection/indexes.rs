@@ -1140,7 +1140,7 @@ impl Collection {
     /// index `[a, b]` stores entries keyed by `<hex_a>_<hex_b>` joined by `_`,
     /// so a prefix built from `<hex_a>` alone never matches its entries and
     /// silently returns no results.
-    fn get_single_field_index_for_field(&self, field: &str) -> Option<Index> {
+    pub(crate) fn get_single_field_index_for_field(&self, field: &str) -> Option<Index> {
         self.index_meta()?
             .indexes
             .iter()
@@ -1365,6 +1365,22 @@ impl Collection {
         }
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
         EqPrefix::Prefix(format!("{}{}:{}:", IDX_PREFIX, index.name, value_str).into_bytes())
+    }
+
+    /// How many entries `index` holds — one per document it indexes, so, for
+    /// a sparse index, fewer than [`Self::count`] exactly when some document
+    /// has all its index fields null. Reads every key of the index.
+    pub(crate) fn index_entry_count(&self, index: &Index) -> usize {
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return 0;
+        };
+        let prefix = format!("{}{}:", IDX_PREFIX, index.name);
+        let mut n = 0usize;
+        let _ = self.for_each_index_entry(&cf, prefix.as_bytes(), |_| {
+            n += 1;
+            Ok(true)
+        });
+        n
     }
 
     /// The index entries under `prefix`, in order: `f` gets each entry's

@@ -259,6 +259,24 @@ fn next_field_intervals(
     Some(intervals)
 }
 
+/// Whether the AND'd `terms` reject every row whose `field` is null or
+/// missing — some term on it is false for null. A sparse index has no entry
+/// for such rows, so a read of it returns every match only then.
+fn rejects_null(field: &str, terms: &[(String, CompositeTerm)]) -> bool {
+    terms
+        .iter()
+        .filter(|(f, _)| f == field)
+        .any(|(_, term)| match term {
+            CompositeTerm::Eq(v) => !v.is_null(),
+            CompositeTerm::In(items) => !items.iter().any(Value::is_null),
+            CompositeTerm::Range(op, v) => !matches!(
+                super::helpers::evaluate_binary_op(&Value::Null, op, v),
+                Ok(Value::Bool(true))
+            ),
+            CompositeTerm::Not(values) => values.iter().any(Value::is_null),
+        })
+}
+
 /// Plan a read of `index` from the AND'd `terms`: the longest run of leading
 /// fields each fixed by an `==` or an `IN`, then the range and `!=` / `NOT
 /// IN` conditions on the next field as key intervals.
@@ -726,7 +744,11 @@ impl<'a> QueryExecutor<'a> {
         {
             return Some(hit);
         }
+        let terms = self.composite_terms(filter, var_name, ctx);
         for cond in &others {
+            if !self.range_read_is_exact(collection, cond, &terms) {
+                continue;
+            }
             if let Some(hit) = self.single_field_hit(collection, cond, limit) {
                 return Some(hit);
             }
@@ -741,6 +763,26 @@ impl<'a> QueryExecutor<'a> {
 
         // 4. An `OR` whose every branch an index serves: the union of them.
         self.lookup_or_union(collection, filter, var_name, ctx)
+    }
+
+    /// Whether reading the range `cond` from the single-field index on its
+    /// field returns every row the FILTER (`terms`) can accept. A sparse
+    /// index has no entry for a null or missing value, which `<` and `<=`
+    /// (and `>=` null) accept, so it serves such a range only when another
+    /// term rejects null. Anything but a range is decided elsewhere.
+    fn range_read_is_exact(
+        &self,
+        collection: &Collection,
+        cond: &IndexableCondition,
+        terms: &[(String, CompositeTerm)],
+    ) -> bool {
+        if !is_range_op(&cond.op) {
+            return true;
+        }
+        match collection.get_single_field_index_for_field(&cond.field) {
+            Some(index) if index.sparse => rejects_null(&cond.field, terms),
+            _ => true,
+        }
     }
 
     /// [`Self::use_index_for_condition`] with the name and type of the
@@ -995,11 +1037,15 @@ impl<'a> QueryExecutor<'a> {
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
         let indexes = collection.get_all_indexes();
         let candidates = self.ordered_index_candidates(filter, var_name, ctx);
+        let terms = self.composite_terms(filter, var_name, ctx);
         for name in &hint.names {
             if let Some(index) = indexes.iter().find(|i| i.name == *name) {
                 let type_str = format!("{:?}", index.index_type);
                 if index.fields.len() == 1 {
-                    for cond in candidates.iter().filter(|c| c.field == index.fields[0]) {
+                    for cond in candidates.iter().filter(|c| {
+                        c.field == index.fields[0]
+                            && self.range_read_is_exact(collection, c, &terms)
+                    }) {
                         if let Some(docs) = self.use_index_for_condition(collection, cond, limit) {
                             return Some((docs, index.name.clone(), type_str));
                         }

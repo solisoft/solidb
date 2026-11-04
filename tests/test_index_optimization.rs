@@ -1703,3 +1703,178 @@ fn test_unique_non_sparse_index_allows_many_nulls() {
     );
     assert_eq!(executor.collection_scans(), 0);
 }
+
+// ====== Sparse indexes never drop null or missing rows from a result ======
+
+/// `plain` (no index) and `sparse` (sparse indexes on `f` and `[g, f]`) hold
+/// the same rows, with `f` null or missing on some; `complete` has an `f` on
+/// every row and a sparse index on it.
+fn create_sparse_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("sparsedb".to_string()).unwrap();
+    let db = engine.get_database("sparsedb").unwrap();
+    let fs = [
+        json!(1),
+        json!(3),
+        json!(7),
+        json!("x"),
+        json!(null),
+        json!(5),
+    ];
+    for name in ["plain", "sparse", "complete"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        let coll = db.get_collection(name).unwrap();
+        for i in 0..120i64 {
+            let mut doc = json!({ "seq": i });
+            if name == "complete" {
+                doc["f"] = json!(i % 9);
+            } else {
+                if i % 7 != 0 {
+                    doc["f"] = fs[(i % 6) as usize].clone();
+                }
+                if i % 3 == 0 {
+                    doc["g"] = json!("g");
+                }
+            }
+            coll.insert(doc).unwrap();
+        }
+    }
+    for (coll, name, fields) in [
+        ("sparse", "idx_f", vec!["f"]),
+        ("sparse", "idx_g_f", vec!["g", "f"]),
+        ("complete", "idx_complete_f", vec!["f"]),
+    ] {
+        db.get_collection(coll)
+            .unwrap()
+            .create_index(
+                name.to_string(),
+                fields.into_iter().map(String::from).collect(),
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+/// Rows of `query` (over `C`) on `plain`, then on `coll`, with the index
+/// EXPLAIN reports and the collection scans on `coll`. Rows are compared in
+/// order when the query sorts, else sorted.
+fn run_sparse(
+    engine: &StorageEngine,
+    coll: &str,
+    query: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Option<String>,
+    u64,
+) {
+    let run = |c: &str| {
+        let executor = QueryExecutor::with_database(engine, "sparsedb".to_string());
+        let ast = parse(&query.replace(" C ", &format!(" {c} "))).unwrap();
+        let mut rows = executor.execute(&ast).unwrap();
+        if !query.contains("SORT") {
+            rows.sort_by_key(|v| v.to_string());
+        }
+        // Read before EXPLAIN, which runs the query its own way.
+        let scans = executor.collection_scans();
+        let used = executor
+            .explain(&ast)
+            .ok()
+            .and_then(|e| e.collections.first().and_then(|c| c.index_used.clone()));
+        (rows, used, scans)
+    };
+    let (expected, _, _) = run(if coll == "complete" {
+        "complete"
+    } else {
+        "plain"
+    });
+    let (rows, used, scans) = run(coll);
+    (expected, rows, used, scans)
+}
+
+/// `<`, `<=` and `>= null` accept null, which a sparse index does not hold:
+/// such a range is only read from it when another term rejects null.
+#[test]
+fn test_sparse_index_ranges_keep_null_rows() {
+    let (engine, _tmp) = create_sparse_engine();
+    let f = |filter: &str| format!("FOR d IN C FILTER {filter} RETURN d.seq");
+    // (query, served by idx_f)
+    for (q, indexed) in [
+        (f("d.f <= 5"), false),
+        (f("d.f < 5"), false),
+        (f("5 >= d.f"), false),
+        (f("d.f <= null"), false),
+        (f("d.f >= null"), false),
+        (f("d.f > 2"), true),
+        (f("d.f >= 1 AND d.f <= 5"), true),
+        (f("d.f <= 5 AND d.f != null"), true),
+        (f("d.f < 5 AND d.f IN [1, 3]"), true),
+    ] {
+        let (expected, rows, used, scans) = run_sparse(&engine, "sparse", &q);
+        assert!(!expected.is_empty(), "seed covers {q}");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(used.as_deref() == Some("idx_f"), indexed, "{q}: {used:?}");
+        assert_eq!(scans == 0, indexed, "{q}");
+    }
+}
+
+/// An index-ordered SORT on a sparse index returns what the scan and sort
+/// return: the index is read only when no row it lacks can be in the result.
+#[test]
+fn test_sparse_index_sorts_keep_null_rows() {
+    let (engine, _tmp) = create_sparse_engine();
+    // (collection, query, served by the index)
+    for (coll, q, indexed) in [
+        // Null and missing values sort first: the index lacks them.
+        (
+            "sparse",
+            "FOR d IN C SORT d.f ASC LIMIT 5 RETURN d.f",
+            false,
+        ),
+        ("sparse", "FOR d IN C SORT d.f ASC RETURN d.f", false),
+        ("sparse", "FOR d IN C SORT d.f DESC RETURN d.f", false),
+        // Descending, they come last: 10 rows are all indexed ones...
+        (
+            "sparse",
+            "FOR d IN C SORT d.f DESC LIMIT 10 RETURN d.f",
+            true,
+        ),
+        // ...but 110 reach past them.
+        (
+            "sparse",
+            "FOR d IN C SORT d.f DESC LIMIT 110 RETURN d.f",
+            false,
+        ),
+        // `[g, f]` leads with `g`, null on most rows.
+        (
+            "sparse",
+            "FOR d IN C SORT d.g ASC LIMIT 5 RETURN d.g",
+            false,
+        ),
+        // Every row has `f`: the sparse index holds them all.
+        (
+            "complete",
+            "FOR d IN C SORT d.f ASC LIMIT 5 RETURN d.f",
+            true,
+        ),
+        ("complete", "FOR d IN C SORT d.f DESC RETURN d.f", true),
+    ] {
+        let (expected, rows, used, scans) = run_sparse(&engine, coll, q);
+        assert_eq!(rows, expected, "{coll}: {q}");
+        assert_eq!(scans == 0, indexed, "{coll}: {q}");
+        // EXPLAIN reports the ordered read only when it happens.
+        let executor = QueryExecutor::with_database(&engine, "sparsedb".to_string());
+        let e = executor
+            .explain(&parse(&q.replace(" C ", &format!(" {coll} "))).unwrap())
+            .unwrap();
+        assert_eq!(
+            e.collections[0].access_type == "index_sort",
+            indexed,
+            "{coll}: {q}: {used:?}"
+        );
+    }
+}

@@ -16,6 +16,22 @@
   Existing indexes, and indexes created without the option, stay sparse.
   `GET …/index/:collection` reports `sparse` for regular indexes.
 
+### Bug Fixes
+
+* **An index no longer drops null and missing rows from `<`, `<=` and
+  SORT.** A regular index is sparse: a document whose index fields are all
+  null or missing has no entry, and SDBQL ranks null below every value. So
+  with an index on `f`, `FILTER d.f <= 5` (and `<`, `>= null`) returned only
+  the rows with a value, and `SORT d.f ASC [LIMIT n]` — or `DESC` without a
+  LIMIT, or with one reaching past the indexed rows — left out the rows
+  without one. On `{f:1}`, `{f:null}`, `{}`, `{f:9}`, `FILTER d.f <= 5` gave
+  `[k1]` instead of `[k1, k2, k3]`, and `SORT d.f ASC LIMIT 2` `k1, k4`
+  instead of `k2, k3`. A sparse index now serves a range only when another
+  term rejects null (`f >= 1 AND f <= 5`, `f <= 5 AND f != null`), an
+  ascending sort only when every document has an entry, and a descending one
+  as long as it does not run out of indexed rows; otherwise the query scans.
+  A non-sparse index (`"sparse": false`) keeps all of them indexed.
+
 ## [2.6.4](https://github.com/solisoft/solidb/compare/v2.6.3...v2.6.4) (2026-11-04)
 
 ### Performance

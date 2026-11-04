@@ -682,7 +682,7 @@ FOR c IN cases FILTER c.owner_id == null RETURN c          // with an index on o
 FOR c IN cases FILTER c.owner_id IN [null, ""] RETURN c
 FOR c IN cases FILTER c.due_at &lt;= @now RETURN c           // rows with no due_at are null, so they match</code></pre>
               <p class="text-sm text-gray-400 mt-3">
-                On a sparse index these shapes are only read from the index after a fixed field of a compound index (<code>owner_id == @me AND status != "Closed"</code>), since every row under a non-null value is indexed. A non-sparse index costs one entry per document. On a unique index, <code>null</code> values never conflict with each other. Existing indexes stay sparse; drop and recreate one to change it.
+                On a sparse index these shapes are only read from the index after a fixed field of a compound index (<code>owner_id == @me AND status != "Closed"</code>), since every row under a non-null value is indexed. For the same reason a sparse index serves <code>f &lt; x</code> or <code>f &lt;= x</code> only when another condition on <code>f</code> rejects null (<code>f &gt;= 1 AND f &lt;= 5</code>), and an index-ordered <code>SORT f ASC</code> only when every document has an entry; otherwise the query scans, so that rows without a value are not lost. A non-sparse index costs one entry per document. On a unique index, <code>null</code> values never conflict with each other. Existing indexes stay sparse; drop and recreate one to change it.
               </p>
             </div>
           </div>
