@@ -42,6 +42,9 @@ pub enum IndexSpec {
         index_type: IndexType,
         #[serde(default)]
         unique: bool,
+        /// Absent from specs written before the option existed: sparse.
+        #[serde(default = "sparse_default")]
+        sparse: bool,
     },
     Fulltext {
         name: String,
@@ -728,17 +731,41 @@ pub struct Index {
     pub index_type: IndexType,
     /// Whether index values must be unique
     pub unique: bool,
+    /// Whether a document whose index fields are all null (or missing) is
+    /// left out. The default, and what every index written before the option
+    /// existed is. A non-sparse index holds exactly one entry per document,
+    /// null values encoded as null, which is what lets `== null`, `IN [null]`
+    /// and `!=` be read from it.
+    #[serde(default = "sparse_default")]
+    pub sparse: bool,
+}
+
+/// Indexes are sparse unless created with `sparse: false`.
+pub(crate) fn sparse_default() -> bool {
+    true
 }
 
 impl Index {
-    /// Create a new index
+    /// Create a new (sparse) index
     pub fn new(name: String, fields: Vec<String>, index_type: IndexType, unique: bool) -> Self {
         Self {
             name,
             fields,
             index_type,
             unique,
+            sparse: true,
         }
+    }
+
+    /// This index, sparse or not.
+    pub fn with_sparse(mut self, sparse: bool) -> Self {
+        self.sparse = sparse;
+        self
+    }
+
+    /// Whether a document with these index field values has an entry.
+    pub fn holds(&self, values: &[Value]) -> bool {
+        !self.sparse || !values.iter().all(Value::is_null)
     }
 }
 
@@ -759,6 +786,9 @@ pub struct IndexStats {
     /// Fulltext only: whether terms are stored and searched accent-folded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fold_accents: Option<bool>,
+    /// Regular indexes: whether rows whose fields are all null are left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparse: Option<bool>,
 }
 
 /// TTL index metadata stored in RocksDB
@@ -809,6 +839,31 @@ pub fn extract_field_value(doc: &Value, field_path: &str) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Metadata and replication specs written before `sparse` existed read
+    /// back as sparse, which is what those indexes are.
+    #[test]
+    fn index_without_sparse_reads_as_sparse() {
+        let index: Index = serde_json::from_str(
+            r#"{"name":"i","fields":["a"],"index_type":"Hash","unique":false}"#,
+        )
+        .unwrap();
+        assert!(index.sparse);
+        let spec: IndexSpec = serde_json::from_value(json!({
+            "kind": "regular", "name": "i", "fields": ["a"],
+            "index_type": "Hash", "unique": false
+        }))
+        .unwrap();
+        assert!(matches!(spec, IndexSpec::Regular { sparse: true, .. }));
+        let dense =
+            Index::new("d".into(), vec!["a".into()], IndexType::Hash, false).with_sparse(false);
+        let back: Index = serde_json::from_slice(&serde_json::to_vec(&dense).unwrap()).unwrap();
+        assert!(!back.sparse);
+        assert!(back.holds(&[Value::Null]));
+        assert!(
+            !Index::new("s".into(), vec!["a".into()], IndexType::Hash, false).holds(&[Value::Null])
+        );
+    }
 
     #[test]
     fn test_generate_ngrams() {
@@ -1163,6 +1218,7 @@ mod tests {
             indexed_documents: 1000,
             min_length: None,
             fold_accents: None,
+            sparse: Some(true),
         };
 
         assert_eq!(stats.indexed_documents, 1000);

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Features
+
+* **Non-sparse indexes: `"sparse": false`.** A regular index leaves out
+  documents whose index fields are all null or missing, so `== null`,
+  `IN [null, …]`, and `!=` / `NOT IN` with nothing fixed before them could
+  only be scanned. An index created with `"sparse": false` (HTTP API and
+  replication spec) holds one entry per document, a missing value as null,
+  and the planner reads those shapes from it: an equality or `IN` on null,
+  the ranges around an excluded value, `<` / `<=` with the null rows
+  included, null counts from the index alone, and all-null combinations of a
+  compound index. Unique constraints still let several documents hold null.
+  Existing indexes, and indexes created without the option, stay sparse.
+  `GET …/index/:collection` reports `sparse` for regular indexes.
+
 ## [2.6.4](https://github.com/solisoft/solidb/compare/v2.6.3...v2.6.4) (2026-11-04)
 
 ### Performance

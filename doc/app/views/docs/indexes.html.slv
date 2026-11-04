@@ -528,7 +528,7 @@ FOR t IN tasks FILTER t.owner_id == @me AND t.status != "Completed" RETURN t
 // index ["opportunity_id", "account_id"]
 FOR d IN invoices FILTER d.opportunity_id IN [null, ""] AND d.account_id IN @accounts RETURN d</code></pre>
                 <p class="text-sm text-gray-400 mt-2">
-                    Conditions past the range, and any other FILTER, are checked on each document read. A row whose index fields are all <code>null</code> is not indexed, so a lookup where some combination of the fixed values is all <code>null</code> (<code>a == null</code>, <code>a IN [null, "x"]</code>), or whose value is an array or object, falls back to the ordinary path. So does <code>!=</code> on a field with nothing fixed before it.
+                    Conditions past the range, and any other FILTER, are checked on each document read. In a sparse index (the default), a row whose index fields are all <code>null</code> is not indexed, so a lookup where some combination of the fixed values is all <code>null</code> (<code>a == null</code>, <code>a IN [null, "x"]</code>), or whose value is an array or object, falls back to the ordinary path. So does <code>!=</code> on a field with nothing fixed before it. A <a href="#sparse" class="text-cyan-400">non-sparse index</a> serves all of these.
                 </p>
                 <p class="text-sm text-gray-400 mt-2">
                     A FILTER that is an <code>OR</code>, or has an <code>OR</code> among its AND'd terms, is read as the union of what an index returns for each branch, when every branch has one; otherwise it is scanned.
@@ -621,7 +621,7 @@ FOR d IN invoices FILTER d.opportunity_id IN [null, ""] AND d.account_id IN @acc
           
           <div class="p-8">
             <p class="text-gray-300 mb-6 leading-relaxed">
-              All SoliDB indexes are <strong>implicitly sparse</strong>. Documents where the indexed field is <code>null</code> or missing are <strong>not added</strong> to the index.
+              SoliDB indexes are <strong>sparse by default</strong>. Documents where the indexed field is <code>null</code> or missing are <strong>not added</strong> to the index. Create one with <code>"sparse": false</code> to index every document instead (see below).
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -671,6 +671,20 @@ FOR d IN invoices FILTER d.opportunity_id IN [null, ""] AND d.account_id IN @acc
                 </div>
               </div>
             </div>
+            <div class="bg-gray-950/50 rounded-lg p-6 border border-white/5 mt-6">
+              <h4 class="text-sm font-bold text-violet-400 uppercase tracking-widest mb-3">Non-sparse indexes (<code>"sparse": false</code>)</h4>
+              <p class="text-sm text-gray-400 mb-3">
+                A non-sparse index holds one entry for every document, a <code>null</code> or missing value stored as <code>null</code>, which sorts before every other value. Conditions that <code>null</code> satisfies can then be read from the index instead of scanning the collection:
+              </p>
+              <pre><code class="language-sql text-sm">// index ["status"], sparse: false
+FOR c IN cases FILTER c.status != "Closed" RETURN c        // two ranges around "Closed", nulls included
+FOR c IN cases FILTER c.owner_id == null RETURN c          // with an index on owner_id
+FOR c IN cases FILTER c.owner_id IN [null, ""] RETURN c
+FOR c IN cases FILTER c.due_at &lt;= @now RETURN c           // rows with no due_at are null, so they match</code></pre>
+              <p class="text-sm text-gray-400 mt-3">
+                On a sparse index these shapes are only read from the index after a fixed field of a compound index (<code>owner_id == @me AND status != "Closed"</code>), since every row under a non-null value is indexed. A non-sparse index costs one entry per document. On a unique index, <code>null</code> values never conflict with each other. Existing indexes stay sparse; drop and recreate one to change it.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -714,6 +728,15 @@ FOR d IN invoices FILTER d.opportunity_id IN [null, ""] AND d.account_id IN @acc
   <span class="text-purple-400">"type"</span>: <span class="text-green-400">"persistent"</span>,
   <span class="text-purple-400">"fields"</span>: [<span class="text-green-400">"user_id"</span>, <span class="text-green-400">"created_at"</span>],
   <span class="text-purple-400">"unique"</span>: <span class="text-yellow-300">false</span>
+}</code></pre>
+                    </div>
+                    <div>
+                      <p class="text-xs text-gray-500 mb-1">Non-sparse (indexes null and missing values too):</p>
+                      <pre><code class="language-json text-sm text-gray-300">{
+  <span class="text-purple-400">"name"</span>: <span class="text-green-400">"idx_status"</span>,
+  <span class="text-purple-400">"type"</span>: <span class="text-green-400">"persistent"</span>,
+  <span class="text-purple-400">"field"</span>: <span class="text-green-400">"status"</span>,
+  <span class="text-purple-400">"sparse"</span>: <span class="text-yellow-300">false</span>
 }</code></pre>
                     </div>
                   </div>

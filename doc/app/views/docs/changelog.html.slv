@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Non-sparse indexes: <code>"sparse": false</code></strong> &mdash; a regular index leaves out documents whose index fields are all null or missing, so <code>== null</code>, <code>IN [null, &hellip;]</code> and <code>!=</code> with nothing fixed before them could only be scanned. An index created with <code>"sparse": false</code> holds one entry per document and serves them, along with <code>&lt;</code> / <code>&lt;=</code> including null rows and null counts read from the index. Unique constraints still let several documents hold null; existing indexes stay sparse.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.6.4 -->
   <section id="v2-6-4" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

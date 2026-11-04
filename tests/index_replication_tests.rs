@@ -62,6 +62,7 @@ fn regular_index_replicates() {
         fields: vec!["email".to_string()],
         index_type: IndexType::Persistent,
         unique: true,
+        sparse: true,
     };
 
     items(&a).create_index_from_spec(&spec).unwrap();
@@ -232,6 +233,7 @@ fn applying_the_same_spec_twice_is_idempotent() {
         fields: vec!["x".to_string()],
         index_type: IndexType::Hash,
         unique: false,
+        sparse: true,
     };
 
     items(&a).apply_index_spec(&spec).unwrap();
@@ -259,6 +261,7 @@ fn dropping_a_missing_index_is_idempotent() {
         fields: vec!["y".to_string()],
         index_type: IndexType::Hash,
         unique: false,
+        sparse: true,
     };
     items(&a).create_index_from_spec(&spec).unwrap();
 
@@ -284,6 +287,7 @@ fn client_facing_create_still_rejects_a_duplicate() {
         fields: vec!["z".to_string()],
         index_type: IndexType::Hash,
         unique: false,
+        sparse: true,
     };
 
     items(&a).create_index_from_spec(&spec).unwrap();
@@ -321,6 +325,7 @@ fn every_index_family_maps_to_a_kind() {
                 fields: vec!["f".into()],
                 index_type: IndexType::Hash,
                 unique: false,
+                sparse: true,
             },
             IndexKind::Regular,
         ),

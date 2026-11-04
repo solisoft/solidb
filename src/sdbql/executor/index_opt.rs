@@ -89,11 +89,11 @@ pub(super) fn prefix_successor(prefix: &str) -> Option<String> {
     None
 }
 
-/// An `IN` right-hand side that per-key lookups can serve: an array without
-/// `null` (index entries never hold null) and of bounded length.
+/// An `IN` right-hand side that per-key lookups can serve: an array of
+/// bounded length. A `null` in it is served only by an index that holds
+/// nulls (a non-sparse one); `index_lookup_in` checks that.
 fn in_list_is_indexable(value: &Value) -> bool {
-    matches!(value, Value::Array(items)
-        if items.len() <= MAX_INDEXED_IN_KEYS && !items.iter().any(Value::is_null))
+    matches!(value, Value::Array(items) if items.len() <= MAX_INDEXED_IN_KEYS)
 }
 
 fn is_range_op(op: &BinaryOperator) -> bool {
@@ -263,20 +263,22 @@ fn next_field_intervals(
 /// fields each fixed by an `==` or an `IN`, then the range and `!=` / `NOT
 /// IN` conditions on the next field as key intervals.
 ///
-/// `None` when the index is not a regular multi-field one, when no leading
-/// field is fixed, when some combination of the fixed values is all null (a
-/// row whose index fields are all null is not indexed, and such a row could
-/// match), or when the reads multiply out past [`MAX_INDEXED_IN_KEYS`].
-///
-/// Because every combination has a non-null value, every row it matches is
+/// `None` when the index is not a regular one, when the reads multiply out
+/// past [`MAX_INDEXED_IN_KEYS`], or when the index cannot be trusted with the
+/// condition. A sparse index leaves out rows whose index fields are all null,
+/// so for one the plan must fix at least one field, every combination of the
+/// fixed values must have a non-null value — every row it matches is then
 /// indexed whatever its other fields hold, which is what lets `!=` and a
-/// range that admits null be read from the index.
+/// range that admits null be read — and the index must have several fields
+/// (a single-field one is the single-field path's). A non-sparse index holds
+/// every document, so none of that applies: `== null`, `IN [null]` and a
+/// `!=` on its first field are read from it.
 fn composite_plan(
     index: crate::storage::index::Index,
     terms: &[(String, CompositeTerm)],
 ) -> Option<CompositePlan> {
-    if index.fields.len() < 2
-        || !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+    if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+        || (index.sparse && index.fields.len() < 2)
     {
         return None;
     }
@@ -301,13 +303,19 @@ fn composite_plan(
         };
         eq_lists.push(list);
     }
-    if eq_lists.is_empty() || eq_lists.iter().all(|l| l.iter().any(Value::is_null)) {
+    if index.sparse
+        && (eq_lists.is_empty() || eq_lists.iter().all(|l| l.iter().any(Value::is_null)))
+    {
         return None;
     }
     let next = index
         .fields
         .get(eq_lists.len())
         .and_then(|field| next_field_intervals(field, terms));
+    // Nothing fixed and nothing bounded would read the whole index.
+    if eq_lists.is_empty() && next.is_none() {
+        return None;
+    }
     let reads = eq_lists
         .iter()
         .map(Vec::len)
@@ -1250,8 +1258,12 @@ impl<'a> QueryExecutor<'a> {
             return None;
         };
         // Establish that an index exists before claiming the lookup, so an
-        // empty list does not report an index it never touched.
-        regular_index_on(collection, &condition.field)?;
+        // empty list does not report an index it never touched. A sparse
+        // index holds no null entries, so a list with null needs the scan.
+        let index = regular_index_on(collection, &condition.field)?;
+        if index.sparse && items.iter().any(Value::is_null) {
+            return None;
+        }
         let mut seen: HashSet<Vec<u8>> = HashSet::with_capacity(items.len());
         let mut out = Vec::new();
         for item in items {
@@ -1429,6 +1441,7 @@ impl<'a> QueryExecutor<'a> {
             fields: vec![field.to_string()],
             index_type: IndexType::Persistent,
             unique: false,
+            sparse: true,
         };
         match collection.create_index(
             name.clone(),
@@ -1965,10 +1978,11 @@ mod optimizer_helper_tests {
     }
 
     #[test]
-    fn in_lists_with_null_or_too_many_keys_are_not_indexed() {
+    fn in_lists_of_too_many_keys_are_not_indexed() {
         assert!(in_list_is_indexable(&json!([1, "a"])));
         assert!(in_list_is_indexable(&json!([])));
-        assert!(!in_list_is_indexable(&json!([1, null])));
+        // Kept: only a non-sparse index serves the null (`index_lookup_in`).
+        assert!(in_list_is_indexable(&json!([1, null])));
         assert!(!in_list_is_indexable(&json!({"a": 1})));
         let long: Vec<Value> = (0..=MAX_INDEXED_IN_KEYS).map(|i| json!(i)).collect();
         assert!(!in_list_is_indexable(&Value::Array(long)));

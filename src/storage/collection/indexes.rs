@@ -42,8 +42,15 @@ impl Collection {
                 fields,
                 index_type,
                 unique,
+                sparse,
             } => self
-                .create_index(name.clone(), fields.clone(), index_type.clone(), *unique)
+                .create_index_with(
+                    name.clone(),
+                    fields.clone(),
+                    index_type.clone(),
+                    *unique,
+                    *sparse,
+                )
                 .map(|_| ()),
             IndexSpec::Fulltext {
                 name,
@@ -148,13 +155,26 @@ impl Collection {
             .cloned()
     }
 
-    /// Create an index on a field
+    /// Create a (sparse) index on a field
     pub fn create_index(
         &self,
         name: String,
         fields: Vec<String>,
         index_type: IndexType,
         unique: bool,
+    ) -> DbResult<IndexStats> {
+        self.create_index_with(name, fields, index_type, unique, true)
+    }
+
+    /// [`Self::create_index`] choosing whether the index is sparse (leaves
+    /// out documents whose index fields are all null) — see [`Index::sparse`].
+    pub fn create_index_with(
+        &self,
+        name: String,
+        fields: Vec<String>,
+        index_type: IndexType,
+        unique: bool,
+        sparse: bool,
     ) -> DbResult<IndexStats> {
         // Check if index already exists
         if self.get_index(&name).is_some() {
@@ -169,7 +189,8 @@ impl Collection {
         let _invalidate = self.invalidate_cached_queries_on_exit();
 
         // Create index metadata
-        let index = Index::new(name.clone(), fields.clone(), index_type.clone(), unique);
+        let index = Index::new(name.clone(), fields.clone(), index_type.clone(), unique)
+            .with_sparse(sparse);
         let index_bytes = serde_json::to_vec(&index)?;
 
         // Store index metadata and build index
@@ -188,7 +209,7 @@ impl Collection {
         // fails must not leave it behind: the index would be half-built,
         // `get_index` would report it as ready, and every later lookup would
         // silently return fewer documents than the collection holds.
-        let indexed_count = match self.backfill_index(&name, &fields, &index_type) {
+        let indexed_count = match self.backfill_index(&index) {
             Ok(count) => count,
             Err(e) => {
                 if let Err(cleanup) = self.drop_index(&name) {
@@ -225,6 +246,7 @@ impl Collection {
             indexed_documents: indexed_count,
             min_length: None,
             fold_accents: None,
+            sparse: Some(sparse),
         })
     }
 
@@ -234,15 +256,11 @@ impl Collection {
     /// backfill on a large collection would otherwise hold every decoded
     /// document in memory at once, inside whatever request triggered it.
     ///
-    /// Returns the number of documents that had a non-null value for `fields`
-    /// — 0 means no document carries the field, so the index cannot match
-    /// anything as it stands.
-    fn backfill_index(
-        &self,
-        name: &str,
-        fields: &[String],
-        index_type: &IndexType,
-    ) -> DbResult<usize> {
+    /// Returns the number of documents given an entry: for a sparse index,
+    /// those with a non-null value for its fields — 0 means no document
+    /// carries them, so the index cannot match anything as it stands.
+    fn backfill_index(&self, index: &Index) -> DbResult<usize> {
+        let (name, fields, index_type) = (&index.name, &index.fields, &index.index_type);
         let db = &self.db;
         let cf = self
             .ks
@@ -272,7 +290,7 @@ impl Collection {
                 .map(|f| extract_field_value(&doc_value, f))
                 .collect();
 
-            if field_values.iter().all(|v| v.is_null()) {
+            if !index.holds(&field_values) {
                 continue;
             }
 
@@ -388,6 +406,7 @@ impl Collection {
                 indexed_documents: 0, // Not calculated for fulltext
                 min_length: Some(idx.min_length),
                 fold_accents: Some(idx.fold_accents),
+                sparse: None,
             });
         }
 
@@ -544,7 +563,7 @@ impl Collection {
                             .map(|f| extract_field_value(&doc_value, f))
                             .collect();
 
-                        if !field_values.iter().all(|v| v.is_null()) {
+                        if index.holds(&field_values) {
                             let entry_key =
                                 Self::idx_entry_key(&index.name, &field_values, &doc.key);
                             batch.put_ks(&cf, entry_key, doc.key.as_bytes());
@@ -709,7 +728,7 @@ impl Collection {
                         .map(|f| extract_field_value(&doc_value, f))
                         .collect();
 
-                    if !field_values.iter().all(|v| v.is_null()) {
+                    if index.holds(&field_values) {
                         let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
                         batch.put_ks(&cf, entry_key, doc.key.as_bytes());
 
@@ -798,6 +817,7 @@ impl Collection {
             indexed_documents: count,
             min_length: None,
             fold_accents: None,
+            sparse: Some(index.sparse),
         })
     }
 
@@ -944,7 +964,7 @@ impl Collection {
                 .map(|f| extract_field_value(doc_value, f))
                 .collect();
 
-            if !field_values.iter().all(|v| v.is_null()) {
+            if index.holds(&field_values) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 db.put_ks(&cf, entry_key, doc_key.as_bytes()).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
@@ -1013,7 +1033,7 @@ impl Collection {
                 .collect();
 
             // Remove old entry
-            if !old_values.iter().all(|v| v.is_null()) {
+            if index.holds(&old_values) {
                 let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
                 db.delete_ks(&cf, old_entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
@@ -1021,7 +1041,7 @@ impl Collection {
             }
 
             // Add new entry
-            if !new_values.iter().all(|v| v.is_null()) {
+            if index.holds(&new_values) {
                 let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
                 db.put_ks(&cf, new_entry_key, doc_key.as_bytes())
                     .map_err(|e| {
@@ -1079,7 +1099,7 @@ impl Collection {
                 .map(|f| extract_field_value(doc_value, f))
                 .collect();
 
-            if !field_values.iter().all(|v| v.is_null()) {
+            if index.holds(&field_values) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 db.delete_ks(&cf, entry_key).map_err(|e| {
                     DbError::InternalError(format!("Failed to update index: {}", e))
@@ -1263,22 +1283,29 @@ impl Collection {
         Some(docs)
     }
 
+    /// A Bloom or Cuckoo index whose filter says `value` is definitely
+    /// absent. Null is never checked against the filter: its entries, in a
+    /// non-sparse index, are found by reading the index.
+    fn filter_rules_out(&self, index: &Index, value: &Value) -> bool {
+        !value.is_null()
+            && ((index.index_type == IndexType::Bloom
+                && !self.bloom_check(&index.name, &value.to_string()))
+                || (index.index_type == IndexType::Cuckoo
+                    && !self.cuckoo_check(&index.name, &value.to_string())))
+    }
+
     /// Lookup documents using index (equality)
     pub fn index_lookup_eq(&self, field: &str, value: &Value) -> Option<Vec<Document>> {
-        // Null values are skipped at insert time (see `if !field_values.iter().all(|v| v.is_null())`
-        // guards in the index insert paths), so `field == null` lookups must
-        // fall back to a full scan to find docs whose indexed field is null.
-        if value.is_null() {
+        let index = self.get_single_field_index_for_field(field)?;
+        // A sparse index skips null values at insert time (`Index::holds`),
+        // so there `field == null` falls back to a full scan to find docs
+        // whose indexed field is null. A non-sparse one holds them.
+        if value.is_null() && index.sparse {
             return None;
         }
-        let index = self.get_single_field_index_for_field(field)?;
 
         // Fast-path: Check Bloom/Cuckoo Filter if available
-        if (index.index_type == IndexType::Bloom
-            && !self.bloom_check(&index.name, &value.to_string()))
-            || (index.index_type == IndexType::Cuckoo
-                && !self.cuckoo_check(&index.name, &value.to_string()))
-        {
+        if self.filter_rules_out(&index, value) {
             return Some(Vec::new());
         }
 
@@ -1327,17 +1354,13 @@ impl Collection {
     /// The index-entry prefix of `field == value`, as [`Self::index_lookup_eq`]
     /// reads it.
     fn index_eq_prefix(&self, field: &str, value: &Value) -> EqPrefix {
-        if value.is_null() {
-            return EqPrefix::NoIndex;
-        }
         let Some(index) = self.get_single_field_index_for_field(field) else {
             return EqPrefix::NoIndex;
         };
-        if (index.index_type == IndexType::Bloom
-            && !self.bloom_check(&index.name, &value.to_string()))
-            || (index.index_type == IndexType::Cuckoo
-                && !self.cuckoo_check(&index.name, &value.to_string()))
-        {
+        if value.is_null() && index.sparse {
+            return EqPrefix::NoIndex;
+        }
+        if self.filter_rules_out(&index, value) {
             return EqPrefix::Empty;
         }
         let value_str = hex::encode(crate::storage::codec::encode_key(value));
@@ -1409,9 +1432,10 @@ impl Collection {
     /// there is one entry per matching document.
     ///
     /// `None` (the caller scans) when no index fits, when a field appears
-    /// twice, when every value is null (such rows are not indexed) or when a
-    /// value is an array or object (the codec compares those as JSON text,
-    /// not as `==` does). `check` is called every 64k entries.
+    /// twice, when every value is null and the only fitting indexes are
+    /// sparse (such rows are not in them), or when a value is an array or
+    /// object (the codec compares those as JSON text, not as `==` does).
+    /// `check` is called every 64k entries.
     pub fn index_count_eq_composite(
         &self,
         conditions: &[(String, Value)],
@@ -1423,7 +1447,6 @@ impl Collection {
             .all(|(i, (f, _))| conditions[..i].iter().all(|(g, _)| g != f));
         if conditions.is_empty()
             || !distinct_fields
-            || conditions.iter().all(|(_, v)| v.is_null())
             || conditions
                 .iter()
                 .any(|(_, v)| matches!(v, Value::Array(_) | Value::Object(_)))
@@ -1436,10 +1459,12 @@ impl Collection {
             .get_all_indexes()
             .into_iter()
             .filter(|index| {
-                // A single-field index may hold several entries per
-                // document (array values); a composite one holds exactly one.
+                // One condition on a single-field index is
+                // `index_count_eq`'s. Rows whose index fields are all null
+                // are only in a non-sparse index.
                 matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
                     && index.fields.len() >= n.max(2)
+                    && (!index.sparse || !conditions.iter().all(|(_, v)| v.is_null()))
                     && index.fields[..n]
                         .iter()
                         .all(|f| conditions.iter().any(|(cf, _)| cf == f))
@@ -1547,10 +1572,12 @@ impl Collection {
     /// those entries lie between `P + hex(v)` and `P + hex(v) + 0x7f`.
     ///
     /// Stops after `cap` documents. `None` (the caller scans) when the index
-    /// is not a regular one, when `eq_values` is empty, covers the whole
-    /// index while a bound is given, or is all null (such rows are never
-    /// indexed), or when any value is an array or object (the codec orders
-    /// those as JSON text, not as SDBQL compares them).
+    /// is not a regular one, when `eq_values` covers the whole index while a
+    /// bound is given, when any value is an array or object (the codec orders
+    /// those as JSON text, not as SDBQL compares them), or, for a sparse
+    /// index, when `eq_values` is empty or all null (rows whose index fields
+    /// are all null are not in it). On a non-sparse index, with `eq_values`
+    /// empty, the bounds apply to the first field.
     pub fn index_scan_composite(
         &self,
         index: &crate::storage::index::Index,
@@ -1563,24 +1590,29 @@ impl Collection {
         let has_range = lower.is_some() || upper.is_some();
         let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
         if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
-            || n == 0
             || n > index.fields.len()
             || (n == index.fields.len() && has_range)
-            || eq_values.iter().all(Value::is_null)
+            || (index.sparse && (n == 0 || eq_values.iter().all(Value::is_null)))
             || eq_values.iter().any(complex)
             || lower.is_some_and(|(v, _)| complex(v))
             || upper.is_some_and(|(v, _)| complex(v))
         {
             return None;
         }
-        let separator = if n == index.fields.len() { ':' } else { '_' };
-        let prefix = format!(
-            "{}{}:{}{}",
-            IDX_PREFIX,
-            index.name,
-            Self::encode_index_values(eq_values),
-            separator
-        )
+        // `idx:<name>:` alone when nothing is fixed: the bounds then apply to
+        // the first field's encoding, which starts right after it.
+        let prefix = if n == 0 {
+            format!("{}{}:", IDX_PREFIX, index.name)
+        } else {
+            let separator = if n == index.fields.len() { ':' } else { '_' };
+            format!(
+                "{}{}:{}{}",
+                IDX_PREFIX,
+                index.name,
+                Self::encode_index_values(eq_values),
+                separator
+            )
+        }
         .into_bytes();
         let bound = |v: &Value, past_equal: bool| {
             let mut key = prefix.clone();
@@ -1649,17 +1681,13 @@ impl Collection {
         value: &Value,
         limit: usize,
     ) -> Option<Vec<Document>> {
-        if value.is_null() {
+        let index = self.get_single_field_index_for_field(field)?;
+        if value.is_null() && index.sparse {
             return None;
         }
-        let index = self.get_single_field_index_for_field(field)?;
 
         // Same Bloom/Cuckoo definite-miss early-exit as `index_lookup_eq`
-        if (index.index_type == IndexType::Bloom
-            && !self.bloom_check(&index.name, &value.to_string()))
-            || (index.index_type == IndexType::Cuckoo
-                && !self.cuckoo_check(&index.name, &value.to_string()))
-        {
+        if self.filter_rules_out(&index, value) {
             return Some(Vec::new());
         }
 
@@ -1826,8 +1854,7 @@ impl Collection {
                     .iter()
                     .map(|f| condition_value(f).cloned())
                     .collect::<Option<_>>()?;
-                (!values.is_empty() && !values.iter().all(|v| v.is_null()))
-                    .then_some((index, values))
+                (!values.is_empty() && index.holds(&values)).then_some((index, values))
             })
             .max_by_key(|(_, values)| values.len())?;
 
@@ -2052,7 +2079,7 @@ impl Collection {
                 .map(|f| extract_field_value(doc_value, f))
                 .collect();
 
-            if !field_values.iter().all(|v| v.is_null()) {
+            if index.holds(&field_values) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 regular_entries.push((entry_key, doc_key.as_bytes().to_vec()));
             }
@@ -2099,13 +2126,13 @@ impl Collection {
                 .collect();
 
             // Remove old entry
-            if !old_values.iter().all(|v| v.is_null()) {
+            if index.holds(&old_values) {
                 let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
                 keys_to_remove.push(old_entry_key);
             }
 
             // Add new entry
-            if !new_values.iter().all(|v| v.is_null()) {
+            if index.holds(&new_values) {
                 let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
                 entries_to_add.push((new_entry_key, doc_key.as_bytes().to_vec()));
             }
@@ -2155,7 +2182,7 @@ impl Collection {
                 .map(|f| extract_field_value(doc_value, f))
                 .collect();
 
-            if !field_values.iter().all(|v| v.is_null()) {
+            if index.holds(&field_values) {
                 let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
                 keys_to_remove.push(entry_key);
             }

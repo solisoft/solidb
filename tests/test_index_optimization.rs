@@ -1473,3 +1473,233 @@ fn test_explain_reports_index_paths_and_subqueries() {
         e.warnings
     );
 }
+
+// ================= Non-sparse indexes (`sparse: false`) =================
+
+/// The same rows in `plain` (no index) and `dense`, whose indexes hold every
+/// document: `f` is a number, a string, an array, null or missing; so is `g`.
+fn create_dense_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("densedb".to_string()).unwrap();
+    let db = engine.get_database("densedb").unwrap();
+    let fs = [
+        json!(1),
+        json!(3),
+        json!(7),
+        json!("x"),
+        json!(null),
+        json!([3]),
+    ];
+    for name in ["plain", "dense"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        let coll = db.get_collection(name).unwrap();
+        for i in 0..300i64 {
+            let mut doc = json!({ "seq": i });
+            if i % 7 != 0 {
+                doc["f"] = fs[(i % 6) as usize].clone();
+            }
+            if i % 4 == 1 {
+                doc["g"] = json!(null);
+            } else if i % 4 == 2 {
+                doc["g"] = json!(format!("g{}", i % 3));
+            }
+            coll.insert(doc).unwrap();
+        }
+    }
+    let dense = db.get_collection("dense").unwrap();
+    dense
+        .create_index_with(
+            "idx_f_dense".to_string(),
+            vec!["f".to_string()],
+            IndexType::Persistent,
+            false,
+            false,
+        )
+        .unwrap();
+    dense
+        .create_index_with(
+            "idx_g_f_dense".to_string(),
+            vec!["g".to_string(), "f".to_string()],
+            IndexType::Hash,
+            false,
+            false,
+        )
+        .unwrap();
+    (engine, tmp_dir)
+}
+
+/// `query` over `C` on `plain` then `dense`: sorted rows of each, the index
+/// EXPLAIN names on `dense`, and its collection scans.
+fn run_dense(
+    engine: &StorageEngine,
+    query: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Option<String>,
+    u64,
+) {
+    let run = |coll: &str| {
+        let executor = QueryExecutor::with_database(engine, "densedb".to_string());
+        let ast = parse(&query.replace(" C ", &format!(" {coll} "))).unwrap();
+        let mut rows = executor.execute(&ast).unwrap();
+        rows.sort_by_key(|v| v.to_string());
+        let used = executor
+            .explain(&ast)
+            .ok()
+            .and_then(|e| e.collections.first().and_then(|c| c.index_used.clone()));
+        (rows, used, executor.collection_scans())
+    };
+    let (expected, _, _) = run("plain");
+    let (rows, used, scans) = run("dense");
+    (expected, rows, used, scans)
+}
+
+/// A non-sparse index answers what null satisfies: `== null`, `IN [null]`,
+/// `!=` and `NOT IN` with nothing fixed before, `<` / `<=`, and all-null
+/// combinations of a composite index — with exactly the scan's rows.
+#[test]
+fn test_non_sparse_index_serves_null_shapes() {
+    let (engine, _tmp) = create_dense_engine();
+    let f = |filter: &str| format!("FOR d IN C FILTER {filter} RETURN d.seq");
+    let cases: Vec<(String, &str)> = vec![
+        (f("d.f == null"), "idx_f_dense"),
+        (f("d.f IN [null, 3]"), "idx_f_dense"),
+        (f("d.f != 3"), "idx_f_dense"),
+        (f("d.f NOT IN [3, \"x\"]"), "idx_f_dense"),
+        (f("d.f != null"), "idx_f_dense"),
+        (f("d.f <= 5"), "idx_f_dense"),
+        (f("d.f < 3"), "idx_f_dense"),
+        (f("d.g == null AND d.f == null"), "idx_g_f_dense"),
+        (f("d.g IN [null] AND d.f != 1"), "idx_g_f_dense"),
+        (
+            f("d.g IN [null, \"g1\"] AND d.f IN [null, 7]"),
+            "idx_g_f_dense",
+        ),
+    ];
+    for (q, index) in &cases {
+        let (expected, rows, used, scans) = run_dense(&engine, q);
+        assert!(!expected.is_empty(), "seed covers {q}");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(used.as_deref(), Some(*index), "{q}");
+        assert_eq!(scans, 0, "{q}");
+    }
+
+    // Counts of null rows are read from the index alone.
+    for q in [
+        "FOR d IN C FILTER d.f == null COLLECT WITH COUNT INTO n RETURN n",
+        "RETURN LENGTH(FOR d IN C FILTER d.g == null AND d.f == null RETURN 1)",
+    ] {
+        let (expected, rows, _, scans) = run_dense(&engine, q);
+        assert!(expected[0].as_i64().unwrap() > 0, "{q}");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(scans, 0, "{q}");
+    }
+
+    // The driver's raw rows for `== null` are the ordinary path's bytes.
+    let executor = QueryExecutor::with_database(&engine, "densedb".to_string());
+    for q in [
+        "FOR d IN dense FILTER d.f == null RETURN d",
+        "FOR d IN dense FILTER d.f == null LIMIT 3, 4 RETURN d.seq",
+    ] {
+        let query = parse(q).unwrap();
+        let raw = executor.execute_raw_msgpack(&query).unwrap();
+        let ordinary =
+            rmp_serde::to_vec_named(&serde_json::Value::Array(executor.execute(&query).unwrap()))
+                .unwrap();
+        assert_eq!(raw.as_ref(), Some(&ordinary), "{q}");
+    }
+
+    // An index-ordered SORT puts null and missing values first, as the
+    // scan does.
+    let q = "FOR d IN C SORT d.f ASC LIMIT 5 RETURN d.f";
+    let (expected, rows, _, _) = run_dense(&engine, q);
+    assert_eq!(rows, expected);
+    assert_eq!(expected, vec![serde_json::Value::Null; 5]);
+}
+
+/// Every write path keeps the null entries of a non-sparse index current.
+#[test]
+fn test_non_sparse_index_tracks_writes() {
+    let (engine, _tmp) = create_dense_engine();
+    let executor = QueryExecutor::with_database(&engine, "densedb".to_string());
+    let run = |q: &str| {
+        let mut rows = executor.execute(&parse(q).unwrap()).unwrap();
+        rows.sort_by_key(|v| v.to_string());
+        rows
+    };
+    let nulls = || run("FOR d IN dense FILTER d.f == null RETURN d._key");
+    let base = nulls().len();
+
+    run("INSERT {_key: \"w1\"} INTO dense");
+    run("INSERT {_key: \"w2\", f: null} INTO dense");
+    assert_eq!(nulls().len(), base + 2);
+
+    run("UPDATE \"w1\" WITH {f: 3} IN dense");
+    assert_eq!(nulls().len(), base + 1);
+    assert!(run("FOR d IN dense FILTER d.f == 3 RETURN d._key").contains(&json!("w1")));
+
+    run("REPLACE \"w1\" WITH {other: 1} IN dense");
+    assert_eq!(nulls().len(), base + 2);
+
+    run("REMOVE \"w1\" IN dense");
+    run("REMOVE \"w2\" IN dense");
+    assert_eq!(nulls().len(), base);
+
+    let dense = engine
+        .get_database("densedb")
+        .unwrap()
+        .get_collection("dense")
+        .unwrap();
+    dense
+        .insert_batch(vec![json!({"_key": "b1"}), json!({"_key": "b2", "f": 1})])
+        .unwrap();
+    assert_eq!(nulls().len(), base + 1);
+
+    // The scan agrees after all of it.
+    let scanned = run("FOR d IN dense FILTER NOT (d.f != null) RETURN d._key");
+    assert_eq!(nulls(), scanned);
+
+    // Rebuilding keeps the index non-sparse.
+    dense.rebuild_all_indexes().unwrap();
+    assert_eq!(nulls().len(), base + 1);
+    let stats = dense.list_indexes();
+    assert!(stats.iter().all(|s| s.sparse == Some(false)), "{stats:?}");
+}
+
+/// A unique non-sparse index lets several documents hold null (or miss the
+/// field), still rejects a repeated value, and serves `== null`.
+#[test]
+fn test_unique_non_sparse_index_allows_many_nulls() {
+    let (engine, _tmp) = create_dense_engine();
+    let db = engine.get_database("densedb").unwrap();
+    db.create_collection("people".to_string(), None).unwrap();
+    let people = db.get_collection("people").unwrap();
+    people
+        .create_index_with(
+            "uq_email".to_string(),
+            vec!["email".to_string()],
+            IndexType::Persistent,
+            true,
+            false,
+        )
+        .unwrap();
+    people.insert(json!({"_key": "p1", "email": null})).unwrap();
+    people.insert(json!({"_key": "p2"})).unwrap();
+    people
+        .insert(json!({"_key": "p3", "email": "a@b.c"}))
+        .unwrap();
+    assert!(people
+        .insert(json!({"_key": "p4", "email": "a@b.c"}))
+        .is_err());
+
+    let executor = QueryExecutor::with_database(&engine, "densedb".to_string());
+    let q = parse("FOR p IN people FILTER p.email == null SORT p._key RETURN p._key").unwrap();
+    assert_eq!(
+        executor.execute(&q).unwrap(),
+        vec![json!("p1"), json!("p2")]
+    );
+    assert_eq!(executor.collection_scans(), 0);
+}

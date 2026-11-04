@@ -565,6 +565,19 @@ fn benchmark_planner_shapes() {
         )
         .unwrap();
     }
+    for (name, field) in [
+        ("idx_status_dense", "status"),
+        ("idx_owner_dense", "owner_id"),
+    ] {
+        rows.create_index_with(
+            name.to_string(),
+            vec![field.to_string()],
+            IndexType::Persistent,
+            false,
+            false,
+        )
+        .unwrap();
+    }
     let queries = [
         ("composite, first field only", "FOR d IN rows FILTER d.object == \"o7\" RETURN d._key"),
         (
@@ -584,6 +597,21 @@ fn benchmark_planner_shapes() {
             "FOR d IN rows FILTER d.opportunity_id IN [null, \"\"] AND d.account_id IN [\"a1\", \"a2\", \"a3\"] RETURN d._key",
         ),
         ("OR of two indexes", "FOR d IN rows FILTER d.a == 3 OR d.b == 7 RETURN d._key"),
+        // Non-sparse indexes, each beside the same condition written so the
+        // planner cannot read it from an index (a scan, on this build).
+        (
+            "non-sparse: != alone",
+            "FOR d IN rows FILTER d.status != \"Completed\" RETURN d._key",
+        ),
+        (
+            "  same, scanned",
+            "FOR d IN rows FILTER NOT (d.status == \"Completed\") RETURN d._key",
+        ),
+        ("non-sparse: == null", "FOR d IN rows FILTER d.owner_id == null RETURN d._key"),
+        (
+            "  same, scanned",
+            "FOR d IN rows FILTER NOT (d.owner_id != null) RETURN d._key",
+        ),
     ];
     for (label, q) in queries {
         let ast = solidb::sdbql::parse(q).unwrap();

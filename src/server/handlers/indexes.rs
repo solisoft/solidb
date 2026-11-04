@@ -175,6 +175,15 @@ pub struct CreateIndexRequest {
     /// Fulltext only: store and search terms accent-folded.
     #[serde(default)]
     pub fold_accents: bool,
+    /// Regular indexes: leave out documents whose index fields are all null
+    /// (default). `false` indexes every document, which lets `== null`,
+    /// `IN [null, …]` and `!=` be read from the index.
+    #[serde(default = "default_sparse")]
+    pub sparse: bool,
+}
+
+fn default_sparse() -> bool {
+    true
 }
 
 fn default_index_type() -> String {
@@ -189,6 +198,9 @@ pub struct CreateIndexResponse {
     #[serde(rename = "type")]
     pub index_type: IndexType,
     pub unique: bool,
+    /// Regular indexes only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparse: Option<bool>,
     pub status: String,
 }
 
@@ -256,6 +268,7 @@ pub async fn create_index(
             fields: fields.clone(),
             index_type: index_type.clone(),
             unique: req.unique,
+            sparse: req.sparse,
         },
     };
 
@@ -268,6 +281,7 @@ pub async fn create_index(
         fields,
         index_type,
         unique: req.unique,
+        sparse: matches!(spec, IndexSpec::Regular { .. }).then_some(req.sparse),
         status: "created".to_string(),
     }))
 }
