@@ -19,6 +19,10 @@ pub enum IndexType {
     Cuckoo,
     /// Vector index - approximate nearest neighbor search using HNSW
     Vector,
+    /// Trigram index - candidate rows for `LIKE "%term%"` (substring) matches,
+    /// one entry per distinct trigram of the field's text. Serves no other
+    /// condition.
+    Trigram,
 }
 
 /// A complete, serialisable description of an index.
@@ -252,6 +256,71 @@ pub struct VectorIndexStats {
     pub memory_bytes: usize,
     /// Compression ratio (1.0 = no compression, 4.0 = 4x compression)
     pub compression_ratio: f32,
+}
+
+// ==================== Trigram index ====================
+
+/// One character as a trigram index stores and searches it: lowercased, then
+/// uppercased (so `ß`/`ẞ` both read `SS`, `ſ` reads `S`, `ς`/`σ` read `Σ`,
+/// the Kelvin sign reads `K`). The fold must be at least as coarse as every
+/// equality LIKE can find between characters — exact for the case-sensitive
+/// forms, the regex engine's case-insensitive matching for `LIKE(…, true)` —
+/// so that a text matching a pattern always holds the pattern's trigrams.
+/// Applied character by character, it maps a substring to a substring.
+fn trigram_fold_char(c: char, out: &mut String) {
+    for lower in c.to_lowercase() {
+        out.extend(lower.to_uppercase());
+    }
+}
+
+/// `text` folded for the trigram index, as characters.
+fn trigram_fold(text: &str) -> Vec<char> {
+    let mut folded = String::with_capacity(text.len());
+    for c in text.chars() {
+        trigram_fold_char(c, &mut folded);
+    }
+    folded.chars().collect()
+}
+
+/// The distinct trigrams of `text`, folded. Empty for a text shorter than
+/// three folded characters: no pattern the index can serve matches it.
+pub fn text_trigrams(text: &str) -> std::collections::BTreeSet<String> {
+    trigram_fold(text)
+        .windows(3)
+        .map(|w| w.iter().collect())
+        .collect()
+}
+
+/// The trigrams every text matching the LIKE `pattern` contains: those of
+/// each literal run between wildcards (`%`, `_`), escapes read as the
+/// characters they stand for. Empty when no run is three
+/// folded characters long, so the index cannot narrow the match.
+pub fn like_trigrams(pattern: &str) -> std::collections::BTreeSet<String> {
+    let mut grams = std::collections::BTreeSet::new();
+    let mut run = String::new();
+    let flush = |run: &mut String, grams: &mut std::collections::BTreeSet<String>| {
+        grams.extend(text_trigrams(run));
+        run.clear();
+    };
+    // Escapes as `like_to_regex` reads them: `\\` before `%`, `_` or `\\`
+    // is that character; before anything else it is a backslash, and the
+    // next character is read on its own.
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '%' | '_' => flush(&mut run, &mut grams),
+            '\\' => match chars.peek() {
+                Some(&next) if matches!(next, '%' | '_' | '\\') => {
+                    chars.next();
+                    run.push(next);
+                }
+                _ => run.push('\\'),
+            },
+            other => run.push(other),
+        }
+    }
+    flush(&mut run, &mut grams);
+    grams
 }
 
 // ==================== N-gram Utilities ====================

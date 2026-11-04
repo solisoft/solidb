@@ -248,6 +248,7 @@ pub async fn create_index(
         "fulltext" => IndexType::Fulltext,
         "bloom" => IndexType::Bloom,
         "cuckoo" => IndexType::Cuckoo,
+        "trigram" | "ngram" => IndexType::Trigram,
         _ => {
             return Err(DbError::InvalidDocument(format!(
                 "Unknown index type: {}",

@@ -176,6 +176,11 @@ impl Collection {
         unique: bool,
         sparse: bool,
     ) -> DbResult<IndexStats> {
+        if index_type == IndexType::Trigram && (fields.len() != 1 || unique) {
+            return Err(DbError::BadRequest(
+                "A trigram index covers exactly one field and cannot be unique".to_string(),
+            ));
+        }
         // Check if index already exists
         if self.get_index(&name).is_some() {
             return Err(DbError::InvalidDocument(format!(
@@ -294,8 +299,9 @@ impl Collection {
                 continue;
             }
 
-            let entry_key = Self::idx_entry_key(name, &field_values, &doc.key);
-            batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+            for entry_key in Self::index_entry_keys(index, &field_values, &doc.key) {
+                batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+            }
             indexed_count += 1;
 
             // If bloom/cuckoo filter, also update in-memory filter
@@ -567,9 +573,10 @@ impl Collection {
                             .collect();
 
                         if index.holds(&field_values) {
-                            let entry_key =
-                                Self::idx_entry_key(&index.name, &field_values, &doc.key);
-                            batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+                            for entry_key in Self::index_entry_keys(index, &field_values, &doc.key)
+                            {
+                                batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+                            }
                             regular_count += 1;
 
                             // Flush batch periodically
@@ -732,8 +739,9 @@ impl Collection {
                         .collect();
 
                     if index.holds(&field_values) {
-                        let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);
-                        batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+                        for entry_key in Self::index_entry_keys(index, &field_values, &doc.key) {
+                            batch.put_ks(&cf, entry_key, doc.key.as_bytes());
+                        }
 
                         if index.index_type == IndexType::Bloom {
                             for value in &field_values {
@@ -822,6 +830,91 @@ impl Collection {
             fold_accents: None,
             sparse: Some(index.sparse),
         })
+    }
+
+    /// The entries a document with these index field values gets in `index`:
+    /// one (`idx_entry_key`) for every type but Trigram, which gets one per
+    /// distinct trigram of the field's text, `idx:<name>:<hex(trigram)>:<key>`.
+    /// The text is what `LIKE(…)` matches against (`text_of`: a string as it
+    /// is, anything else stringified), so a document LIKE can match always
+    /// has the pattern's trigrams; null has none.
+    pub(crate) fn index_entry_keys(index: &Index, values: &[Value], doc_key: &str) -> Vec<Vec<u8>> {
+        if index.index_type != IndexType::Trigram {
+            return vec![Self::idx_entry_key(&index.name, values, doc_key)];
+        }
+        let Some(value) = values.first().filter(|v| !v.is_null()) else {
+            return Vec::new();
+        };
+        let text = crate::sdbql::executor::builtins::string::text_of(value);
+        crate::storage::index::text_trigrams(&text)
+            .into_iter()
+            .map(|gram| {
+                format!(
+                    "{}{}:{}:{}",
+                    IDX_PREFIX,
+                    index.name,
+                    hex::encode(gram.as_bytes()),
+                    doc_key
+                )
+                .into_bytes()
+            })
+            .collect()
+    }
+
+    /// The documents whose `index` (a Trigram index) entries hold every one
+    /// of `grams` — a superset of those a LIKE with these trigrams matches;
+    /// the caller re-checks the FILTER. Reads each trigram's entries, rarest
+    /// first is not known, so in order, intersecting as it goes and stopping
+    /// when nothing is left. `None` when `grams` is empty (the index cannot
+    /// narrow the read) or the candidates pass `cap`.
+    pub fn index_trigram_candidates(
+        &self,
+        index: &Index,
+        grams: &std::collections::BTreeSet<String>,
+        cap: usize,
+    ) -> Option<Vec<Document>> {
+        if index.index_type != IndexType::Trigram || grams.is_empty() {
+            return None;
+        }
+        let cf = self.ks.handle(&self.db)?;
+        let mut candidates: Option<std::collections::HashSet<Vec<u8>>> = None;
+        for gram in grams {
+            let prefix = format!(
+                "{}{}:{}:",
+                IDX_PREFIX,
+                index.name,
+                hex::encode(gram.as_bytes())
+            );
+            let mut keys = std::collections::HashSet::new();
+            let read = self.for_each_index_entry(&cf, prefix.as_bytes(), |doc_key| {
+                if candidates.as_ref().is_none_or(|c| c.contains(doc_key)) {
+                    keys.insert(doc_key.to_vec());
+                }
+                Ok(true)
+            });
+            read.ok()?;
+            if keys.is_empty() {
+                return Some(Vec::new());
+            }
+            candidates = Some(keys);
+        }
+        let candidates = candidates?;
+        if candidates.len() > cap {
+            return None;
+        }
+        let doc_keys: Vec<Vec<u8>> = candidates
+            .iter()
+            .map(|k| Self::doc_key(&String::from_utf8_lossy(k)))
+            .collect();
+        Some(
+            self.db
+                .multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()))
+                .into_iter()
+                .filter_map(|r| r.ok())
+                .flatten()
+                .filter_map(|bytes| deserialize_doc(&bytes).ok())
+                .collect(),
+        )
     }
 
     /// Encode index field values the way `idx_entry_key` does: hex of the
@@ -968,10 +1061,11 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                db.put_ks(&cf, entry_key, doc_key.as_bytes()).map_err(|e| {
-                    DbError::InternalError(format!("Failed to update index: {}", e))
-                })?;
+                for entry_key in Self::index_entry_keys(&index, &field_values, doc_key) {
+                    db.put_ks(&cf, entry_key, doc_key.as_bytes()).map_err(|e| {
+                        DbError::InternalError(format!("Failed to update index: {}", e))
+                    })?;
+                }
 
                 if index.index_type == IndexType::Bloom {
                     for value in field_values {
@@ -1037,19 +1131,21 @@ impl Collection {
 
             // Remove old entry
             if index.holds(&old_values) {
-                let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
-                db.delete_ks(&cf, old_entry_key).map_err(|e| {
-                    DbError::InternalError(format!("Failed to update index: {}", e))
-                })?;
+                for old_entry_key in Self::index_entry_keys(&index, &old_values, doc_key) {
+                    db.delete_ks(&cf, old_entry_key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to update index: {}", e))
+                    })?;
+                }
             }
 
             // Add new entry
             if index.holds(&new_values) {
-                let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
-                db.put_ks(&cf, new_entry_key, doc_key.as_bytes())
-                    .map_err(|e| {
-                        DbError::InternalError(format!("Failed to update index: {}", e))
-                    })?;
+                for new_entry_key in Self::index_entry_keys(&index, &new_values, doc_key) {
+                    db.put_ks(&cf, new_entry_key, doc_key.as_bytes())
+                        .map_err(|e| {
+                            DbError::InternalError(format!("Failed to update index: {}", e))
+                        })?;
+                }
             }
         }
         let _ = db;
@@ -1103,10 +1199,11 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                db.delete_ks(&cf, entry_key).map_err(|e| {
-                    DbError::InternalError(format!("Failed to update index: {}", e))
-                })?;
+                for entry_key in Self::index_entry_keys(&index, &field_values, doc_key) {
+                    db.delete_ks(&cf, entry_key).map_err(|e| {
+                        DbError::InternalError(format!("Failed to update index: {}", e))
+                    })?;
+                }
             }
         }
         let _ = db;
@@ -1134,6 +1231,8 @@ impl Collection {
         self.index_meta()?
             .indexes
             .iter()
+            // A trigram index holds trigrams, not the field's values.
+            .filter(|index| index.index_type != IndexType::Trigram)
             .find(|index| index.fields.first().map(|s| s.as_str()) == Some(field))
             .cloned()
     }
@@ -1148,7 +1247,10 @@ impl Collection {
             .indexes
             .iter()
             .find(|index| {
-                index.fields.len() == 1 && index.fields.first().map(|s| s.as_str()) == Some(field)
+                // A trigram index holds trigrams, not the field's values.
+                index.index_type != IndexType::Trigram
+                    && index.fields.len() == 1
+                    && index.fields.first().map(|s| s.as_str()) == Some(field)
             })
             .cloned()
     }
@@ -2099,8 +2201,9 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                regular_entries.push((entry_key, doc_key.as_bytes().to_vec()));
+                for entry_key in Self::index_entry_keys(&index, &field_values, doc_key) {
+                    regular_entries.push((entry_key, doc_key.as_bytes().to_vec()));
+                }
             }
         }
 
@@ -2146,14 +2249,14 @@ impl Collection {
 
             // Remove old entry
             if index.holds(&old_values) {
-                let old_entry_key = Self::idx_entry_key(&index.name, &old_values, doc_key);
-                keys_to_remove.push(old_entry_key);
+                keys_to_remove.extend(Self::index_entry_keys(&index, &old_values, doc_key));
             }
 
             // Add new entry
             if index.holds(&new_values) {
-                let new_entry_key = Self::idx_entry_key(&index.name, &new_values, doc_key);
-                entries_to_add.push((new_entry_key, doc_key.as_bytes().to_vec()));
+                for new_entry_key in Self::index_entry_keys(&index, &new_values, doc_key) {
+                    entries_to_add.push((new_entry_key, doc_key.as_bytes().to_vec()));
+                }
             }
         }
 
@@ -2202,8 +2305,7 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                let entry_key = Self::idx_entry_key(&index.name, &field_values, doc_key);
-                keys_to_remove.push(entry_key);
+                keys_to_remove.extend(Self::index_entry_keys(&index, &field_values, doc_key));
             }
         }
 

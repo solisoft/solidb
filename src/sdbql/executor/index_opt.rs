@@ -453,8 +453,19 @@ fn regular_index_on(collection: &Collection, field: &str) -> Option<crate::stora
     collection.get_all_indexes().into_iter().find(|i| {
         i.fields.len() == 1
             && i.fields[0] == field
-            && !matches!(i.index_type, IndexType::Fulltext | IndexType::Vector)
+            && !matches!(
+                i.index_type,
+                IndexType::Fulltext | IndexType::Vector | IndexType::Trigram
+            )
     })
+}
+
+/// The trigram index on `field`, if there is one.
+fn trigram_index_on(collection: &Collection, field: &str) -> Option<crate::storage::index::Index> {
+    collection
+        .get_all_indexes()
+        .into_iter()
+        .find(|i| i.index_type == IndexType::Trigram && i.fields.len() == 1 && i.fields[0] == field)
 }
 
 /// Range scan `[prefix, successor(prefix))` over a single-field index: every
@@ -853,14 +864,19 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // 3. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
+        // 3. Trigram index: the candidates of a `LIKE "%term%"`.
+        if let Some(hit) = self.lookup_trigram(collection, filter, var_name, ctx) {
+            return Some(hit);
+        }
+
+        // 4. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
         if let Some(hit) =
             self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
         {
             return Some(hit);
         }
 
-        // 4. An `OR` whose every branch an index serves: the union of them.
+        // 5. An `OR` whose every branch an index serves: the union of them.
         self.lookup_or_union(collection, filter, var_name, ctx)
     }
 
@@ -901,6 +917,9 @@ impl<'a> QueryExecutor<'a> {
             if let Some(name) = self.plan_single_field(collection, cond, &terms) {
                 return PlannedRead::Index(name);
             }
+        }
+        if let Some(name) = self.plan_trigram(collection, filter, var_name, ctx) {
+            return PlannedRead::Index(name);
         }
         if self.geo_may_serve(collection, filter, var_name, ctx) {
             return PlannedRead::Maybe;
@@ -1053,6 +1072,94 @@ impl<'a> QueryExecutor<'a> {
             Some(index) if index.sparse => rejects_null(&cond.field, terms),
             _ => true,
         }
+    }
+
+    /// The AND'd LIKE conditions of `filter` on `var`'s fields, with their
+    /// pattern: `v.f LIKE p` and `LIKE(v.f, p[, case_insensitive])`. Either
+    /// form matches only texts holding the trigrams of `p`'s literal runs.
+    fn like_terms(
+        &self,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<(String, String)> {
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        let mut out = Vec::new();
+        for conjunct in conjuncts {
+            let (field_expr, pattern_expr) = match conjunct {
+                Expression::BinaryOp {
+                    left,
+                    op: BinaryOperator::Like,
+                    right,
+                } => (left.as_ref(), right.as_ref()),
+                Expression::FunctionCall { name, args }
+                    if name.eq_ignore_ascii_case("LIKE") && (2..=3).contains(&args.len()) =>
+                {
+                    (&args[0], &args[1])
+                }
+                _ => continue,
+            };
+            let Some(field) = self.extract_field_path(field_expr, var_name) else {
+                continue;
+            };
+            if let Some(Value::String(pattern)) =
+                self.extract_indexable_value(pattern_expr, var_name, ctx)
+            {
+                out.push((field, pattern));
+            }
+        }
+        out
+    }
+
+    /// The first LIKE of `filter` whose field has a trigram index and whose
+    /// pattern has a literal run of three characters or more: the index and
+    /// those trigrams.
+    fn trigram_read(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<(
+        crate::storage::index::Index,
+        std::collections::BTreeSet<String>,
+    )> {
+        self.like_terms(filter, var_name, ctx)
+            .into_iter()
+            .find_map(|(field, pattern)| {
+                let index = trigram_index_on(collection, &field)?;
+                let grams = crate::storage::index::like_trigrams(&pattern);
+                (!grams.is_empty()).then_some((index, grams))
+            })
+    }
+
+    /// Candidates for a `LIKE "%term%"` from a trigram index: every document
+    /// whose text holds the pattern's trigrams, a superset of the matches the
+    /// caller's FILTER re-check keeps.
+    fn lookup_trigram(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        let (index, grams) = self.trigram_read(collection, filter, var_name, ctx)?;
+        let cap = self.max_intermediate_rows().saturating_add(1);
+        let docs = collection.index_trigram_candidates(&index, &grams, cap)?;
+        Some((docs, index.name, "Trigram".to_string()))
+    }
+
+    /// [`Self::lookup_trigram`], planned.
+    fn plan_trigram(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<String> {
+        self.trigram_read(collection, filter, var_name, ctx)
+            .map(|(index, _)| index.name)
     }
 
     /// [`Self::use_index_for_condition`] with the name and type of the
@@ -1310,7 +1417,14 @@ impl<'a> QueryExecutor<'a> {
         for name in &hint.names {
             if let Some(index) = indexes.iter().find(|i| i.name == *name) {
                 let type_str = format!("{:?}", index.index_type);
-                if index.fields.len() == 1 {
+                if index.index_type == IndexType::Trigram {
+                    if let Some(hit) = self
+                        .lookup_trigram(collection, filter, var_name, ctx)
+                        .filter(|(_, used, _)| used == name)
+                    {
+                        return Some(hit);
+                    }
+                } else if index.fields.len() == 1 {
                     for cond in candidates.iter().filter(|c| {
                         c.field == index.fields[0]
                             && self.range_read_is_exact(collection, c, &terms)
@@ -1729,10 +1843,10 @@ impl<'a> QueryExecutor<'a> {
         }
         let meta = collection.index_meta();
         let indexes = meta.as_deref().map_or(&[][..], |m| m.indexes.as_slice());
-        if indexes
-            .iter()
-            .any(|i| i.fields.len() == 1 && i.fields[0] == field)
-        {
+        // A trigram index does not answer `==`, so it does not cover the field.
+        if indexes.iter().any(|i| {
+            i.fields.len() == 1 && i.fields[0] == field && i.index_type != IndexType::Trigram
+        }) {
             return false;
         }
         indexes.iter().filter(|i| is_auto_index(i)).count() < AUTO_INDEX_CAP
@@ -1911,7 +2025,7 @@ fn exactly_indexed(indexes: &[crate::storage::index::Index], field: &str) -> boo
     }
     indexes
         .iter()
-        .find(|i| i.fields.len() == 1 && i.fields[0] == field)
+        .find(|i| i.fields.len() == 1 && i.fields[0] == field && i.index_type != IndexType::Trigram)
         .is_some_and(|i| matches!(i.index_type, IndexType::Persistent | IndexType::Hash))
 }
 

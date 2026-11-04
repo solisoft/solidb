@@ -689,6 +689,33 @@ FOR c IN cases FILTER c.due_at &lt;= @now RETURN c           // rows with no due
         </div>
       </section>
 
+      <!-- Trigram Index -->
+      <section id="trigram" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Trigram Index</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A <strong>trigram index</strong> makes substring searches &mdash; <code>LIKE "%term%"</code>, a search box &mdash; read from an index instead of scanning. It stores the distinct three-character sequences of one field's text; a <code>LIKE</code> whose pattern has a literal run of three characters or more reads the documents holding all of that run's trigrams, then checks the condition on each.
+            </p>
+            <pre><code class="language-json text-sm">{ "name": "trg_name", "type": "trigram", "field": "name" }</code></pre>
+            <pre><code class="language-sql text-sm">FOR a IN accounts FILTER LIKE(a.name, "%dupont%", true) RETURN a     // served
+FOR a IN accounts FILTER a.name LIKE "%Dupont SA%" RETURN a          // served
+FOR a IN accounts FILTER LIKE(a.name, "%du%", true) RETURN a         // scanned: no run of 3
+FOR a IN accounts
+  FILTER LIKE(a.name, @q, true) OR LIKE(a.city, @q, true)            // union of two trigram indexes
+  RETURN a</code></pre>
+            <ul class="space-y-1 text-sm text-gray-400 list-disc pl-5">
+              <li>Both forms are served: the <code>LIKE</code> operator (case-sensitive, strings only) and the <code>LIKE()</code> function, case-insensitive with <code>true</code>, which also matches numbers and other values as text.</li>
+              <li>Characters are folded so that case-insensitive matches are never missed, including pairs such as <code>ß</code>/<code>ẞ</code> and <code>σ</code>/<code>ς</code>.</li>
+              <li><code>_</code> and <code>%</code> split the pattern into runs; <code>\%</code>, <code>\_</code> and <code>\\</code> are literal characters within a run.</li>
+              <li>A trigram index serves nothing else: equality, ranges and SORT use a hash or persistent index. It covers one field and cannot be unique.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <!-- Management API -->
       <section id="management" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

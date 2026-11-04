@@ -2052,3 +2052,194 @@ fn test_explain_names_the_unindexed_or_branch() {
     assert_eq!(access, "index_lookup");
     assert!(ors.is_empty(), "{ors:?}");
 }
+
+// ===================== Trigram indexes for LIKE "%term%" =====================
+
+/// The same rows in `plain` and `trig` (trigram indexes on `name`, `city`
+/// and `n`), with case and Unicode pairs LIKE's case-insensitive form treats
+/// as equal, escapes, numbers, arrays, objects, nulls and short texts.
+fn create_trigram_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("trgdb".to_string()).unwrap();
+    let db = engine.get_database("trgdb").unwrap();
+    let names = [
+        json!("Straße Nord"),
+        json!("STRAẞE SÜD"),
+        json!("ſtraße alt"),
+        json!("Kelvin \u{212A} unit"),
+        json!("ΟΔΟΣ Αθηνών"),
+        json!("οδος ς"),
+        json!("µ-meter"),
+        json!("μmeter"),
+        json!("Hello World"),
+        json!("hello_world"),
+        json!("50% off"),
+        json!("a\\b path"),
+        json!("x"),
+        json!(""),
+        json!(null),
+        json!(12345),
+        json!(["arr", "value"]),
+        json!({"k": "objval"}),
+    ];
+    let cities = ["Paris", "paris-nord", "Lyon", "PARISIEN", "Marseille"];
+    for coll in ["plain", "trig"] {
+        db.create_collection(coll.to_string(), None).unwrap();
+        let c = db.get_collection(coll).unwrap();
+        for i in 0..90i64 {
+            let mut doc = json!({ "seq": i, "n": i * 1117, "city": cities[(i % 5) as usize] });
+            if i % 19 != 0 {
+                doc["name"] = names[(i % names.len() as i64) as usize].clone();
+            }
+            c.insert(doc).unwrap();
+        }
+    }
+    let trig = db.get_collection("trig").unwrap();
+    for (name, field) in [("trg_name", "name"), ("trg_city", "city"), ("trg_n", "n")] {
+        trig.create_index(
+            name.to_string(),
+            vec![field.to_string()],
+            IndexType::Trigram,
+            false,
+        )
+        .unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+fn run_trigram(
+    engine: &StorageEngine,
+    query: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    Option<String>,
+    u64,
+) {
+    let run = |coll: &str| {
+        let executor = QueryExecutor::with_database(engine, "trgdb".to_string());
+        let ast = parse(&query.replace(" C ", &format!(" {coll} "))).unwrap();
+        let mut rows = executor.execute(&ast).unwrap();
+        rows.sort_by_key(|v| v.as_i64());
+        let scans = executor.collection_scans();
+        let used = executor
+            .explain(&ast)
+            .ok()
+            .and_then(|e| e.collections.first().and_then(|c| c.index_used.clone()));
+        (rows, used, scans)
+    };
+    let (expected, _, _) = run("plain");
+    let (rows, used, scans) = run("trig");
+    (expected, rows, used, scans)
+}
+
+/// A trigram index returns, for every LIKE shape, exactly the rows the scan
+/// returns, and is used whenever the pattern has a literal run of 3+.
+#[test]
+fn test_trigram_index_serves_like_contains() {
+    let (engine, _tmp) = create_trigram_engine();
+    let f = |filter: &str| format!("FOR d IN C FILTER {filter} RETURN d.seq");
+    // (filter, index expected)
+    for (q, index) in [
+        (f("LIKE(d.name, \"%straße%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%STRASSE%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%strasse%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%traße%\")"), Some("trg_name")),
+        (f("d.name LIKE \"%World%\""), Some("trg_name")),
+        (f("LIKE(d.name, \"%world%\")"), Some("trg_name")),
+        (f("LIKE(d.name, \"%world%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%hello_world%\", true)"), Some("trg_name")),
+        (
+            f("LIKE(d.name, \"%hello\\\\_world%\", true)"),
+            Some("trg_name"),
+        ),
+        (f("LIKE(d.name, \"%50\\\\% off%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%a\\\\b p%\")"), Some("trg_name")),
+        (f("LIKE(d.name, \"%kelvin k%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%οδοσ%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%ΟΔΟΣ%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%μmeter%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%µ-met%\", true)"), Some("trg_name")),
+        (f("LIKE(d.name, \"%arr%\")"), Some("trg_name")),
+        (f("LIKE(d.name, \"%objval%\")"), Some("trg_name")),
+        (f("LIKE(d.name, \"%2345%\")"), Some("trg_name")),
+        (f("LIKE(d.n, \"%234%\")"), Some("trg_n")),
+        (f("LIKE(d.name, \"Hello%\")"), Some("trg_name")),
+        // Soli's search box: an OR of two indexed fields is a union.
+        (
+            f("(LIKE(d.name, \"%hello%\", true) OR LIKE(d.city, \"%paris%\", true))"),
+            Some("trg_name | trg_city"),
+        ),
+        // Nothing three characters long: the index cannot narrow it.
+        (f("LIKE(d.name, \"%ab%\", true)"), None),
+        (f("LIKE(d.name, \"%%\", true)"), None),
+        (f("LIKE(d.name, \"h_l_o%\", true)"), None),
+        // A trigram index never answers `==`.
+        (f("d.name == \"Hello World\""), None),
+    ] {
+        let (expected, rows, used, scans) = run_trigram(&engine, &q);
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(used.as_deref(), index, "{q}");
+        assert_eq!(scans == 0, index.is_some(), "{q}");
+    }
+    // The seed is not vacuous: the case-folding pairs do match.
+    let (expected, _, _, _) = run_trigram(&engine, &f("LIKE(d.name, \"%straße%\", true)"));
+    assert!(expected.len() >= 10, "{expected:?}");
+}
+
+/// Writes keep a trigram index's entries current, and creation refuses what
+/// it cannot index.
+#[test]
+fn test_trigram_index_tracks_writes() {
+    let (engine, _tmp) = create_trigram_engine();
+    let executor = QueryExecutor::with_database(&engine, "trgdb".to_string());
+    let run = |q: &str| executor.execute(&parse(q).unwrap()).unwrap();
+    let found = |term: &str| {
+        let mut rows = run(&format!(
+            "FOR d IN trig FILTER LIKE(d.name, \"%{term}%\", true) RETURN d._key"
+        ));
+        rows.sort_by_key(|v| v.to_string());
+        rows
+    };
+    run("INSERT {_key: \"w1\", name: \"Brand New Street\"} INTO trig");
+    assert_eq!(found("new str"), vec![json!("w1")]);
+    run("UPDATE \"w1\" WITH {name: \"Old Lane\"} IN trig");
+    assert!(found("new str").is_empty());
+    assert_eq!(found("old la"), vec![json!("w1")]);
+    run("REPLACE \"w1\" WITH {name: \"Old Lane East\"} IN trig");
+    assert_eq!(found("lane east"), vec![json!("w1")]);
+    run("REMOVE \"w1\" IN trig");
+    assert!(found("old la").is_empty());
+
+    let trig = engine
+        .get_database("trgdb")
+        .unwrap()
+        .get_collection("trig")
+        .unwrap();
+    trig.insert_batch(vec![json!({"_key": "b1", "name": "Batch Avenue"})])
+        .unwrap();
+    assert_eq!(found("avenue"), vec![json!("b1")]);
+    trig.rebuild_all_indexes().unwrap();
+    assert_eq!(found("avenue"), vec![json!("b1")]);
+
+    // A forced hint naming the trigram index is honoured.
+    let hinted = run(
+        "FOR d IN trig OPTIONS { indexHint: \"trg_name\", forceIndexHint: true } \
+                      FILTER LIKE(d.name, \"%avenue%\", true) RETURN d._key",
+    );
+    assert_eq!(hinted, vec![json!("b1")]);
+
+    assert!(trig
+        .create_index(
+            "bad1".into(),
+            vec!["a".into(), "b".into()],
+            IndexType::Trigram,
+            false
+        )
+        .is_err());
+    assert!(trig
+        .create_index("bad2".into(), vec!["a".into()], IndexType::Trigram, true)
+        .is_err());
+}

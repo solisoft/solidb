@@ -4,6 +4,19 @@
 
 ### Features
 
+* **Trigram indexes for `LIKE "%term%"`.** A search box's
+  `LIKE(doc.name, "%term%", true)` could only be scanned. An index created
+  with `"type": "trigram"` on one field stores the distinct trigrams of the
+  field's text (`LIKE`'s own text: strings as they are, other values
+  stringified) and serves both `d.f LIKE p` and `LIKE(d.f, p[, true])`
+  whenever the pattern has a literal run of three characters or more: the
+  documents holding every trigram are read and the FILTER re-checked.
+  Characters are folded (lowercased then uppercased) so case-insensitive
+  matches and pairs such as `ß`/`ẞ`, `ſ`/`s`, `σ`/`ς` are never missed. An
+  `OR` of such conditions on indexed fields is read as their union. A
+  trigram index serves nothing else (`==`, ranges, SORT) and cannot be
+  unique or span several fields.
+
 * **Non-sparse indexes: `"sparse": false`.** A regular index leaves out
   documents whose index fields are all null or missing, so `== null`,
   `IN [null, …]`, and `!=` / `NOT IN` with nothing fixed before them could
