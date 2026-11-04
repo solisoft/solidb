@@ -15,6 +15,19 @@
   compound index. Unique constraints still let several documents hold null.
   Existing indexes, and indexes created without the option, stay sparse.
   `GET …/index/:collection` reports `sparse` for regular indexes.
+* **EXPLAIN names the `OR` branch that forces a scan.** When an `OR` is not
+  read as a union of indexes, `warnings` gets `optimizer: OR scanned, no
+  index serves the branch \`…\` (an index on \`f\` would serve it)`, or
+  says no index can serve the condition (a `LIKE "%…%"`, a function call).
+  EXPLAIN also writes FILTER expressions as SDBQL (`d.a == 1 OR d.b == 2`):
+  comparisons, logical and arithmetic operators, arrays and objects printed
+  as the parsed tree (`BinaryOp { left: … }`).
+
+### Performance
+
+* **An `OR` union no longer reads branches it cannot use.** Each branch is
+  planned before any is read; one that no index serves sends the FILTER to
+  the scan straight away, instead of after reading the others' rows.
 
 ### Bug Fixes
 

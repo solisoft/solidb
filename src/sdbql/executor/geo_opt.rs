@@ -302,6 +302,28 @@ impl<'a> QueryExecutor<'a> {
     /// superset of the matches of the geo conjunct), the geo index name and
     /// `"Geo"`. `only_index` restricts the rule to one geo index (index
     /// hints); `limit` stops the index read early (existence probes).
+    /// Whether [`Self::geo_lookup_for_filter`] might serve `filter`: some
+    /// conjunct is a radius on a geo-indexed field. Whether it does depends on
+    /// a check made against the rows, so this only says it may.
+    pub(super) fn geo_may_serve(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> bool {
+        let geo_indexes = collection.get_all_geo_indexes();
+        if geo_indexes.is_empty() {
+            return false;
+        }
+        let mut parts = Vec::new();
+        conjuncts(filter, &mut parts);
+        parts.into_iter().any(|part| {
+            self.parse_geo_radius_conjunct(part, var_name, ctx)
+                .is_some_and(|(call, _)| geo_indexes.iter().any(|g| g.field == call.field))
+        })
+    }
+
     pub(super) fn geo_lookup_for_filter(
         &self,
         collection: &Collection,

@@ -259,6 +259,40 @@ fn next_field_intervals(
     Some(intervals)
 }
 
+/// The composite read [`composite_plan`] makes of `terms` with the index
+/// using the most fields (at least `min_fields`), the shorter index on a tie;
+/// only the index named `only` when given.
+fn best_composite_plan(
+    collection: &Collection,
+    terms: &[(String, CompositeTerm)],
+    only: Option<&str>,
+    min_fields: usize,
+) -> Option<CompositePlan> {
+    if terms.is_empty() {
+        return None;
+    }
+    collection
+        .get_all_indexes()
+        .into_iter()
+        .filter(|i| only.is_none_or(|name| i.name == name))
+        .filter_map(|i| composite_plan(i, terms))
+        .filter(|p| p.fields_used() >= min_fields)
+        .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))
+}
+
+/// What [`QueryExecutor::lookup_index_for_filter_limited`] would read for a
+/// FILTER, decided without reading anything.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum PlannedRead {
+    /// Served from these indexes (names joined by ` | ` for a union).
+    Index(String),
+    /// Possibly served; only the read tells (a geo radius, whose null check
+    /// runs on the row).
+    Maybe,
+    /// No index serves it: the scan does.
+    Scan,
+}
+
 /// Whether the AND'd `terms` reject every row whose `field` is null or
 /// missing — some term on it is false for null. A sparse index has no entry
 /// for such rows, so a read of it returns every match only then.
@@ -765,6 +799,177 @@ impl<'a> QueryExecutor<'a> {
         self.lookup_or_union(collection, filter, var_name, ctx)
     }
 
+    /// What [`Self::lookup_index_for_filter_limited`] would read for
+    /// `filter`, step by step in the same order, without reading. A step the
+    /// planner cannot decide without the data (a geo radius) is
+    /// [`PlannedRead::Maybe`].
+    pub(super) fn plan_index_read(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> PlannedRead {
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return PlannedRead::Scan;
+        }
+        let terms = self.composite_terms(filter, var_name, ctx);
+        if let Some(plan) = best_composite_plan(collection, &terms, None, 2) {
+            return PlannedRead::Index(plan.index.name);
+        }
+        let (equalities, others): (Vec<_>, Vec<_>) = self
+            .ordered_index_candidates(filter, var_name, ctx)
+            .into_iter()
+            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
+        for cond in &equalities {
+            if let Some(name) = self.plan_single_field(collection, cond, &terms) {
+                return PlannedRead::Index(name);
+            }
+        }
+        if let Some(plan) = best_composite_plan(collection, &terms, None, 1) {
+            return PlannedRead::Index(plan.index.name);
+        }
+        for cond in &others {
+            if let Some(name) = self.plan_single_field(collection, cond, &terms) {
+                return PlannedRead::Index(name);
+            }
+        }
+        if self.geo_may_serve(collection, filter, var_name, ctx) {
+            return PlannedRead::Maybe;
+        }
+        self.plan_or_union(collection, filter, var_name, ctx)
+    }
+
+    /// The single-field index [`Self::use_index_for_condition`] would read
+    /// for `cond`, or `None` when it would decline.
+    fn plan_single_field(
+        &self,
+        collection: &Collection,
+        cond: &IndexableCondition,
+        terms: &[(String, CompositeTerm)],
+    ) -> Option<String> {
+        if cond.field == "_key" || cond.field == "_id" {
+            return matches!(cond.op, BinaryOperator::Equal | BinaryOperator::In)
+                .then(|| "primary key".to_string());
+        }
+        match &cond.op {
+            BinaryOperator::Equal => {
+                let index = collection.get_single_field_index_for_field(&cond.field)?;
+                (!cond.value.is_null() || !index.sparse).then_some(index.name)
+            }
+            BinaryOperator::In => {
+                let index = regular_index_on(collection, &cond.field)?;
+                let has_null = matches!(&cond.value, Value::Array(items)
+                    if items.iter().any(Value::is_null));
+                (!has_null || !index.sparse).then_some(index.name)
+            }
+            BinaryOperator::Like => {
+                let index = regular_index_on(collection, &cond.field)?;
+                prefix_successor(cond.value.as_str()?)?;
+                Some(index.name)
+            }
+            op if is_range_op(op) => {
+                let index = collection.get_single_field_index_for_field(&cond.field)?;
+                self.range_read_is_exact(collection, cond, terms)
+                    .then_some(index.name)
+            }
+            _ => None,
+        }
+    }
+
+    /// [`Self::lookup_or_union`], planned: the first `OR` conjunct every
+    /// branch of which an index may serve.
+    fn plan_or_union(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> PlannedRead {
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        for conjunct in conjuncts {
+            let mut branches = Vec::new();
+            push_disjuncts(conjunct, &mut branches);
+            if branches.len() < 2 {
+                continue;
+            }
+            let plans: Vec<PlannedRead> = branches
+                .iter()
+                .map(|b| self.plan_index_read(collection, b, var_name, ctx))
+                .collect();
+            if plans.contains(&PlannedRead::Scan) {
+                continue;
+            }
+            if plans.contains(&PlannedRead::Maybe) {
+                return PlannedRead::Maybe;
+            }
+            let mut names: Vec<String> = Vec::new();
+            for plan in plans {
+                if let PlannedRead::Index(name) = plan {
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+            return PlannedRead::Index(names.join(" | "));
+        }
+        PlannedRead::Scan
+    }
+
+    /// For EXPLAIN, when the FILTER is scanned: each `OR` branch that keeps
+    /// its `OR` from being read as a union of indexes, with the fields an
+    /// index would need. Empty when no `OR` is involved.
+    pub(super) fn or_scan_reasons(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<String> {
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        let mut out = Vec::new();
+        for conjunct in conjuncts {
+            let mut branches = Vec::new();
+            push_disjuncts(conjunct, &mut branches);
+            if branches.len() < 2 {
+                continue;
+            }
+            for branch in branches {
+                if self.plan_index_read(collection, branch, var_name, ctx) != PlannedRead::Scan {
+                    continue;
+                }
+                let mut fields: Vec<String> = self
+                    .composite_terms(branch, var_name, ctx)
+                    .into_iter()
+                    .map(|(f, _)| f)
+                    .collect();
+                fields.dedup();
+                let hint = if fields.is_empty() {
+                    "no index can serve this condition".to_string()
+                } else {
+                    format!(
+                        "an index on {} would serve it",
+                        fields
+                            .iter()
+                            .map(|f| format!("`{f}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                out.push(format!(
+                    "optimizer: OR scanned, no index serves the branch `{}` ({hint})",
+                    super::format_expression(branch)
+                ));
+            }
+        }
+        out
+    }
+
     /// Whether reading the range `cond` from the single-field index on its
     /// field returns every row the FILTER (`terms`) can accept. A sparse
     /// index has no entry for a null or missing value, which `<` and `<=`
@@ -824,6 +1029,14 @@ impl<'a> QueryExecutor<'a> {
             let mut branches = Vec::new();
             push_disjuncts(conjunct, &mut branches);
             if branches.len() < 2 {
+                return None;
+            }
+            // Plan every branch before reading any: one that needs the scan
+            // makes the union useless, and its reads would be thrown away.
+            if branches
+                .iter()
+                .any(|b| self.plan_index_read(collection, b, var_name, ctx) == PlannedRead::Scan)
+            {
                 return None;
             }
             let mut seen: HashSet<String> = HashSet::new();
@@ -927,16 +1140,7 @@ impl<'a> QueryExecutor<'a> {
         limit: Option<usize>,
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
         let terms = self.composite_terms(filter, var_name, ctx);
-        if terms.is_empty() {
-            return None;
-        }
-        let plan = collection
-            .get_all_indexes()
-            .into_iter()
-            .filter(|i| only.is_none_or(|name| i.name == name))
-            .filter_map(|i| composite_plan(i, &terms))
-            .filter(|p| p.fields_used() >= min_fields)
-            .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))?;
+        let plan = best_composite_plan(collection, &terms, only, min_fields)?;
 
         let cap = limit
             .or(self.scan_cap())
@@ -2046,5 +2250,84 @@ mod optimizer_helper_tests {
                 force: true
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod planning_tests {
+    use super::*;
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+
+    /// `plan_index_read` must say what `lookup_index_for_filter_limited`
+    /// reads, for every shape: the union relies on a branch it plans as
+    /// `Scan` really being unserved, or it would skip a union it could serve.
+    #[test]
+    fn plan_matches_the_lookup() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        engine.create_database("p".to_string()).unwrap();
+        let db = engine.get_database("p").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let c = db.get_collection("c").unwrap();
+        for i in 0..60i64 {
+            let mut doc = json!({"a": i % 5, "b": i % 7, "s": format!("s{}", i % 4), "o": i % 3});
+            if i % 6 != 0 {
+                doc["n"] = json!(i % 4);
+            }
+            c.insert(doc).unwrap();
+        }
+        c.create_index("ia".into(), vec!["a".into()], IndexType::Hash, false)
+            .unwrap();
+        c.create_index("is".into(), vec!["s".into()], IndexType::Persistent, false)
+            .unwrap();
+        c.create_index(
+            "ibo".into(),
+            vec!["b".into(), "o".into()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+        c.create_index("in".into(), vec!["n".into()], IndexType::Persistent, false)
+            .unwrap();
+        let exec = QueryExecutor::with_database(&engine, "p".to_string());
+
+        for filter in [
+            "d.a == 1",
+            "d.a IN [1, 2]",
+            "d.a IN [1, null]",
+            "d.a == null",
+            "d.s LIKE \"s1%\"",
+            "d.s LIKE \"%1\"",
+            "d.b == 2",
+            "d.b == 2 AND d.o != 1",
+            "d.b IN [1, 2] AND d.o <= 1",
+            "d.n <= 2",
+            "d.n <= 2 AND d.n >= 1",
+            "d.n > 1",
+            "d.o == 1",
+            "d._key == \"x\"",
+            "d._key > \"x\"",
+            "d.a == 1 OR d.b == 3",
+            "d.a == 1 OR d.o == 2",
+            "d.o == 1 AND (d.a == 1 OR d.s == \"s2\")",
+            "(d.a == 1 OR d.o == 2) AND (d.b == 1 OR d.s == \"s1\")",
+            "d.a > 2",
+        ] {
+            let q = crate::sdbql::parse(&format!("FOR d IN c FILTER {filter} RETURN d")).unwrap();
+            let Some(BodyClause::Filter(f)) = q.body_clauses.get(1) else {
+                panic!("no filter in {filter}");
+            };
+            let ctx = Context::default();
+            let read = exec.lookup_index_for_filter_limited(&c, &f.expression, "d", &ctx, None);
+            let plan = exec.plan_index_read(&c, &f.expression, "d", &ctx);
+            match (&plan, &read) {
+                (PlannedRead::Index(name), Some((_, used, _))) => {
+                    assert_eq!(name, used, "{filter}")
+                }
+                (PlannedRead::Scan, None) => {}
+                other => panic!("{filter}: plan and read disagree: {other:?}"),
+            }
+        }
     }
 }

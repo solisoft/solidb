@@ -303,6 +303,14 @@ impl<'a> QueryExecutor<'a> {
                                         auto_index_candidate = Some(cond.field);
                                     }
                                 }
+                                if !used_index {
+                                    warnings.extend(self.or_scan_reasons(
+                                        &collection,
+                                        &index_filter,
+                                        &for_clause.variable,
+                                        &probe_ctx,
+                                    ));
+                                }
                             }
                         }
                     }

@@ -1955,3 +1955,46 @@ fn test_sparse_sort_completeness_follows_writes() {
         .unwrap();
     expect_indexed("rebuilt");
 }
+
+/// When an `OR` is scanned because a branch has no index, EXPLAIN names the
+/// branch and the field an index would need; a union it serves says nothing.
+#[test]
+fn test_explain_names_the_unindexed_or_branch() {
+    let (engine, _tmp) = create_planner_engine();
+    let executor = QueryExecutor::with_database(&engine, "plandb".to_string());
+    let warnings = |filter: &str| {
+        let q = parse(&format!("FOR d IN indexed FILTER {filter} RETURN d.seq")).unwrap();
+        let e = executor.explain(&q).unwrap();
+        let ors: Vec<String> = e
+            .warnings
+            .into_iter()
+            .filter(|w| w.contains("OR scanned"))
+            .collect();
+        (e.collections[0].access_type.clone(), ors)
+    };
+
+    let (access, ors) = warnings("d.a == 1 OR d.seq == 2");
+    assert_eq!(access, "full_scan");
+    assert_eq!(ors.len(), 1, "{ors:?}");
+    assert_eq!(
+        ors[0],
+        "optimizer: OR scanned, no index serves the branch `d.seq == 2` \
+         (an index on `seq` would serve it)"
+    );
+    assert!(
+        !ors[0].contains("d.a"),
+        "the served branch is not blamed: {ors:?}"
+    );
+
+    let (_, ors) = warnings("d.a == 1 OR LIKE(d.object, \"%x%\", true)");
+    assert_eq!(ors.len(), 1, "{ors:?}");
+    assert_eq!(
+        ors[0],
+        "optimizer: OR scanned, no index serves the branch `LIKE(d.object, \"%x%\", true)` \
+         (no index can serve this condition)"
+    );
+
+    let (access, ors) = warnings("d.a == 1 OR d.b == 2");
+    assert_eq!(access, "index_lookup");
+    assert!(ors.is_empty(), "{ors:?}");
+}

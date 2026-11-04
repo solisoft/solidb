@@ -206,9 +206,107 @@ pub fn parse_date_value(value: &Value) -> DbResult<ParsedDate> {
     }
 }
 
+/// How an operator is written in SDBQL.
+fn binary_operator_symbol(op: &BinaryOperator) -> &'static str {
+    use BinaryOperator::*;
+    match op {
+        Equal => "==",
+        NotEqual => "!=",
+        LessThan => "<",
+        LessThanOrEqual => "<=",
+        GreaterThan => ">",
+        GreaterThanOrEqual => ">=",
+        Spaceship => "<=>",
+        SemanticMatch => "~",
+        In => "IN",
+        NotIn => "NOT IN",
+        And => "AND",
+        Or => "OR",
+        Add => "+",
+        Subtract => "-",
+        Multiply => "*",
+        Divide => "/",
+        Modulus => "%",
+        Exponent => "**",
+        Like => "LIKE",
+        NotLike => "NOT LIKE",
+        RegEx => "=~",
+        NotRegEx => "!~",
+        FuzzyEqual => "~=",
+        BitwiseAnd => "&",
+        BitwiseOr => "|",
+        BitwiseXor => "^",
+        LeftShift => "<<",
+        RightShift => ">>",
+        NullCoalesce => "??",
+        LogicalOr => "||",
+    }
+}
+
+/// Binding strength, for the parentheses `format_expression` adds.
+fn binary_precedence(op: &BinaryOperator) -> u8 {
+    use BinaryOperator::*;
+    match op {
+        Or | LogicalOr | NullCoalesce => 1,
+        And => 2,
+        Equal | NotEqual | LessThan | LessThanOrEqual | GreaterThan | GreaterThanOrEqual
+        | Spaceship | SemanticMatch | In | NotIn | Like | NotLike | RegEx | NotRegEx
+        | FuzzyEqual => 3,
+        BitwiseOr | BitwiseXor | BitwiseAnd => 4,
+        LeftShift | RightShift => 5,
+        Add | Subtract => 6,
+        Multiply | Divide | Modulus => 7,
+        Exponent => 8,
+    }
+}
+
 /// Format an Expression as a human-readable string
 pub fn format_expression(expr: &Expression) -> String {
     match expr {
+        Expression::BinaryOp { left, op, right } => {
+            // A looser operand gets parentheses: `a AND (b OR c)`.
+            let side = |e: &Expression| match e {
+                Expression::BinaryOp { op: inner, .. }
+                    if binary_precedence(inner) < binary_precedence(op) =>
+                {
+                    format!("({})", format_expression(e))
+                }
+                _ => format_expression(e),
+            };
+            format!(
+                "{} {} {}",
+                side(left),
+                binary_operator_symbol(op),
+                side(right)
+            )
+        }
+        Expression::Array(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(format_expression)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::Object(fields) => format!(
+            "{{{}}}",
+            fields
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, format_expression(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expression::UnaryOp { op, operand } => {
+            let inner = match operand.as_ref() {
+                Expression::BinaryOp { .. } => format!("({})", format_expression(operand)),
+                _ => format_expression(operand),
+            };
+            match op {
+                UnaryOperator::Not => format!("NOT {}", inner),
+                UnaryOperator::Negate => format!("-{}", inner),
+                UnaryOperator::BitwiseNot => format!("~{}", inner),
+            }
+        }
         Expression::Variable(name) => name.clone(),
         Expression::BindVariable(name) => format!("@{}", name),
         Expression::FieldAccess(base, field) => {
@@ -258,5 +356,27 @@ pub fn format_expression(expr: &Expression) -> String {
             }
         }
         _ => format!("{:?}", expr), // Fallback to debug for complex expressions
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    /// EXPLAIN shows FILTERs as SDBQL, not as the parsed tree.
+    #[test]
+    fn format_expression_writes_operators_as_sdbql() {
+        let q = crate::sdbql::parse(
+            "FOR d IN c FILTER d.a == 1 AND (d.b != \"x\" OR NOT (d.c IN [1, 2])) \
+             AND d.n * (2 + 3) >= -d.m RETURN d",
+        )
+        .unwrap();
+        let Some(BodyClause::Filter(f)) = q.body_clauses.get(1) else {
+            panic!("no filter");
+        };
+        assert_eq!(
+            format_expression(&f.expression),
+            "d.a == 1 AND (d.b != \"x\" OR NOT (d.c IN [1, 2])) AND d.n * (2 + 3) >= -d.m"
+        );
     }
 }
