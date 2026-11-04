@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- 2.6.2 -->
+  <section id="v2-6-2" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.6.2</h2>
+      <span class="text-sm font-medium text-gray-400">November 4, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A composite index serves equality lookups that include <code>null</code></strong> &mdash; <code>FILTER d.company == X AND d.archived_at == null</code> always fell back to a full scan, because the composite lookup gave up as soon as one requested value was null. Only rows whose indexed fields are all null are left out of the index, so it now declines only then, with unchanged results: on 500k documents a count went from 3.7&nbsp;s to 0.1&ndash;0.46&nbsp;s, and <code>SORT &hellip; LIMIT 5</code> from 3.8&nbsp;s to 0.06&ndash;0.36&nbsp;s.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.6.1 -->
   <section id="v2-6-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [2.6.2](https://github.com/solisoft/solidb/compare/v2.6.1...v2.6.2) (2026-11-04)
+
+### Bug Fixes
+
+* **A composite index serves equality lookups that include `null`.**
+  `FILTER d.company == X AND d.archived_at == null` always fell back to a
+  full scan, because the composite lookup gave up as soon as one requested
+  value was null. Only rows whose indexed fields are all null are left out of
+  the index, so the lookup now declines only then. Results are unchanged
+  (explicit nulls and missing fields both match, as with the scan). On 500k
+  documents: count 3.7 s → 0.1–0.46 s, `SORT … LIMIT 5` 3.8 s → 0.06–0.36 s.
+
 ## [2.6.1](https://github.com/solisoft/solidb/compare/v2.6.0...v2.6.1) (2026-11-03)
 
 ### Performance
