@@ -507,11 +507,21 @@
                     A compound index on <code>["a", "b", "c"]</code> can accelerate queries filtering on:
                 </p>
                 <ul class="space-y-1 text-sm text-gray-400">
-                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> alone</li>
+                    <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> alone, when an <code>indexHint</code> names the index (otherwise a single-field index on <code>a</code> is used)</li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code></li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg><code>a</code> AND <code>b</code> AND <code>c</code></li>
                     <li class="flex items-center"><svg class="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg><code>b</code> or <code>c</code> alone (must include leading field)</li>
                 </ul>
+                <p class="text-sm text-gray-400 mt-4 mb-2">
+                    Each leading field may be fixed by <code>==</code> or <code>IN</code>, and the field after them may carry a range (<code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, or both sides). An <code>IN</code> list becomes one bounded read of the index per value, so only the matching rows are read:
+                </p>
+                <pre><code class="language-sql text-sm">// index ["state", "run_at", "priority"]
+FOR j IN jobs
+  FILTER j.state IN ["pending", "scheduled", "failed"] AND j.run_at &lt;= @now
+  RETURN j</code></pre>
+                <p class="text-sm text-gray-400 mt-2">
+                    Conditions past the range, and any other FILTER, are checked on each document read. A lookup whose fixed values are all <code>null</code>, or whose value is an array or object, falls back to the ordinary path.
+                </p>
             </div>
           </div>
         </div>

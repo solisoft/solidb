@@ -86,7 +86,7 @@ FOR variable IN collection [OPTIONS { indexHint: "idx", forceIndexHint: true }]
             <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
               <h3 class="text-indigo-300 font-bold mb-2">FOR ... OPTIONS</h3>
               <p class="text-sm text-gray-400 mb-3">
-                A collection loop can carry index hints for the optimizer. <code class="text-indigo-300">indexHint</code> is an index name or an array of names in order of preference; with <code class="text-indigo-300">forceIndexHint: true</code> the query fails instead of falling back when none of them can serve the FILTER. Values must be literals; unknown keys are a parse error.
+                A collection loop can carry index hints for the optimizer. <code class="text-indigo-300">indexHint</code> is an index name or an array of names in order of preference; with <code class="text-indigo-300">forceIndexHint: true</code> the query fails instead of falling back when none of them can serve the FILTER. A hint may name a compound index; it is then used as soon as the FILTER fixes its first field with <code class="text-indigo-300">==</code> or <code class="text-indigo-300">IN</code>. Values must be literals; unknown keys are a parse error.
               </p>
               <pre><code class="language-sql text-sm">FOR o IN orders OPTIONS { indexHint: ["idx_status_date", "idx_status"] }
   FILTER o.status == "open"

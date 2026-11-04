@@ -9,6 +9,20 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A composite index serves <code>IN</code> and a range</strong> &mdash; a composite index was used only when <code>==</code> terms covered every one of its fields, so <code>FILTER d.state IN [&hellip;] AND d.run_at &lt;= @now</code> (Soli's job claim, against the <code>[state, run_at, priority]</code> index Soli creates) read every pending, scheduled and failed job through the single-field <code>state</code> index. Leading fields fixed by <code>==</code> or <code>IN</code>, then one range on the next field, are now read as one bounded range of the index per combination of values, and every FILTER is still re-checked: on a 172k-job queue with 50 due, a claim went from 390&nbsp;ms to 0.21&nbsp;ms.</li>
+        <li><strong class="text-white"><code>indexHint</code> can name a composite index</strong> &mdash; the hint was dropped, and <code>forceIndexHint</code> failed, unless <code>==</code> terms covered all its fields. It is now honoured as soon as the FILTER fixes the index's first field.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.6.2 -->
   <section id="v2-6-2" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

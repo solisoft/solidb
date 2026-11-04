@@ -381,3 +381,124 @@ fn benchmark_subquery_shapes() {
         }
     }
 }
+
+/// Soli's job claim on a queue that is mostly future work: 100k `scheduled`
+/// and 20k `failed` jobs due later, 2k future `pending`, 50k `done`, and 50
+/// jobs due now. Three setups: no index; one single-field index per field
+/// (what 2.6.2 served the claim from — it read every row in the claimed
+/// states); and the `[state, run_at, priority]` index Soli creates.
+#[test]
+#[ignore]
+fn benchmark_job_claim() {
+    let (engine, _tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("jobs".to_string(), None).unwrap();
+    let jobs = db.get_collection("jobs").unwrap();
+    let groups: &[(&str, usize, bool)] = &[
+        ("scheduled", 100_000, false),
+        ("failed", 20_000, false),
+        ("pending", 2_000, false),
+        ("done", 50_000, true),
+        ("pending", 30, true),
+        ("failed", 10, true),
+        ("scheduled", 10, true),
+    ];
+    let mut seq = 0usize;
+    for &(state, count, past) in groups {
+        for start in (0..count).step_by(5000) {
+            let batch: Vec<_> = (start..(start + 5000).min(count))
+                .map(|i| {
+                    seq += 1;
+                    let day = if past { 1 + i % 3 } else { 5 + i % 25 };
+                    json!({
+                        "state": state,
+                        "run_at": format!("2026-11-{day:02}T{:02}:{:02}:00Z", i % 24, i % 60),
+                        "priority": i % 3,
+                        "queue": "default",
+                        "class": "SendReminder",
+                        "args": { "id": seq, "note": "x".repeat(120) },
+                    })
+                })
+                .collect();
+            jobs.insert_batch(batch).unwrap();
+        }
+    }
+
+    const NOW: &str = "2026-11-04T12:00:00Z";
+    let queries = [
+        (
+            "claim",
+            format!(
+                "FOR doc IN jobs FILTER doc.state IN [\"pending\", \"scheduled\", \"failed\"] \
+                 AND doc.run_at <= \"{NOW}\" SORT doc.priority DESC, doc.run_at ASC \
+                 LIMIT 200 RETURN doc"
+            ),
+        ),
+        (
+            "claim + indexHint",
+            format!(
+                "FOR doc IN jobs OPTIONS {{ indexHint: \"idx_jobs_claim\" }} \
+                 FILTER doc.state IN [\"pending\", \"scheduled\", \"failed\"] \
+                 AND doc.run_at <= \"{NOW}\" SORT doc.priority DESC, doc.run_at ASC \
+                 LIMIT 200 RETURN doc"
+            ),
+        ),
+        (
+            "one state, ==",
+            format!(
+                "FOR doc IN jobs FILTER doc.state == \"scheduled\" AND doc.run_at <= \"{NOW}\" \
+                 RETURN doc._key"
+            ),
+        ),
+        (
+            "one day's window",
+            "FOR doc IN jobs FILTER doc.state == \"scheduled\" \
+             AND doc.run_at >= \"2026-11-10\" AND doc.run_at < \"2026-11-11\" \
+             COLLECT WITH COUNT INTO n RETURN n"
+                .to_string(),
+        ),
+    ];
+
+    let measure = |setup: &str| {
+        for (label, q) in &queries {
+            let ast = solidb::sdbql::parse(q).unwrap();
+            let executor = QueryExecutor::with_database(&engine, "bench_db".to_string());
+            let used = executor.explain(&ast).unwrap().collections[0]
+                .index_used
+                .clone()
+                .unwrap_or_else(|| "full scan".into());
+            executor.execute(&ast).unwrap();
+            let mut best = std::time::Duration::MAX;
+            let mut rows = 0;
+            for _ in 0..5 {
+                let start = Instant::now();
+                rows = executor.execute(&ast).unwrap().len();
+                best = best.min(start.elapsed());
+            }
+            println!(
+                "BENCH|{setup}|{label}|{rows}|{used}|{:.3}",
+                best.as_secs_f64() * 1e3
+            );
+        }
+    };
+
+    measure("no index");
+    for f in ["state", "run_at", "priority"] {
+        jobs.create_index(
+            format!("idx_{f}"),
+            vec![f.to_string()],
+            IndexType::Hash,
+            false,
+        )
+        .unwrap();
+    }
+    measure("single-field indexes (2.6.2 plan)");
+    jobs.create_index(
+        "idx_jobs_claim".to_string(),
+        ["state", "run_at", "priority"].map(String::from).to_vec(),
+        IndexType::Persistent,
+        false,
+    )
+    .unwrap();
+    measure("[state, run_at, priority]");
+}

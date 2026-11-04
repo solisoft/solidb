@@ -1532,101 +1532,111 @@ impl Collection {
         Ok(Some((keys.len(), out, seen)))
     }
 
-    /// Composite-index equality lookup.
+    /// Documents of a multi-field `index` whose leading fields equal
+    /// `eq_values` and whose next field lies within `lower`/`upper`
+    /// (`(value, inclusive)`), read as one bounded range of the index.
     ///
-    /// Given a set of `(field, value)` equality conditions, find the multi-field
-    /// index whose `fields` list is fully covered by those conditions, build the
-    /// joined-hex prefix that matches `idx_entry_key`, and return all docs.
+    /// Entries are `idx:<name>:hex(v1)_hex(v2)_…:<doc_key>`. The key codec is
+    /// order-preserving, ranks types like `compare_values`, and is
+    /// prefix-free, so under the prefix `P` of the equality values the
+    /// entries are ordered by the next field: those equal to `v` all start
+    /// with `P + hex(v)` followed by `_` or `:`, both below `0x7f`, and only
+    /// those entries lie between `P + hex(v)` and `P + hex(v) + 0x7f`.
     ///
-    /// Returns `(index, docs)` on a hit, or `None` if no multi-field index can
-    /// satisfy the conditions. Single-field indexes are intentionally ignored
-    /// here — they go through [`index_lookup_eq`].
-    pub fn index_lookup_eq_composite(
+    /// Stops after `cap` documents. `None` (the caller scans) when the index
+    /// is not a regular one, when `eq_values` is empty, covers the whole
+    /// index while a bound is given, or is all null (such rows are never
+    /// indexed), or when any value is an array or object (the codec orders
+    /// those as JSON text, not as SDBQL compares them).
+    pub fn index_scan_composite(
         &self,
-        conditions: &[(String, Value)],
-    ) -> Option<(crate::storage::index::Index, Vec<Document>)> {
-        if conditions.len() < 2 {
+        index: &crate::storage::index::Index,
+        eq_values: &[Value],
+        lower: Option<(&Value, bool)>,
+        upper: Option<(&Value, bool)>,
+        cap: usize,
+    ) -> Option<Vec<Document>> {
+        let n = eq_values.len();
+        let has_range = lower.is_some() || upper.is_some();
+        let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
+        if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+            || n == 0
+            || n > index.fields.len()
+            || (n == index.fields.len() && has_range)
+            || eq_values.iter().all(Value::is_null)
+            || eq_values.iter().any(complex)
+            || lower.is_some_and(|(v, _)| complex(v))
+            || upper.is_some_and(|(v, _)| complex(v))
+        {
             return None;
         }
-        // Pick the multi-field index whose fields are all covered by the
-        // provided conditions. Prefer the most selective (most fields covered).
-        let mut best: Option<crate::storage::index::Index> = None;
-        for index in self.get_all_indexes() {
-            if index.fields.len() < 2 {
-                continue;
+        let separator = if n == index.fields.len() { ':' } else { '_' };
+        let prefix = format!(
+            "{}{}:{}{}",
+            IDX_PREFIX,
+            index.name,
+            Self::encode_index_values(eq_values),
+            separator
+        )
+        .into_bytes();
+        let bound = |v: &Value, past_equal: bool| {
+            let mut key = prefix.clone();
+            key.extend_from_slice(hex::encode(crate::storage::codec::encode_key(v)).as_bytes());
+            if past_equal {
+                key.push(0x7f);
             }
-            let all_covered = index
-                .fields
-                .iter()
-                .all(|f| conditions.iter().any(|(cf, _)| cf == f));
-            if all_covered
-                && best
-                    .as_ref()
-                    .is_none_or(|b| b.fields.len() < index.fields.len())
-            {
-                best = Some(index);
+            key
+        };
+        // `>= v` starts at the entries equal to v, `> v` past them.
+        let start = match lower {
+            Some((v, inclusive)) => bound(v, !inclusive),
+            None => prefix.clone(),
+        };
+        // `<= v` ends past the entries equal to v, `< v` before them.
+        let end = match upper {
+            Some((v, inclusive)) => bound(v, inclusive),
+            None => {
+                // The prefix ends in ':' or '_'; the next byte is the first
+                // key past every entry under it.
+                let mut end = prefix.clone();
+                *end.last_mut().expect("non-empty prefix") += 1;
+                end
             }
-        }
-        let index = best?;
-
-        // The condition values in the index's field order.
-        let values: Vec<&Value> = index
-            .fields
-            .iter()
-            .map(|f| {
-                conditions
-                    .iter()
-                    .find(|(cf, _)| cf == f)
-                    .map(|(_, v)| v)
-                    .expect("coverage check ensures field is present")
-            })
-            .collect();
-
-        // A row whose index fields are ALL null is never written (see the
-        // `!field_values.iter().all(|v| v.is_null())` guards on insert), so
-        // such a lookup cannot be served. Any other mix is indexed — a missing
-        // field is extracted as `Value::Null` and encoded like an explicit
-        // null — so `company == X AND archived_at == null` finds exactly the
-        // rows the scan's `==` accepts.
-        if values.iter().all(|v| v.is_null()) {
-            return None;
+        };
+        if start >= end {
+            return Some(Vec::new());
         }
 
-        // Build value_part = hex(v1)_hex(v2)... in the index's field order
-        // (matching `idx_entry_key`).
-        let encoded: Vec<String> = values
-            .iter()
-            .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
-            .collect();
-        let value_part = encoded.join("_");
-
-        let db = &self.db;
         let cf = self.ks.handle(&self.db)?;
-        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_part);
-        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-
-        let doc_keys: Vec<Vec<u8>> = iter
-            .filter_map(|r| r.ok())
-            .take_while(|(k, _)| k.starts_with(prefix.as_bytes()))
-            .map(|(_, v)| {
-                let key_str = String::from_utf8_lossy(&v);
-                Self::doc_key(&key_str)
-            })
-            .collect();
-
-        if doc_keys.is_empty() {
-            return Some((index, Vec::new()));
+        let mut doc_keys = Vec::new();
+        let iter = self.db.iterator_ks_bounded(
+            &cf,
+            IterMode::From(&start, Direction::Forward),
+            Some(&start),
+            Some(&end),
+        );
+        for item in iter {
+            let Ok((k, v)) = item else { continue };
+            if !k.starts_with(&prefix) || k.as_ref() >= end.as_slice() {
+                break;
+            }
+            doc_keys.push(Self::doc_key(&String::from_utf8_lossy(&v)));
+            if doc_keys.len() >= cap {
+                break;
+            }
         }
-
-        let results = db.multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()));
-        let docs: Vec<Document> = results
+        if doc_keys.is_empty() {
+            return Some(Vec::new());
+        }
+        let docs = self
+            .db
+            .multi_get_ks(&cf, doc_keys.iter().map(|k| k.as_slice()))
             .into_iter()
             .filter_map(|r| r.ok())
             .flatten()
             .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
-
-        Some((index, docs))
+        Some(docs)
     }
 
     /// Lookup documents using index (equality) with limit

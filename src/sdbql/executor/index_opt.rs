@@ -106,6 +106,103 @@ fn is_range_op(op: &BinaryOperator) -> bool {
     )
 }
 
+/// A read of a multi-field index planned by [`composite_plan`].
+struct CompositePlan {
+    index: crate::storage::index::Index,
+    /// The values each leading field may take, distinct by index encoding.
+    eq_lists: Vec<Vec<Value>>,
+    /// Bounds on the field after them: `(value, inclusive)`.
+    lower: Option<(Value, bool)>,
+    upper: Option<(Value, bool)>,
+}
+
+impl CompositePlan {
+    fn fields_used(&self) -> usize {
+        self.eq_lists.len() + usize::from(self.lower.is_some() || self.upper.is_some())
+    }
+}
+
+/// Plan a read of `index` from the AND'd conditions `conds`: the longest run
+/// of leading fields each fixed by an `==` or an `IN`, then the range
+/// conditions on the next field. `None` when the index is not a regular
+/// multi-field one, when no leading field is fixed, when every fixed value
+/// is null (such rows are not indexed), or when the `IN` lists multiply out
+/// to more than [`MAX_INDEXED_IN_KEYS`] reads.
+fn composite_plan(
+    index: crate::storage::index::Index,
+    conds: &[IndexableCondition],
+) -> Option<CompositePlan> {
+    if index.fields.len() < 2
+        || !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+    {
+        return None;
+    }
+    let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
+    let mut eq_lists: Vec<Vec<Value>> = Vec::new();
+    for field in &index.fields {
+        let on_field = || conds.iter().filter(|c| c.field == *field);
+        let list = if let Some(eq) =
+            on_field().find(|c| matches!(c.op, BinaryOperator::Equal) && !complex(&c.value))
+        {
+            vec![eq.value.clone()]
+        } else if let Some(Value::Array(items)) = on_field()
+            .find(|c| matches!(c.op, BinaryOperator::In))
+            .map(|c| &c.value)
+        {
+            if items.iter().any(complex) {
+                break;
+            }
+            let mut seen = HashSet::with_capacity(items.len());
+            items
+                .iter()
+                .filter(|v| seen.insert(crate::storage::codec::encode_key(v)))
+                .cloned()
+                .collect()
+        } else {
+            break;
+        };
+        eq_lists.push(list);
+    }
+    if eq_lists.is_empty() || eq_lists.iter().all(|l| l.len() == 1 && l[0].is_null()) {
+        return None;
+    }
+    let reads = eq_lists
+        .iter()
+        .try_fold(1usize, |acc, l| acc.checked_mul(l.len().max(1)))?;
+    if reads > MAX_INDEXED_IN_KEYS {
+        return None;
+    }
+    let (mut lower, mut upper) = (None, None);
+    if let Some(field) = index.fields.get(eq_lists.len()) {
+        for c in conds
+            .iter()
+            .filter(|c| c.field == *field && !complex(&c.value))
+        {
+            match c.op {
+                BinaryOperator::GreaterThan if lower.is_none() => {
+                    lower = Some((c.value.clone(), false))
+                }
+                BinaryOperator::GreaterThanOrEqual if lower.is_none() => {
+                    lower = Some((c.value.clone(), true))
+                }
+                BinaryOperator::LessThan if upper.is_none() => {
+                    upper = Some((c.value.clone(), false))
+                }
+                BinaryOperator::LessThanOrEqual if upper.is_none() => {
+                    upper = Some((c.value.clone(), true))
+                }
+                _ => {}
+            }
+        }
+    }
+    Some(CompositePlan {
+        index,
+        eq_lists,
+        lower,
+        upper,
+    })
+}
+
 /// Single-field index on `field` whose entries live in the `idx:` key space.
 fn regular_index_on(collection: &Collection, field: &str) -> Option<crate::storage::index::Index> {
     collection.get_all_indexes().into_iter().find(|i| {
@@ -477,17 +574,9 @@ impl<'a> QueryExecutor<'a> {
             return None;
         }
 
-        // 1. Composite path
-        let eq_conditions = self.extract_equality_conditions(filter, var_name, ctx);
-        if eq_conditions.len() >= 2 {
-            let pairs: Vec<(String, Value)> = eq_conditions
-                .iter()
-                .map(|c| (c.field.clone(), c.value.clone()))
-                .collect();
-            if let Some((index, docs)) = collection.index_lookup_eq_composite(&pairs) {
-                let type_str = format!("{:?}", index.index_type);
-                return Some((docs, index.name, type_str));
-            }
+        // 1. Composite path: `==` / `IN` on leading fields, then one range
+        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, limit) {
+            return Some(hit);
         }
 
         // 2. Single-field: the first conjunct an index can serve
@@ -505,6 +594,87 @@ impl<'a> QueryExecutor<'a> {
 
         // 3. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
         self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
+    }
+
+    /// Serve `filter` from a multi-field index: every conjunct that is `==`
+    /// or `IN` on a leading field of the index extends the key prefix, and
+    /// range conjuncts on the field after them bound the read. `IN` lists
+    /// expand to one bounded read per combination of values.
+    ///
+    /// Without `only`, the index whose plan uses the most fields wins, and
+    /// a plan must use at least two (one field is the single-field path's
+    /// job). With `only`, that index is used if it can serve any field. The
+    /// rows returned are a superset of the matches; the caller re-checks
+    /// every FILTER.
+    fn lookup_composite(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        only: Option<&str>,
+        limit: Option<usize>,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        let conds = self.extract_indexable_conditions(filter, var_name, ctx);
+        if conds.is_empty() {
+            return None;
+        }
+        let min_fields = if only.is_some() { 1 } else { 2 };
+        let plan = collection
+            .get_all_indexes()
+            .into_iter()
+            .filter(|i| only.is_none_or(|name| i.name == name))
+            .filter_map(|i| composite_plan(i, &conds))
+            .filter(|p| p.fields_used() >= min_fields)
+            .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))?;
+
+        let cap = limit
+            .or(self.scan_cap())
+            .unwrap_or(usize::MAX)
+            .min(self.max_intermediate_rows().saturating_add(1));
+        let lower = plan.lower.as_ref().map(|(v, inc)| (v, *inc));
+        let upper = plan.upper.as_ref().map(|(v, inc)| (v, *inc));
+        let mut out = Vec::new();
+        // Odometer over the IN lists: one read per combination.
+        let mut at = vec![0usize; plan.eq_lists.len()];
+        if plan.eq_lists.iter().all(|l| !l.is_empty()) {
+            loop {
+                let combo: Vec<Value> = plan
+                    .eq_lists
+                    .iter()
+                    .zip(&at)
+                    .map(|(l, &i)| l[i].clone())
+                    .collect();
+                let docs = collection.index_scan_composite(
+                    &plan.index,
+                    &combo,
+                    lower,
+                    upper,
+                    cap - out.len(),
+                )?;
+                out.extend(docs);
+                if out.len() >= cap {
+                    break; // the caller's budget check reports an overflow
+                }
+                let mut d = at.len();
+                loop {
+                    if d == 0 {
+                        break;
+                    }
+                    d -= 1;
+                    at[d] += 1;
+                    if at[d] < plan.eq_lists[d].len() {
+                        break;
+                    }
+                    at[d] = 0;
+                }
+                if at.iter().all(|&i| i == 0) {
+                    break;
+                }
+            }
+        }
+        let type_str = format!("{:?}", plan.index.index_type);
+        Some((out, plan.index.name, type_str))
     }
 
     /// [`Self::lookup_index_for_filter_limited`] honouring an index hint.
@@ -564,17 +734,10 @@ impl<'a> QueryExecutor<'a> {
                             return Some((docs, index.name.clone(), type_str));
                         }
                     }
-                } else {
-                    let pairs: Vec<(String, Value)> = self
-                        .extract_equality_conditions(filter, var_name, ctx)
-                        .into_iter()
-                        .map(|c| (c.field, c.value))
-                        .collect();
-                    if let Some((used, docs)) = collection.index_lookup_eq_composite(&pairs) {
-                        if used.name == *name {
-                            return Some((docs, used.name, type_str));
-                        }
-                    }
+                } else if let Some(hit) =
+                    self.lookup_composite(collection, filter, var_name, ctx, Some(name), limit)
+                {
+                    return Some(hit);
                 }
             } else if let Some(hit) =
                 self.geo_lookup_for_filter(collection, filter, var_name, ctx, Some(name), limit)

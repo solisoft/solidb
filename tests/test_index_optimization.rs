@@ -871,3 +871,226 @@ fn test_composite_count_falls_back_to_the_scan() {
         assert!(scans > 0, "{query}");
     }
 }
+
+// ============ `==` / `IN` prefixes and a range, from a composite index ============
+
+/// A job queue in the shape Soli's claim reads: states in and out of the
+/// claimed set, a `run_at` that is a date string on most rows, a number on
+/// some and missing on others, and some rows with no state at all.
+fn create_jobs_engine() -> (StorageEngine, TempDir) {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap())
+        .expect("Failed to create storage engine");
+    engine.create_database("jobdb".to_string()).unwrap();
+    let db = engine.get_database("jobdb").unwrap();
+    db.create_collection("jobs".to_string(), None).unwrap();
+    let jobs = db.get_collection("jobs").unwrap();
+    let states = ["pending", "scheduled", "failed", "done", "running"];
+    for i in 0..400i64 {
+        let mut doc = json!({ "seq": i, "priority": i % 4 });
+        if i % 13 != 0 {
+            doc["state"] = json!(states[(i % 5) as usize]);
+        }
+        if i % 11 == 0 {
+            doc["run_at"] = json!(i);
+        } else if i % 7 != 0 {
+            doc["run_at"] = json!(format!("2026-11-{:02}T00:00:00", i % 28 + 1));
+        }
+        jobs.insert(doc).unwrap();
+    }
+    (engine, tmp_dir)
+}
+
+fn add_jobs_index(engine: &StorageEngine, name: &str, fields: &[&str], ty: IndexType) {
+    engine
+        .get_database("jobdb")
+        .unwrap()
+        .get_collection("jobs")
+        .unwrap()
+        .create_index(
+            name.to_string(),
+            fields.iter().map(|f| f.to_string()).collect(),
+            ty,
+            false,
+        )
+        .unwrap();
+}
+
+/// Rows, index named by EXPLAIN, and full collection scans taken.
+fn run_jobs(engine: &StorageEngine, sdbql: &str) -> (Vec<serde_json::Value>, Option<String>, u64) {
+    let executor = QueryExecutor::with_database(engine, "jobdb".to_string());
+    let query = parse(sdbql).unwrap();
+    let rows = executor.execute(&query).unwrap();
+    let scans = executor.collection_scans();
+    let used = executor.explain(&query).unwrap().collections[0]
+        .index_used
+        .clone();
+    (rows, used, scans)
+}
+
+const CLAIMED: &str = "[\"pending\", \"scheduled\", \"failed\"]";
+
+fn range_queries() -> Vec<String> {
+    let f = |filter: &str| format!("FOR j IN jobs FILTER {filter} RETURN j.seq");
+    vec![
+        // Soli's claim, made deterministic on ties.
+        format!(
+            "FOR j IN jobs FILTER j.state IN {CLAIMED} AND j.run_at <= \"2026-11-14T00:00:00\" \
+             SORT j.priority DESC, j.run_at ASC, j.seq ASC LIMIT 20 RETURN j.seq"
+        ),
+        f(&format!("j.state IN {CLAIMED} AND j.run_at <= \"2026-11-14T00:00:00\"")),
+        f("j.state == \"pending\" AND j.run_at < \"2026-11-10\""),
+        f(&format!("j.state IN {CLAIMED} AND j.run_at > \"2026-11-20T00:00:00\"")),
+        f(&format!("j.state IN {CLAIMED} AND j.run_at >= \"2026-11-20T00:00:00\"")),
+        f(&format!(
+            "j.state IN {CLAIMED} AND j.run_at >= \"2026-11-05\" AND j.run_at <= \"2026-11-15\""
+        )),
+        // The field on the right.
+        f(&format!("\"2026-11-14\" >= j.run_at AND j.state IN {CLAIMED}")),
+        // A numeric bound: missing run_at (null) and numbers below it.
+        f(&format!("j.state IN {CLAIMED} AND j.run_at <= 150")),
+        f(&format!("j.state IN {CLAIMED} AND j.run_at <= null")),
+        f(&format!("j.state IN {CLAIMED} AND j.run_at >= 200")),
+        // Repeated IN keys return each row once.
+        f("j.state IN [\"pending\", \"pending\", \"failed\"] AND j.run_at <= \"2026-11-14\""),
+        // Two INs and a range on the third field.
+        f(&format!(
+            "j.state IN {CLAIMED} AND j.run_at IN [\"2026-11-03T00:00:00\", \"2026-11-09T00:00:00\"] \
+             AND j.priority > 1"
+        )),
+        // Every field equal.
+        f("j.state == \"done\" AND j.run_at == \"2026-11-04T00:00:00\" AND j.priority == 3"),
+        f("j.state IN [] AND j.run_at <= \"2026-11-14\""),
+        // A residual conjunct outside the index.
+        f(&format!(
+            "j.state IN {CLAIMED} AND j.run_at <= \"2026-11-14\" AND j.seq % 2 == 0"
+        )),
+    ]
+}
+
+fn sorted_if_unsorted(sdbql: &str, mut rows: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    if !sdbql.contains("SORT") {
+        rows.sort_by_key(|v| v.as_i64());
+    }
+    rows
+}
+
+/// With `[state, run_at, priority]` beside single-field indexes on each
+/// field (what Soli creates for `_jobs`), every query reads the composite
+/// index, scans nothing, and returns exactly what the scan returned.
+#[test]
+fn test_composite_index_serves_in_and_range() {
+    let (engine, _tmp) = create_jobs_engine();
+    let queries = range_queries();
+    let expected: Vec<_> = queries
+        .iter()
+        .map(|q| sorted_if_unsorted(q, run_jobs(&engine, q).0))
+        .collect();
+    assert!(expected[1].len() > 20, "the seed exercises the claim");
+
+    for f in ["state", "run_at", "priority"] {
+        add_jobs_index(&engine, &format!("idx_{f}"), &[f], IndexType::Hash);
+    }
+    add_jobs_index(
+        &engine,
+        "idx_jobs_claim",
+        &["state", "run_at", "priority"],
+        IndexType::Persistent,
+    );
+
+    for (q, want) in queries.iter().zip(&expected) {
+        let (rows, used, scans) = run_jobs(&engine, q);
+        assert_eq!(&sorted_if_unsorted(q, rows), want, "{q}");
+        assert_eq!(used.as_deref(), Some("idx_jobs_claim"), "{q}");
+        assert_eq!(scans, 0, "{q}");
+    }
+}
+
+/// What the composite read cannot serve falls back, with the same rows.
+#[test]
+fn test_composite_range_falls_back() {
+    let (engine, _tmp) = create_jobs_engine();
+    let queries = [
+        // Every leading value null: such rows are not in the index.
+        "FOR j IN jobs FILTER j.state == null AND j.run_at == null RETURN j.seq",
+        // Leading values all null and a range that admits null: a row with
+        // every index field null would match and is not in the index.
+        "FOR j IN jobs FILTER j.state == null AND j.run_at <= \"2026-11-14\" RETURN j.seq",
+        // An array bound: the codec orders arrays as JSON text.
+        "FOR j IN jobs FILTER j.state == \"pending\" AND j.run_at <= [\"x\"] RETURN j.seq",
+        // Not a leading field.
+        "FOR j IN jobs FILTER j.run_at <= \"2026-11-14\" AND j.priority == 1 RETURN j.seq",
+    ];
+    let expected: Vec<_> = queries
+        .iter()
+        .map(|q| sorted_if_unsorted(q, run_jobs(&engine, q).0))
+        .collect();
+    add_jobs_index(
+        &engine,
+        "idx_jobs_claim",
+        &["state", "run_at", "priority"],
+        IndexType::Persistent,
+    );
+    for (q, want) in queries.iter().zip(&expected) {
+        let (rows, used, _) = run_jobs(&engine, q);
+        assert_eq!(&sorted_if_unsorted(q, rows), want, "{q}");
+        assert_eq!(used, None, "{q}");
+    }
+}
+
+/// `indexHint` naming a composite index uses it, even for a FILTER that
+/// fixes only its first field; `forceIndexHint` still fails when the named
+/// index cannot serve the FILTER.
+#[test]
+fn test_index_hint_names_a_composite_index() {
+    let (engine, _tmp) = create_jobs_engine();
+    let hinted = [
+        format!(
+            "FOR j IN jobs OPTIONS {{ indexHint: \"idx_jobs_claim\", forceIndexHint: true }} \
+             FILTER j.state IN {CLAIMED} AND j.run_at <= \"2026-11-14\" RETURN j.seq"
+        ),
+        format!(
+            "FOR j IN jobs OPTIONS {{ indexHint: \"idx_jobs_claim\", forceIndexHint: true }} \
+             FILTER j.state IN {CLAIMED} RETURN j.seq"
+        ),
+        "FOR j IN jobs OPTIONS { indexHint: \"idx_jobs_claim\" } \
+         FILTER j.state == \"failed\" AND j.priority == 2 RETURN j.seq"
+            .to_string(),
+    ];
+    // The same queries without their OPTIONS, before the index exists.
+    let unhinted = |q: &str| {
+        let (head, rest) = q.split_once(" OPTIONS ").unwrap();
+        format!("{head} {}", rest.split_once("} ").unwrap().1)
+    };
+    let expected: Vec<_> = hinted
+        .iter()
+        .map(|q| sorted_if_unsorted(q, run_jobs(&engine, &unhinted(q)).0))
+        .collect();
+    add_jobs_index(
+        &engine,
+        "idx_jobs_claim",
+        &["state", "run_at", "priority"],
+        IndexType::Persistent,
+    );
+    for (q, want) in hinted.iter().zip(&expected) {
+        let executor = QueryExecutor::with_database(&engine, "jobdb".to_string());
+        let rows = executor.execute(&parse(q).unwrap()).unwrap();
+        assert_eq!(&sorted_if_unsorted(q, rows), want, "{q}");
+        assert_eq!(executor.collection_scans(), 0, "{q}");
+    }
+
+    let executor = QueryExecutor::with_database(&engine, "jobdb".to_string());
+    let err = executor
+        .execute(
+            &parse(
+                "FOR j IN jobs OPTIONS { indexHint: \"idx_jobs_claim\", forceIndexHint: true } \
+                 FILTER j.priority == 2 RETURN j.seq",
+            )
+            .unwrap(),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("could not use index hint"),
+        "{err}"
+    );
+}

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Performance
+
+* **A composite index serves `IN` and a range.** A composite index was used
+  only when `==` terms covered every one of its fields, so `FILTER d.state IN
+  [...] AND d.run_at <= @now` — Soli's job claim, against the
+  `[state, run_at, priority]` index Soli creates for `_jobs` — was served by
+  the single-field `state` index and read every pending, scheduled and failed
+  job. Leading fields fixed by `==` or `IN`, then one range on the next
+  field, are now read as one bounded range of the index per combination of
+  values; every FILTER is still re-checked per document. On a 172k-job queue
+  with 50 due: 390 ms → 0.21 ms per claim.
+* **`indexHint` can name a composite index.** The hint was dropped (and
+  `forceIndexHint` failed) unless `==` terms covered all its fields; it is now
+  honoured as soon as the FILTER fixes the index's first field.
+
 ## [2.6.2](https://github.com/solisoft/solidb/compare/v2.6.1...v2.6.2) (2026-11-04)
 
 ### Bug Fixes
