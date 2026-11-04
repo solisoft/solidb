@@ -1459,19 +1459,73 @@ fn test_explain_reports_index_paths_and_subqueries() {
         ]
     );
 
-    // No row reaches the subquery: said so, not guessed.
-    let e = explain(
-        "FOR d IN indexed FILTER d.a == 99 \
-         LET o = (FOR x IN indexed FILTER x.b == d.b RETURN 1) RETURN o",
+    // No row reaches the subquery: its loops are planned from the shape of
+    // their FILTER, outer values standing in as placeholders, and say so.
+    let none = "FOR d IN indexed FILTER d.a == 99";
+    let e = explain(&format!(
+        "{none} LET o = (FOR x IN indexed FILTER x.b == d.b RETURN 1) RETURN o"
+    ));
+    assert_eq!(e.collections.len(), 2);
+    let o = &e.collections[1];
+    assert_eq!(
+        (
+            o.subquery.as_deref(),
+            o.access_type.as_str(),
+            o.index_used.as_deref()
+        ),
+        (Some("LET o"), "index_lookup", Some("idx_b"))
     );
-    assert_eq!(e.collections.len(), 1);
+    assert_eq!(o.estimated, Some(true));
+    assert_eq!(e.collections[0].estimated, None);
     assert!(
         e.warnings
             .iter()
-            .any(|w| w.contains("LET o: subquery not explained")),
+            .any(|w| w.contains("LET o: no row reached the subquery")),
         "{:?}",
         e.warnings
     );
+    // A Soli `includes`: the primary key.
+    let e = explain(&format!(
+        "{none} LET owner = (FOR u IN indexed FILTER u._key == d.owner_id LIMIT 1 RETURN u) \
+         RETURN owner"
+    ));
+    assert_eq!(e.collections[1].index_used.as_deref(), Some("primary key"));
+    // `IN` an outer list, an unindexed field, and a subquery inside one.
+    let e = explain(&format!(
+        "{none} LET o = (FOR x IN indexed FILTER x.a IN d.list \
+           LET y = (FOR z IN plain FILTER z.b == x.b RETURN 1) RETURN y) RETURN o"
+    ));
+    let got: Vec<_> = e
+        .collections
+        .iter()
+        .skip(1)
+        .map(|c| {
+            (
+                c.subquery.clone(),
+                c.name.clone(),
+                c.access_type.clone(),
+                c.estimated,
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (
+                Some("LET o".into()),
+                "indexed".into(),
+                "index_lookup".into(),
+                Some(true)
+            ),
+            (
+                Some("LET o > LET y".into()),
+                "plain".into(),
+                "full_scan".into(),
+                Some(true)
+            ),
+        ]
+    );
+    assert_eq!(e.collections[1].index_used.as_deref(), Some("idx_a"));
 }
 
 // ================= Non-sparse indexes (`sparse: false`) =================

@@ -22,6 +22,12 @@
   EXPLAIN also writes FILTER expressions as SDBQL (`d.a == 1 OR d.b == 2`):
   comparisons, logical and arithmetic operators, arrays and objects printed
   as the parsed tree (`BinaryOp { left: … }`).
+* **EXPLAIN plans a subquery that no row reaches.** On an empty collection,
+  or when the FILTER before it matches nothing, a correlated subquery (a
+  Soli `includes`, `LET x = (FOR … FILTER x.f == doc.g …)`) was only noted
+  in `warnings`. Its loops are now planned from the shape of their FILTER,
+  outer values standing in as non-null placeholders, without being run, and
+  listed with `"estimated": true` — nested subqueries too.
 
 ### Performance
 

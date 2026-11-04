@@ -280,6 +280,71 @@ fn best_composite_plan(
         .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))
 }
 
+/// The value a FILTER's comparison stands for when the row it reads is not
+/// there to evaluate: non-null, a scalar, matching nothing in particular.
+const PLACEHOLDER_VALUE: &str = "<value from the outer row>";
+
+/// `filter` with the value side of each AND'd / OR'd comparison replaced by a
+/// non-null placeholder when it reads a variable other than `var` — what
+/// [`QueryExecutor::plan_index_read`] needs to choose an index by the shape of
+/// a correlated subquery's FILTER (`rel._key == doc.owner_id`) when no outer
+/// row exists to evaluate it against. An `IN` gets a one-element array.
+/// Anything else is kept as it is.
+pub(super) fn with_placeholder_values(filter: &Expression, var: &str) -> Expression {
+    let reads_other_vars = |e: &Expression| {
+        !expression_references_var(e, var)
+            && expression_any(e, &mut |x| matches!(x, Expression::Variable(_)))
+    };
+    let placeholder = |array: bool| {
+        let lit = Expression::Literal(Value::String(PLACEHOLDER_VALUE.to_string()));
+        if array {
+            Expression::Array(vec![lit])
+        } else {
+            lit
+        }
+    };
+    match filter {
+        Expression::BinaryOp {
+            left,
+            op: op @ (BinaryOperator::And | BinaryOperator::Or),
+            right,
+        } => Expression::BinaryOp {
+            left: Box::new(with_placeholder_values(left, var)),
+            op: op.clone(),
+            right: Box::new(with_placeholder_values(right, var)),
+        },
+        Expression::BinaryOp { left, op, right } => {
+            let list = matches!(op, BinaryOperator::In | BinaryOperator::NotIn);
+            let left_is_field = expression_references_var(left, var);
+            let right_is_field = expression_references_var(right, var);
+            Expression::BinaryOp {
+                left: Box::new(if right_is_field && !list && reads_other_vars(left) {
+                    placeholder(false)
+                } else {
+                    (**left).clone()
+                }),
+                op: op.clone(),
+                right: Box::new(if left_is_field && reads_other_vars(right) {
+                    placeholder(list)
+                } else {
+                    (**right).clone()
+                }),
+            }
+        }
+        Expression::FunctionCall { name, args }
+            if name.eq_ignore_ascii_case("STARTS_WITH")
+                && args.len() == 2
+                && reads_other_vars(&args[1]) =>
+        {
+            Expression::FunctionCall {
+                name: name.clone(),
+                args: vec![args[0].clone(), placeholder(false)],
+            }
+        }
+        other => other.clone(),
+    }
+}
+
 /// What [`QueryExecutor::lookup_index_for_filter_limited`] would read for a
 /// FILTER, decided without reading anything.
 #[derive(Debug, Clone, PartialEq)]

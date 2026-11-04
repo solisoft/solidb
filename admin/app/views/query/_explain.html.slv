@@ -46,6 +46,9 @@
                 <% if access["subquery"] %>
                   <span class="block text-xs text-zinc-500">in <%= access["subquery"] %></span>
                 <% end %>
+                <% if access["estimated"] %>
+                  <span class="block text-xs text-zinc-500">estimated: no row reached it</span>
+                <% end %>
               </td>
               <td class="font-mono text-zinc-500"><%= access["variable"] ?? "" %></td>
               <td>

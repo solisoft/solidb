@@ -76,8 +76,12 @@ impl<'a> QueryExecutor<'a> {
         }
         let Some(ctx) = ctx else {
             warnings.push(format!(
-                "{label}: subquery not explained, no row reached it"
+                "{label}: no row reached the subquery; its plan is estimated from the shape of \
+                 its FILTER"
             ));
+            for (sub, _) in subs {
+                self.estimate_subquery(&sub, label, depth + 1, out, warnings);
+            }
             return;
         };
         for (sub, under_length) in subs {
@@ -98,6 +102,107 @@ impl<'a> QueryExecutor<'a> {
                     warnings.extend(plan.warnings.into_iter().map(|w| format!("{label}: {w}")));
                 }
                 Err(e) => warnings.push(format!("{label}: subquery not explained: {e}")),
+            }
+        }
+    }
+
+    /// The loops of a subquery no row reached, planned without running it:
+    /// each `FOR` over a collection gets the access [`Self::plan_index_read`]
+    /// chooses for its FILTER, values read from outer rows replaced by a
+    /// placeholder, marked `estimated`. Subqueries inside it are estimated
+    /// the same way.
+    fn estimate_subquery(
+        &self,
+        sub: &Query,
+        label: &str,
+        depth: usize,
+        out: &mut Vec<CollectionAccess>,
+        warnings: &mut Vec<String>,
+    ) {
+        use super::index_opt::{with_placeholder_values, PlannedRead};
+        let clauses = &sub.body_clauses;
+        for (i, clause) in clauses.iter().enumerate() {
+            let BodyClause::For(for_clause) = clause else {
+                continue;
+            };
+            let iterates_collection = for_clause.source_expression.is_none()
+                && !for_clause.collection.is_empty()
+                && for_clause
+                    .source_variable
+                    .as_ref()
+                    .is_none_or(|s| s == &for_clause.collection);
+            if !iterates_collection {
+                continue;
+            }
+            let filters = leading_filters(clauses, i + 1);
+            let plan = match (
+                self.get_collection(&for_clause.collection),
+                conjunction(&filters),
+            ) {
+                (Ok(collection), Some(filter))
+                    if !self.row_policy_applies(&for_clause.collection) =>
+                {
+                    let filter = with_placeholder_values(&filter, &for_clause.variable);
+                    self.plan_index_read(
+                        &collection,
+                        &filter,
+                        &for_clause.variable,
+                        &Context::default(),
+                    )
+                }
+                _ => PlannedRead::Scan,
+            };
+            let (access_type, index_used) = match plan {
+                PlannedRead::Index(name) => ("index_lookup", Some(name)),
+                PlannedRead::Maybe => {
+                    warnings.push(format!(
+                        "{label}: `{}` may be read from a geo index, depending on the rows",
+                        for_clause.collection
+                    ));
+                    ("full_scan", None)
+                }
+                PlannedRead::Scan => ("full_scan", None),
+            };
+            out.push(CollectionAccess {
+                name: for_clause.collection.clone(),
+                variable: for_clause.variable.clone(),
+                access_type: access_type.to_string(),
+                index_used,
+                index_type: None,
+                documents_count: 0,
+                auto_index_candidate: None,
+                subquery: Some(label.to_string()),
+                estimated: Some(true),
+            });
+        }
+
+        // Subqueries inside it, labelled as a run would label them.
+        if depth >= MAX_EXPLAIN_DEPTH {
+            return;
+        }
+        let lets = sub
+            .let_clauses
+            .iter()
+            .chain(clauses.iter().filter_map(|c| match c {
+                BodyClause::Let(l) => Some(l),
+                _ => None,
+            }));
+        let mut nested: Vec<(String, &Expression)> = lets
+            .chain(&sub.post_limit_lets)
+            .map(|l| (format!("LET {}", l.variable), &l.expression))
+            .collect();
+        nested.extend(clauses.iter().filter_map(|c| match c {
+            BodyClause::Filter(f) => Some(("FILTER".to_string(), &f.expression)),
+            _ => None,
+        }));
+        if let Some(ret) = &sub.return_clause {
+            nested.push(("RETURN".to_string(), &ret.expression));
+        }
+        for (inner, expr) in nested {
+            let mut subs = Vec::new();
+            direct_subqueries(expr, &mut subs);
+            for (q, _) in subs {
+                self.estimate_subquery(&q, &format!("{label} > {inner}"), depth + 1, out, warnings);
             }
         }
     }
@@ -408,6 +513,7 @@ impl<'a> QueryExecutor<'a> {
                         documents_count: 0, // Simplified
                         auto_index_candidate,
                         subquery: None,
+                        estimated: None,
                     });
                 }
                 BodyClause::Filter(filter_clause) => {

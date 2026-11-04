@@ -254,6 +254,11 @@ pub struct CollectionAccess {
     /// ` > `. Absent for the query's own loops.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subquery: Option<String>,
+    /// `true` when no row reached this subquery loop, so its access was
+    /// planned from the shape of its FILTER (outer values standing in as
+    /// non-null placeholders) instead of being run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
