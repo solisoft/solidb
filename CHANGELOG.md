@@ -30,7 +30,10 @@
   term rejects null (`f >= 1 AND f <= 5`, `f <= 5 AND f != null`), an
   ascending sort only when every document has an entry, and a descending one
   as long as it does not run out of indexed rows; otherwise the query scans.
-  A non-sparse index (`"sparse": false`) keeps all of them indexed.
+  Whether a sparse index holds every document is counted once and cached
+  until the collection's next write, so a repeated ascending
+  `SORT … LIMIT` stays a read of its first entries. A non-sparse index
+  (`"sparse": false`) keeps all of them indexed.
 
 ## [2.6.4](https://github.com/solisoft/solidb/compare/v2.6.3...v2.6.4) (2026-11-04)
 

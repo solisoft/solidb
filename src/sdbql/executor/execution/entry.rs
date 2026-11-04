@@ -869,18 +869,15 @@ impl QueryExecutor<'_> {
             return Some("primary key".to_string());
         }
         let index = collection.get_index_for_field(field)?;
-        if index.sparse {
+        if !collection.index_holds_every_document(&index) {
             // As `complete_index_sorted` decides it, from the entry count
-            // instead of the rows read.
-            let total = collection.count();
-            let entries = collection.index_entry_count(&index);
+            // instead of the rows read: descending, enough indexed rows.
             let wanted = query.limit_clause.as_ref().and_then(|l| {
                 let (offset, count) = self.eval_limit(l, bindings);
                 offset.checked_add(count?)
             });
-            let complete =
-                entries >= total || (!sort.fields[0].1 && wanted.is_some_and(|k| entries >= k));
-            if !complete {
+            let descending = !sort.fields[0].1;
+            if !(descending && wanted.is_some_and(|k| collection.index_entry_count(&index) >= k)) {
                 return None;
             }
         }
@@ -896,7 +893,8 @@ impl QueryExecutor<'_> {
     /// first, so the read is exact only when the index holds every document.
     /// Descending, they come last: the read is exact unless it falls short of
     /// `limit` without having read every document. A non-sparse index, and
-    /// the primary key, hold every document.
+    /// the primary key, hold every document. Whether a sparse one does is
+    /// [`Collection::index_holds_every_document`], cached per write.
     pub(in crate::sdbql::executor) fn complete_index_sorted(
         &self,
         collection: &crate::storage::Collection,
@@ -908,16 +906,15 @@ impl QueryExecutor<'_> {
             return collection.index_sorted(field, ascending, limit);
         }
         let index = collection.get_index_for_field(field)?;
-        if !index.sparse {
+        // Cached until the collection's next write (one key count, then O(1)).
+        if collection.index_holds_every_document(&index) {
             return collection.index_sorted(field, ascending, limit);
         }
-        let total = collection.count();
-        if ascending && collection.index_entry_count(&index) < total {
+        if ascending {
             return None;
         }
         let docs = collection.index_sorted(field, ascending, limit)?;
-        let enough = docs.len() >= total || limit.is_some_and(|k| docs.len() >= k);
-        enough.then_some(docs)
+        limit.is_some_and(|k| docs.len() >= k).then_some(docs)
     }
 }
 

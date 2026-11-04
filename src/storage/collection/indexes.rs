@@ -417,6 +417,9 @@ impl Collection {
     /// Call this after bulk imports using insert_no_index()
     pub fn rebuild_all_indexes(&self) -> DbResult<usize> {
         let total_start = std::time::Instant::now();
+        // Entries are cleared and rewritten: results cached against them, and
+        // completeness answers, must not outlive the rebuild.
+        let _invalidate = self.invalidate_cached_queries_on_exit();
 
         let indexes = self.get_all_indexes();
         let geo_indexes = self.get_all_geo_indexes();

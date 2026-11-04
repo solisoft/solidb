@@ -689,6 +689,8 @@ impl Collection {
     /// collection without a fulltext index answers `[]`, which is cached).
     pub(crate) fn invalidate_cached_queries(&self) {
         crate::storage::query_cache::invalidate_collection("", &self.name);
+        // Same moments, same reason: what the index holds may have changed.
+        super::index_meta::bump_write_generation(&self.db, &self.name);
     }
 
     /// [`Self::invalidate_cached_queries`] when the returned guard drops, so

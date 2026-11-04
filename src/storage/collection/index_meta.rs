@@ -109,3 +109,86 @@ impl Collection {
         invalidate_index_meta(&self.db, &self.name);
     }
 }
+
+/// Per collection, process-wide like the cache above: a write generation,
+/// and the answer to "does this sparse index hold every document?" for the
+/// generation it was computed at.
+///
+/// The generation is bumped by [`bump_write_generation`], which runs from
+/// `Collection::invalidate_cached_queries` — after every document write
+/// (`emit_change`), truncate and index DDL or rebuild, each already
+/// committed. A reader loads the generation *before* counting, so a count
+/// that races a write is stored under a generation the write then moves
+/// past, and is recomputed on the next read instead of being trusted.
+#[derive(Default)]
+struct Completeness {
+    generation: std::sync::atomic::AtomicU64,
+    answers: DashMap<String, (u64, bool)>,
+}
+
+struct CompletenessEntry {
+    db: Weak<DB>,
+    state: Arc<Completeness>,
+}
+
+static COMPLETENESS: Lazy<DashMap<CacheKey, CompletenessEntry>> = Lazy::new(DashMap::new);
+
+/// The live completeness state of a collection, created when absent or when
+/// the stored one belongs to a DB that died (its address reused).
+fn completeness(db: &Arc<DB>, cf_name: &str) -> Arc<Completeness> {
+    let key = cache_key(db, cf_name);
+    if let Some(entry) = COMPLETENESS.get(&key) {
+        if entry
+            .db
+            .upgrade()
+            .is_some_and(|live| Arc::ptr_eq(&live, db))
+        {
+            return Arc::clone(&entry.state);
+        }
+    }
+    let state = Arc::new(Completeness::default());
+    COMPLETENESS.insert(
+        key,
+        CompletenessEntry {
+            db: Arc::downgrade(db),
+            state: Arc::clone(&state),
+        },
+    );
+    state
+}
+
+/// Move a collection's write generation, dropping every cached answer.
+/// Nothing to do when no answer was ever cached for it.
+pub(crate) fn bump_write_generation(db: &DB, cf_name: &str) {
+    if let Some(entry) = COMPLETENESS.get(&cache_key(db, cf_name)) {
+        entry
+            .state
+            .generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+impl Collection {
+    /// Whether `index` has an entry for every document. Always for a
+    /// non-sparse index; for a sparse one, when no document has all its index
+    /// fields null — its entry count equals [`Self::count`]. That count reads
+    /// every key of the index, so the answer is cached until the collection's
+    /// next write.
+    pub(crate) fn index_holds_every_document(&self, index: &Index) -> bool {
+        if !index.sparse {
+            return true;
+        }
+        let state = completeness(&self.db, &self.name);
+        let generation = state.generation.load(std::sync::atomic::Ordering::Acquire);
+        if let Some(answer) = state.answers.get(&index.name) {
+            if answer.0 == generation {
+                return answer.1;
+            }
+        }
+        let complete = self.index_entry_count(index) >= self.count();
+        state
+            .answers
+            .insert(index.name.clone(), (generation, complete));
+        complete
+    }
+}

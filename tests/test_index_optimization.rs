@@ -1878,3 +1878,80 @@ fn test_sparse_index_sorts_keep_null_rows() {
         );
     }
 }
+
+/// Whether a sparse index holds every document is cached between writes:
+/// each write path that can leave a document out of it must be seen, through
+/// whichever handle it arrives, before the next ascending read trusts it.
+#[test]
+fn test_sparse_sort_completeness_follows_writes() {
+    let (engine, _tmp) = create_sparse_engine();
+    let executor = QueryExecutor::with_database(&engine, "sparsedb".to_string());
+    let sorted = || {
+        let q = parse("FOR d IN complete SORT d.f ASC LIMIT 3 RETURN d.f").unwrap();
+        let ex = QueryExecutor::with_database(&engine, "sparsedb".to_string());
+        let rows = ex.execute(&q).unwrap();
+        (rows, ex.collection_scans() == 0)
+    };
+    let run = |q: &str| executor.execute(&parse(q).unwrap()).unwrap();
+    let expect_null_first = |label: &str| {
+        let (rows, indexed) = sorted();
+        assert_eq!(rows[0], serde_json::Value::Null, "{label}");
+        assert!(
+            !indexed,
+            "{label}: a row the index lacks must send it to the scan"
+        );
+    };
+    let expect_indexed = |label: &str| {
+        let (rows, indexed) = sorted();
+        assert_ne!(rows[0], serde_json::Value::Null, "{label}");
+        assert!(indexed, "{label}");
+    };
+
+    expect_indexed("start");
+    expect_indexed("cached");
+
+    run("INSERT {_key: \"n1\"} INTO complete");
+    expect_null_first("insert without f");
+    run("REMOVE \"n1\" IN complete");
+    expect_indexed("removed");
+
+    let any_key = run("FOR d IN complete LIMIT 1 RETURN d._key")[0].clone();
+    let key = any_key.as_str().unwrap().to_string();
+    run(&format!("UPDATE \"{key}\" WITH {{f: null}} IN complete"));
+    expect_null_first("update to null");
+    run(&format!("UPDATE \"{key}\" WITH {{f: 4}} IN complete"));
+    expect_indexed("update back");
+
+    run(&format!("REPLACE \"{key}\" WITH {{seq: -1}} IN complete"));
+    expect_null_first("replace without f");
+    run(&format!(
+        "REPLACE \"{key}\" WITH {{seq: -1, f: 4}} IN complete"
+    ));
+    expect_indexed("replace back");
+
+    let db = engine.get_database("sparsedb").unwrap();
+    db.get_collection("complete")
+        .unwrap()
+        .insert_batch(vec![json!({"_key": "b1"})])
+        .unwrap();
+    expect_null_first("insert_batch");
+    run("REMOVE \"b1\" IN complete");
+    expect_indexed("batch row removed");
+
+    // A write through the engine's own handle for the collection.
+    engine
+        .get_collection("sparsedb:complete")
+        .unwrap()
+        .insert(json!({"_key": "e1"}))
+        .unwrap();
+    expect_null_first("engine handle");
+    run("REMOVE \"e1\" IN complete");
+    expect_indexed("engine row removed");
+
+    // Rebuilding keeps the answer right.
+    db.get_collection("complete")
+        .unwrap()
+        .rebuild_all_indexes()
+        .unwrap();
+    expect_indexed("rebuilt");
+}
