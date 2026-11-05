@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.7.0](https://github.com/solisoft/solidb/compare/v2.6.4...v2.7.0) (2026-11-05)
+
 ### Features
 
 * **Trigram indexes for `LIKE "%term%"`.** A search box's
