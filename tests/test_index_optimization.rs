@@ -2277,3 +2277,79 @@ fn test_trigram_index_steps_aside_when_unselective() {
         .unwrap();
     assert_eq!(e.collections[0].access_type, "full_scan");
 }
+
+/// `explain_plan` (`analyze: false`) chooses the accesses EXPLAIN reports,
+/// marks them estimated, and reads and writes nothing.
+#[test]
+fn test_explain_plan_without_running() {
+    let (engine, _tmp) = create_planner_engine();
+    let main_access = |q: &str| {
+        let ast = parse(q).unwrap();
+        let ex = QueryExecutor::with_database(&engine, "plandb".to_string());
+        let ran = ex.explain(&ast).unwrap();
+        let ex = QueryExecutor::with_database(&engine, "plandb".to_string());
+        let plan = ex.explain_plan(&ast).unwrap();
+        assert_eq!(ex.collection_scans(), 0, "{q}: a plan reads nothing");
+        assert!(plan.plan_only, "{q}");
+        assert_eq!(plan.timing.total_us, 0, "{q}");
+        assert_eq!(plan.documents_scanned, 0, "{q}");
+        assert!(
+            plan.collections.iter().all(|c| c.estimated == Some(true)),
+            "{q}"
+        );
+        (ran, plan)
+    };
+    for q in [
+        "FOR d IN indexed FILTER d.object == \"accounts\" RETURN d",
+        "FOR d IN indexed FILTER d.a == 1 OR d.b == 2 RETURN d",
+        "FOR d IN indexed FILTER d.owner_id == \"u1\" AND d.status != \"Completed\" RETURN d",
+        "FOR d IN indexed FILTER d.seq == 5 RETURN d",
+        "FOR d IN indexed SORT d.a DESC LIMIT 5 RETURN d",
+    ] {
+        let (ran, plan) = main_access(q);
+        assert_eq!(
+            (
+                plan.collections[0].access_type.as_str(),
+                &plan.collections[0].index_used
+            ),
+            (
+                ran.collections[0].access_type.as_str(),
+                &ran.collections[0].index_used
+            ),
+            "{q}"
+        );
+    }
+
+    // Subqueries are planned too, with the labels a run gives them.
+    let (_, plan) = main_access(
+        "FOR d IN indexed FILTER d.a == 1 \
+         LET o = (FOR x IN indexed FILTER x.b == d.b RETURN 1) RETURN o",
+    );
+    assert_eq!(plan.collections[1].subquery.as_deref(), Some("LET o"));
+    assert_eq!(plan.collections[1].index_used.as_deref(), Some("idx_b"));
+
+    // A scan the run would make is not made.
+    let ast = parse("FOR d IN plain FILTER d.seq > 3 RETURN d").unwrap();
+    let ex = QueryExecutor::with_database(&engine, "plandb".to_string());
+    ex.explain(&ast).unwrap();
+    assert!(ex.collection_scans() > 0);
+    let ex = QueryExecutor::with_database(&engine, "plandb".to_string());
+    let plan = ex.explain_plan(&ast).unwrap();
+    assert_eq!(ex.collection_scans(), 0);
+    assert_eq!(plan.collections[0].access_type, "full_scan");
+
+    // A write is planned, not made.
+    let count = || {
+        engine
+            .get_database("plandb")
+            .unwrap()
+            .get_collection("plain")
+            .unwrap()
+            .count()
+    };
+    let before = count();
+    let ex = QueryExecutor::with_database(&engine, "plandb".to_string());
+    ex.explain_plan(&parse("FOR i IN 1..3 INSERT {x: i} INTO plain").unwrap())
+        .unwrap();
+    assert_eq!(count(), before);
+}

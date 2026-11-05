@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Features
+
+* **EXPLAIN without running the query: `"analyze": false`.** EXPLAIN runs
+  the query to time each step, so explaining a slow query cost as much as
+  running it. `POST …/explain` with `"analyze": false` builds the plan
+  without reading a document or writing anything: each loop, its
+  subqueries' included, gets the access the planner chooses for its FILTER
+  (`"estimated": true`), an index-ordered SORT is named, timings and counts
+  are zero, and the response carries `"plan_only": true`. `analyze`
+  defaults to `true`, so existing callers see no change.
+
 ## [2.7.1](https://github.com/solisoft/solidb/compare/v2.7.0...v2.7.1) (2026-11-05)
 
 ### Bug Fixes

@@ -125,6 +125,12 @@
                          <td class="p-3">Key-value pairs for bind parameters.</td>
                          <td class="p-3">No</td>
                        </tr>
+                       <tr>
+                         <td class="p-3 text-fuchsia-400 font-mono">analyze</td>
+                         <td class="p-3 font-mono">boolean</td>
+                         <td class="p-3">Default <code>true</code>: the query is run to time each step. <code>false</code> plans it without running it or reading a document &mdash; every access marked <code>"estimated": true</code>, timings and counts zero, <code>"plan_only": true</code>. Safe on a large or slow query; the data can still change what a run does.</td>
+                         <td class="p-3">No</td>
+                       </tr>
                      </tbody>
                    </table>
                  </div>

@@ -37,9 +37,16 @@ pub struct ExecuteQueryRequest {
     pub batch_size: usize,
     #[serde(default = "default_cache")]
     pub cache: bool,
+    /// EXPLAIN only: `false` plans the query without running it.
+    #[serde(default = "default_analyze")]
+    pub analyze: bool,
 }
 
 fn default_cache() -> bool {
+    true
+}
+
+fn default_analyze() -> bool {
     true
 }
 
@@ -990,6 +997,7 @@ pub async fn explain_query(
     // EXPLAIN reports whether *this* caller's run would auto-index, so it needs
     // the same principal the run would get.
     let principal = principal_from_claims(&claims);
+    let analyze = req.analyze;
 
     let explain = {
         let storage = storage.clone();
@@ -1010,7 +1018,11 @@ pub async fn explain_query(
                     }
                 }
 
-                executor.explain(&query)
+                if analyze {
+                    executor.explain(&query)
+                } else {
+                    executor.explain_plan(&query)
+                }
             }),
         )
         .await

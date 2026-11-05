@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">EXPLAIN without running the query: <code>"analyze": false</code></strong> &mdash; EXPLAIN runs the query to time each step, so explaining a slow one cost as much as running it. With <code>"analyze": false</code> the plan is built without reading a document or writing anything: each loop gets the access the planner chooses (<code>"estimated": true</code>) and the response carries <code>"plan_only": true</code>. The default is unchanged.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.7.1 -->
   <section id="v2-7-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

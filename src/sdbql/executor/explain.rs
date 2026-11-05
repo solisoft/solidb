@@ -49,6 +49,94 @@ impl<'a> QueryExecutor<'a> {
         self.explain_in(query, &Context::default(), 0)
     }
 
+    /// The plan of `query` without running it (`analyze: false`): each loop
+    /// over a collection, its subqueries' included, gets the access the
+    /// planner chooses for its FILTER — values read from other rows standing
+    /// in as placeholders — marked `estimated`; an index-ordered SORT is named
+    /// when one applies. No document is read and nothing is written; timings
+    /// and document counts are zero. The data can still change the real run:
+    /// a sparse index's ordered read falls back when short of rows, a trigram
+    /// read when its term is too common.
+    pub fn explain_plan(&self, query: &Query) -> DbResult<QueryExplain> {
+        let mut folded_query = query.clone();
+        self.fold_constants(&mut folded_query);
+        let query = &folded_query;
+        let bindings = Context::default();
+        let mut warnings = vec![
+            "plan only (analyze: false): nothing was run and no document was read; every access \
+             is estimated from the shape of the query"
+                .to_string(),
+        ];
+        let mut collections = Vec::new();
+        self.estimate_loops(query, None, 0, &mut collections, &mut warnings);
+
+        let sort_index = if super::execution::has_window_functions(query) {
+            None
+        } else {
+            self.bare_sort_index(query, &bindings)
+        };
+        if let (Some(name), Some(first)) = (&sort_index, collections.first_mut()) {
+            if first.subquery.is_none() {
+                first.access_type = "index_sort".to_string();
+                first.index_used = Some(name.clone());
+            }
+        }
+
+        let filters = query
+            .body_clauses
+            .iter()
+            .filter_map(|c| match c {
+                BodyClause::Filter(f) => Some(FilterInfo {
+                    expression: format_expression(&f.expression),
+                    index_candidate: None,
+                    can_use_index: false,
+                    documents_before: 0,
+                    documents_after: 0,
+                    time_us: 0,
+                }),
+                _ => None,
+            })
+            .collect();
+        let limit = query.limit_clause.as_ref().map(|l| {
+            let (offset, count) = self.eval_limit(l, &bindings);
+            LimitInfo { offset, count }
+        });
+        Ok(QueryExplain {
+            collections,
+            let_bindings: query
+                .let_clauses
+                .iter()
+                .map(|l| LetBinding {
+                    variable: l.variable.clone(),
+                    is_subquery: matches!(l.expression, Expression::Subquery(_)),
+                    time_us: 0,
+                })
+                .collect(),
+            filters,
+            sort: query.sort_clause.as_ref().map(|s| SortInfo {
+                field: s
+                    .fields
+                    .iter()
+                    .map(|(e, _)| format_expression(e))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                direction: if s.fields.first().map(|(_, asc)| *asc).unwrap_or(true) {
+                    "ASC".to_string()
+                } else {
+                    "DESC".to_string()
+                },
+                time_us: 0,
+                index: sort_index,
+            }),
+            limit,
+            timing: ExecutionTiming::default(),
+            documents_scanned: 0,
+            documents_returned: 0,
+            warnings,
+            plan_only: true,
+        })
+    }
+
     /// The plans of the subqueries under `expr`, evaluated against `ctx`
     /// (the row they would see first), added to `out` labelled with `label`.
     /// A subquery that fails is reported in `warnings`, not as an error: the
@@ -80,7 +168,7 @@ impl<'a> QueryExecutor<'a> {
                  its FILTER"
             ));
             for (sub, _) in subs {
-                self.estimate_subquery(&sub, label, depth + 1, out, warnings);
+                self.estimate_loops(&sub, Some(label), depth + 1, out, warnings);
             }
             return;
         };
@@ -111,10 +199,10 @@ impl<'a> QueryExecutor<'a> {
     /// chooses for its FILTER, values read from outer rows replaced by a
     /// placeholder, marked `estimated`. Subqueries inside it are estimated
     /// the same way.
-    fn estimate_subquery(
+    fn estimate_loops(
         &self,
         sub: &Query,
-        label: &str,
+        label: Option<&str>,
         depth: usize,
         out: &mut Vec<CollectionAccess>,
         warnings: &mut Vec<String>,
@@ -156,7 +244,8 @@ impl<'a> QueryExecutor<'a> {
                 PlannedRead::Index(name) => ("index_lookup", Some(name)),
                 PlannedRead::Maybe => {
                     warnings.push(format!(
-                        "{label}: `{}` may be read from a geo index, depending on the rows",
+                        "{}: `{}` may be read from a geo index, depending on the rows",
+                        label.unwrap_or("FOR"),
                         for_clause.collection
                     ));
                     ("full_scan", None)
@@ -171,7 +260,7 @@ impl<'a> QueryExecutor<'a> {
                 index_type: None,
                 documents_count: 0,
                 auto_index_candidate: None,
-                subquery: Some(label.to_string()),
+                subquery: label.map(str::to_string),
                 estimated: Some(true),
             });
         }
@@ -202,7 +291,11 @@ impl<'a> QueryExecutor<'a> {
             let mut subs = Vec::new();
             direct_subqueries(expr, &mut subs);
             for (q, _) in subs {
-                self.estimate_subquery(&q, &format!("{label} > {inner}"), depth + 1, out, warnings);
+                let nested = match label {
+                    Some(label) => format!("{label} > {inner}"),
+                    None => inner.clone(),
+                };
+                self.estimate_loops(&q, Some(&nested), depth + 1, out, warnings);
             }
         }
     }
@@ -675,6 +768,7 @@ impl<'a> QueryExecutor<'a> {
             documents_scanned: total_docs_scanned,
             documents_returned,
             warnings,
+            plan_only: false,
         })
     }
 

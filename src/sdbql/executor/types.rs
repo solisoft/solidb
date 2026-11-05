@@ -236,6 +236,10 @@ pub struct QueryExplain {
     pub documents_returned: usize,
     /// Warnings or suggestions
     pub warnings: Vec<String>,
+    /// `true` for a plan built without running the query (`analyze: false`):
+    /// every access is estimated, timings and document counts are zero.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plan_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,7 +300,7 @@ pub struct LimitInfo {
     pub count: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExecutionTiming {
     pub total_us: u64,
     pub let_clauses_us: u64,
