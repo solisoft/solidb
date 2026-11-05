@@ -89,6 +89,13 @@ jobs:
         working-directory: .
         run: .github/scripts/www-boot-check.sh "$(command -v soli)"
 
+      # The specs render the documented pages and check the version pill against
+      # Cargo.toml. Nothing else ran them, so one asserting v2.4.1 failed
+      # unseen until 2.7.1. No SoliDB runs here: the runner warns that it
+      # cannot reset its test databases, and no spec reads one.
+      - name: Specs
+        run: soli test --no-coverage
+
       # Advisory, deliberately not blocking. The site may have lint issues that
       # predate this workflow.
       - name: Formatting (advisory)

@@ -3,10 +3,16 @@
 # feature, fails here instead of shipping silently.
 
 describe("Docs pages") do
-  test("the home page carries the version being released") do
+  test("the home page carries the version Cargo.toml declares") do
+    # Read from the manifest, not written here: a literal went stale at the
+    # next release and failed unnoticed from 2.4.2 to 2.7.1.
+    manifest = File.read("../Cargo.toml")
+    version = manifest.split("\nversion = \"")[1].split("\"")[0]
+    expect(version.split(".").length()).to_equal(3)
+
     response = get("/")
     expect(res_status(response)).to_equal(200)
-    expect(res_body(response).include?("v2.4.1")).to_equal(true)
+    expect(res_body(response).include?("ver-pill\">v" + version + "<")).to_equal(true)
   end
 
   test("a docs page shows the same version as the landing page") do
