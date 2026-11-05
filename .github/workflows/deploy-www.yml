@@ -91,10 +91,13 @@ jobs:
 
       # The specs render the documented pages and check the version pill against
       # Cargo.toml. Nothing else ran them, so one asserting v2.4.1 failed
-      # unseen until 2.7.1. No SoliDB runs here: the runner warns that it
-      # cannot reset its test databases, and no spec reads one.
+      # unseen until 2.7.1. `soli test` refuses to start without .env.test
+      # (gitignored, so absent here); no SoliDB runs on the runner either: it
+      # warns that it cannot reset its test databases, and no spec reads one.
       - name: Specs
-        run: soli test --no-coverage
+        run: |
+          printf 'APP_ENV=test\nSOLIDB_HOST=http://127.0.0.1:6745\nSOLIDB_DATABASE=doc\nSOLI_DISABLE_CSRF=true\n' > .env.test
+          soli test --no-coverage
 
       # Advisory, deliberately not blocking. The site may have lint issues that
       # predate this workflow.
