@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.7.2](https://github.com/solisoft/solidb/compare/v2.7.1...v2.7.2) (2026-11-05)
+
 ### Features
 
 * **EXPLAIN without running the query: `"analyze": false`.** EXPLAIN runs
