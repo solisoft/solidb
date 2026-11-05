@@ -240,8 +240,27 @@ impl<'a> QueryExecutor<'a> {
                 }
                 _ => PlannedRead::Scan,
             };
+            let mut estimated_rows = None;
             let (access_type, index_used) = match plan {
-                PlannedRead::Index(name) => ("index_lookup", Some(name)),
+                PlannedRead::Index(name) => {
+                    // A count of a placeholder standing in for an outer
+                    // value says nothing about the rows: only a FILTER that
+                    // needed none is counted.
+                    let filter = conjunction(&filters)
+                        .filter(|f| with_placeholder_values(f, &for_clause.variable) == **f);
+                    if let (Ok(collection), Some(filter)) =
+                        (self.get_collection(&for_clause.collection), filter)
+                    {
+                        estimated_rows = self.chosen_read_estimate(
+                            &collection,
+                            &filter,
+                            &for_clause.variable,
+                            &Context::default(),
+                            &name,
+                        );
+                    }
+                    ("index_lookup", Some(name))
+                }
                 PlannedRead::Maybe => {
                     warnings.push(format!(
                         "{}: `{}` may be read from a geo index, depending on the rows",
@@ -262,6 +281,7 @@ impl<'a> QueryExecutor<'a> {
                 auto_index_candidate: None,
                 subquery: label.map(str::to_string),
                 estimated: Some(true),
+                estimated_rows,
             });
         }
 
@@ -443,6 +463,7 @@ impl<'a> QueryExecutor<'a> {
                     let mut used_index = false;
                     let mut index_name: Option<String> = None;
                     let mut index_type: Option<String> = None;
+                    let mut estimated_rows: Option<usize> = None;
                     let mut auto_index_candidate: Option<String> = None;
 
                     // Check if the FILTERs after the FOR can use an index
@@ -471,6 +492,13 @@ impl<'a> QueryExecutor<'a> {
                                     &probe_ctx,
                                 ) {
                                     used_index = true;
+                                    estimated_rows = self.chosen_read_estimate(
+                                        &collection,
+                                        &index_filter,
+                                        &for_clause.variable,
+                                        &probe_ctx,
+                                        &name,
+                                    );
                                     index_name = Some(name);
                                     index_type = Some(ty);
 
@@ -607,6 +635,10 @@ impl<'a> QueryExecutor<'a> {
                         auto_index_candidate,
                         subquery: None,
                         estimated: None,
+                        // Only what the FILTER's index read chose: an index
+                        // count or index-ordered read reports no estimate.
+                        estimated_rows: estimated_rows
+                            .filter(|_| used_index && !sorted_by_index && !(first && counted)),
                     });
                 }
                 BodyClause::Filter(filter_clause) => {

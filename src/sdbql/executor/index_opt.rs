@@ -358,6 +358,42 @@ pub(super) enum PlannedRead {
     Scan,
 }
 
+/// One way to read a FILTER's candidate rows from indexes, chosen before
+/// anything is read. The rows are a superset of the matches; the FILTER is
+/// re-checked on each.
+enum ReadPlan {
+    /// A compound index: fixed leading fields, intervals of the next one.
+    Composite(CompositePlan),
+    /// A single-field (or primary key) read for one condition, with the name
+    /// and type EXPLAIN reports.
+    Single(IndexableCondition, String, String),
+    /// The documents holding a LIKE pattern's trigrams.
+    Trigram(
+        crate::storage::index::Index,
+        std::collections::BTreeSet<String>,
+    ),
+    /// An `OR` conjunct read as the union of its branches.
+    Union(Vec<Expression>),
+}
+
+/// Every combination of one value from each list, in order.
+fn combinations(lists: &[Vec<Value>]) -> Vec<Vec<Value>> {
+    let mut out: Vec<Vec<Value>> = vec![Vec::new()];
+    for list in lists {
+        out = out
+            .into_iter()
+            .flat_map(|prefix| {
+                list.iter().map(move |v| {
+                    let mut next = prefix.clone();
+                    next.push(v.clone());
+                    next
+                })
+            })
+            .collect();
+    }
+    out
+}
+
 /// Whether the AND'd `terms` reject every row whose `field` is null or
 /// missing — some term on it is false for null. A sparse index has no entry
 /// for such rows, so a read of it returns every match only then.
@@ -738,15 +774,16 @@ impl<'a> QueryExecutor<'a> {
         out
     }
 
-    /// Conditions to try against single-field indexes, best first: equality
-    /// and `IN` from any conjunct, then prefix scans, then — only when it is
-    /// the condition the planner always picked — a range.
+    /// Conditions to try against single-field indexes, in the order the
+    /// planner breaks ties between equally cheap reads: equality and `IN`,
+    /// then prefix scans, then ranges, each in FILTER order.
     ///
-    /// A range from a later conjunct is not tried. That restriction dates from
-    /// when `index_range_scan` silently stopped an unlimited read at 1000 keys
-    /// (the request in the E2 report); the read is now bounded by the row
-    /// ceiling and fails loudly past it, so lifting the restriction is a
-    /// planner choice, no longer a correctness one.
+    /// Until the planner compared costs, only a range in the FILTER's first
+    /// conjunct was tried, so `status == "open" AND amount > x` always read
+    /// the status. That restriction dated from when `index_range_scan`
+    /// silently stopped an unlimited read at 1000 keys; the read is now
+    /// bounded by the row ceiling and fails loudly past it, and a range from
+    /// any conjunct is counted against the others like every candidate.
     fn ordered_index_candidates(
         &self,
         filter: &Expression,
@@ -754,17 +791,15 @@ impl<'a> QueryExecutor<'a> {
         ctx: &Context,
     ) -> Vec<IndexableCondition> {
         let all = self.extract_indexable_conditions(filter, var_name, ctx);
-        let first = self.extract_indexable_condition(filter, var_name, ctx);
         let (mut out, rest): (Vec<IndexableCondition>, Vec<IndexableCondition>) = all
             .into_iter()
             .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
-        out.extend(
-            rest.into_iter()
-                .filter(|c| matches!(c.op, BinaryOperator::Like)),
-        );
-        if let Some(first) = first.filter(|c| is_range_op(&c.op)) {
-            out.push(first);
-        }
+        let (prefixes, ranges): (Vec<_>, Vec<_>) = rest
+            .into_iter()
+            .filter(|c| matches!(c.op, BinaryOperator::Like) || is_range_op(&c.op))
+            .partition(|c| matches!(c.op, BinaryOperator::Like));
+        out.extend(prefixes);
+        out.extend(ranges);
         out
     }
 
@@ -830,54 +865,36 @@ impl<'a> QueryExecutor<'a> {
             return None;
         }
 
-        // 1. Composite path: `==` / `IN` on leading fields, then the next
-        //    field's range or exclusions — two fields at least.
-        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, 2, limit)
-        {
-            return Some(hit);
-        }
-
-        // 2. Single-field: the first conjunct an index can serve, equalities
-        //    and `IN` first. Between those and the prefix and range reads, a
-        //    composite index fixed on its first field alone — the only index
-        //    on that field, often.
-        let (equalities, others): (Vec<_>, Vec<_>) = self
-            .ordered_index_candidates(filter, var_name, ctx)
-            .into_iter()
-            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
-        for cond in &equalities {
-            if let Some(hit) = self.single_field_hit(collection, cond, limit) {
+        // Every index read that could serve the FILTER, cheapest first (ties
+        // in the order the planner always tried them); a read that declines
+        // (a trigram too common to narrow anything) gives way to the next. A
+        // geo radius, which only the rows decide, comes after the index reads,
+        // or first when there is none but unions.
+        let candidates = self.read_candidates(collection, filter, var_name, ctx);
+        let has_index_read = candidates.iter().any(|c| !matches!(c, ReadPlan::Union(_)));
+        if !has_index_read {
+            if let Some(hit) =
+                self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
+            {
                 return Some(hit);
             }
         }
-        if let Some(hit) = self.lookup_composite(collection, filter, var_name, ctx, None, 1, limit)
-        {
-            return Some(hit);
-        }
-        let terms = self.composite_terms(filter, var_name, ctx);
-        for cond in &others {
-            if !self.range_read_is_exact(collection, cond, &terms) {
-                continue;
-            }
-            if let Some(hit) = self.single_field_hit(collection, cond, limit) {
+        // A pushed-down LIMIT means the FILTER is that one condition: there is
+        // nothing to choose between.
+        let ordered = if limit.is_some() {
+            candidates
+        } else {
+            self.rank_reads(collection, candidates, var_name, ctx)
+        };
+        for plan in ordered {
+            if let Some(hit) = self.execute_read(collection, plan, var_name, ctx, limit) {
                 return Some(hit);
             }
         }
-
-        // 3. Trigram index: the candidates of a `LIKE "%term%"`.
-        if let Some(hit) = self.lookup_trigram(collection, filter, var_name, ctx) {
-            return Some(hit);
+        if has_index_read {
+            return self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit);
         }
-
-        // 4. Geo index: `DISTANCE(...) <= r` / `GEO_DISTANCE(...) <= r`
-        if let Some(hit) =
-            self.geo_lookup_for_filter(collection, filter, var_name, ctx, None, limit)
-        {
-            return Some(hit);
-        }
-
-        // 5. An `OR` whose every branch an index serves: the union of them.
-        self.lookup_or_union(collection, filter, var_name, ctx)
+        None
     }
 
     /// What [`Self::lookup_index_for_filter_limited`] would read for
@@ -897,111 +914,422 @@ impl<'a> QueryExecutor<'a> {
         {
             return PlannedRead::Scan;
         }
-        let terms = self.composite_terms(filter, var_name, ctx);
-        if let Some(plan) = best_composite_plan(collection, &terms, None, 2) {
-            return PlannedRead::Index(plan.index.name);
-        }
-        let (equalities, others): (Vec<_>, Vec<_>) = self
-            .ordered_index_candidates(filter, var_name, ctx)
-            .into_iter()
-            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
-        for cond in &equalities {
-            if let Some(name) = self.plan_single_field(collection, cond, &terms) {
-                return PlannedRead::Index(name);
-            }
-        }
-        if let Some(plan) = best_composite_plan(collection, &terms, None, 1) {
-            return PlannedRead::Index(plan.index.name);
-        }
-        for cond in &others {
-            if let Some(name) = self.plan_single_field(collection, cond, &terms) {
-                return PlannedRead::Index(name);
-            }
-        }
-        if let Some(name) = self.plan_trigram(collection, filter, var_name, ctx) {
-            return PlannedRead::Index(name);
-        }
-        if self.geo_may_serve(collection, filter, var_name, ctx) {
+        let candidates = self.read_candidates(collection, filter, var_name, ctx);
+        if !candidates.iter().any(|c| !matches!(c, ReadPlan::Union(_)))
+            && self.geo_may_serve(collection, filter, var_name, ctx)
+        {
             return PlannedRead::Maybe;
         }
-        self.plan_or_union(collection, filter, var_name, ctx)
-    }
-
-    /// The single-field index [`Self::use_index_for_condition`] would read
-    /// for `cond`, or `None` when it would decline.
-    fn plan_single_field(
-        &self,
-        collection: &Collection,
-        cond: &IndexableCondition,
-        terms: &[(String, CompositeTerm)],
-    ) -> Option<String> {
-        if cond.field == "_key" || cond.field == "_id" {
-            return matches!(cond.op, BinaryOperator::Equal | BinaryOperator::In)
-                .then(|| "primary key".to_string());
-        }
-        match &cond.op {
-            BinaryOperator::Equal => {
-                let index = collection.get_single_field_index_for_field(&cond.field)?;
-                (!cond.value.is_null() || !index.sparse).then_some(index.name)
-            }
-            BinaryOperator::In => {
-                let index = regular_index_on(collection, &cond.field)?;
-                let has_null = matches!(&cond.value, Value::Array(items)
-                    if items.iter().any(Value::is_null));
-                (!has_null || !index.sparse).then_some(index.name)
-            }
-            BinaryOperator::Like => {
-                let index = regular_index_on(collection, &cond.field)?;
-                prefix_successor(cond.value.as_str()?)?;
-                Some(index.name)
-            }
-            op if is_range_op(op) => {
-                let index = collection.get_single_field_index_for_field(&cond.field)?;
-                self.range_read_is_exact(collection, cond, terms)
-                    .then_some(index.name)
-            }
-            _ => None,
+        match self
+            .rank_reads(collection, candidates, var_name, ctx)
+            .into_iter()
+            .next()
+        {
+            Some(plan) => self.read_name(collection, &plan, var_name, ctx),
+            None if self.geo_may_serve(collection, filter, var_name, ctx) => PlannedRead::Maybe,
+            None => PlannedRead::Scan,
         }
     }
 
-    /// [`Self::lookup_or_union`], planned: the first `OR` conjunct every
-    /// branch of which an index may serve.
-    fn plan_or_union(
+    /// The index reads that could serve `filter`, decided without reading,
+    /// in the order the planner tried them before it compared costs (which
+    /// now breaks ties): a compound plan using two fields or more,
+    /// single-field equalities and `IN`, a compound plan on one field,
+    /// single-field prefixes and ranges, a trigram read, then the union of
+    /// each `OR` conjunct whose every branch an index (or a geo radius) may
+    /// serve.
+    fn read_candidates(
         &self,
         collection: &Collection,
         filter: &Expression,
         var_name: &str,
         ctx: &Context,
-    ) -> PlannedRead {
+    ) -> Vec<ReadPlan> {
+        let terms = self.composite_terms(filter, var_name, ctx);
+        let mut out = Vec::new();
+        let compound = best_composite_plan(collection, &terms, None, 2);
+        let had_compound = compound.is_some();
+        if let Some(plan) = compound {
+            out.push(ReadPlan::Composite(plan));
+        }
+        let (equalities, others): (Vec<_>, Vec<_>) = self
+            .ordered_index_candidates(filter, var_name, ctx)
+            .into_iter()
+            .partition(|c| matches!(c.op, BinaryOperator::Equal | BinaryOperator::In));
+        let single = |cond: IndexableCondition, out: &mut Vec<ReadPlan>| {
+            if let Some((name, type_str)) = self.plan_single_field(collection, &cond, &terms) {
+                out.push(ReadPlan::Single(cond, name, type_str));
+            }
+        };
+        for cond in equalities {
+            single(cond, &mut out);
+        }
+        if !had_compound {
+            if let Some(plan) = best_composite_plan(collection, &terms, None, 1) {
+                out.push(ReadPlan::Composite(plan));
+            }
+        }
+        for cond in others {
+            single(cond, &mut out);
+        }
+        if let Some((index, grams)) = self.trigram_read(collection, filter, var_name, ctx) {
+            out.push(ReadPlan::Trigram(index, grams));
+        }
         let mut conjuncts = Vec::new();
         push_conjuncts(filter, &mut conjuncts);
         for conjunct in conjuncts {
             let mut branches = Vec::new();
             push_disjuncts(conjunct, &mut branches);
-            if branches.len() < 2 {
-                continue;
+            if branches.len() >= 2
+                && branches
+                    .iter()
+                    .all(|b| self.servable(collection, b, var_name, ctx))
+            {
+                out.push(ReadPlan::Union(branches.into_iter().cloned().collect()));
             }
-            let plans: Vec<PlannedRead> = branches
-                .iter()
-                .map(|b| self.plan_index_read(collection, b, var_name, ctx))
-                .collect();
-            if plans.contains(&PlannedRead::Scan) {
-                continue;
+        }
+        out
+    }
+
+    /// Whether some index read, or a geo radius, may serve `filter` —
+    /// decided without counting or reading.
+    fn servable(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> bool {
+        !self
+            .read_candidates(collection, filter, var_name, ctx)
+            .is_empty()
+            || self.geo_may_serve(collection, filter, var_name, ctx)
+    }
+
+    /// `candidates`, cheapest first by the index entries each would read,
+    /// counted without fetching a document; ties keep their order. Each
+    /// candidate is counted only as far as it takes to beat the cheapest one
+    /// so far, under a bound that starts at 1,024 and grows ×8 until some
+    /// candidate fits — so ranking costs about one cheapest read per
+    /// candidate, and a cheap read beside a large one costs no more than
+    /// the cheap one. A lone candidate is not counted.
+    fn rank_reads(
+        &self,
+        collection: &Collection,
+        candidates: Vec<ReadPlan>,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<ReadPlan> {
+        self.rank_with_estimates(collection, candidates, var_name, ctx)
+            .into_iter()
+            .map(|(_, c)| c)
+            .collect()
+    }
+
+    /// [`Self::rank_reads`], each read with what it was counted at: the
+    /// first one's count is exact unless every candidate passed the row
+    /// ceiling, the others' are lower bounds. `None` for a lone candidate.
+    fn rank_with_estimates(
+        &self,
+        collection: &Collection,
+        candidates: Vec<ReadPlan>,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Vec<(Option<usize>, ReadPlan)> {
+        if candidates.len() < 2 {
+            return candidates.into_iter().map(|c| (None, c)).collect();
+        }
+        let cap = self.max_intermediate_rows().saturating_add(1);
+        let mut bound = 1024usize.min(cap);
+        let estimates = loop {
+            // An estimate above what it was counted to means "at least that
+            // many": never cheaper than the best before it, so it sorts after.
+            let mut best = usize::MAX;
+            let mut estimates = Vec::with_capacity(candidates.len());
+            for candidate in &candidates {
+                let upto = bound.min(best.saturating_sub(1));
+                let estimate = self.estimate_read(collection, candidate, upto, var_name, ctx);
+                if estimate <= upto {
+                    best = estimate;
+                }
+                estimates.push(estimate);
             }
-            if plans.contains(&PlannedRead::Maybe) {
-                return PlannedRead::Maybe;
+            if best <= bound || bound >= cap {
+                break estimates;
             }
-            let mut names: Vec<String> = Vec::new();
-            for plan in plans {
-                if let PlannedRead::Index(name) = plan {
-                    if !names.contains(&name) {
-                        names.push(name);
+            bound = bound.saturating_mul(8).min(cap);
+        };
+        let mut ranked: Vec<(usize, usize, ReadPlan)> = candidates
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (estimates[i], i, c))
+            .collect();
+        ranked.sort_by_key(|(estimate, i, _)| (*estimate, *i));
+        ranked
+            .into_iter()
+            .map(|(estimate, _, c)| (Some(estimate), c))
+            .collect()
+    }
+
+    /// For EXPLAIN: the index entries counted for the read the planner
+    /// chose for `filter`, when it compared two or more and that read is
+    /// the one named `used` (not a later one, after the chosen read
+    /// declined).
+    pub(super) fn chosen_read_estimate(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        used: &str,
+    ) -> Option<usize> {
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return None;
+        }
+        let candidates = self.read_candidates(collection, filter, var_name, ctx);
+        let (estimate, chosen) = self
+            .rank_with_estimates(collection, candidates, var_name, ctx)
+            .into_iter()
+            .next()?;
+        let estimate = estimate?;
+        (self.read_name(collection, &chosen, var_name, ctx) == PlannedRead::Index(used.to_string()))
+            .then_some(estimate)
+    }
+
+    /// The index entries `plan` would read, counted up to `bound`; more than
+    /// `bound` means "at least that many".
+    fn estimate_read(
+        &self,
+        collection: &Collection,
+        plan: &ReadPlan,
+        bound: usize,
+        var_name: &str,
+        ctx: &Context,
+    ) -> usize {
+        match plan {
+            ReadPlan::Composite(plan) => {
+                let unbounded = [(None, None)];
+                let intervals: &[(IntervalBound, IntervalBound)] = match &plan.next {
+                    Some(intervals) => intervals,
+                    None => &unbounded,
+                };
+                let mut total = 0usize;
+                for combo in combinations(&plan.eq_lists) {
+                    for (lo, hi) in intervals {
+                        let (prefix, start, end) = Collection::index_key_range(
+                            &plan.index.name,
+                            plan.index.fields.len(),
+                            &combo,
+                            lo.as_ref().map(|(v, inc)| (v, *inc)),
+                            hi.as_ref().map(|(v, inc)| (v, *inc)),
+                        );
+                        total += collection.count_key_range(&prefix, &start, &end, bound - total);
+                        if total > bound {
+                            return total;
+                        }
                     }
                 }
+                total
             }
-            return PlannedRead::Index(names.join(" | "));
+            ReadPlan::Single(cond, name, _) => self.estimate_single(collection, cond, name, bound),
+            ReadPlan::Trigram(index, grams) => {
+                let rarest = grams
+                    .iter()
+                    .map(|gram| {
+                        let prefix = format!(
+                            "{}{}:{}:",
+                            crate::storage::collection::IDX_PREFIX,
+                            index.name,
+                            hex::encode(gram.as_bytes())
+                        )
+                        .into_bytes();
+                        let mut end = prefix.clone();
+                        *end.last_mut().expect("non-empty prefix") += 1;
+                        collection.count_key_range(&prefix, &prefix, &end, bound)
+                    })
+                    .min()
+                    .unwrap_or(0);
+                // The read steps aside past the point where fetching that
+                // many documents one by one loses to the scan (the rule of
+                // `index_trigram_candidates`): never the cheapest, then.
+                let cap = self.max_intermediate_rows().saturating_add(1);
+                let worthwhile = (collection.count() / 4).max(1024).min(cap);
+                if rarest > worthwhile {
+                    bound.saturating_add(1)
+                } else {
+                    rarest
+                }
+            }
+            ReadPlan::Union(branches) => {
+                let mut total = 0usize;
+                for branch in branches {
+                    total += self
+                        .read_candidates(collection, branch, var_name, ctx)
+                        .iter()
+                        .map(|c| self.estimate_read(collection, c, bound - total, var_name, ctx))
+                        .min()
+                        // A branch only a geo radius serves: unknown, so dear.
+                        .unwrap_or(bound.saturating_add(1) - total);
+                    if total > bound {
+                        break;
+                    }
+                }
+                total
+            }
         }
-        PlannedRead::Scan
+    }
+
+    /// [`Self::estimate_read`] for one single-field (or primary-key)
+    /// condition, read from the index named `name`.
+    fn estimate_single(
+        &self,
+        collection: &Collection,
+        cond: &IndexableCondition,
+        name: &str,
+        bound: usize,
+    ) -> usize {
+        if cond.field == "_key" || cond.field == "_id" {
+            return match &cond.value {
+                Value::Array(items) => items.len(),
+                _ => 1,
+            };
+        }
+        let count =
+            |eq: &[Value], lower: Option<(&Value, bool)>, upper: Option<(&Value, bool)>, bound| {
+                let (prefix, start, end) = Collection::index_key_range(name, 1, eq, lower, upper);
+                collection.count_key_range(&prefix, &start, &end, bound)
+            };
+        match &cond.op {
+            BinaryOperator::Equal => count(std::slice::from_ref(&cond.value), None, None, bound),
+            BinaryOperator::In => {
+                let Value::Array(items) = &cond.value else {
+                    return bound.saturating_add(1);
+                };
+                let mut total = 0usize;
+                for item in items {
+                    total += count(std::slice::from_ref(item), None, None, bound - total);
+                    if total > bound {
+                        break;
+                    }
+                }
+                total
+            }
+            BinaryOperator::Like => {
+                let Some(prefix) = cond.value.as_str() else {
+                    return bound.saturating_add(1);
+                };
+                let Some(upper) = prefix_successor(prefix) else {
+                    return bound.saturating_add(1);
+                };
+                let lower = Value::String(prefix.to_string());
+                let upper = Value::String(upper);
+                count(&[], Some((&lower, true)), Some((&upper, false)), bound)
+            }
+            BinaryOperator::GreaterThan => count(&[], Some((&cond.value, false)), None, bound),
+            BinaryOperator::GreaterThanOrEqual => {
+                count(&[], Some((&cond.value, true)), None, bound)
+            }
+            BinaryOperator::LessThan => count(&[], None, Some((&cond.value, false)), bound),
+            BinaryOperator::LessThanOrEqual => count(&[], None, Some((&cond.value, true)), bound),
+            _ => bound.saturating_add(1),
+        }
+    }
+
+    /// Read `plan`, or `None` when it declines (the caller tries the next).
+    fn execute_read(
+        &self,
+        collection: &Collection,
+        plan: ReadPlan,
+        var_name: &str,
+        ctx: &Context,
+        limit: Option<usize>,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
+        match plan {
+            ReadPlan::Composite(plan) => self.run_composite(collection, plan, limit),
+            ReadPlan::Single(cond, name, type_str) => {
+                let docs = self.use_index_for_condition(collection, &cond, limit)?;
+                Some((docs, name, type_str))
+            }
+            ReadPlan::Trigram(index, grams) => {
+                let cap = self.max_intermediate_rows().saturating_add(1);
+                let docs = collection.index_trigram_candidates(&index, &grams, cap)?;
+                Some((docs, index.name, "Trigram".to_string()))
+            }
+            ReadPlan::Union(branches) => self.read_union(collection, &branches, var_name, ctx),
+        }
+    }
+
+    /// What EXPLAIN calls `plan`.
+    fn read_name(
+        &self,
+        collection: &Collection,
+        plan: &ReadPlan,
+        var_name: &str,
+        ctx: &Context,
+    ) -> PlannedRead {
+        match plan {
+            ReadPlan::Composite(plan) => PlannedRead::Index(plan.index.name.clone()),
+            ReadPlan::Single(_, name, _) => PlannedRead::Index(name.clone()),
+            ReadPlan::Trigram(index, _) => PlannedRead::Index(index.name.clone()),
+            ReadPlan::Union(branches) => {
+                let mut names: Vec<String> = Vec::new();
+                for branch in branches {
+                    match self.plan_index_read(collection, branch, var_name, ctx) {
+                        PlannedRead::Index(name) => {
+                            if !names.contains(&name) {
+                                names.push(name);
+                            }
+                        }
+                        other => return other,
+                    }
+                }
+                PlannedRead::Index(names.join(" | "))
+            }
+        }
+    }
+
+    /// The single-field index [`Self::use_index_for_condition`] would read
+    /// for `cond`, as `(name, type)`, or `None` when it would decline.
+    fn plan_single_field(
+        &self,
+        collection: &Collection,
+        cond: &IndexableCondition,
+        terms: &[(String, CompositeTerm)],
+    ) -> Option<(String, String)> {
+        if cond.field == "_key" || cond.field == "_id" {
+            return matches!(cond.op, BinaryOperator::Equal | BinaryOperator::In)
+                .then(|| ("primary key".to_string(), "Primary".to_string()));
+        }
+        let named = |index: crate::storage::index::Index| {
+            let type_str = format!("{:?}", index.index_type);
+            (index.name, type_str)
+        };
+        match &cond.op {
+            BinaryOperator::Equal => {
+                let index = collection.get_single_field_index_for_field(&cond.field)?;
+                (!cond.value.is_null() || !index.sparse).then(|| named(index))
+            }
+            BinaryOperator::In => {
+                let index = regular_index_on(collection, &cond.field)?;
+                let has_null = matches!(&cond.value, Value::Array(items)
+                    if items.iter().any(Value::is_null));
+                (!has_null || !index.sparse).then(|| named(index))
+            }
+            BinaryOperator::Like => {
+                let index = regular_index_on(collection, &cond.field)?;
+                prefix_successor(cond.value.as_str()?)?;
+                Some(named(index))
+            }
+            op if is_range_op(op) => {
+                let index = collection.get_single_field_index_for_field(&cond.field)?;
+                self.range_read_is_exact(collection, cond, terms)
+                    .then(|| named(index))
+            }
+            _ => None,
+        }
     }
 
     /// For EXPLAIN, when the FILTER is scanned: each `OR` branch that keeps
@@ -1024,7 +1352,7 @@ impl<'a> QueryExecutor<'a> {
                 continue;
             }
             for branch in branches {
-                if self.plan_index_read(collection, branch, var_name, ctx) != PlannedRead::Scan {
+                if self.servable(collection, branch, var_name, ctx) {
                     continue;
                 }
                 let mut fields: Vec<String> = self
@@ -1150,83 +1478,32 @@ impl<'a> QueryExecutor<'a> {
         Some((docs, index.name, "Trigram".to_string()))
     }
 
-    /// [`Self::lookup_trigram`], planned.
-    fn plan_trigram(
-        &self,
-        collection: &Collection,
-        filter: &Expression,
-        var_name: &str,
-        ctx: &Context,
-    ) -> Option<String> {
-        self.trigram_read(collection, filter, var_name, ctx)
-            .map(|(index, _)| index.name)
-    }
-
-    /// [`Self::use_index_for_condition`] with the name and type of the
-    /// single-field index it read, for EXPLAIN.
-    fn single_field_hit(
-        &self,
-        collection: &Collection,
-        cond: &IndexableCondition,
-        limit: Option<usize>,
-    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
-        let docs = self.use_index_for_condition(collection, cond, limit)?;
-        if cond.field == "_key" || cond.field == "_id" {
-            return Some((docs, "primary key".to_string(), "Primary".to_string()));
-        }
-        let (name, type_str) = collection
-            .get_all_indexes()
-            .into_iter()
-            .find(|i| i.fields.len() == 1 && i.fields[0] == cond.field)
-            .map(|i| (i.name, format!("{:?}", i.index_type)))
-            .unwrap_or_default();
-        Some((docs, name, type_str))
-    }
-
-    /// A FILTER that is an `OR`, or an AND with an `OR` conjunct, served as
-    /// the union of what an index returns for each branch. Every branch must
-    /// be served — one that is not would need the scan anyway. The rows are
-    /// a superset of the matches (each branch's are), deduplicated by key;
+    /// An `OR` conjunct served as the union of what an index returns for
+    /// each of its `branches` (every one planned servable before any is
+    /// read). The rows are a superset of the matches, deduplicated by key;
     /// the caller re-checks every FILTER.
-    fn lookup_or_union(
+    fn read_union(
         &self,
         collection: &Collection,
-        filter: &Expression,
+        branches: &[Expression],
         var_name: &str,
         ctx: &Context,
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
-        let mut conjuncts = Vec::new();
-        push_conjuncts(filter, &mut conjuncts);
-        conjuncts.into_iter().find_map(|conjunct| {
-            let mut branches = Vec::new();
-            push_disjuncts(conjunct, &mut branches);
-            if branches.len() < 2 {
-                return None;
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut out = Vec::new();
+        let mut names: Vec<String> = Vec::new();
+        for branch in branches {
+            let (docs, name, _) =
+                self.lookup_index_for_filter_limited(collection, branch, var_name, ctx, None)?;
+            if !names.contains(&name) {
+                names.push(name);
             }
-            // Plan every branch before reading any: one that needs the scan
-            // makes the union useless, and its reads would be thrown away.
-            if branches
-                .iter()
-                .any(|b| self.plan_index_read(collection, b, var_name, ctx) == PlannedRead::Scan)
-            {
-                return None;
+            out.extend(docs.into_iter().filter(|d| seen.insert(d.key.clone())));
+            if out.len() > self.max_intermediate_rows() {
+                break; // the caller's budget check reports it
             }
-            let mut seen: HashSet<String> = HashSet::new();
-            let mut out = Vec::new();
-            let mut names: Vec<String> = Vec::new();
-            for branch in branches {
-                let (docs, name, _) =
-                    self.lookup_index_for_filter_limited(collection, branch, var_name, ctx, None)?;
-                if !names.contains(&name) {
-                    names.push(name);
-                }
-                out.extend(docs.into_iter().filter(|d| seen.insert(d.key.clone())));
-                if out.len() > self.max_intermediate_rows() {
-                    break; // the caller's budget check reports it
-                }
-            }
-            Some((out, names.join(" | "), "Union".to_string()))
-        })
+        }
+        Some((out, names.join(" | "), "Union".to_string()))
     }
 
     /// Every AND'd conjunct of `filter` the composite planner can use:
@@ -1313,7 +1590,17 @@ impl<'a> QueryExecutor<'a> {
     ) -> Option<(Vec<crate::storage::Document>, String, String)> {
         let terms = self.composite_terms(filter, var_name, ctx);
         let plan = best_composite_plan(collection, &terms, only, min_fields)?;
+        self.run_composite(collection, plan, limit)
+    }
 
+    /// Read a compound-index `plan`: one bounded read per combination of
+    /// the fixed fields' values and interval of the next field.
+    fn run_composite(
+        &self,
+        collection: &Collection,
+        plan: CompositePlan,
+        limit: Option<usize>,
+    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
         let cap = limit
             .or(self.scan_cap())
             .unwrap_or(usize::MAX)

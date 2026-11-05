@@ -263,6 +263,11 @@ pub struct CollectionAccess {
     /// non-null placeholders) instead of being run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimated: Option<bool>,
+    /// The index entries the planner counted for the read it chose, when
+    /// two or more index reads could serve the FILTER and it compared them.
+    /// More than the row ceiling reads as "at least that many".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_rows: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

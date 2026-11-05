@@ -18,6 +18,7 @@
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
         <li><strong class="text-white">EXPLAIN without running the query: <code>"analyze": false</code></strong> &mdash; EXPLAIN runs the query to time each step, so explaining a slow one cost as much as running it. With <code>"analyze": false</code> the plan is built without reading a document or writing anything: each loop gets the access the planner chooses (<code>"estimated": true</code>) and the response carries <code>"plan_only": true</code>. The default is unchanged.</li>
+        <li><strong class="text-white">The planner reads the cheapest index, not the first that applies</strong> &mdash; when two or more index reads could serve a FILTER, it counts the index entries each would read and takes the smallest. <code>status == "open" AND amount &gt;= x</code> read every open row through <code>status</code>; it now reads the few amounts (0.24 ms against 556 ms on 200k documents). <code>owner_id IN @team AND (a == @x OR b == @y)</code> reads the union of the <code>OR</code> instead of the whole team (0.26 ms against 274 ms). A range from any conjunct is now a candidate, not only the first. EXPLAIN reports the count as <code>estimated_rows</code>. Equal counts keep the previous order.</li>
       </ul>
     </div>
   </section>

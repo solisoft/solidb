@@ -12,6 +12,19 @@
   (`"estimated": true`), an index-ordered SORT is named, timings and counts
   are zero, and the response carries `"plan_only": true`. `analyze`
   defaults to `true`, so existing callers see no change.
+* **The planner reads the cheapest index, not the first that applies.**
+  When two or more index reads could serve a FILTER (a compound index, a
+  single-field equality, `IN`, prefix or range, a trigram, the union of an
+  `OR`), it counts the index entries each would read, without loading a
+  document, and reads the smallest. Counting stops once a read can no
+  longer beat the cheapest so far. On 200k documents,
+  `status == "open" AND amount >= x` went from 556 ms (every open row,
+  through `status`) to 0.24 ms; `owner_id IN @team AND (a == @x OR b == @y)`
+  from 274 ms to 0.26 ms; `amount >= 1000 AND amount < 1100` from 624 ms to
+  5 ms. A range from any conjunct is now a candidate, not only the
+  first. A trigram read that would step aside for the scan is never chosen.
+  EXPLAIN reports the count chosen as `estimated_rows`. Equal counts keep
+  the previous order.
 
 ## [2.7.1](https://github.com/solisoft/solidb/compare/v2.7.0...v2.7.1) (2026-11-05)
 

@@ -1771,45 +1771,8 @@ impl Collection {
         {
             return None;
         }
-        // `idx:<name>:` alone when nothing is fixed: the bounds then apply to
-        // the first field's encoding, which starts right after it.
-        let prefix = if n == 0 {
-            format!("{}{}:", IDX_PREFIX, index.name)
-        } else {
-            let separator = if n == index.fields.len() { ':' } else { '_' };
-            format!(
-                "{}{}:{}{}",
-                IDX_PREFIX,
-                index.name,
-                Self::encode_index_values(eq_values),
-                separator
-            )
-        }
-        .into_bytes();
-        let bound = |v: &Value, past_equal: bool| {
-            let mut key = prefix.clone();
-            key.extend_from_slice(hex::encode(crate::storage::codec::encode_key(v)).as_bytes());
-            if past_equal {
-                key.push(0x7f);
-            }
-            key
-        };
-        // `>= v` starts at the entries equal to v, `> v` past them.
-        let start = match lower {
-            Some((v, inclusive)) => bound(v, !inclusive),
-            None => prefix.clone(),
-        };
-        // `<= v` ends past the entries equal to v, `< v` before them.
-        let end = match upper {
-            Some((v, inclusive)) => bound(v, inclusive),
-            None => {
-                // The prefix ends in ':' or '_'; the next byte is the first
-                // key past every entry under it.
-                let mut end = prefix.clone();
-                *end.last_mut().expect("non-empty prefix") += 1;
-                end
-            }
-        };
+        let (prefix, start, end) =
+            Self::index_key_range(&index.name, index.fields.len(), eq_values, lower, upper);
         if start >= end {
             return Some(Vec::new());
         }
@@ -1844,6 +1807,97 @@ impl Collection {
             .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
         Some(docs)
+    }
+
+    /// The keys of `index_name` (an index on `n_fields` fields) whose leading
+    /// fields equal `eq_values` and whose next field lies within
+    /// `lower`/`upper`: `(prefix, start, end)`, the range `[start, end)` all
+    /// under `prefix`. See [`Self::index_scan_composite`] for why one range
+    /// covers it; no rule about which reads are exact is applied here.
+    pub(crate) fn index_key_range(
+        index_name: &str,
+        n_fields: usize,
+        eq_values: &[Value],
+        lower: Option<(&Value, bool)>,
+        upper: Option<(&Value, bool)>,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let n = eq_values.len();
+        // `idx:<name>:` alone when nothing is fixed: the bounds then apply to
+        // the first field's encoding, which starts right after it.
+        let prefix = if n == 0 {
+            format!("{}{}:", IDX_PREFIX, index_name)
+        } else {
+            let separator = if n >= n_fields { ':' } else { '_' };
+            format!(
+                "{}{}:{}{}",
+                IDX_PREFIX,
+                index_name,
+                Self::encode_index_values(eq_values),
+                separator
+            )
+        }
+        .into_bytes();
+        let bound = |v: &Value, past_equal: bool| {
+            let mut key = prefix.clone();
+            key.extend_from_slice(hex::encode(crate::storage::codec::encode_key(v)).as_bytes());
+            if past_equal {
+                key.push(0x7f);
+            }
+            key
+        };
+        // `>= v` starts at the entries equal to v, `> v` past them.
+        let start = match lower {
+            Some((v, inclusive)) => bound(v, !inclusive),
+            None => prefix.clone(),
+        };
+        // `<= v` ends past the entries equal to v, `< v` before them.
+        let end = match upper {
+            Some((v, inclusive)) => bound(v, inclusive),
+            None => {
+                // The prefix ends in ':' or '_'; the next byte is the first
+                // key past every entry under it.
+                let mut end = prefix.clone();
+                *end.last_mut().expect("non-empty prefix") += 1;
+                end
+            }
+        };
+        (prefix, start, end)
+    }
+
+    /// How many index keys lie in `[start, end)` under `prefix`, counting
+    /// stopped once past `bound`: what the planner compares candidate reads
+    /// by, without fetching a document.
+    pub(crate) fn count_key_range(
+        &self,
+        prefix: &[u8],
+        start: &[u8],
+        end: &[u8],
+        bound: usize,
+    ) -> usize {
+        if start >= end {
+            return 0;
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return 0;
+        };
+        let mut n = 0usize;
+        let iter = self.db.iterator_ks_bounded(
+            &cf,
+            IterMode::From(start, Direction::Forward),
+            Some(start),
+            Some(end),
+        );
+        for item in iter {
+            let Ok((k, _)) = item else { continue };
+            if !k.starts_with(prefix) || k.as_ref() >= end {
+                break;
+            }
+            n += 1;
+            if n > bound {
+                break;
+            }
+        }
+        n
     }
 
     /// Lookup documents using index (equality) with limit

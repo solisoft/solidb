@@ -640,3 +640,99 @@ fn benchmark_planner_shapes() {
         println!("BENCH|{label}|{n}|{used}|{:.3}", best.as_secs_f64() * 1e3);
     }
 }
+
+/// The cost-based choice between candidate reads, on 200k documents: each
+/// query as the planner now reads it, beside the read the fixed order took
+/// before (forced with `indexHint`, which skips the counting), and two
+/// shapes where both reads are cheap, to show what the counting costs.
+#[test]
+#[ignore]
+fn benchmark_planner_cost_choice() {
+    let (engine, _tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("rows".to_string(), None).unwrap();
+    let rows = db.get_collection("rows").unwrap();
+    for start in (0..200_000usize).step_by(5000) {
+        let batch: Vec<_> = (start..start + 5000)
+            .map(|i| {
+                json!({
+                    "status": if i % 20 == 0 { "closed" } else { "open" },
+                    "amount": i,
+                    "owner_id": format!("u{}", i % 5),
+                    "opportunity_id": format!("p{i}"),
+                    "account_id": format!("a{}", i % 100_000),
+                    "padding": "x".repeat(100),
+                })
+            })
+            .collect();
+        rows.insert_batch(batch).unwrap();
+    }
+    for (name, field, ty) in [
+        ("idx_status", "status", IndexType::Hash),
+        ("idx_amount", "amount", IndexType::Persistent),
+        ("idx_owner", "owner_id", IndexType::Hash),
+        ("idx_opp", "opportunity_id", IndexType::Hash),
+        ("idx_acc", "account_id", IndexType::Hash),
+    ] {
+        rows.create_index(name.to_string(), vec![field.to_string()], ty, false)
+            .unwrap();
+    }
+    let time = |q: &str| -> (usize, String, f64) {
+        let ast = solidb::sdbql::parse(q).unwrap();
+        let executor = QueryExecutor::with_database(&engine, "bench_db".to_string());
+        let used = executor.explain(&ast).unwrap().collections[0]
+            .index_used
+            .clone()
+            .unwrap_or_else(|| "full scan".into());
+        executor.execute(&ast).unwrap();
+        let mut best = std::time::Duration::MAX;
+        let mut n = 0;
+        for _ in 0..5 {
+            let start = Instant::now();
+            n = executor.execute(&ast).unwrap().len();
+            best = best.min(start.elapsed());
+        }
+        (n, used, best.as_secs_f64() * 1e3)
+    };
+    for (label, filter, old) in [
+        (
+            "common == beside a selective range",
+            "d.status == \"open\" AND d.amount >= 199990",
+            "idx_status",
+        ),
+        (
+            "team IN beside an OR of keys",
+            "d.owner_id IN [\"u0\", \"u1\"] AND (d.opportunity_id == \"p5\" OR d.account_id == \"a7\")",
+            "idx_owner",
+        ),
+        (
+            "two-sided range, tight upper side",
+            "d.amount >= 1000 AND d.amount < 1100",
+            "idx_amount",
+        ),
+        (
+            "cheap == then common ==",
+            "d.opportunity_id == \"p5\" AND d.status == \"open\"",
+            "idx_opp",
+        ),
+        (
+            "common == then cheap ==",
+            "d.status == \"open\" AND d.opportunity_id == \"p5\"",
+            "idx_status",
+        ),
+        (
+            "two cheap ==",
+            "d.opportunity_id == \"p5\" AND d.account_id == \"a5\"",
+            "idx_opp",
+        ),
+    ] {
+        let (n, used, ms) = time(&format!("FOR d IN rows FILTER {filter} RETURN d._key"));
+        // EXPLAIN ignores the hint (tasks/todo/explain-ignores-index-hint.md),
+        // so the hinted read is named after the hint.
+        let (old_n, _, old_ms) = time(&format!(
+            "FOR d IN rows OPTIONS {{ indexHint: \"{old}\" }} FILTER {filter} RETURN d._key"
+        ));
+        assert_eq!(n, old_n, "{label}");
+        println!("BENCH|{label}|{n}|{used}|{ms:.3}|{old}|{old_ms:.3}");
+    }
+}

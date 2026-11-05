@@ -2353,3 +2353,198 @@ fn test_explain_plan_without_running() {
         .unwrap();
     assert_eq!(count(), before);
 }
+
+/// 3,000 tickets in `plain` and in `indexed` (single-field indexes on
+/// `status`, `amount`, `owner_id`, `opportunity_id`, `account_id`, a
+/// trigram on `name`): `status` is "open" for every row but the last ten,
+/// `owner_id` takes three values, `opportunity_id` and `account_id` are
+/// unique, and "SARL" is in two thirds of the names.
+fn create_cost_engine() -> (StorageEngine, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database("costdb".to_string()).unwrap();
+    let db = engine.get_database("costdb").unwrap();
+    for name in ["plain", "indexed"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        let docs: Vec<_> = (0..3000i64)
+            .map(|i| {
+                json!({
+                    "seq": i,
+                    "status": if i < 2990 { "open" } else { "closed" },
+                    "amount": i,
+                    "owner_id": format!("u{}", i % 3),
+                    "opportunity_id": format!("o{i}"),
+                    "account_id": format!("a{i}"),
+                    "name": if i % 3 == 0 { format!("Client {i}") } else { format!("Client {i} SARL") },
+                })
+            })
+            .collect();
+        db.get_collection(name).unwrap().insert_batch(docs).unwrap();
+    }
+    let indexed = db.get_collection("indexed").unwrap();
+    for (name, field, ty) in [
+        ("idx_status", "status", IndexType::Hash),
+        ("idx_amount", "amount", IndexType::Persistent),
+        ("idx_owner", "owner_id", IndexType::Hash),
+        ("idx_opp", "opportunity_id", IndexType::Hash),
+        ("idx_acc", "account_id", IndexType::Hash),
+        ("trg_name", "name", IndexType::Trigram),
+    ] {
+        indexed
+            .create_index(name.to_string(), vec![field.to_string()], ty, false)
+            .unwrap();
+    }
+    (engine, tmp)
+}
+
+/// `filter` over `plain` then `indexed`: the scan's rows, the index's rows,
+/// and the indexed run's EXPLAIN (index named, estimate, documents read).
+fn run_cost(
+    engine: &StorageEngine,
+    filter: &str,
+) -> (
+    Vec<serde_json::Value>,
+    Vec<serde_json::Value>,
+    solidb::sdbql::QueryExplain,
+) {
+    let run = |coll: &str| {
+        let ex = QueryExecutor::with_database(engine, "costdb".to_string());
+        let ast = parse(&format!("FOR d IN {coll} FILTER {filter} RETURN d.seq")).unwrap();
+        let mut rows = ex.execute(&ast).unwrap();
+        rows.sort_by_key(|v| v.as_i64());
+        (rows, ex.explain(&ast).unwrap())
+    };
+    let (expected, _) = run("plain");
+    let (rows, explain) = run("indexed");
+    (expected, rows, explain)
+}
+
+/// The planner reads the candidate with the fewest index entries, not the
+/// first that applies: a selective range over a common equality (in either
+/// conjunct order), a two-row union over a thousand-row `IN`, a range's
+/// tighter side. EXPLAIN reports what it counted.
+#[test]
+fn test_planner_reads_the_cheapest_candidate() {
+    let (engine, _tmp) = create_cost_engine();
+    for (filter, index, estimate, read) in [
+        // 2,990 open rows against ten amounts.
+        ("d.status == \"open\" AND d.amount >= 2985", "idx_amount", 15, 15),
+        ("d.amount >= 2985 AND d.status == \"open\"", "idx_amount", 15, 15),
+        // ...and the equality when it is the selective side.
+        ("d.status == \"closed\" AND d.amount >= 100", "idx_status", 10, 10),
+        // Two thousand team rows against the union of two unique keys.
+        (
+            "d.owner_id IN [\"u0\", \"u1\"] AND (d.opportunity_id == \"o5\" OR d.account_id == \"a7\")",
+            "idx_opp | idx_acc",
+            2,
+            2,
+        ),
+        // Both sides of a range on one field: the tighter one is read.
+        ("d.amount >= 10 AND d.amount < 20", "idx_amount", 20, 20),
+        ("d.amount >= 2990 AND d.amount < 2995", "idx_amount", 10, 10),
+        // A rare trigram ("123" in thirteen names) over the open rows.
+        (
+            "LIKE(d.name, \"%client 123%\", true) AND d.status == \"open\"",
+            "trg_name",
+            13,
+            11,
+        ),
+    ] {
+        let (expected, rows, e) = run_cost(&engine, filter);
+        assert_eq!(rows, expected, "{filter}");
+        let access = &e.collections[0];
+        assert_eq!(access.index_used.as_deref(), Some(index), "{filter}");
+        assert_eq!(access.estimated_rows, Some(estimate), "{filter}");
+        assert_eq!(e.documents_scanned, read, "{filter}");
+    }
+}
+
+/// Equal estimates keep the order the planner always used (equalities
+/// before ranges, then FILTER order); a lone candidate is not counted.
+#[test]
+fn test_planner_ties_keep_the_old_order() {
+    let (engine, _tmp) = create_cost_engine();
+    for (filter, index, estimate) in [
+        // One row each way: the equality, as before.
+        (
+            "d.amount == 7 AND d.opportunity_id == \"o7\"",
+            "idx_amount",
+            Some(1),
+        ),
+        (
+            "d.opportunity_id == \"o7\" AND d.amount == 7",
+            "idx_opp",
+            Some(1),
+        ),
+        // (`<=` would not be a candidate: null rows pass it, and the
+        // sparse index holds none.)
+        (
+            "d.amount >= 2999 AND d.account_id == \"a2999\"",
+            "idx_acc",
+            Some(1),
+        ),
+        // Nothing to compare.
+        ("d.owner_id == \"u1\" AND d.seq > 5", "idx_owner", None),
+    ] {
+        let (expected, rows, e) = run_cost(&engine, filter);
+        assert_eq!(rows, expected, "{filter}");
+        assert_eq!(
+            e.collections[0].index_used.as_deref(),
+            Some(index),
+            "{filter}"
+        );
+        assert_eq!(e.collections[0].estimated_rows, estimate, "{filter}");
+    }
+}
+
+/// A trigram read that would step aside (its rarest trigram is in more
+/// than a quarter of the collection) is never the cheapest, though it
+/// counts fewer entries: "SARL" is in two thirds of the names, so the
+/// status is read, and EXPLAIN's plan says so too.
+#[test]
+fn test_planner_passes_over_a_trigram_read_that_steps_aside() {
+    let (engine, _tmp) = create_cost_engine();
+    let filter = "LIKE(d.name, \"%sarl%\", true) AND d.status == \"open\"";
+    let (expected, rows, e) = run_cost(&engine, filter);
+    assert_eq!(rows, expected);
+    assert_eq!(rows.len(), 1993);
+    assert_eq!(e.collections[0].index_used.as_deref(), Some("idx_status"));
+    assert_eq!(e.collections[0].estimated_rows, Some(2990));
+
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    let plan = ex
+        .explain_plan(&parse(&format!("FOR d IN indexed FILTER {filter} RETURN d")).unwrap())
+        .unwrap();
+    assert_eq!(
+        plan.collections[0].index_used.as_deref(),
+        Some("idx_status")
+    );
+    assert_eq!(plan.collections[0].estimated_rows, Some(2990));
+}
+
+/// A plan-only EXPLAIN counts nothing for a placeholder: in a correlated
+/// subquery the outer value is not known, so the loop's read is named but
+/// carries no `estimated_rows`; the query's own loop keeps its count.
+#[test]
+fn test_planned_subquery_reports_no_count_for_placeholders() {
+    let (engine, _tmp) = create_cost_engine();
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    let plan = ex
+        .explain_plan(
+            &parse(
+                "FOR d IN indexed FILTER d.status == \"closed\" AND d.amount >= 100 \
+                 LET same = (FOR x IN indexed FILTER x.owner_id == d.owner_id \
+                 AND x.amount >= 2999 RETURN x.seq) RETURN same",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        plan.collections[0].index_used.as_deref(),
+        Some("idx_status")
+    );
+    assert_eq!(plan.collections[0].estimated_rows, Some(10));
+    assert_eq!(plan.collections[1].subquery.as_deref(), Some("LET same"));
+    assert!(plan.collections[1].index_used.is_some());
+    assert_eq!(plan.collections[1].estimated_rows, None);
+}

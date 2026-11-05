@@ -717,6 +717,32 @@ FOR a IN accounts
         </div>
       </section>
 
+      <section id="choosing" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Which index a query reads</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A FILTER often has more than one condition an index could serve. The planner lists every read that would do &mdash; a compound index, a single-field equality, <code>IN</code>, prefix or range, a trigram, the union of an <code>OR</code>'s branches &mdash; counts the index entries each would read without loading a document, and reads the smallest. The rest of the FILTER is checked on the rows read.
+            </p>
+            <pre><code class="language-sql text-sm">// 190,000 open tickets, ten with amount >= 199990: reads the ten
+FOR t IN tickets FILTER t.status == "open" AND t.amount >= 199990 RETURN t
+
+// 80,000 rows for the team, two for the keys: reads the union of the OR
+FOR d IN deals
+  FILTER d.owner_id IN @team AND (d.opportunity_id == @opp OR d.account_id == @acc)
+  RETURN d</code></pre>
+            <ul class="space-y-1 text-sm text-gray-400 list-disc pl-5">
+              <li>Counting stops as soon as a read can no longer beat the cheapest so far, so it costs about as much as the read chosen; two cheap reads cost a few microseconds more to compare.</li>
+              <li>Equal counts keep a fixed order: a compound index on two fields or more, single-field equalities and <code>IN</code>, a compound index on its first field, prefixes, ranges, trigrams, then unions, each in FILTER order.</li>
+              <li>A range is a candidate from any conjunct. On a sparse index it must exclude null (<code>&gt;</code>, <code>&gt;=</code>, or a FILTER that rejects null), since null rows are not in the index.</li>
+              <li>EXPLAIN names the read in <code>index_used</code> and its count in <code>estimated_rows</code>. <code>OPTIONS { indexHint: "&hellip;" }</code> skips the comparison and reads the named index.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       <!-- Management API -->
       <section id="management" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
