@@ -861,12 +861,20 @@ impl Collection {
             .collect()
     }
 
-    /// The documents whose `index` (a Trigram index) entries hold every one
-    /// of `grams` — a superset of those a LIKE with these trigrams matches;
-    /// the caller re-checks the FILTER. Reads each trigram's entries, rarest
-    /// first is not known, so in order, intersecting as it goes and stopping
-    /// when nothing is left. `None` when `grams` is empty (the index cannot
-    /// narrow the read) or the candidates pass `cap`.
+    /// Candidates for a LIKE whose pattern holds `grams`: documents of
+    /// `index` (a Trigram index) holding the rarest of those trigrams, and
+    /// every other one rare enough to intersect cheaply — a superset of the
+    /// matches; the caller re-checks the FILTER.
+    ///
+    /// A common trigram (`CLI` in "Client 1234") can sit in every document,
+    /// so the posting lists are not read in order: each is counted up to a
+    /// bound that starts at 1,024 and grows ×8 until some trigram fits under
+    /// it, which costs a few times the rarest list. That list is read, then
+    /// intersected with the other trigrams whose counts came in under the
+    /// bound. `None` — the caller scans — when `grams` is empty (the index
+    /// cannot narrow the read), or when even the rarest trigram is in more
+    /// than a quarter of the collection (or past `cap`): fetching that many
+    /// documents one by one costs more than reading them all in order.
     pub fn index_trigram_candidates(
         &self,
         index: &Index,
@@ -877,30 +885,73 @@ impl Collection {
             return None;
         }
         let cf = self.ks.handle(&self.db)?;
-        let mut candidates: Option<std::collections::HashSet<Vec<u8>>> = None;
-        for gram in grams {
-            let prefix = format!(
-                "{}{}:{}:",
-                IDX_PREFIX,
-                index.name,
-                hex::encode(gram.as_bytes())
-            );
-            let mut keys = std::collections::HashSet::new();
-            let read = self.for_each_index_entry(&cf, prefix.as_bytes(), |doc_key| {
-                if candidates.as_ref().is_none_or(|c| c.contains(doc_key)) {
-                    keys.insert(doc_key.to_vec());
+        let prefixes: Vec<Vec<u8>> = grams
+            .iter()
+            .map(|gram| {
+                format!(
+                    "{}{}:{}:",
+                    IDX_PREFIX,
+                    index.name,
+                    hex::encode(gram.as_bytes())
+                )
+                .into_bytes()
+            })
+            .collect();
+        // Entries under `prefix`, counting stopped once past `bound`.
+        let count_upto = |prefix: &[u8], bound: usize| -> Option<usize> {
+            let mut n = 0usize;
+            self.for_each_index_entry(&cf, prefix, |_| {
+                n += 1;
+                Ok(n <= bound)
+            })
+            .ok()?;
+            Some(n)
+        };
+        // Beyond this, an index read loses to the scan (`%sarl%` in every
+        // "… SARL" name: 925 ms against 220 ms on 200k documents).
+        let worthwhile = (self.count() / 4).max(1024).min(cap);
+        let mut bound = 1024usize;
+        let counted: Vec<(usize, &Vec<u8>)> = loop {
+            let mut counts = Vec::with_capacity(prefixes.len());
+            for prefix in &prefixes {
+                let n = count_upto(prefix, bound)?;
+                if n == 0 {
+                    // A trigram no document holds: nothing can match.
+                    return Some(Vec::new());
                 }
-                Ok(true)
-            });
-            read.ok()?;
-            if keys.is_empty() {
-                return Some(Vec::new());
+                counts.push((n, prefix));
             }
-            candidates = Some(keys);
-        }
-        let candidates = candidates?;
-        if candidates.len() > cap {
+            if counts.iter().any(|(n, _)| *n <= bound) {
+                break counts;
+            }
+            if bound >= worthwhile {
+                return None;
+            }
+            bound = bound.saturating_mul(8);
+        };
+        let mut known: Vec<(usize, &Vec<u8>)> =
+            counted.into_iter().filter(|(n, _)| *n <= bound).collect();
+        known.sort_by_key(|(n, _)| *n);
+        let (rarest, rest) = known.split_first()?;
+        if rarest.0 > worthwhile {
             return None;
+        }
+        let read = |prefix: &[u8]| -> Option<std::collections::HashSet<Vec<u8>>> {
+            let mut keys = std::collections::HashSet::new();
+            self.for_each_index_entry(&cf, prefix, |doc_key| {
+                keys.insert(doc_key.to_vec());
+                Ok(true)
+            })
+            .ok()?;
+            Some(keys)
+        };
+        let mut candidates = read(rarest.1)?;
+        for (_, prefix) in rest {
+            if candidates.is_empty() {
+                break;
+            }
+            let other = read(prefix)?;
+            candidates.retain(|k| other.contains(k));
         }
         let doc_keys: Vec<Vec<u8>> = candidates
             .iter()

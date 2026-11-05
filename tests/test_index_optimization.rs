@@ -2243,3 +2243,37 @@ fn test_trigram_index_tracks_writes() {
         .create_index("bad2".into(), vec!["a".into()], IndexType::Trigram, true)
         .is_err());
 }
+
+/// A trigram every document holds narrows nothing: the read would fetch the
+/// whole collection one document at a time, so the query scans instead, with
+/// the same rows; a selective term on the same index is still read from it.
+#[test]
+fn test_trigram_index_steps_aside_when_unselective() {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database("t".to_string()).unwrap();
+    let db = engine.get_database("t").unwrap();
+    db.create_collection("acc".to_string(), None).unwrap();
+    let acc = db.get_collection("acc").unwrap();
+    let docs: Vec<_> = (0..3000)
+        .map(|i| json!({ "seq": i, "name": format!("Client {i} SARL") }))
+        .collect();
+    acc.insert_batch(docs).unwrap();
+    acc.create_index("trg".into(), vec!["name".into()], IndexType::Trigram, false)
+        .unwrap();
+    let executor = QueryExecutor::with_database(&engine, "t".to_string());
+    let run = |q: &str| {
+        let ex = QueryExecutor::with_database(&engine, "t".to_string());
+        let rows = ex.execute(&parse(q).unwrap()).unwrap();
+        (rows.len(), ex.collection_scans())
+    };
+    let (rows, scans) = run("FOR a IN acc FILTER LIKE(a.name, \"%sarl%\", true) RETURN a.seq");
+    assert_eq!((rows, scans > 0), (3000, true));
+    let (rows, scans) =
+        run("FOR a IN acc FILTER LIKE(a.name, \"%client 1234%\", true) RETURN a.seq");
+    assert_eq!((rows, scans), (1, 0));
+    let e = executor
+        .explain(&parse("FOR a IN acc FILTER LIKE(a.name, \"%sarl%\", true) RETURN a").unwrap())
+        .unwrap();
+    assert_eq!(e.collections[0].access_type, "full_scan");
+}

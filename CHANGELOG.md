@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **A trigram index no longer makes a search slower than the scan.** 2.7.0
+  intersected the trigrams' entry lists in alphabetical order, so a term
+  holding a common trigram (`CLI` in every "Client …" name) read that list
+  in full, once per such trigram: on 200,000 accounts,
+  `LIKE(a.name, "%client 1234%", true)` took 220 ms with the index against
+  192 ms without. Each list is now counted up to a bound that grows only
+  until one trigram fits under it; the rarest list is read and intersected
+  with the other short ones: 3.7 ms. When even the rarest trigram is in more
+  than a quarter of the collection (`%sarl%` in every "… SARL" name), the
+  query scans instead of fetching documents one by one: 232 ms, where 2.7.0
+  took 925 ms.
+
 ## [2.7.0](https://github.com/solisoft/solidb/compare/v2.6.4...v2.7.0) (2026-11-05)
 
 ### Features

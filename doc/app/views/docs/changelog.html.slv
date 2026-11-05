@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A trigram index no longer makes a search slower than the scan</strong> &mdash; 2.7.0 intersected the trigrams' entry lists in alphabetical order, so a term holding a common trigram read that list in full: on 200,000 accounts <code>LIKE(a.name, "%client 1234%", true)</code> took 220&nbsp;ms with the index against 192&nbsp;ms without. The rarest trigram is now found by bounded counting and read first: 3.7&nbsp;ms. When even the rarest one is in more than a quarter of the collection, the query scans instead (232&nbsp;ms, where 2.7.0 took 925&nbsp;ms).</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.7.0 -->
   <section id="v2-7-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -710,6 +710,7 @@ FOR a IN accounts
               <li>Both forms are served: the <code>LIKE</code> operator (case-sensitive, strings only) and the <code>LIKE()</code> function, case-insensitive with <code>true</code>, which also matches numbers and other values as text.</li>
               <li>Characters are folded so that case-insensitive matches are never missed, including pairs such as <code>ß</code>/<code>ẞ</code> and <code>σ</code>/<code>ς</code>.</li>
               <li><code>_</code> and <code>%</code> split the pattern into runs; <code>\%</code>, <code>\_</code> and <code>\\</code> are literal characters within a run.</li>
+              <li>The rarest of the pattern's trigrams is read first. When even that one appears in more than a quarter of the documents (<code>%sarl%</code> in a collection of "&hellip; SARL" names), reading them one by one would cost more than the scan, so the query scans.</li>
               <li>A trigram index serves nothing else: equality, ranges and SORT use a hash or persistent index. It covers one field and cannot be unique.</li>
             </ul>
           </div>
