@@ -18,6 +18,7 @@ describe("BlogController", fn() {
 
   test("every listed post renders with its title", fn() {
     posts = {
+      "solidb-2-7-the-queries-that-scanned-anyway": "the queries that scanned with an index right there",
       "solistore-a-storage-engine-of-our-own": "a storage engine of our own",
       "solidb-2-3-1-the-index-in-the-second-filter": "the index in the second FILTER",
       "solidb-2-3-answers-that-outlived-their-data": "An edge that would not move",
@@ -41,8 +42,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(15)
-    newest = body.index_of("/blog/solistore-a-storage-engine-of-our-own")
+    expect(body.split("class=\"post-card\"").length()).to_equal(16)
+    newest = body.index_of("/blog/solidb-2-7-the-queries-that-scanned-anyway")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })

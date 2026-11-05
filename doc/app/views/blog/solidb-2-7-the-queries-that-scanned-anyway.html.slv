@@ -1,0 +1,161 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Releases 2.6.3 – 2.7.1 · Performance · Correctness</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">A job queue polled once a second read 122,050 rows to find 50, although an index on exactly the fields it filtered on was right there. That query started an audit of every query a CRM sends. What it found became five releases: shapes the planner now reads from an index, a bug that returned wrong rows, indexes that hold null, and an index for search boxes.</p>
+  <p class="post-note">Every timing here is the median of repeated runs on a throwaway server or in the engine's benchmark suite, against builds of the versions named, with the same data on both sides and the result cache off. The rows returned are the same on both sides unless the table says otherwise.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#claim">One poll, 122,050 jobs</a></li>
+    <li><a href="#audit">158 queries, one EXPLAIN each</a></li>
+    <li><a href="#shapes">Shapes the planner now reads</a></li>
+    <li><a href="#wrong">A wrong answer on the way</a></li>
+    <li><a href="#nulls">Indexes that hold null</a></li>
+    <li><a href="#search">Search boxes</a></li>
+    <li><a href="#explain">EXPLAIN says what runs</a></li>
+    <li><a href="#still">What still scans</a></li>
+    <li><a href="#upgrading">Upgrading</a></li>
+  </ol>
+</nav>
+
+<section id="claim"><h2>One poll, 122,050 jobs</h2>
+<p>Soli&rsquo;s job engine claims work with this query, on every poll:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre>FOR doc IN _jobs
+  FILTER doc.state IN ["pending", "scheduled", "failed"]
+     AND doc.run_at &lt;= @now
+  SORT doc.priority DESC, doc.run_at ASC
+  LIMIT 200 RETURN doc</pre></div>
+<p>Soli creates a persistent index on <code>[state, run_at, priority]</code> for it. Up to 2.6.2, SoliDB used a compound index only when <code>==</code> terms covered every one of its fields. An <code>IN</code> and a <code>&lt;=</code> did not qualify, so the query was served by the single-field index on <code>state</code>: every pending, scheduled and failed job was read, then <code>run_at</code> was checked. Naming the index in <code>OPTIONS { indexHint }</code> did not help. The hint went down the same equality-only path and was dropped, and with <code>forceIndexHint</code> the query failed.</p>
+<p>On a queue that is mostly future work, 172,050 jobs of which 50 are due:</p>
+<table>
+  <thead><tr><th>Query</th><th>2.6.2</th><th>2.6.3</th></tr></thead>
+  <tbody>
+    <tr><td>The claim</td><td>390&nbsp;ms</td><td>0.21&nbsp;ms</td></tr>
+    <tr><td>The claim with <code>indexHint</code></td><td>388&nbsp;ms</td><td>0.21&nbsp;ms</td></tr>
+    <tr><td><code>state == "scheduled" AND run_at &lt;= @now</code></td><td>314&nbsp;ms</td><td>0.038&nbsp;ms</td></tr>
+    <tr><td>One day of scheduled jobs, counted</td><td>317&nbsp;ms</td><td>16&nbsp;ms</td></tr>
+  </tbody>
+</table>
+<p>Since 2.6.3, the leading fields of a compound index can each be fixed by <code>==</code> or <code>IN</code>, and the field after them can carry a range. Each value of an <code>IN</code> becomes one bounded read of the index, so the claim reads three short ranges, one per state, and finds its 50 jobs.</p>
+</section>
+
+<section id="audit"><h2>158 queries, one EXPLAIN each</h2>
+<p>If that query scanned, others would too. We took the CRM that reported it and listed every query shape it had sent, 158 of them recorded in its query statistics, along with the ones its 27,000 lines of code can build. We rebuilt its 121 indexes on an empty server and ran <code>EXPLAIN</code> on each shape.</p>
+<p>Some full scans were missing indexes, the CRM&rsquo;s to add. A larger share had an index the planner could not use. A compound index was never used for its first field alone. <code>!=</code> was never read from an index, nor was an <code>IN</code> list containing <code>null</code>, nor any <code>OR</code>. Those shapes are everywhere in an app: the open tasks of the current user, the open cases in a console polled every 15 seconds, the visibility filter on every list of invoices for a user who is not an admin.</p>
+</section>
+
+<section id="shapes"><h2>Shapes the planner now reads</h2>
+<p>2.6.4 reads four of them from indexes that already exist. Measured on 200,000 documents, 2.6.3 against 2.6.4 with the same indexes:</p>
+<table>
+  <thead><tr><th>Shape</th><th>Index</th><th>2.6.3</th><th>2.6.4</th></tr></thead>
+  <tbody>
+    <tr><td><code>object == "o7"</code> (5,000 rows)</td><td><code>[object, sort_order]</code></td><td>174&nbsp;ms</td><td>19&nbsp;ms</td></tr>
+    <tr><td>the same, counted</td><td><code>[object, sort_order]</code></td><td>407&nbsp;ms</td><td>0.9&nbsp;ms</td></tr>
+    <tr><td><code>owner_id == @me AND status != "Completed"</code></td><td><code>[owner_id, status]</code></td><td>188&nbsp;ms</td><td>2.8&nbsp;ms</td></tr>
+    <tr><td><code>owner_id == @me AND status NOT IN [&hellip;]</code></td><td><code>[owner_id, status]</code></td><td>186&nbsp;ms</td><td>1.4&nbsp;ms</td></tr>
+    <tr><td><code>opportunity_id IN [null, ""] AND account_id IN @a</code></td><td><code>[opportunity_id, account_id]</code></td><td>208&nbsp;ms</td><td>0.4&nbsp;ms</td></tr>
+    <tr><td><code>a == 3 OR b == 7</code></td><td><code>[a]</code> and <code>[b]</code></td><td>186&nbsp;ms</td><td>12&nbsp;ms</td></tr>
+  </tbody>
+</table>
+<ul>
+<li><strong>A compound index on its first field alone.</strong> It is tried after the single-field indexes, which win when they exist. Counts are read from the index too.</li>
+<li><strong><code>!=</code> and <code>NOT IN</code> after a fixed field.</strong> Under <code>owner_id == @me</code>, the read covers the key ranges on each side of <code>"Completed"</code>. Every row under a non-null prefix is in the index, so tasks with no status still come back: <code>null != "Completed"</code> is true.</li>
+<li><strong><code>IN</code> lists with <code>null</code></strong> on a compound index, which stores null like any other value, as long as no combination of the fixed values is entirely null.</li>
+<li><strong><code>OR</code></strong> is read as the union of what each branch&rsquo;s index returns, when every branch has one, and deduplicated. Since 2.7.0, every branch is planned before any is read, so an <code>OR</code> that will be scanned anyway no longer reads the others first.</li>
+</ul>
+<p>Rows read through an index are still checked against the whole FILTER, as a scan would check them.</p>
+</section>
+
+<section id="wrong"><h2>A wrong answer on the way</h2>
+<p>A regular index is <em>sparse</em>: a document whose indexed fields are all null or missing gets no entry. SDBQL ranks null below every other value. Those two facts disagree for any read that null satisfies, and two of them did not account for it. On 2.6.4, with four documents and a persistent index on <code>f</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> data</div><pre>{_key: "k1", f: 1}   {_key: "k2", f: null}   {_key: "k3"}   {_key: "k4", f: 9}</pre></div>
+<table>
+  <thead><tr><th>Query</th><th>Without the index</th><th>With it, 2.6.4</th></tr></thead>
+  <tbody>
+    <tr><td><code>FILTER d.f &lt;= 5</code></td><td>k1, k2, k3</td><td>k1</td></tr>
+    <tr><td><code>FILTER d.f &lt; 5</code></td><td>k1, k2, k3</td><td>k1</td></tr>
+    <tr><td><code>SORT d.f ASC LIMIT 2</code></td><td>k2, k3</td><td>k1, k4</td></tr>
+  </tbody>
+</table>
+<p>Creating an index changed the answer. A <code>SORT</code> without a <code>LIMIT</code> dropped the null rows altogether. This is fixed in 2.7.0:</p>
+<ul>
+<li>a sparse index serves <code>&lt;</code> or <code>&lt;=</code> only when another condition on the field rejects null (<code>f &gt;= 1 AND f &lt;= 5</code>, <code>f &lt;= 5 AND f != null</code>);</li>
+<li>it serves an ascending SORT only when every document has an entry. Checking that means counting the index&rsquo;s keys, so the answer is cached until the collection&rsquo;s next write;</li>
+<li>it serves a descending one as long as it does not run out of indexed rows;</li>
+<li>otherwise the query scans.</li>
+</ul>
+<p>If you are on 2.6.4 or earlier and sort or filter with <code>&lt;</code> or <code>&lt;=</code> on a field that can be missing, check those results.</p>
+</section>
+
+<section id="nulls"><h2>Indexes that hold null</h2>
+<p>A sparse index cannot answer <code>== null</code>, <code>IN [null, &hellip;]</code>, or a <code>!=</code> with nothing fixed before it, because the rows those match are not in it. 2.7.0 adds the option to index them:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/crm/index/cases
+{"name": "idx_owner", "type": "persistent", "field": "owner_id", "sparse": false}</pre></div>
+<p>A non-sparse index holds one entry per document, a missing value stored as null. The planner then reads equality and <code>IN</code> on null from it, the ranges around an excluded value, <code>&lt;</code> and <code>&lt;=</code> with the null rows included, and null counts from the index alone. Several documents can still hold null under a unique non-sparse index. On 200,000 documents:</p>
+<table>
+  <thead><tr><th>Shape</th><th>Rows</th><th>Scanned</th><th>Non-sparse index</th></tr></thead>
+  <tbody>
+    <tr><td><code>owner_id == null</code></td><td>2,062</td><td>172&nbsp;ms</td><td>8&nbsp;ms</td></tr>
+    <tr><td><code>status != "Completed"</code></td><td>40,000</td><td>182&nbsp;ms</td><td>159&nbsp;ms</td></tr>
+  </tbody>
+</table>
+<p>The second line gains little, because it returns a fifth of the collection and fetching those documents is most of the cost. An index helps a condition that keeps few rows. Existing indexes, and every index created without the option, stay sparse.</p>
+</section>
+
+<section id="search"><h2>Search boxes</h2>
+<p>Every list in the CRM has a search box, and the Soli ORM turns it into <code>LIKE(doc.name, "%term%", true)</code>, once per searchable field and joined by <code>OR</code>. A pattern that starts with <code>%</code> has no prefix to look up, and the fulltext index stores words, not substrings, so these queries always scanned.</p>
+<p>2.7.0 adds a trigram index. It stores the distinct three-character sequences of one field&rsquo;s text, and serves a <code>LIKE</code> whose pattern has a literal run of three characters or more:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/crm/index/accounts
+{"name": "trg_name", "type": "trigram", "field": "name"}
+
+FOR a IN accounts
+  FILTER LIKE(a.name, @q, true) OR LIKE(a.city, @q, true)   <span class="tok-com"># a union of two trigram indexes</span>
+  RETURN a</pre></div>
+<p>Characters are folded before they are stored or looked up, lowercased then uppercased. A case-insensitive match is therefore never missed, including pairs such as <code>ß</code> and <code>ẞ</code>, <code>ſ</code> and <code>s</code>, or <code>σ</code> and <code>ς</code>. The text is what <code>LIKE()</code> itself compares, so a number or an array in the field is found too. Rows read through the index are checked against the full pattern.</p>
+<p>2.7.0 shipped this with a mistake in how it read the index. It intersected the trigrams&rsquo; entry lists in alphabetical order. A term holding a common trigram, such as <code>CLI</code> when every account is called &ldquo;Client &hellip;&rdquo;, read that whole list first, and every other list that common. 2.7.1 counts each list only up to a bound that grows until one trigram fits under it, and reads the rarest first. When even the rarest trigram is in more than a quarter of the collection, it scans instead: fetching that many documents one by one costs more than reading them in order. On 200,000 accounts named &ldquo;Client N SARL&rdquo;:</p>
+<table>
+  <thead><tr><th>Search</th><th>Rows</th><th>Scanned</th><th>2.7.0</th><th>2.7.1</th></tr></thead>
+  <tbody>
+    <tr><td><code>%client 1234%</code></td><td>111</td><td>192&nbsp;ms</td><td>220&nbsp;ms</td><td>3.7&nbsp;ms</td></tr>
+    <tr><td><code>%98765%</code></td><td>2</td><td>222&nbsp;ms</td><td>&mdash;</td><td>1.0&nbsp;ms</td></tr>
+    <tr><td><code>%sarl%</code>, LIMIT 10</td><td>10</td><td>&mdash;</td><td>925&nbsp;ms</td><td>232&nbsp;ms, scanned</td></tr>
+  </tbody>
+</table>
+<p>If you created a trigram index on 2.7.0, upgrade to 2.7.1.</p>
+</section>
+
+<section id="explain"><h2>EXPLAIN says what runs</h2>
+<p>The audit leaned on <code>EXPLAIN</code>, and <code>EXPLAIN</code> left too much out. It changed in 2.6.4 and 2.7.0:</p>
+<ul>
+<li>reads that already used an index but showed as <code>full_scan</code> now have their own access types: <code>index_sort</code> for rows read in SORT order up to the LIMIT (with <code>sort.index</code> naming the index), and <code>index_count</code> for a count read from the index;</li>
+<li>subqueries are listed after the query&rsquo;s own loops, each labelled with the clause it sits in (<code>"subquery": "LET owner"</code>). Each one is explained against the first row that reaches it. When no row reaches it, as on an empty development database, it is planned from the shape of its FILTER without running and marked <code>"estimated": true</code>. A Soli <code>includes</code> on <code>_key</code> then shows <code>"index_used": "primary key"</code>;</li>
+<li>when an <code>OR</code> is scanned because one branch has no index, <code>warnings</code> names the branch: <code>OR scanned, no index serves the branch `t.seq == 2` (an index on `seq` would serve it)</code>;</li>
+<li>FILTER text is written as SDBQL (<code>t.a == 1 OR t.seq == 2</code>), not as the parsed tree.</li>
+</ul>
+</section>
+
+<section id="still"><h2>What still scans</h2>
+<ul>
+<li>a <code>LIKE</code> with no literal run of three characters (<code>"%du%"</code>), and a trigram held by more than a quarter of the documents;</li>
+<li>an <code>OR</code> with one branch that no index serves; <code>EXPLAIN</code> now says which;</li>
+<li>on a sparse index, <code>!=</code>, <code>== null</code> or <code>IN [null]</code> with nothing fixed before them. A non-sparse index serves them;</li>
+<li>a query the planner could serve two ways gets the first plan that applies, not the cheapest. A cost-based choice is the next step.</li>
+</ul>
+</section>
+
+<section id="upgrading"><h2>Upgrading</h2>
+<p>None of this needs a migration. Existing indexes keep working as they are and stay sparse; <code>"sparse": false</code> and <code>"type": "trigram"</code> only apply to indexes you create with them. Two changes are visible:</p>
+<ul>
+<li>a query that sorted ascending, or filtered with <code>&lt;</code> or <code>&lt;=</code>, through a sparse index on a field some documents lack now scans where it used to return too few rows. Give it a non-sparse index to keep it indexed;</li>
+<li><code>EXPLAIN</code> has new access types, subquery entries and warnings. Its existing fields keep their meaning.</li>
+</ul>
+<p>A cluster whose nodes run different versions should not create trigram or non-sparse indexes until every node is on 2.7.1: an older node does not know the trigram type, and creates a sparse index when asked for a non-sparse one. The details are in the <a href="/docs/changelog">changelog</a> and the <a href="/docs/indexes">indexes guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

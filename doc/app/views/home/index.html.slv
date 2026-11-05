@@ -370,6 +370,11 @@ $ curl -u admin:… 10.0.0.3:6745/_api/cluster/status</pre>
     </div>
 
     <div class="releases">
+      <a class="release" href="/blog/solidb-2-7-the-queries-that-scanned-anyway">
+        <span class="release-ver">2.6 – 2.7</span>
+        <span class="release-title">The queries that scanned with an index right there</span>
+        <span class="release-sum">A job claim read 122,050 rows to find 50; now 0.21&nbsp;ms. Compound prefixes, <code>!=</code> and <code>OR</code> read from indexes, a sparse index that dropped null rows from <code>&lt;=</code> and <code>SORT</code>, non-sparse and trigram indexes.</span>
+      </a>
       <a class="release" href="/blog/solidb-2-3-1-the-index-in-the-second-filter">
         <span class="release-ver">2.3.1</span>
         <span class="release-title">The index in the second FILTER</span>

@@ -69,6 +69,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-2-7-the-queries-that-scanned-anyway",
+        "title": "SoliDB 2.6 to 2.7.1: the queries that scanned with an index right there",
+        "date": "2026-11-05",
+        "display_date": "November 5, 2026",
+        "summary": "A job queue read 122,050 rows to find 50 next to an index built for it. Auditing every "
+        + "query of a CRM turned that into five releases: compound prefixes, != and OR from an index, "
+        + "a sparse-index bug that dropped null rows, non-sparse indexes, and trigram search.",
+        "tags": ["Performance", "Correctness", "Release 2.7.1"],
+        "read_minutes": 10
+      },
+      {
         "slug": "solistore-a-storage-engine-of-our-own",
         "title": "solistore: a storage engine of our own",
         "date": "2026-10-15",
