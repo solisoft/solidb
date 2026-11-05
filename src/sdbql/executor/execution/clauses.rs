@@ -337,17 +337,9 @@ impl<'a> QueryExecutor<'a> {
                                             ctx,
                                         )
                                     });
-                                    let hint =
-                                        crate::sdbql::executor::index_opt::IndexHint::from_options(
-                                            for_clause
-                                                .options
-                                                .as_ref()
-                                                .map(|o| o.index_hint.as_slice()),
-                                            for_clause
-                                                .options
-                                                .as_ref()
-                                                .is_some_and(|o| o.force_index_hint),
-                                        );
+                                    let hint = crate::sdbql::executor::index_opt::IndexHint::of(
+                                        for_clause,
+                                    );
                                     let Some((docs, _name, _ty)) = self
                                         .lookup_index_for_filter_hinted(
                                             &collection,

@@ -727,12 +727,11 @@ fn benchmark_planner_cost_choice() {
         ),
     ] {
         let (n, used, ms) = time(&format!("FOR d IN rows FILTER {filter} RETURN d._key"));
-        // EXPLAIN ignores the hint (tasks/todo/explain-ignores-index-hint.md),
-        // so the hinted read is named after the hint.
-        let (old_n, _, old_ms) = time(&format!(
+        let (old_n, old_used, old_ms) = time(&format!(
             "FOR d IN rows OPTIONS {{ indexHint: \"{old}\" }} FILTER {filter} RETURN d._key"
         ));
         assert_eq!(n, old_n, "{label}");
-        println!("BENCH|{label}|{n}|{used}|{ms:.3}|{old}|{old_ms:.3}");
+        assert_eq!(old_used, old, "{label}: the hint is what EXPLAIN names");
+        println!("BENCH|{label}|{n}|{used}|{ms:.3}|{old_used}|{old_ms:.3}");
     }
 }

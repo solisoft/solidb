@@ -26,6 +26,16 @@
   EXPLAIN reports the count chosen as `estimated_rows`. Equal counts keep
   the previous order.
 
+### Bug Fixes
+
+* **EXPLAIN follows `indexHint`.** EXPLAIN named the planner's own choice
+  even when the loop's `OPTIONS { indexHint }` made the query read another
+  index. Both the run and `"analyze": false` now report the hinted index
+  when it serves (with no `estimated_rows`: nothing was compared), add a
+  warning naming the hint when it cannot, and fail with the query's own
+  error when a `forceIndexHint` cannot serve — a warning instead for a
+  subquery no row reaches, which the query would only fail on if one did.
+
 ## [2.7.1](https://github.com/solisoft/solidb/compare/v2.7.0...v2.7.1) (2026-11-05)
 
 ### Bug Fixes

@@ -59,6 +59,44 @@ impl IndexHint {
         }
         Some(Self { names, force })
     }
+
+    /// The hint of `for_clause`'s `OPTIONS`, if it names an index.
+    pub fn of(for_clause: &crate::sdbql::ast::ForClause) -> Option<Self> {
+        let options = for_clause.options.as_ref()?;
+        Self::from_options(Some(&options.index_hint), options.force_index_hint)
+    }
+
+    /// Whether the read named `used` is one this hint asked for.
+    pub(super) fn served_by(&self, used: &str) -> bool {
+        self.names.iter().any(|n| n == used)
+    }
+
+    /// The error a forced hint that no named index can serve raises.
+    pub(super) fn unserved_error(&self, collection: &Collection) -> DbError {
+        DbError::ExecutionError(format!(
+            "could not use index hint to serve query: none of [{}] on '{}' can serve the \
+             FILTER (forceIndexHint is set)",
+            self.names.join(", "),
+            collection
+                .name
+                .rsplit(':')
+                .next()
+                .unwrap_or(&collection.name)
+        ))
+    }
+
+    /// For EXPLAIN: the warning when the hint was given, not forced, and
+    /// the read made (`used`, `None` for a scan) is not one it names.
+    pub(super) fn unserved_warning(&self, collection: &str, used: Option<&str>) -> Option<String> {
+        if self.force || used.is_some_and(|u| self.served_by(u)) {
+            return None;
+        }
+        Some(format!(
+            "`{collection}`: indexHint [{}] cannot serve the FILTER; the planner's own choice \
+             is used",
+            self.names.join(", ")
+        ))
+    }
 }
 
 /// The literal prefix of a LIKE pattern: the characters before the first
@@ -827,24 +865,11 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// Resolve the best index for a FILTER expression: composite first (when
-    /// 2+ AND'd equality terms cover all of an index's fields), otherwise the
-    /// existing single-field path. Returns `(docs, index_name, index_type)` so
-    /// EXPLAIN and the executor can report what was used without re-scanning
-    /// the index list.
-    pub(super) fn lookup_index_for_filter(
-        &self,
-        collection: &Collection,
-        filter: &Expression,
-        var_name: &str,
-        ctx: &Context,
-    ) -> Option<(Vec<crate::storage::Document>, String, String)> {
-        self.lookup_index_for_filter_limited(collection, filter, var_name, ctx, None)
-    }
-
-    /// [`lookup_index_for_filter`] with an optional cap on the number of
-    /// documents fetched. Callers must only pass `Some` when the FILTER is
-    /// fully satisfied by the index condition (see
+    /// Read the candidate rows of `filter` from the cheapest index read that
+    /// serves it, as `(docs, index_name, index_type)` so EXPLAIN and the
+    /// executor can report what was used; `None` when the FILTER is scanned.
+    /// `limit` caps the number of documents fetched. Callers must only pass
+    /// `Some` when the FILTER is fully satisfied by the index condition (see
     /// [`Self::filter_fully_covered_by_index`]) — a residual conjunct could
     /// otherwise reject fetched rows and silently under-fill the LIMIT.
     pub(super) fn lookup_index_for_filter_limited(
@@ -1675,18 +1700,85 @@ impl<'a> QueryExecutor<'a> {
             return Ok(Some(hit));
         }
         if hint.force {
-            return Err(DbError::ExecutionError(format!(
-                "could not use index hint to serve query: none of [{}] on '{}' can serve the \
-                 FILTER (forceIndexHint is set)",
-                hint.names.join(", "),
-                collection
-                    .name
-                    .rsplit(':')
-                    .next()
-                    .unwrap_or(&collection.name)
-            )));
+            return Err(hint.unserved_error(collection));
         }
         Ok(self.lookup_index_for_filter_limited(collection, filter, var_name, ctx, limit))
+    }
+
+    /// [`Self::lookup_index_for_filter_hinted`], planned without reading:
+    /// the first hinted index that would serve `filter`, else the
+    /// planner's choice, else (forced) the error the run raises.
+    pub(super) fn plan_index_read_hinted(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        hint: Option<&IndexHint>,
+    ) -> DbResult<PlannedRead> {
+        let Some(hint) = hint.filter(|h| !h.names.is_empty()) else {
+            return Ok(self.plan_index_read(collection, filter, var_name, ctx));
+        };
+        if let Some(read) = self.plan_with_hint(collection, filter, var_name, ctx, hint) {
+            return Ok(read);
+        }
+        if hint.force {
+            return Err(hint.unserved_error(collection));
+        }
+        Ok(self.plan_index_read(collection, filter, var_name, ctx))
+    }
+
+    /// [`Self::lookup_with_hint`], planned: each hinted index in turn, by
+    /// the rules its read applies.
+    fn plan_with_hint(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        hint: &IndexHint,
+    ) -> Option<PlannedRead> {
+        let indexes = collection.get_all_indexes();
+        let candidates = self.ordered_index_candidates(filter, var_name, ctx);
+        let terms = self.composite_terms(filter, var_name, ctx);
+        for name in &hint.names {
+            let Some(index) = indexes.iter().find(|i| i.name == *name) else {
+                // Not a regular index: a geo one, which only the rows decide.
+                if collection
+                    .get_all_geo_indexes()
+                    .iter()
+                    .any(|g| g.name == *name)
+                    && self.geo_may_serve(collection, filter, var_name, ctx)
+                {
+                    return Some(PlannedRead::Maybe);
+                }
+                continue;
+            };
+            let serves = if index.index_type == IndexType::Trigram {
+                self.trigram_read(collection, filter, var_name, ctx)
+                    .filter(|(trigram, _)| trigram.name == *name)
+                    .is_some_and(|(trigram, grams)| {
+                        // The read steps aside past this; counting up to it
+                        // says whether it would.
+                        let cap = self.max_intermediate_rows().saturating_add(1);
+                        let worthwhile = (collection.count() / 4).max(1024).min(cap);
+                        let plan = ReadPlan::Trigram(trigram, grams);
+                        self.estimate_read(collection, &plan, worthwhile, var_name, ctx)
+                            <= worthwhile
+                    })
+            } else if index.fields.len() == 1 {
+                candidates.iter().any(|c| {
+                    c.field == index.fields[0]
+                        && self.plan_single_field(collection, c, &terms).is_some()
+                })
+            } else {
+                best_composite_plan(collection, &terms, Some(name), 1).is_some()
+            };
+            if serves {
+                return Some(PlannedRead::Index(name.clone()));
+            }
+        }
+        None
     }
 
     fn lookup_with_hint(

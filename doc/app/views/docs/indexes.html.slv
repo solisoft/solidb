@@ -737,7 +737,7 @@ FOR d IN deals
               <li>Counting stops as soon as a read can no longer beat the cheapest so far, so it costs about as much as the read chosen; two cheap reads cost a few microseconds more to compare.</li>
               <li>Equal counts keep a fixed order: a compound index on two fields or more, single-field equalities and <code>IN</code>, a compound index on its first field, prefixes, ranges, trigrams, then unions, each in FILTER order.</li>
               <li>A range is a candidate from any conjunct. On a sparse index it must exclude null (<code>&gt;</code>, <code>&gt;=</code>, or a FILTER that rejects null), since null rows are not in the index.</li>
-              <li>EXPLAIN names the read in <code>index_used</code> and its count in <code>estimated_rows</code>. <code>OPTIONS { indexHint: "&hellip;" }</code> skips the comparison and reads the named index.</li>
+              <li>EXPLAIN names the read in <code>index_used</code> and its count in <code>estimated_rows</code>. <code>OPTIONS { indexHint: "&hellip;" }</code> skips the comparison and reads the named index; EXPLAIN names it too, and warns when it cannot serve the FILTER.</li>
             </ul>
           </div>
         </div>

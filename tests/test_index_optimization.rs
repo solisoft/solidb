@@ -2548,3 +2548,117 @@ fn test_planned_subquery_reports_no_count_for_placeholders() {
     assert!(plan.collections[1].index_used.is_some());
     assert_eq!(plan.collections[1].estimated_rows, None);
 }
+
+/// `query` on `costdb`, explained by a run and by a plan (`analyze: false`).
+fn explain_both(
+    engine: &StorageEngine,
+    query: &str,
+) -> (
+    solidb::DbResult<solidb::sdbql::QueryExplain>,
+    solidb::DbResult<solidb::sdbql::QueryExplain>,
+) {
+    let ast = parse(query).unwrap();
+    let ran = QueryExecutor::with_database(engine, "costdb".to_string()).explain(&ast);
+    let plan = QueryExecutor::with_database(engine, "costdb".to_string()).explain_plan(&ast);
+    (ran, plan)
+}
+
+/// EXPLAIN reads the loop's `indexHint` as the run does: a hinted index
+/// that serves is named (and, not having been compared, carries no
+/// count); one that cannot is named in a warning beside the planner's own
+/// choice; a forced one that cannot fails EXPLAIN with the run's error.
+#[test]
+fn test_explain_follows_the_index_hint() {
+    let (engine, _tmp) = create_cost_engine();
+    let filter = "FILTER d.status == \"open\" AND d.amount >= 2985 RETURN d.seq";
+
+    // Served: the run reads idx_status, and both EXPLAINs say so.
+    let q = format!("FOR d IN indexed OPTIONS {{ indexHint: \"idx_status\" }} {filter}");
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    assert_eq!(ex.execute(&parse(&q).unwrap()).unwrap().len(), 5);
+    let (ran, plan) = explain_both(&engine, &q);
+    for e in [ran.unwrap(), plan.unwrap()] {
+        assert_eq!(e.collections[0].index_used.as_deref(), Some("idx_status"));
+        assert_eq!(e.collections[0].estimated_rows, None);
+        assert!(
+            !e.warnings.iter().any(|w| w.contains("indexHint")),
+            "{:?}",
+            e.warnings
+        );
+    }
+
+    // Cannot serve: the planner's choice, and a warning naming the hint.
+    let q = format!("FOR d IN indexed OPTIONS {{ indexHint: \"idx_owner\" }} {filter}");
+    let (ran, plan) = explain_both(&engine, &q);
+    for e in [ran.unwrap(), plan.unwrap()] {
+        assert_eq!(e.collections[0].index_used.as_deref(), Some("idx_amount"));
+        assert_eq!(e.collections[0].estimated_rows, Some(15));
+        assert!(
+            e.warnings
+                .iter()
+                .any(|w| w.contains("indexHint [idx_owner] cannot serve the FILTER")),
+            "{:?}",
+            e.warnings
+        );
+    }
+
+    // Forced and cannot serve: the run's error, from both.
+    let q = format!(
+        "FOR d IN indexed OPTIONS {{ indexHint: \"idx_owner\", forceIndexHint: true }} {filter}"
+    );
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    let run_error = ex.execute(&parse(&q).unwrap()).unwrap_err().to_string();
+    assert!(run_error.contains("forceIndexHint"), "{run_error}");
+    let (ran, plan) = explain_both(&engine, &q);
+    assert_eq!(ran.unwrap_err().to_string(), run_error);
+    assert_eq!(plan.unwrap_err().to_string(), run_error);
+}
+
+/// A forced hint in a subquery no row reaches fails only if one does: both
+/// EXPLAINs warn instead of failing. A trigram hint whose read would step
+/// aside is not followed, by the run or by either EXPLAIN.
+#[test]
+fn test_explain_hint_edge_cases() {
+    let (engine, _tmp) = create_cost_engine();
+    let q = "FOR d IN indexed FILTER d.status == \"nope\" \
+             LET same = (FOR x IN indexed OPTIONS { indexHint: \"idx_owner\", forceIndexHint: true } \
+             FILTER x.amount == d.amount RETURN 1) RETURN same";
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    assert!(ex.execute(&parse(q).unwrap()).unwrap().is_empty());
+    let (ran, plan) = explain_both(&engine, q);
+    for e in [ran.unwrap(), plan.unwrap()] {
+        assert!(
+            e.warnings
+                .iter()
+                .any(|w| w.starts_with("LET same: a row reaching it fails")
+                    && w.contains("forceIndexHint")),
+            "{:?}",
+            e.warnings
+        );
+    }
+
+    let q = "FOR d IN indexed OPTIONS { indexHint: \"trg_name\" } \
+             FILTER LIKE(d.name, \"%sarl%\", true) AND d.status == \"open\" RETURN d.seq";
+    let ex = QueryExecutor::with_database(&engine, "costdb".to_string());
+    assert_eq!(ex.execute(&parse(q).unwrap()).unwrap().len(), 1993);
+    let (ran, plan) = explain_both(&engine, q);
+    for e in [ran.unwrap(), plan.unwrap()] {
+        assert_eq!(e.collections[0].index_used.as_deref(), Some("idx_status"));
+        assert!(
+            e.warnings
+                .iter()
+                .any(|w| w.contains("indexHint [trg_name] cannot serve")),
+            "{:?}",
+            e.warnings
+        );
+    }
+
+    // A rare term: the hinted trigram serves, in the run and both EXPLAINs.
+    let q = "FOR d IN indexed OPTIONS { indexHint: \"trg_name\" } \
+             FILTER LIKE(d.name, \"%client 123%\", true) AND d.status == \"open\" RETURN d.seq";
+    let (ran, plan) = explain_both(&engine, q);
+    for e in [ran.unwrap(), plan.unwrap()] {
+        assert_eq!(e.collections[0].index_used.as_deref(), Some("trg_name"));
+        assert_eq!(e.collections[0].estimated_rows, None);
+    }
+}

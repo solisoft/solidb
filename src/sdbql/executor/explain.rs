@@ -13,7 +13,7 @@ use std::time::Instant;
 use serde_json::Value;
 
 use super::format_expression;
-use super::index_opt::{conjunction, leading_filters};
+use super::index_opt::{conjunction, leading_filters, IndexHint};
 use super::types::{
     CollectionAccess, Context, ExecutionTiming, FilterInfo, LetBinding, LimitInfo, QueryExplain,
     SortInfo,
@@ -68,7 +68,7 @@ impl<'a> QueryExecutor<'a> {
                 .to_string(),
         ];
         let mut collections = Vec::new();
-        self.estimate_loops(query, None, 0, &mut collections, &mut warnings);
+        self.estimate_loops(query, None, 0, &mut collections, &mut warnings)?;
 
         let sort_index = if super::execution::has_window_functions(query) {
             None
@@ -168,7 +168,9 @@ impl<'a> QueryExecutor<'a> {
                  its FILTER"
             ));
             for (sub, _) in subs {
-                self.estimate_loops(&sub, Some(label), depth + 1, out, warnings);
+                if let Err(e) = self.estimate_loops(&sub, Some(label), depth + 1, out, warnings) {
+                    warnings.push(format!("{label}: subquery not explained: {e}"));
+                }
             }
             return;
         };
@@ -206,7 +208,7 @@ impl<'a> QueryExecutor<'a> {
         depth: usize,
         out: &mut Vec<CollectionAccess>,
         warnings: &mut Vec<String>,
-    ) {
+    ) -> DbResult<()> {
         use super::index_opt::{with_placeholder_values, PlannedRead};
         let clauses = &sub.body_clauses;
         for (i, clause) in clauses.iter().enumerate() {
@@ -223,6 +225,7 @@ impl<'a> QueryExecutor<'a> {
                 continue;
             }
             let filters = leading_filters(clauses, i + 1);
+            let hint = IndexHint::of(for_clause);
             let plan = match (
                 self.get_collection(&for_clause.collection),
                 conjunction(&filters),
@@ -231,17 +234,48 @@ impl<'a> QueryExecutor<'a> {
                     if !self.row_policy_applies(&for_clause.collection) =>
                 {
                     let filter = with_placeholder_values(&filter, &for_clause.variable);
-                    self.plan_index_read(
+                    let plan = match self.plan_index_read_hinted(
                         &collection,
                         &filter,
                         &for_clause.variable,
                         &Context::default(),
-                    )
+                        hint.as_ref(),
+                    ) {
+                        Ok(plan) => plan,
+                        // A forced hint that cannot serve: the run fails at
+                        // the query's own loop, and at a subquery's only if
+                        // a row reaches it.
+                        Err(e) => match label {
+                            None => return Err(e),
+                            Some(label) => {
+                                warnings.push(format!("{label}: a row reaching it fails: {e}"));
+                                PlannedRead::Scan
+                            }
+                        },
+                    };
+                    let used = match &plan {
+                        PlannedRead::Index(name) => Some(name.as_str()),
+                        _ => None,
+                    };
+                    if plan != PlannedRead::Maybe {
+                        warnings.extend(
+                            hint.as_ref()
+                                .and_then(|h| h.unserved_warning(&for_clause.collection, used))
+                                .map(|w| match label {
+                                    Some(label) => format!("{label}: {w}"),
+                                    None => w,
+                                }),
+                        );
+                    }
+                    plan
                 }
                 _ => PlannedRead::Scan,
             };
             let mut estimated_rows = None;
             let (access_type, index_used) = match plan {
+                PlannedRead::Index(name) if hint.as_ref().is_some_and(|h| h.served_by(&name)) => {
+                    ("index_lookup", Some(name)) // a hinted read was not compared
+                }
                 PlannedRead::Index(name) => {
                     // A count of a placeholder standing in for an outer
                     // value says nothing about the rows: only a FILTER that
@@ -287,7 +321,7 @@ impl<'a> QueryExecutor<'a> {
 
         // Subqueries inside it, labelled as a run would label them.
         if depth >= MAX_EXPLAIN_DEPTH {
-            return;
+            return Ok(());
         }
         let lets = sub
             .let_clauses
@@ -315,9 +349,12 @@ impl<'a> QueryExecutor<'a> {
                     Some(label) => format!("{label} > {inner}"),
                     None => inner.clone(),
                 };
-                self.estimate_loops(&q, Some(&nested), depth + 1, out, warnings);
+                if let Err(e) = self.estimate_loops(&q, Some(&nested), depth + 1, out, warnings) {
+                    warnings.push(format!("{nested}: subquery not explained: {e}"));
+                }
             }
         }
+        Ok(())
     }
 
     fn explain_in(&self, query: &Query, outer: &Context, depth: usize) -> DbResult<QueryExplain> {
@@ -485,20 +522,31 @@ impl<'a> QueryExecutor<'a> {
                                 // structural decision of whether an index
                                 // would be used at runtime.
                                 let probe_ctx = rows.first().cloned().unwrap_or_default();
-                                if let Some((docs, name, ty)) = self.lookup_index_for_filter(
-                                    &collection,
-                                    &index_filter,
-                                    &for_clause.variable,
-                                    &probe_ctx,
-                                ) {
-                                    used_index = true;
-                                    estimated_rows = self.chosen_read_estimate(
+                                // As the run reads it: the loop's indexHint
+                                // first, and a forced one that cannot serve
+                                // fails here as it fails there.
+                                let hint = IndexHint::of(for_clause);
+                                if let Some((docs, name, ty)) = self
+                                    .lookup_index_for_filter_hinted(
                                         &collection,
                                         &index_filter,
                                         &for_clause.variable,
                                         &probe_ctx,
-                                        &name,
-                                    );
+                                        None,
+                                        hint.as_ref(),
+                                    )?
+                                {
+                                    used_index = true;
+                                    // A hinted read was not compared.
+                                    if hint.as_ref().is_none_or(|h| !h.served_by(&name)) {
+                                        estimated_rows = self.chosen_read_estimate(
+                                            &collection,
+                                            &index_filter,
+                                            &for_clause.variable,
+                                            &probe_ctx,
+                                            &name,
+                                        );
+                                    }
                                     index_name = Some(name);
                                     index_type = Some(ty);
 
@@ -529,6 +577,12 @@ impl<'a> QueryExecutor<'a> {
                                         auto_index_candidate = Some(cond.field);
                                     }
                                 }
+                                warnings.extend(hint.and_then(|h| {
+                                    h.unserved_warning(
+                                        &for_clause.collection,
+                                        index_name.as_deref(),
+                                    )
+                                }));
                                 if !used_index {
                                     warnings.extend(self.or_scan_reasons(
                                         &collection,
