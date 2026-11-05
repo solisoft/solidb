@@ -25,14 +25,14 @@
 
 <section id="claim"><h2>One poll, 122,050 jobs</h2>
 <p>Soli&rsquo;s job engine claims work with this query, on every poll:</p>
-<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre>FOR doc IN _jobs
-  FILTER doc.state IN ["pending", "scheduled", "failed"]
-     AND doc.run_at &lt;= @now
-  SORT doc.priority DESC, doc.run_at ASC
-  LIMIT 200 RETURN doc</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> doc <span class="tok-kw">IN</span> _jobs
+  <span class="tok-kw">FILTER</span> doc.state <span class="tok-kw">IN</span> [<span class="tok-str">"pending"</span>, <span class="tok-str">"scheduled"</span>, <span class="tok-str">"failed"</span>]
+     <span class="tok-kw">AND</span> doc.run_at <span class="tok-punc">&lt;=</span> <span class="tok-bind">@now</span>
+  <span class="tok-kw">SORT</span> doc.priority <span class="tok-kw">DESC</span>, doc.run_at <span class="tok-kw">ASC</span>
+  <span class="tok-kw">LIMIT</span> <span class="tok-num">200</span> <span class="tok-kw">RETURN</span> doc</pre></div>
 <p>Soli creates a persistent index on <code>[state, run_at, priority]</code> for it. Up to 2.6.2, SoliDB used a compound index only when <code>==</code> terms covered every one of its fields. An <code>IN</code> and a <code>&lt;=</code> did not qualify, so the query was served by the single-field index on <code>state</code>: every pending, scheduled and failed job was read, then <code>run_at</code> was checked. Naming the index in <code>OPTIONS { indexHint }</code> did not help. The hint went down the same equality-only path and was dropped, and with <code>forceIndexHint</code> the query failed.</p>
 <p>On a queue that is mostly future work, 172,050 jobs of which 50 are due:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Query</th><th>2.6.2</th><th>2.6.3</th></tr></thead>
   <tbody>
     <tr><td>The claim</td><td>390&nbsp;ms</td><td>0.21&nbsp;ms</td></tr>
@@ -40,7 +40,7 @@
     <tr><td><code>state == "scheduled" AND run_at &lt;= @now</code></td><td>314&nbsp;ms</td><td>0.038&nbsp;ms</td></tr>
     <tr><td>One day of scheduled jobs, counted</td><td>317&nbsp;ms</td><td>16&nbsp;ms</td></tr>
   </tbody>
-</table>
+</table></div>
 <p>Since 2.6.3, the leading fields of a compound index can each be fixed by <code>==</code> or <code>IN</code>, and the field after them can carry a range. Each value of an <code>IN</code> becomes one bounded read of the index, so the claim reads three short ranges, one per state, and finds its 50 jobs.</p>
 </section>
 
@@ -51,7 +51,7 @@
 
 <section id="shapes"><h2>Shapes the planner now reads</h2>
 <p>2.6.4 reads four of them from indexes that already exist. Measured on 200,000 documents, 2.6.3 against 2.6.4 with the same indexes:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Shape</th><th>Index</th><th>2.6.3</th><th>2.6.4</th></tr></thead>
   <tbody>
     <tr><td><code>object == "o7"</code> (5,000 rows)</td><td><code>[object, sort_order]</code></td><td>174&nbsp;ms</td><td>19&nbsp;ms</td></tr>
@@ -61,7 +61,7 @@
     <tr><td><code>opportunity_id IN [null, ""] AND account_id IN @a</code></td><td><code>[opportunity_id, account_id]</code></td><td>208&nbsp;ms</td><td>0.4&nbsp;ms</td></tr>
     <tr><td><code>a == 3 OR b == 7</code></td><td><code>[a]</code> and <code>[b]</code></td><td>186&nbsp;ms</td><td>12&nbsp;ms</td></tr>
   </tbody>
-</table>
+</table></div>
 <ul>
 <li><strong>A compound index on its first field alone.</strong> It is tried after the single-field indexes, which win when they exist. Counts are read from the index too.</li>
 <li><strong><code>!=</code> and <code>NOT IN</code> after a fixed field.</strong> Under <code>owner_id == @me</code>, the read covers the key ranges on each side of <code>"Completed"</code>. Every row under a non-null prefix is in the index, so tasks with no status still come back: <code>null != "Completed"</code> is true.</li>
@@ -73,15 +73,15 @@
 
 <section id="wrong"><h2>A wrong answer on the way</h2>
 <p>A regular index is <em>sparse</em>: a document whose indexed fields are all null or missing gets no entry. SDBQL ranks null below every other value. Those two facts disagree for any read that null satisfies, and two of them did not account for it. On 2.6.4, with four documents and a persistent index on <code>f</code>:</p>
-<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> data</div><pre>{_key: "k1", f: 1}   {_key: "k2", f: null}   {_key: "k3"}   {_key: "k4", f: 9}</pre></div>
-<table>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> data</div><pre>{_key: <span class="tok-str">"k1"</span>, f: <span class="tok-num">1</span>}   {_key: <span class="tok-str">"k2"</span>, f: <span class="tok-num">null</span>}   {_key: <span class="tok-str">"k3"</span>}   {_key: <span class="tok-str">"k4"</span>, f: <span class="tok-num">9</span>}</pre></div>
+<div class="post-table"><table>
   <thead><tr><th>Query</th><th>Without the index</th><th>With it, 2.6.4</th></tr></thead>
   <tbody>
     <tr><td><code>FILTER d.f &lt;= 5</code></td><td>k1, k2, k3</td><td>k1</td></tr>
     <tr><td><code>FILTER d.f &lt; 5</code></td><td>k1, k2, k3</td><td>k1</td></tr>
     <tr><td><code>SORT d.f ASC LIMIT 2</code></td><td>k2, k3</td><td>k1, k4</td></tr>
   </tbody>
-</table>
+</table></div>
 <p>Creating an index changed the answer. A <code>SORT</code> without a <code>LIMIT</code> dropped the null rows altogether. This is fixed in 2.7.0:</p>
 <ul>
 <li>a sparse index serves <code>&lt;</code> or <code>&lt;=</code> only when another condition on the field rejects null (<code>f &gt;= 1 AND f &lt;= 5</code>, <code>f &lt;= 5 AND f != null</code>);</li>
@@ -95,15 +95,15 @@
 <section id="nulls"><h2>Indexes that hold null</h2>
 <p>A sparse index cannot answer <code>== null</code>, <code>IN [null, &hellip;]</code>, or a <code>!=</code> with nothing fixed before it, because the rows those match are not in it. 2.7.0 adds the option to index them:</p>
 <div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/crm/index/cases
-{"name": "idx_owner", "type": "persistent", "field": "owner_id", "sparse": false}</pre></div>
+{<span class="tok-str">"name"</span>: <span class="tok-str">"idx_owner"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"persistent"</span>, <span class="tok-str">"field"</span>: <span class="tok-str">"owner_id"</span>, <span class="tok-str">"sparse"</span>: <span class="tok-num">false</span>}</pre></div>
 <p>A non-sparse index holds one entry per document, a missing value stored as null. The planner then reads equality and <code>IN</code> on null from it, the ranges around an excluded value, <code>&lt;</code> and <code>&lt;=</code> with the null rows included, and null counts from the index alone. Several documents can still hold null under a unique non-sparse index. On 200,000 documents:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Shape</th><th>Rows</th><th>Scanned</th><th>Non-sparse index</th></tr></thead>
   <tbody>
     <tr><td><code>owner_id == null</code></td><td>2,062</td><td>172&nbsp;ms</td><td>8&nbsp;ms</td></tr>
     <tr><td><code>status != "Completed"</code></td><td>40,000</td><td>182&nbsp;ms</td><td>159&nbsp;ms</td></tr>
   </tbody>
-</table>
+</table></div>
 <p>The second line gains little, because it returns a fifth of the collection and fetching those documents is most of the cost. An index helps a condition that keeps few rows. Existing indexes, and every index created without the option, stay sparse.</p>
 </section>
 
@@ -111,21 +111,20 @@
 <p>Every list in the CRM has a search box, and the Soli ORM turns it into <code>LIKE(doc.name, "%term%", true)</code>, once per searchable field and joined by <code>OR</code>. A pattern that starts with <code>%</code> has no prefix to look up, and the fulltext index stores words, not substrings, so these queries always scanned.</p>
 <p>2.7.0 adds a trigram index. It stores the distinct three-character sequences of one field&rsquo;s text, and serves a <code>LIKE</code> whose pattern has a literal run of three characters or more:</p>
 <div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>POST /_api/database/crm/index/accounts
-{"name": "trg_name", "type": "trigram", "field": "name"}
-
-FOR a IN accounts
-  FILTER LIKE(a.name, @q, true) OR LIKE(a.city, @q, true)   <span class="tok-com"># a union of two trigram indexes</span>
-  RETURN a</pre></div>
+{<span class="tok-str">"name"</span>: <span class="tok-str">"trg_name"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"trigram"</span>, <span class="tok-str">"field"</span>: <span class="tok-str">"name"</span>}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> a <span class="tok-kw">IN</span> accounts
+  <span class="tok-kw">FILTER</span> <span class="tok-kw">LIKE</span>(a.name, <span class="tok-bind">@q</span>, <span class="tok-num">true</span>) <span class="tok-kw">OR</span> <span class="tok-kw">LIKE</span>(a.city, <span class="tok-bind">@q</span>, <span class="tok-num">true</span>)   <span class="tok-com"># a union of two trigram indexes</span>
+  <span class="tok-kw">RETURN</span> a</pre></div>
 <p>Characters are folded before they are stored or looked up, lowercased then uppercased. A case-insensitive match is therefore never missed, including pairs such as <code>ß</code> and <code>ẞ</code>, <code>ſ</code> and <code>s</code>, or <code>σ</code> and <code>ς</code>. The text is what <code>LIKE()</code> itself compares, so a number or an array in the field is found too. Rows read through the index are checked against the full pattern.</p>
 <p>2.7.0 shipped this with a mistake in how it read the index. It intersected the trigrams&rsquo; entry lists in alphabetical order. A term holding a common trigram, such as <code>CLI</code> when every account is called &ldquo;Client &hellip;&rdquo;, read that whole list first, and every other list that common. 2.7.1 counts each list only up to a bound that grows until one trigram fits under it, and reads the rarest first. When even the rarest trigram is in more than a quarter of the collection, it scans instead: fetching that many documents one by one costs more than reading them in order. On 200,000 accounts named &ldquo;Client N SARL&rdquo;:</p>
-<table>
+<div class="post-table"><table>
   <thead><tr><th>Search</th><th>Rows</th><th>Scanned</th><th>2.7.0</th><th>2.7.1</th></tr></thead>
   <tbody>
     <tr><td><code>%client 1234%</code></td><td>111</td><td>192&nbsp;ms</td><td>220&nbsp;ms</td><td>3.7&nbsp;ms</td></tr>
     <tr><td><code>%98765%</code></td><td>2</td><td>222&nbsp;ms</td><td>&mdash;</td><td>1.0&nbsp;ms</td></tr>
     <tr><td><code>%sarl%</code>, LIMIT 10</td><td>10</td><td>&mdash;</td><td>925&nbsp;ms</td><td>232&nbsp;ms, scanned</td></tr>
   </tbody>
-</table>
+</table></div>
 <p>If you created a trigram index on 2.7.0, upgrade to 2.7.1.</p>
 </section>
 
