@@ -48,7 +48,17 @@ jobs:
       run:
         working-directory: doc
     steps:
+      # fetch-depth: 0 for the tags the docs-sync check compares against.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # CI skips a push that only touches the site, so its docs-sync job does
+      # not run for one: check here that the changelog page and the version
+      # pill still describe the version in Cargo.toml before deploying.
+      - name: Docs site matches Cargo.toml version
+        working-directory: .
+        run: ./scripts/check_docs_sync.sh
 
       # Direct download of the pinned release: the published install.sh only
       # knows `latest`.

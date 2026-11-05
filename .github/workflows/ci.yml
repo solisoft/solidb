@@ -4,8 +4,22 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # A change to the docs site alone (doc/, its deploy files) builds and
+    # tests nothing here: deploy-www.yml verifies and deploys it, docs-sync
+    # check included. A push touching both still runs everything, and path
+    # filters are not evaluated for tag pushes, so releases always run.
+    paths-ignore:
+      - 'doc/**'
+      - 'deploy/www/**'
+      - '.github/workflows/deploy-www.yml'
+      - '.github/scripts/www-boot-check.sh'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'doc/**'
+      - 'deploy/www/**'
+      - '.github/workflows/deploy-www.yml'
+      - '.github/scripts/www-boot-check.sh'
 
 permissions:
   contents: write
