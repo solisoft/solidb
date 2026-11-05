@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.7.1](https://github.com/solisoft/solidb/compare/v2.7.0...v2.7.1) (2026-11-05)
+
 ### Bug Fixes
 
 * **A trigram index no longer makes a search slower than the scan.** 2.7.0
