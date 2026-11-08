@@ -3,7 +3,6 @@ use crate::error::{DbError, DbResult};
 use crate::storage::keyspace::KsId;
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
-use hex;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -560,47 +559,38 @@ impl Collection {
         format!("{}{}", IDX_META_PREFIX, name).into_bytes()
     }
 
-    /// Generate an index entry key: "idx:<name>:<value>:<doc_key>"
+    /// Generate an index entry key: "idx:<name>:<values>:<doc_key>", where
+    /// `<values>` is each value's order-preserving encoding
+    /// (`codec::encode_key`) in lowercase hex, joined with `_`.
+    ///
+    /// Written into one buffer: every indexed field of every document write
+    /// builds one, and going through a hex `String` per value, a `join` and
+    /// a `format!` was several allocations each.
     pub fn idx_entry_key(index_name: &str, values: &[Value], doc_key: &str) -> Vec<u8> {
-        let _value_str = serde_json::to_string(values).unwrap_or_default();
-        // Use hex encoding for binary-safe keys if needed, but here simple concatenation
-        // CAUTION: In original code, it might have matched exactly this format.
-        // Let's re-verify the original implementation below!
-        // Original: const prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
-        // Wait, line 240 in original code used:
-        // let value_str = serde_json::to_string(&field_values).unwrap_or_default();
-        // let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
-        // However, looking at line 2887 `index_lookup_eq`:
-        // let value_str = hex::encode(crate::storage::codec::encode_key(value));
-        // There seems to be a discrepancy or I misread the original file.
-        // Let's check `idx_entry_key` usage in original file.
-        // Line 952: `let entry_key = Self::idx_entry_key(&index.name, &field_values, &doc.key);`
-        // I need to implement `idx_entry_key` exactly as it was or consistent with new logic.
-        // In the original file (viewed previously), I didn't see the specific definition of `idx_entry_key`
-        // but I saw usage. I should check the helper methods section.
-        // I'll assume usage of `hex::encode(crate::storage::codec::encode_key(value))` for consistency if it was there.
-        // But wait, line 2239 says `let value_str = serde_json::to_string(&field_values).unwrap_or_default();`
-        // This suggests the unique constraint check uses JSON string.
-        // BUT `index_lookup_eq` (line 2912) uses `hex::encode(crate::storage::codec::encode_key(value))`.
-        // This is a Conflict!
-        // Actually, `check_unique_constraints` (line 2218) iterates over prefix.
-        // Let's look at `index_documents` (line 892).
-        // It calls `Self::idx_entry_key`.
-        // I should find where `idx_entry_key` was defined in the original file.
-        // It was likely later in the file.
-        // I will implement it using `hex::encode(crate::storage::codec::encode_key)` for EACH value in the compound key?
-        // Let's use a safe implementation that matches likely usage.
-        // Keys: `idx:<name>:<hex(encoded_val1)>_<hex(encoded_val2)>:<doc_key>`
-        // Actually, let's look at `index_sorted` (line 3069):
-        // "Since we use binary-comparable encoding (wrapped in hex)..."
-        // So `idx_entry_key` MUST use hex encoding of codec::encode_key.
-
-        let encoded_values: Vec<String> = values
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let encoded: Vec<Vec<u8>> = values
             .iter()
-            .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
+            .map(crate::storage::codec::encode_key)
             .collect();
-        let value_part = encoded_values.join("_");
-        format!("{}{}:{}:{}", IDX_PREFIX, index_name, value_part, doc_key).into_bytes()
+        let value_len: usize =
+            encoded.iter().map(|e| 2 * e.len()).sum::<usize>() + encoded.len().saturating_sub(1);
+        let mut key =
+            Vec::with_capacity(IDX_PREFIX.len() + index_name.len() + value_len + doc_key.len() + 2);
+        key.extend_from_slice(IDX_PREFIX.as_bytes());
+        key.extend_from_slice(index_name.as_bytes());
+        key.push(b':');
+        for (i, bytes) in encoded.iter().enumerate() {
+            if i > 0 {
+                key.push(b'_');
+            }
+            for b in bytes {
+                key.push(HEX[(b >> 4) as usize]);
+                key.push(HEX[(b & 0x0f) as usize]);
+            }
+        }
+        key.push(b':');
+        key.extend_from_slice(doc_key.as_bytes());
+        key
     }
 
     /// Generate a geo metadata key: "geo_meta:<name>"
@@ -711,5 +701,50 @@ impl Collection {
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<ChangeEvent>> {
         self.invalidate_cached_queries();
         self.change_sender.send(event)
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The index entry key as it was built before: a hex `String` per value,
+    /// joined, then formatted.
+    fn formatted(index_name: &str, values: &[Value], doc_key: &str) -> Vec<u8> {
+        let encoded: Vec<String> = values
+            .iter()
+            .map(|v| hex::encode(crate::storage::codec::encode_key(v)))
+            .collect();
+        format!(
+            "{}{}:{}:{}",
+            IDX_PREFIX,
+            index_name,
+            encoded.join("_"),
+            doc_key
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn idx_entry_key_is_unchanged() {
+        let cases: Vec<Vec<Value>> = vec![
+            vec![],
+            vec![json!(null)],
+            vec![json!(true), json!(false)],
+            vec![json!(0), json!(-1.5), json!(u64::MAX), json!(i64::MIN)],
+            vec![json!("pending")],
+            vec![json!("ünïcode ✓"), json!("")],
+            vec![json!([1, "a", null]), json!({"b": {"c": 2}})],
+        ];
+        for values in cases {
+            for doc_key in ["o0000001", "", "k:with:colons"] {
+                assert_eq!(
+                    Collection::idx_entry_key("idx_status", &values, doc_key),
+                    formatted("idx_status", &values, doc_key),
+                    "{values:?} {doc_key}"
+                );
+            }
+        }
     }
 }

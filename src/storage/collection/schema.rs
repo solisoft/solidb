@@ -1,8 +1,36 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::keyspace::KsId;
 use crate::storage::schema::CollectionSchema;
+use crate::storage::RocksDb as DB;
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use seahash::SeaHasher;
 use std::hash::Hasher;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
+
+/// A collection's stored schema with its hash, as last read from disk.
+type StoredSchema = Option<Arc<(u64, CollectionSchema)>>;
+
+struct SchemaEntry {
+    /// Pins the DB allocation, so an equal pointer is the same live instance.
+    db: Weak<DB>,
+    /// [`SCHEMA_EPOCH`] when the schema was read.
+    epoch: u64,
+    schema: StoredSchema,
+}
+
+/// Every write checks the collection's schema, and reading it was a point
+/// lookup (plus a parse, a re-serialization and a hash when one is set) per
+/// document. It is cached per shared keyspace — ids are never reused, so a
+/// recreated collection cannot see its predecessor's schema — and an entry is
+/// trusted only while [`SCHEMA_EPOCH`] has not moved since it was read. Setting
+/// or removing any schema moves it, after the write: a read that raced the
+/// change is stored under the old epoch and never served. Legacy (per-CF)
+/// collections, whose id is a reusable name, are not cached.
+static SCHEMAS: Lazy<DashMap<(usize, KsId), SchemaEntry>> = Lazy::new(DashMap::new);
+static SCHEMA_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 impl Collection {
     // ==================== Schema Management ====================
@@ -15,10 +43,38 @@ impl Collection {
         hasher.finish()
     }
 
+    /// The stored schema and its hash, from the cache when it is current.
+    fn stored_schema(&self) -> StoredSchema {
+        let cacheable = matches!(self.ks.id(), KsId::Shared(_));
+        let epoch = SCHEMA_EPOCH.load(Ordering::Acquire);
+        let key = (Arc::as_ptr(&self.db) as usize, self.ks.id().clone());
+        if cacheable {
+            if let Some(entry) = SCHEMAS.get(&key) {
+                if entry.epoch == epoch && Weak::as_ptr(&entry.db) == Arc::as_ptr(&self.db) {
+                    return entry.schema.clone();
+                }
+            }
+        }
+        let schema = self
+            .get_json_schema()
+            .map(|s| Arc::new((Self::compute_schema_hash(&s), s)));
+        if cacheable {
+            SCHEMAS.insert(
+                key,
+                SchemaEntry {
+                    db: Arc::downgrade(&self.db),
+                    epoch,
+                    schema: schema.clone(),
+                },
+            );
+        }
+        schema
+    }
+
     /// Get or create cached schema validator
     pub fn get_cached_schema_validator(&self) -> Result<Option<SchemaValidator>, DbError> {
-        if let Some(schema) = self.get_json_schema() {
-            let schema_hash = Self::compute_schema_hash(&schema);
+        if let Some(stored) = self.stored_schema() {
+            let (schema_hash, ref schema) = *stored;
 
             // Fast path: read guards only (parking_lot's RwLock never
             // poisons, so no .unwrap() is needed).
@@ -34,7 +90,7 @@ impl Collection {
                 }
             }
 
-            let validator = SchemaValidator::new(schema).map_err(|e| {
+            let validator = SchemaValidator::new(schema.clone()).map_err(|e| {
                 DbError::InvalidDocument(format!("Schema compilation error: {}", e))
             })?;
 
@@ -82,8 +138,11 @@ impl Collection {
             .expect("Column family should exist");
 
         let schema_bytes = serde_json::to_vec(&schema)?;
-        db.put_ks(&cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
-            .map_err(|e| DbError::InternalError(format!("Failed to set schema: {}", e)))?;
+        let written = db
+            .put_ks(&cf, SCHEMA_KEY.as_bytes(), &schema_bytes)
+            .map_err(|e| DbError::InternalError(format!("Failed to set schema: {}", e)));
+        SCHEMA_EPOCH.fetch_add(1, Ordering::AcqRel);
+        written?;
 
         Ok(())
     }
@@ -109,8 +168,11 @@ impl Collection {
             .handle(&self.db)
             .expect("Column family should exist");
 
-        db.delete_ks(&cf, SCHEMA_KEY.as_bytes())
-            .map_err(|e| DbError::InternalError(format!("Failed to remove schema: {}", e)))?;
+        let removed = db
+            .delete_ks(&cf, SCHEMA_KEY.as_bytes())
+            .map_err(|e| DbError::InternalError(format!("Failed to remove schema: {}", e)));
+        SCHEMA_EPOCH.fetch_add(1, Ordering::AcqRel);
+        removed?;
 
         Ok(())
     }

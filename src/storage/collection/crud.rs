@@ -31,6 +31,44 @@ fn take_key(data: &mut Value) -> DbResult<String> {
     Ok(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string())
 }
 
+/// What a single-document write hands back to its caller.
+#[derive(Clone, Copy)]
+enum Returning {
+    Document,
+    /// The API value (`Document::to_value`), built by moving the document's
+    /// fields rather than copying them.
+    Value,
+}
+
+enum Written {
+    Document(Document),
+    Value(Value),
+}
+
+impl Written {
+    fn into_document(self) -> Document {
+        match self {
+            Written::Document(doc) => doc,
+            Written::Value(_) => unreachable!("asked for the document"),
+        }
+    }
+
+    fn into_value(self) -> Value {
+        match self {
+            Written::Value(value) => value,
+            Written::Document(doc) => doc.into_value(),
+        }
+    }
+
+    /// A copy of the value, for a change event.
+    fn to_value(&self) -> Value {
+        match self {
+            Written::Document(doc) => doc.to_value(),
+            Written::Value(value) => value.clone(),
+        }
+    }
+}
+
 impl Collection {
     // ==================== Basic CRUD ====================
 
@@ -173,20 +211,32 @@ impl Collection {
     /// Insert a new document. Fails with a conflict if `_key` exists; use
     /// [`Collection::insert_or_replace`] where overwriting is intended.
     pub fn insert(&self, data: Value) -> DbResult<Document> {
-        self.insert_internal(data, true)
+        self.insert_internal(data, true, Returning::Document)
+            .map(|(_, written)| written.into_document())
+    }
+
+    /// [`Self::insert`], returning the document's key and the stored document
+    /// as the API shows it (`Document::to_value`). The value is built from the
+    /// document itself rather than copied from it, for a caller that only
+    /// answers with it.
+    pub fn insert_value(&self, data: Value) -> DbResult<(String, Value)> {
+        self.insert_internal(data, true, Returning::Value)
+            .map(|(key, written)| (key, written.into_value()))
     }
 
     /// Insert a new document without updating indexes (for bulk loads)
     pub fn insert_no_index(&self, data: Value) -> DbResult<Document> {
-        self.insert_internal(data, false)
+        self.insert_internal(data, false, Returning::Document)
+            .map(|(_, written)| written.into_document())
     }
 
     /// Internal insert implementation with atomic document + index writes
-    pub(crate) fn insert_internal(
+    fn insert_internal(
         &self,
         mut data: Value,
         update_indexes: bool,
-    ) -> DbResult<Document> {
+        returning: Returning,
+    ) -> DbResult<(String, Written)> {
         // Validate edge documents
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
@@ -202,13 +252,50 @@ impl Collection {
         let key = take_key(&mut data)?;
         let doc = Document::with_key(&self.name, key.clone(), data);
 
-        self.with_key_locked(&key, || self.insert_locked(doc, update_indexes))
+        let written =
+            self.with_key_locked(&key, || self.insert_locked(doc, update_indexes, returning))?;
+        Ok((key, written))
+    }
+
+    /// What index maintenance reads of `doc`: the whole value when the
+    /// collection records versions (the record holds it), otherwise only
+    /// the fields some definition reads.
+    fn write_view(&self, doc: &Document, versioned: bool) -> Value {
+        match self.index_meta() {
+            Some(meta) if !versioned => Self::indexed_view(doc, &meta),
+            _ => doc.to_value(),
+        }
+    }
+
+    /// Drop the cached query results and tell the change subscribers, if
+    /// there are any, after a committed write. The event's values are only
+    /// built for a subscriber: one that subscribes after this check did so
+    /// after the commit, and reads it.
+    fn publish_change(&self, event: impl FnOnce() -> ChangeEvent) {
+        self.publish_changes(|| std::iter::once(event()));
+    }
+
+    /// [`Self::publish_change`] for the events of one batch: the cached
+    /// results are dropped once for them all.
+    fn publish_changes<I: IntoIterator<Item = ChangeEvent>>(&self, events: impl FnOnce() -> I) {
+        self.invalidate_cached_queries();
+        if self.change_sender.receiver_count() > 0 {
+            for event in events() {
+                let _ = self.change_sender.send(event);
+            }
+        }
     }
 
     /// Insert `doc`; the caller holds its key stripe (audit D4).
-    fn insert_locked(&self, doc: Document, update_indexes: bool) -> DbResult<Document> {
+    fn insert_locked(
+        &self,
+        doc: Document,
+        update_indexes: bool,
+        returning: Returning,
+    ) -> DbResult<Written> {
         let key = doc.key.clone();
-        let doc_value = doc.to_value();
+        let versioned = self.is_versioned();
+        let doc_value = self.write_view(&doc, versioned);
 
         let tokens = if update_indexes {
             self.unique_tokens(&doc_value)
@@ -240,7 +327,6 @@ impl Collection {
         batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
 
         // Record a version in the same atomic batch (if versioning is enabled).
-        let versioned = self.is_versioned();
         if versioned {
             self.append_version_to_batch(&mut batch, &cf, &key, Some(&doc_value));
         }
@@ -265,14 +351,18 @@ impl Collection {
 
         self.increment_count();
 
-        let _ = self.emit_change(ChangeEvent {
+        let written = match returning {
+            Returning::Document => Written::Document(doc),
+            Returning::Value => Written::Value(doc.into_value()),
+        };
+        self.publish_change(|| ChangeEvent {
             type_: ChangeType::Insert,
             key,
-            data: Some(doc_value),
+            data: Some(written.to_value()),
             old_data: None,
         });
 
-        Ok(doc)
+        Ok(written)
     }
 
     /// Insert `data`, or replace the stored document wholesale if its `_key`
@@ -297,7 +387,11 @@ impl Collection {
         self.with_key_locked(&key, || {
             let old_doc = match self.get(&key) {
                 Ok(old) => old,
-                Err(DbError::DocumentNotFound(_)) => return self.insert_locked(doc, true),
+                Err(DbError::DocumentNotFound(_)) => {
+                    return self
+                        .insert_locked(doc, true, Returning::Document)
+                        .map(Written::into_document)
+                }
                 Err(e) => return Err(e),
             };
             if self.collection_type.read().as_str() == "timeseries" {
@@ -438,6 +532,97 @@ impl Collection {
         })
     }
 
+    /// Merge `changes`' top-level fields over the stored document's — the
+    /// driver's `Update` with `merge: true` — and return the result as the
+    /// API shows it (`Document::to_value`).
+    ///
+    /// The driver used to read the document, merge, and pass the result to
+    /// [`Self::update`], which read it again under the key's lock: two reads,
+    /// and a write to another field landing between them was overwritten
+    /// with the first read's value. The result is otherwise the same,
+    /// including when either side is not an object: then the stored data is
+    /// kept as it is (only `_rev` and `_updated_at` move). Errors come in the
+    /// same order: a missing document before a timeseries collection.
+    ///
+    /// The fields are moved into the document rather than copied, the index
+    /// diff reads only the indexed fields of the old version, and the old
+    /// version is rebuilt whole only for a change subscriber.
+    pub fn merge_update(&self, key: &str, changes: Value) -> DbResult<Value> {
+        self.with_key_locked(key, || {
+            let mut doc = self.get(key)?;
+            if self.collection_type.read().as_str() == "timeseries" {
+                return Err(DbError::OperationNotSupported(
+                    "Update operations are not allowed on timeseries collections".to_string(),
+                ));
+            }
+            let old_view = match self.index_meta() {
+                Some(meta) => Self::indexed_view(&doc, &meta),
+                None => doc.to_value(),
+            };
+            let (old_rev, old_updated_at) = (doc.rev.clone(), doc.updated_at);
+
+            // What `doc.update(changes)` does, keeping each replaced value.
+            let mut replaced: Vec<(String, Option<Value>)> = Vec::new();
+            match (doc.data.is_object(), changes) {
+                (true, Value::Object(changes)) => {
+                    doc.update(Value::Object(serde_json::Map::new()));
+                    if let Value::Object(fields) = &mut doc.data {
+                        for (field, value) in changes {
+                            if !crate::storage::document::is_system_field(&field) {
+                                let previous = fields.insert(field.clone(), value);
+                                replaced.push((field, previous));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    let unchanged = doc.data.clone();
+                    doc.update(unchanged);
+                }
+            }
+
+            let doc_bytes = serialize_doc(&doc)?;
+            let new_value = doc.into_value();
+
+            if self.collection_type.read().as_str() == "edge" {
+                self.validate_edge_document(&new_value)?;
+            }
+            if let Some(validator) = self.get_cached_schema_validator()? {
+                validator.validate(&new_value).map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
+            }
+
+            self.write_update_core(key, &old_view, doc_bytes, &new_value)?;
+
+            self.publish_change(|| {
+                // The old version: the new one with the replaced fields and
+                // the old `_rev` / `_updated_at` put back.
+                let mut old_value = new_value.clone();
+                if let Value::Object(fields) = &mut old_value {
+                    fields.insert("_rev".to_string(), Value::String(old_rev));
+                    fields.insert(
+                        "_updated_at".to_string(),
+                        Value::String(old_updated_at.to_rfc3339()),
+                    );
+                    for (field, previous) in replaced {
+                        match previous {
+                            Some(value) => fields.insert(field, value),
+                            None => fields.remove(&field),
+                        };
+                    }
+                }
+                ChangeEvent {
+                    type_: ChangeType::Update,
+                    key: key.to_string(),
+                    data: Some(new_value.clone()),
+                    old_data: Some(old_value),
+                }
+            });
+            Ok(new_value)
+        })
+    }
+
     /// Update a document with revision check (optimistic concurrency control)
     pub fn update_with_rev(
         &self,
@@ -486,48 +671,8 @@ impl Collection {
         doc: Document,
         new_value: Value,
     ) -> DbResult<Document> {
-        // A unique value the update claims is checked and written under that
-        // value's stripe (audit D4; updates used not to check at all).
-        let tokens = self.unique_tokens(&new_value);
-        let _unique_guard = self.lock_unique_tokens(&tokens);
-        if !tokens.is_empty() {
-            self.check_unique_constraints(key, &new_value)?;
-        }
-
         let doc_bytes = serialize_doc(&doc)?;
-
-        let db = &self.db;
-        let cf = self.live_cf()?;
-        let mut batch = KvBatch::default();
-
-        // Update document in batch
-        batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
-
-        // Record a version in the same atomic batch (if versioning is enabled).
-        let versioned = self.is_versioned();
-        if versioned {
-            self.append_version_to_batch(&mut batch, &cf, key, Some(&new_value));
-        }
-
-        self.add_update_entries(&mut batch, &cf, key, &old_value, &new_value)?;
-
-        // Atomic write: document + all index updates together
-        db.write(batch)
-            .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
-
-        // Update vector indexes in-memory (separate from KvBatch). Skip the
-        // delete+reinsert entirely when the embedding is unchanged — a document
-        // rewritten for non-embedding fields must not pay HNSW churn or dirty
-        // the index (which would trigger a full re-serialize on persist).
-        if !self.vector_index_unchanged(&old_value, &new_value) {
-            self.update_vector_indexes_on_delete(key);
-            self.update_vector_indexes_on_upsert(key, &new_value);
-        }
-
-        // Enforce version retention (best-effort, off the atomic write).
-        if versioned {
-            self.prune_versions(key);
-        }
+        self.write_update_core(key, &old_value, doc_bytes, &new_value)?;
 
         // Broadcast change event
         let _ = self.emit_change(ChangeEvent {
@@ -538,6 +683,61 @@ impl Collection {
         });
 
         Ok(doc)
+    }
+
+    /// The write of an update, up to (not including) its change event:
+    /// unique checks, the stored document, its version record, the index
+    /// diff, and the vector indexes. `old_value` and `new_value` need only
+    /// hold what index maintenance reads, except that a versioned
+    /// collection records `new_value` whole.
+    fn write_update_core(
+        &self,
+        key: &str,
+        old_value: &Value,
+        doc_bytes: Vec<u8>,
+        new_value: &Value,
+    ) -> DbResult<()> {
+        // A unique value the update claims is checked and written under that
+        // value's stripe (audit D4; updates used not to check at all).
+        let tokens = self.unique_tokens(new_value);
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+        if !tokens.is_empty() {
+            self.check_unique_constraints(key, new_value)?;
+        }
+
+        let db = &self.db;
+        let cf = self.live_cf()?;
+        let mut batch = KvBatch::default();
+
+        // Update document in batch
+        batch.put_ks(&cf, Self::doc_key(key), doc_bytes);
+
+        // Record a version in the same atomic batch (if versioning is enabled).
+        let versioned = self.is_versioned();
+        if versioned {
+            self.append_version_to_batch(&mut batch, &cf, key, Some(new_value));
+        }
+
+        self.add_update_entries(&mut batch, &cf, key, old_value, new_value)?;
+
+        // Atomic write: document + all index updates together
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to update document: {}", e)))?;
+
+        // Update vector indexes in-memory (separate from KvBatch). Skip the
+        // delete+reinsert entirely when the embedding is unchanged — a document
+        // rewritten for non-embedding fields must not pay HNSW churn or dirty
+        // the index (which would trigger a full re-serialize on persist).
+        if !self.vector_index_unchanged(old_value, new_value) {
+            self.update_vector_indexes_on_delete(key);
+            self.update_vector_indexes_on_upsert(key, new_value);
+        }
+
+        // Enforce version retention (best-effort, off the atomic write).
+        if versioned {
+            self.prune_versions(key);
+        }
+        Ok(())
     }
 
     // ---------- delete ----------
@@ -995,26 +1195,52 @@ impl Collection {
             inserted_docs.push(Document::with_key(&self.name, key, data));
         }
 
-        let _key_guard = self.lock_keys(inserted_docs.iter().map(|d| d.key.as_str()));
-        let doc_values: Vec<Value> = inserted_docs.iter().map(|d| d.to_value()).collect();
+        // Pass 2, before any lock: a new document's entries depend on nothing
+        // but the document, so it is serialized and its index, geo, fulltext
+        // and TTL entries are added to the batch here, from what index
+        // maintenance reads of it (see `write_view`). Under the keys' locks
+        // remain only the checks against what is stored, the version records
+        // and the write: concurrent batches into one collection overlap in
+        // everything else.
+        let versioned = self.is_versioned();
+        let meta = self.index_meta();
+        let doc_values: Vec<Value> = inserted_docs
+            .iter()
+            .map(|doc| match &meta {
+                Some(meta) if !versioned => Self::indexed_view(doc, meta),
+                _ => doc.to_value(),
+            })
+            .collect();
         let tokens: Vec<String> = doc_values
             .iter()
             .flat_map(|v| self.unique_tokens(v))
             .collect();
-        let _unique_guard = self.lock_unique_tokens(&tokens);
 
         let db = &self.db;
         let cf = self.live_cf()?;
-        let versioned = self.is_versioned();
         let mut batch = KvBatch::default();
+        let mut doc_keys: Vec<Vec<u8>> = Vec::with_capacity(inserted_docs.len());
+        for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
+            let doc_key = Self::doc_key(&doc.key);
+            batch.put_ks(&cf, &doc_key, serialize_doc(doc)?);
+            self.add_insert_entries(&mut batch, &cf, &doc.key, doc_value)?;
+            doc_keys.push(doc_key);
+        }
+
+        let _key_guard = self.lock_keys(inserted_docs.iter().map(|d| d.key.as_str()));
+        let _unique_guard = self.lock_unique_tokens(&tokens);
+
+        // Every key's existence in one multi-get, then the checks in batch
+        // order: the first conflict reported is the one a check per
+        // document would have hit.
+        let existing = db.multi_get_ks(&cf, &doc_keys);
         let mut claimed: HashSet<String> = HashSet::new();
 
-        for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
+        for ((doc, doc_value), found) in inserted_docs.iter().zip(&doc_values).zip(existing) {
             let key = &doc.key;
 
             // Check if document with this key already exists in the DB
-            if db
-                .get_pinned_ks(&cf, Self::doc_key(key))
+            if found
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to check existing key: {}", e))
                 })?
@@ -1036,15 +1262,9 @@ impl Collection {
                 }
             }
 
-            let doc_bytes = serialize_doc(doc)?;
-
-            // Add document to batch
-            batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, key, Some(doc_value));
             }
-
-            self.add_insert_entries(&mut batch, &cf, key, doc_value)?;
         }
 
         // Atomic write: all documents + indexes together
@@ -1065,15 +1285,15 @@ impl Collection {
         self.doc_count.fetch_add(count, Ordering::Relaxed);
         self.count_dirty.store(true, Ordering::Relaxed);
 
-        // Broadcast change events
-        for (doc, doc_value) in inserted_docs.iter().zip(doc_values) {
-            let _ = self.emit_change(ChangeEvent {
+        // Broadcast change events, after one cache invalidation for them all
+        self.publish_changes(|| {
+            inserted_docs.iter().map(|doc| ChangeEvent {
                 type_: ChangeType::Insert,
                 key: doc.key.clone(),
-                data: Some(doc_value),
+                data: Some(doc.to_value()),
                 old_data: None,
-            });
-        }
+            })
+        });
 
         Ok(inserted_docs)
     }

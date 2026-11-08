@@ -26,23 +26,12 @@ impl Collection {
 
     /// Get all vector index configurations
     pub fn get_all_vector_index_configs(&self) -> Vec<VectorIndexConfig> {
-        let db = &self.db;
-        let Some(cf) = self.ks.handle(&self.db) else {
-            return Vec::new(); // column family dropped mid-operation
-        };
-        let prefix = VEC_META_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_ks(&cf, prefix);
-
-        iter.filter_map(|result| {
-            result.ok().and_then(|(key, value)| {
-                if key.starts_with(prefix) {
-                    serde_json::from_slice(&value).ok()
-                } else {
-                    None
-                }
-            })
-        })
-        .collect()
+        // From the cached index definitions: every document write asks, and
+        // this used to open an iterator each time. Empty when the column
+        // family is gone (dropped mid-operation).
+        self.index_meta()
+            .map(|m| m.vector.clone())
+            .unwrap_or_default()
     }
 
     /// Get vector index (loading it if necessary)
@@ -118,10 +107,13 @@ impl Collection {
                 .ks
                 .handle(&self.db)
                 .expect("Column family should exist");
-            db.put_ks(&cf, Self::vec_meta_key(&name), &config_bytes)
+            let written = db
+                .put_ks(&cf, Self::vec_meta_key(&name), &config_bytes)
                 .map_err(|e| {
                     DbError::InternalError(format!("Failed to create vector index: {}", e))
-                })?;
+                });
+            self.invalidate_index_meta();
+            written?;
         }
 
         // Create in-memory index
@@ -229,9 +221,11 @@ impl Collection {
         self.vector_indexes.remove(name);
 
         // Remove from disk
-        db.delete_ks(&cf, Self::vec_meta_key(name)).map_err(|e| {
-            DbError::InternalError(format!("Failed to delete vector config: {}", e))
-        })?;
+        let deleted = db
+            .delete_ks(&cf, Self::vec_meta_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to delete vector config: {}", e)));
+        self.invalidate_index_meta();
+        deleted?;
         db.delete_ks(&cf, Self::vec_data_key(name))
             .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
 
@@ -391,9 +385,12 @@ impl Collection {
             config.quantization = quantization;
             let cf = self.ks.live(&self.db, &self.name)?;
             let config_bytes = serde_json::to_vec(config)?;
-            self.db
+            let written = self
+                .db
                 .put_ks(&cf, Self::vec_meta_key(name), &config_bytes)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
+                .map_err(|e| DbError::InternalError(e.to_string()));
+            self.invalidate_index_meta();
+            written?;
         }
         Ok(())
     }

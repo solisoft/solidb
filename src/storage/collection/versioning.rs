@@ -16,7 +16,7 @@
 
 use super::{Collection, DOCV_PREFIX, ROW_POLICY_META_KEY, VERSIONING_META_KEY};
 use crate::error::{DbError, DbResult};
-use crate::storage::keyspace::{KsBatchExt, KsCf, KsDbExt};
+use crate::storage::keyspace::{KsBatchExt, KsCf, KsDbExt, KsId};
 use crate::storage::kv::KvBatch;
 use crate::storage::kv::{Direction, IterMode};
 use dashmap::DashMap;
@@ -73,8 +73,8 @@ fn max_versions() -> usize {
 
 /// Per-column-family cache of the versioning flag, so the write hot path never
 /// hits RocksDB just to learn versioning is off.
-fn versioned_cache() -> &'static DashMap<String, bool> {
-    static CACHE: OnceLock<DashMap<String, bool>> = OnceLock::new();
+fn versioned_cache() -> &'static DashMap<(usize, KsId), bool> {
+    static CACHE: OnceLock<DashMap<(usize, KsId), bool>> = OnceLock::new();
     CACHE.get_or_init(DashMap::new)
 }
 
@@ -82,10 +82,14 @@ impl Collection {
     /// Cache key that is unique per (storage engine, collection): the CF name
     /// alone collides when several `StorageEngine` instances share a process
     /// (e.g. tests), so fold in the RocksDB instance pointer.
-    fn version_cache_key(&self) -> String {
+    fn version_cache_key(&self) -> (usize, KsId) {
         // By keyspace, not name: a dropped and recreated collection must not
-        // inherit its predecessor's versioning flag.
-        format!("{:p}/{:?}", std::sync::Arc::as_ptr(&self.db), self.ks.id())
+        // inherit its predecessor's versioning flag. Built without
+        // formatting: every write asks.
+        (
+            std::sync::Arc::as_ptr(&self.db) as usize,
+            self.ks.id().clone(),
+        )
     }
 
     fn version_prefix(key: &str) -> String {

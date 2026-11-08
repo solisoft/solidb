@@ -349,13 +349,96 @@ pub fn deserialize_doc_as_value(bytes: &[u8]) -> DbResult<serde_json::Value> {
     }
 }
 
+/// [`DocumentWithVersion`]'s fields before `data`, borrowed. Bincode is
+/// positional, so this writes the same bytes as the owned struct.
+#[derive(Serialize)]
+struct StoredHeader<'a> {
+    version: u8,
+    key: &'a str,
+    id: &'a str,
+    rev: &'a str,
+    created_at: &'a chrono::DateTime<chrono::Utc>,
+    updated_at: &'a chrono::DateTime<chrono::Utc>,
+}
+
+/// The stored form of `doc`: [`DOC_FORMAT_VERSION`], then
+/// [`DocumentWithVersion`] in bincode, its `data` the document's fields in
+/// MessagePack.
+///
+/// Written into one buffer, sized up front: the header from borrowed
+/// fields, then `data`'s length and the MessagePack straight after it. It
+/// used to copy the key, id and revision into a `DocumentWithVersion`,
+/// encode the fields into a buffer of their own, and copy that into a
+/// second one grown as it went — on every document write. The bytes are the
+/// same (`serialize_doc_matches_the_struct_encoding`).
 pub fn serialize_doc(doc: &Document) -> DbResult<Vec<u8>> {
-    let doc_with_version = DocumentWithVersion::from_doc(doc);
-    let mut bytes = Vec::new();
+    let header = StoredHeader {
+        version: DOC_FORMAT_VERSION,
+        key: &doc.key,
+        id: &doc.id,
+        rev: &doc.rev,
+        created_at: &doc.created_at,
+        updated_at: &doc.updated_at,
+    };
+    // Two version bytes, six lengths, two timestamps of ~32 bytes, the
+    // three strings, and room for a typical document's fields.
+    let mut bytes = Vec::with_capacity(128 + doc.key.len() + doc.id.len() + doc.rev.len() + 512);
     bytes.push(DOC_FORMAT_VERSION);
-    bincode::serialize_into(&mut bytes, &doc_with_version)
+    bincode::serialize_into(&mut bytes, &header)
         .map_err(|e| DbError::InternalError(format!("Serialization failed: {}", e)))?;
+
+    // `data`: bincode writes a byte string as its length (u64, little
+    // endian) and the bytes. The length is filled in once the MessagePack is
+    // written.
+    let len_at = bytes.len();
+    bytes.extend_from_slice(&[0u8; 8]);
+    write_msgpack(&mut bytes, &doc.data);
+    let data_len = (bytes.len() - len_at - 8) as u64;
+    bytes[len_at..len_at + 8].copy_from_slice(&data_len.to_le_bytes());
     Ok(bytes)
+}
+
+/// `value` in MessagePack, byte for byte what `rmp_serde::encode::write`
+/// writes for it, without going through serde: the same `rmp` primitive per
+/// node (`serde_json`'s `Serialize` maps a positive integer to `u64`, a
+/// negative one to `i64` and anything else to `f64`; a map's keys are
+/// strings, in the map's order). Writing to a `Vec` cannot fail.
+pub(crate) fn write_msgpack(out: &mut Vec<u8>, value: &serde_json::Value) {
+    use rmp::encode;
+    use serde_json::Value;
+    match value {
+        Value::Null => {
+            let _ = encode::write_nil(out);
+        }
+        Value::Bool(b) => {
+            let _ = encode::write_bool(out, *b);
+        }
+        Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                let _ = encode::write_uint(out, u);
+            } else if let Some(i) = n.as_i64() {
+                let _ = encode::write_sint(out, i);
+            } else if let Some(f) = n.as_f64() {
+                let _ = encode::write_f64(out, f);
+            }
+        }
+        Value::String(s) => {
+            let _ = encode::write_str(out, s);
+        }
+        Value::Array(items) => {
+            let _ = encode::write_array_len(out, items.len() as u32);
+            for item in items {
+                write_msgpack(out, item);
+            }
+        }
+        Value::Object(fields) => {
+            let _ = encode::write_map_len(out, fields.len() as u32);
+            for (key, item) in fields {
+                let _ = encode::write_str(out, key);
+                write_msgpack(out, item);
+            }
+        }
+    }
 }
 
 pub fn deserialize_doc(bytes: &[u8]) -> DbResult<Document> {
@@ -422,6 +505,90 @@ mod tests {
     use super::*;
     use crate::storage::document::Document;
     use serde_json::json;
+
+    /// What `serialize_doc` wrote before it was written in one buffer.
+    fn struct_encoding(doc: &Document) -> Vec<u8> {
+        let mut bytes = vec![DOC_FORMAT_VERSION];
+        bincode::serialize_into(&mut bytes, &DocumentWithVersion::from_doc(doc)).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn write_msgpack_matches_rmp_serde() {
+        let mut values = vec![
+            json!(null),
+            json!(true),
+            json!(false),
+            json!(0.1),
+            json!(-0.0),
+            json!(1.0),
+            json!(1e300),
+            json!(f64::MIN_POSITIVE),
+            json!(""),
+            json!("ünïcode ✓"),
+            json!([]),
+            json!({}),
+            json!({"b": 1, "a": [1, {"c": null}], "": "empty key"}),
+        ];
+        for n in [
+            0i64,
+            1,
+            31,
+            32,
+            127,
+            128,
+            255,
+            256,
+            65_535,
+            65_536,
+            i32::MAX as i64,
+            u32::MAX as i64,
+            u32::MAX as i64 + 1,
+            i64::MAX,
+        ] {
+            values.push(json!(n));
+            values.push(json!(-n));
+        }
+        values.push(json!(i64::MIN));
+        values.push(json!(u64::MAX));
+        for len in [0usize, 15, 16, 31, 32, 255, 256, 65_535, 65_536] {
+            values.push(json!("s".repeat(len)));
+            values.push(serde_json::Value::Array(vec![json!(1); len]));
+            values.push(serde_json::Value::Object(
+                (0..len).map(|i| (format!("k{i:06}"), json!(i))).collect(),
+            ));
+        }
+        for value in values {
+            let mut ours = Vec::new();
+            write_msgpack(&mut ours, &value);
+            assert_eq!(ours, rmp_serde::to_vec(&value).unwrap(), "{value}");
+        }
+    }
+
+    #[test]
+    fn serialize_doc_matches_the_struct_encoding() {
+        let docs = vec![
+            create_test_doc(),
+            Document::with_key("c", "k".to_string(), json!({})),
+            Document::with_key("c", String::new(), json!(null)),
+            Document::with_key("c", "ünïcode-ключ".to_string(), json!([1, "two", 3.5])),
+            Document::with_key(
+                "db:c",
+                "big".to_string(),
+                json!({
+                    "s": "x".repeat(70_000),
+                    "n": [u64::MAX, i64::MIN, 0.1, -0.0],
+                    "deep": {"a": {"b": {"c": [null, true, false, {}]}}},
+                }),
+            ),
+        ];
+        for doc in docs {
+            let bytes = serialize_doc(&doc).unwrap();
+            assert_eq!(bytes, struct_encoding(&doc));
+            let back = deserialize_doc(&bytes).unwrap();
+            assert_eq!(back.to_value(), doc.to_value());
+        }
+    }
 
     fn create_test_doc() -> Document {
         Document::with_key(

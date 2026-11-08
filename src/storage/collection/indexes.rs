@@ -2386,10 +2386,12 @@ impl Collection {
         doc_key: &str,
         doc_value: &Value,
     ) -> DbResult<(IndexEntries, IndexEntries)> {
-        let indexes = self.get_all_indexes();
+        // One snapshot of the definitions, read in place: this runs for every
+        // document written.
+        let meta = self.index_meta().unwrap_or_default();
         let mut regular_entries = Vec::new();
 
-        for index in indexes {
+        for index in &meta.indexes {
             let field_values: Vec<Value> = index
                 .fields
                 .iter()
@@ -2397,17 +2399,16 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                for entry_key in Self::index_entry_keys(&index, &field_values, doc_key) {
+                for entry_key in Self::index_entry_keys(index, &field_values, doc_key) {
                     regular_entries.push((entry_key, doc_key.as_bytes().to_vec()));
                 }
             }
         }
 
         // Compute geo index entries
-        let geo_indexes = self.get_all_geo_indexes();
         let mut geo_entries = Vec::new();
 
-        for geo_index in &geo_indexes {
+        for geo_index in &meta.geo {
             let field_value = extract_field_value(doc_value, &geo_index.field);
             if !field_value.is_null() {
                 let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
@@ -2427,11 +2428,11 @@ impl Collection {
         old_value: &Value,
         new_value: &Value,
     ) -> DbResult<(IndexEntries, IndexKeys, IndexEntries, IndexKeys)> {
-        let indexes = self.get_all_indexes();
+        let meta = self.index_meta().unwrap_or_default();
         let mut entries_to_add = Vec::new();
         let mut keys_to_remove = Vec::new();
 
-        for index in indexes {
+        for index in &meta.indexes {
             let old_values: Vec<Value> = index
                 .fields
                 .iter()
@@ -2445,23 +2446,22 @@ impl Collection {
 
             // Remove old entry
             if index.holds(&old_values) {
-                keys_to_remove.extend(Self::index_entry_keys(&index, &old_values, doc_key));
+                keys_to_remove.extend(Self::index_entry_keys(index, &old_values, doc_key));
             }
 
             // Add new entry
             if index.holds(&new_values) {
-                for new_entry_key in Self::index_entry_keys(&index, &new_values, doc_key) {
+                for new_entry_key in Self::index_entry_keys(index, &new_values, doc_key) {
                     entries_to_add.push((new_entry_key, doc_key.as_bytes().to_vec()));
                 }
             }
         }
 
         // Compute geo index entries
-        let geo_indexes = self.get_all_geo_indexes();
         let mut geo_entries_to_add = Vec::new();
         let mut geo_keys_to_remove = Vec::new();
 
-        for geo_index in &geo_indexes {
+        for geo_index in &meta.geo {
             let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
             let new_field = extract_field_value(new_value, &geo_index.field);
 
@@ -2490,10 +2490,10 @@ impl Collection {
         doc_key: &str,
         doc_value: &Value,
     ) -> DbResult<(IndexKeys, IndexKeys)> {
-        let indexes = self.get_all_indexes();
+        let meta = self.index_meta().unwrap_or_default();
         let mut keys_to_remove = Vec::new();
 
-        for index in indexes {
+        for index in &meta.indexes {
             let field_values: Vec<Value> = index
                 .fields
                 .iter()
@@ -2501,15 +2501,14 @@ impl Collection {
                 .collect();
 
             if index.holds(&field_values) {
-                keys_to_remove.extend(Self::index_entry_keys(&index, &field_values, doc_key));
+                keys_to_remove.extend(Self::index_entry_keys(index, &field_values, doc_key));
             }
         }
 
         // Compute geo index keys to remove
-        let geo_indexes = self.get_all_geo_indexes();
         let mut geo_keys_to_remove = Vec::new();
 
-        for geo_index in &geo_indexes {
+        for geo_index in &meta.geo {
             let entry_key = Self::geo_entry_key(&geo_index.name, doc_key);
             geo_keys_to_remove.push(entry_key);
         }
