@@ -1,6 +1,6 @@
 [workspace]
 members = ["clients/rust-client", "sdbql-core", "benchmarks"]
-exclude = ["fuzz"]
+exclude = ["fuzz", "benchmarks/compare"]
 
 [package]
 name = "solidb"

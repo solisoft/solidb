@@ -1,0 +1,24 @@
+[package]
+name = "solidb-compare"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Run the same documents and queries against SoliDB, PostgreSQL, MongoDB, ArangoDB and SurrealDB"
+
+# A workspace of its own: the drivers of four other databases stay out of the
+# root Cargo.lock, and out of the `audit` job that reads it.
+[workspace]
+
+[dependencies]
+solidb-client = { path = "../../clients/rust-client" }
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+mongodb = "3"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+surrealdb = { version = "4", default-features = false, features = ["protocol-ws"] }
+
+[profile.release]
+debug = 1
