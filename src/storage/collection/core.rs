@@ -551,7 +551,10 @@ impl Collection {
 
     /// Generate a document key: "doc:<key>"
     pub fn doc_key(key: &str) -> Vec<u8> {
-        format!("{}{}", DOC_PREFIX, key).into_bytes()
+        let mut k = Vec::with_capacity(DOC_PREFIX.len() + key.len());
+        k.extend_from_slice(DOC_PREFIX.as_bytes());
+        k.extend_from_slice(key.as_bytes());
+        k
     }
 
     /// Generate an index metadata key: "idx_meta:<name>"

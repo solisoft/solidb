@@ -3,7 +3,10 @@ use serde_json::Value;
 /// Encode a value into a binary-comparable key
 /// Preserves sort order: Null < Bool < Number < String < Other
 pub fn encode_key(value: &Value) -> Vec<u8> {
-    let mut key = Vec::with_capacity(9);
+    let mut key = Vec::with_capacity(match value {
+        Value::String(s) => s.len() + 2,
+        _ => 9,
+    });
     match value {
         Value::Null => {
             key.push(0x01);

@@ -26,9 +26,8 @@
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use parking_lot::{Condvar, Mutex, MutexGuard};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use super::Collection;
 
@@ -117,11 +116,17 @@ pub(crate) struct WriteGuard {
     _guards: Vec<MutexGuard<'static, ()>>,
 }
 
-fn hash_of<T: Hash + ?Sized>(seed: u64, value: &T) -> u64 {
-    let mut h = DefaultHasher::new();
-    seed.hash(&mut h);
-    value.hash(&mut h);
-    h.finish()
+/// A 64-bit hash of `bytes`, one family per `seed`. SeaHash rather than the
+/// standard SipHash: every write hashes its keys here, and nothing outside
+/// chooses these inputs to collide on purpose to any effect but waiting.
+fn hash_of(seed: u64, bytes: &[u8]) -> u64 {
+    seahash::hash_seeded(
+        bytes,
+        seed,
+        0x243f_6a88_85a3_08d3,
+        0x1319_8a2e_0370_7344,
+        0xa409_3822_299f_31d0,
+    )
 }
 
 /// The shard of a key hash: its top bits, so ascending hash order visits the
@@ -165,7 +170,7 @@ impl Collection {
     fn stripe_set(&self) -> &'static StripeSet {
         let id = hash_of(
             std::sync::Arc::as_ptr(&self.db) as usize as u64,
-            self.name.as_str(),
+            self.name.as_bytes(),
         );
         if let Some(set) = STRIPE_SETS.get(&id) {
             return *set;
@@ -183,7 +188,7 @@ impl Collection {
         I: IntoIterator<Item = &'a str>,
     {
         let set = self.stripe_set();
-        let mut hashes: Vec<u64> = keys.into_iter().map(|k| hash_of(0, k)).collect();
+        let mut hashes: Vec<u64> = keys.into_iter().map(|k| hash_of(0, k.as_bytes())).collect();
         hashes.sort_unstable();
         hashes.dedup();
         WriteGuard {
@@ -201,7 +206,7 @@ impl Collection {
     {
         let idx: Vec<usize> = tokens
             .into_iter()
-            .map(|t| (hash_of(1, t.as_str()) as usize) % STRIPES)
+            .map(|t| (hash_of(1, t.as_bytes()) as usize) % STRIPES)
             .collect();
         if idx.is_empty() {
             return WriteGuard {
