@@ -24,7 +24,7 @@ use super::super::types::{Context, MutationStats, QueryExecutionResult};
 use super::super::window::contains_window_functions;
 use super::super::QueryExecutor;
 use crate::error::DbResult;
-use crate::sdbql::ast::{BodyClause, Expression, ForClause, LetClause, Query};
+use crate::sdbql::ast::{BodyClause, Expression, ForClause, LetClause, Query, ReturnClause};
 use crate::storage::{Collection, Document};
 
 /// The parts of `FOR v IN c FILTER … [LET …]* SORT v.f LIMIT …` this path
@@ -105,6 +105,62 @@ fn sort_plan(query: &Query) -> Option<SortPlan<'_>> {
         lets,
         sort_field,
         ascending: *ascending,
+    })
+}
+
+/// For each of `lets`, bound in order on every row: when it is
+/// `v = DOCUMENT(id)` with one argument, and the LETs after it and the RETURN
+/// read `v` only as `v.field` (`projection::collect`), the function's name,
+/// its argument and the fields read, sorted. `None` for any other LET, for
+/// one rebound by a later LET, and for an argument that calls anything but a
+/// pure function (it is evaluated before DOCUMENT is chosen, and must be
+/// safe to hand on).
+pub(super) fn document_projections<'q>(
+    lets: &[&'q LetClause],
+    ret: Option<&'q ReturnClause>,
+) -> Vec<Option<(String, &'q Expression, Vec<String>)>> {
+    lets.iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let Expression::FunctionCall { name, args } = &l.expression else {
+                return None;
+            };
+            let upper = name.to_ascii_uppercase();
+            let [arg] = args.as_slice() else {
+                return None;
+            };
+            if upper != "DOCUMENT" || !pure(arg) {
+                return None;
+            }
+            let var = l.variable.as_str();
+            let mut fields = Vec::new();
+            for later in &lets[i + 1..] {
+                if later.variable == var {
+                    return None;
+                }
+                super::super::projection::collect(&later.expression, var, &mut fields)?;
+            }
+            super::super::projection::collect(&ret?.expression, var, &mut fields)?;
+            fields.sort_unstable();
+            fields.dedup();
+            Some((upper, arg, fields))
+        })
+        .collect()
+}
+
+/// Whether evaluating `expr` can only compute a value: literals, bind
+/// variables, variables and their fields, operators, and calls to the
+/// functions constant folding treats as pure.
+fn pure(expr: &Expression) -> bool {
+    !crate::sdbql::ast::expression_any(expr, &mut |e| match e {
+        Expression::FunctionCall { name, args } => {
+            !super::super::const_fold::is_pure_function(name, args.len())
+        }
+        Expression::Subquery(_)
+        | Expression::Lambda { .. }
+        | Expression::WindowFunctionCall { .. }
+        | Expression::ArrayInline { .. } => true,
+        _ => false,
     })
 }
 
@@ -312,29 +368,86 @@ impl QueryExecutor<'_> {
     }
 
     /// The RETURN of each row a sorted walk kept past the LIMIT's offset,
-    /// its LETs bound first.
+    /// its LETs bound first. A `LET v = DOCUMENT(id)` the rest of the row
+    /// reads only as `v.field` fetches those fields alone
+    /// ([`document_projections`]).
     fn sorted_rows_out(
         &self,
         query: &Query,
         target: &SortedTarget<'_>,
         rows: Vec<Context>,
     ) -> DbResult<Vec<serde_json::Value>> {
+        let lets: Vec<&LetClause> = target
+            .plan
+            .lets
+            .iter()
+            .copied()
+            .chain(&query.post_limit_lets)
+            .collect();
+        let projections = document_projections(&lets, query.return_clause.as_ref());
+        // Collections DOCUMENT read, resolved once for all the rows.
+        let mut handles: Vec<(String, Collection)> = Vec::new();
         let mut results = Vec::with_capacity(rows.len().saturating_sub(target.offset));
         for mut ctx in rows.into_iter().skip(target.offset) {
-            for let_clause in target
-                .plan
-                .lets
-                .iter()
-                .copied()
-                .chain(&query.post_limit_lets)
-            {
-                self.bind_let(let_clause, &mut ctx)?;
+            for (let_clause, projection) in lets.iter().zip(&projections) {
+                match projection {
+                    Some((name, arg, fields)) => {
+                        let value =
+                            self.document_projected(name, arg, fields, &ctx, &mut handles)?;
+                        ctx.insert(let_clause.variable.clone(), value);
+                    }
+                    None => self.bind_let(let_clause, &mut ctx)?,
+                }
             }
             if let Some(ref ret) = query.return_clause {
                 results.push(self.evaluate_expr_with_context(&ret.expression, &ctx)?);
             }
         }
         Ok(results)
+    }
+
+    /// `DOCUMENT(arg)` as the evaluator computes it, the document found
+    /// holding only `fields`. The argument is evaluated once; anything but
+    /// an id `collection/key` in this database (an array of ids, a
+    /// `db:collection` name, a malformed id) goes to DOCUMENT itself with
+    /// that value, and a collection a row policy applies to is read whole,
+    /// for the policy, as DOCUMENT reads it.
+    fn document_projected(
+        &self,
+        name: &str,
+        arg: &Expression,
+        fields: &[String],
+        ctx: &Context,
+        handles: &mut Vec<(String, Collection)>,
+    ) -> DbResult<serde_json::Value> {
+        let id = self.evaluate_expr_with_context(arg, ctx)?;
+        let target = match &id {
+            serde_json::Value::String(id) => id
+                .split_once('/')
+                .filter(|(collection, _)| !collection.contains(':')),
+            _ => None,
+        };
+        let Some((collection, key)) = target else {
+            return self.call_function(name, vec![id.clone()], ctx);
+        };
+        let at = match handles.iter().position(|(n, _)| n == collection) {
+            Some(at) => at,
+            None => {
+                // Errors (a protected or missing collection) as DOCUMENT's.
+                handles.push((collection.to_string(), self.get_collection(collection)?));
+                handles.len() - 1
+            }
+        };
+        let coll = &handles[at].1;
+        if self.row_policy_gate_for(coll, collection).is_some() {
+            return Ok(self
+                .get_visible(coll, collection, key, ctx)
+                .unwrap_or(serde_json::Value::Null));
+        }
+        // Absent and unreadable alike are null, as `get_visible` makes them.
+        Ok(coll
+            .get_value_projected(key, fields)
+            .unwrap_or(serde_json::Value::Null))
     }
 
     /// [`Self::walk_sorted`] for a query that reads only `fields` of each

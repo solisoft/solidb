@@ -87,6 +87,10 @@
                     <p class="text-gray-500 mt-1">Result-cache hits. <code>solidb_query_cache_misses_total</code> counts misses and expired entries. <code>solidb_query_cache_entries</code> is how many results are held.</p>
                   </div>
                   <div class="bg-gray-950/50 p-3 rounded border border-white/5">
+                    <code class="text-green-400">solidb_query_parse_cache_hits_total</code>
+                    <p class="text-gray-500 mt-1">Queries on <code>/cursor</code> and the driver whose text was found already parsed, so they skipped the parser. <code>solidb_query_parse_cache_misses_total</code> counts the texts parsed; <code>solidb_query_parse_cache_entries</code> is how many parsed texts are held (at most 1,000 texts and 4 MiB of text; one longer than 16 KiB is parsed every time). One parsed query serves every request that sends the same text, whatever its bind variables: pass values as bind variables rather than splicing them into the text, or every request is a miss.</p>
+                  </div>
+                  <div class="bg-gray-950/50 p-3 rounded border border-white/5">
                     <code class="text-green-400">solidb_slow_queries_total</code>
                     <p class="text-gray-500 mt-1">Executions at or above 100ms, including failures, panics and timeouts (counter)</p>
                   </div>

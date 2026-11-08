@@ -864,9 +864,414 @@ fn threads_cpu_ns(prefix: &str) -> u64 {
         .sum()
 }
 
+/// The server's work on one request of each shape, split by phase and
+/// timed in process on one thread (thread CPU time, so a loaded host's
+/// waiting does not count): what each step the driver takes costs, by
+/// calling it directly as the handler calls it. Steps nest — the handler
+/// includes the prepared-statement lookup, the executor, the storage reads —
+/// so the differences are the phases:
+///
+/// * frame decode: the command's MessagePack into a `Command`;
+/// * parse: the SDBQL text, uncached (what the prepared-statement cache
+///   saves), and the cache lookup that replaces it;
+/// * handler: `handle_query` whole (auth check, principal, lookup, the
+///   inline decision, executor setup, planning, reads, rows);
+/// * executor: the same query on a fresh executor, as the handler runs it
+///   inline (`execute_raw_msgpack_small`, then `execute_small_sorted`);
+/// * storage: the index read and document fetches alone, nothing decoded;
+/// * response encode: the frame written back.
+///
+/// What end to end adds beyond these (socket reads and writes, the runtime's
+/// wakeups) is the server CPU of the TCP series less the handler and the
+/// two codecs.
+#[allow(clippy::type_complexity)]
+fn phase_split(
+    engine: &StorageEngine,
+    shapes: &[(
+        &str,
+        &str,
+        &dyn Fn(&str, u64) -> std::collections::HashMap<String, serde_json::Value>,
+    )],
+    docs: u64,
+) {
+    use solidb::driver::protocol::{decode_command, encode_command, encode_response, Command};
+    use solidb::sdbql::executor::SmallRaw;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let storage = std::sync::Arc::new(engine.clone());
+    let mut handler = solidb::driver::DriverHandler::new(storage, None);
+    let auth = rt.block_on(solidb::driver::handlers::auth::handle_auth(
+        &mut handler,
+        "bench_db".to_string(),
+        "admin".to_string(),
+        "bench-password".to_string(),
+        None,
+    ));
+    assert!(
+        matches!(auth, solidb::driver::protocol::Response::Ok { .. }),
+        "{auth:?}"
+    );
+    // Every step reads the same 256 random keys, read once before the first
+    // step: all of them find their blocks cached, so each step costs what it
+    // costs on a warm cache, whichever ran before it. (Fresh keys per step,
+    // or a pool too large for the block cache, left some steps paying for
+    // block-cache misses — a decompression each — that others did not.)
+    const POOL: u64 = 256;
+    let n = 5_000u64;
+    let counter = InstructionCounters::this_thread();
+    // Each step's thousands of user-space instructions per request, in the
+    // order measured: steady under load, where the times are not.
+    let kinst = std::cell::RefCell::new(Vec::<f64>::new());
+    let time = |f: &mut dyn FnMut(u64)| -> f64 {
+        for r in 0..n / 5 {
+            f(mix(1, r % POOL));
+        }
+        let start = thread_cpu_us();
+        let counted = counter.read();
+        for r in 0..n {
+            f(mix(1, r % POOL));
+        }
+        kinst
+            .borrow_mut()
+            .push((counter.read() - counted) as f64 / 1e3 / n as f64);
+        (thread_cpu_us() - start) / n as f64
+    };
+    let db = engine.get_database("bench_db").unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    let customers = db.get_collection("customers").unwrap();
+    let created_index = orders
+        .get_all_indexes()
+        .into_iter()
+        .find(|i| i.fields == ["created_at"])
+        .unwrap();
+    for (shape, q, binds_of) in shapes {
+        let warm = solidb::sdbql::parse(q).unwrap();
+        for r in 0..POOL {
+            QueryExecutor::with_database_and_bind_vars(
+                engine,
+                "bench_db".to_string(),
+                binds_of(shape, mix(1, r)),
+            )
+            .execute(&warm)
+            .unwrap();
+        }
+    }
+    for r in 0..POOL {
+        orders
+            .get_value(&format!("o{:07}", mix(1, r) % docs))
+            .unwrap();
+    }
+    for (shape, q, binds_of) in shapes {
+        let frame = |r: u64| {
+            let cmd = Command::Query {
+                database: "bench_db".to_string(),
+                sdbql: q.to_string(),
+                bind_vars: Some(binds_of(shape, r)),
+                cache: false,
+            };
+            encode_command(&cmd).unwrap()[4..].to_vec()
+        };
+        let frames: Vec<Vec<u8>> = (0..64).map(frame).collect();
+        let decode = time(&mut |r| {
+            std::hint::black_box(decode_command(&frames[r as usize % 64]).unwrap());
+        });
+        let parse = time(&mut |_| {
+            std::hint::black_box(solidb::sdbql::parse(q).unwrap());
+        });
+        let lookup = time(&mut |_| {
+            std::hint::black_box(
+                solidb::sdbql::get_prepared_statement_cache()
+                    .parse_if_needed(q)
+                    .unwrap(),
+            );
+        });
+        let mut encoded = 0usize;
+        let mut encode = 0.0;
+        let mut encode_inst = 0u64;
+        let handle = time(&mut |r| {
+            let resp = rt.block_on(solidb::driver::handlers::query::handle_query(
+                &handler,
+                "bench_db".to_string(),
+                q.to_string(),
+                Some(binds_of(shape, r)),
+                false,
+            ));
+            let (start, counted) = (thread_cpu_us(), counter.read());
+            encoded += encode_response(&resp).unwrap().len();
+            encode += thread_cpu_us() - start;
+            encode_inst += counter.read() - counted;
+        });
+        // `time` ran the handler `n + n / 5` times, all of them encoded.
+        let encode = encode / (n + n / 5) as f64;
+        let encode_kinst = encode_inst as f64 / 1e3 / (n + n / 5) as f64;
+        let handle = handle - encode;
+        let ast = solidb::sdbql::parse(q).unwrap();
+        let execute = time(&mut |r| {
+            let executor = QueryExecutor::with_database_and_bind_vars(
+                engine,
+                "bench_db".to_string(),
+                binds_of(shape, r),
+            )
+            .with_timeout(std::time::Duration::from_secs(30));
+            match executor.execute_raw_msgpack_small(&ast, 64).unwrap() {
+                SmallRaw::Rows(rows) => {
+                    std::hint::black_box(rows);
+                }
+                _ => {
+                    std::hint::black_box(executor.execute_small_sorted(&ast, 64).unwrap().unwrap());
+                }
+            }
+        });
+        let storage = time(&mut |r| {
+            let binds = binds_of(shape, r);
+            if *shape == "by_customer" {
+                // Only `_key` copied: the index read and the fetches.
+                let shape = solidb::storage::raw_rows::RawShape::Single("_key".to_string());
+                let read =
+                    orders.index_raw_eq("customer_id", &binds["c"], 0, 64, &shape, |_| Ok(()));
+                std::hint::black_box(read.unwrap());
+                return;
+            }
+            // The 20 newest of the window, their bytes handed back untouched.
+            let mut keys = Vec::new();
+            let walked = orders.index_sorted_range_by(
+                &created_index,
+                &[],
+                Some((&binds["lo"], true)),
+                Some((&binds["hi"], false)),
+                false,
+                20,
+                256,
+                &mut |bytes| {
+                    if *shape == "join" {
+                        let doc = solidb::storage::serializer::deserialize_doc_projected(
+                            bytes,
+                            &["customer_id".to_string()],
+                        )
+                        .ok()?;
+                        keys.push(doc["customer_id"].as_str()?.to_string());
+                    }
+                    Some(Some(bytes.len()))
+                },
+            );
+            std::hint::black_box(walked.unwrap());
+            for key in keys {
+                std::hint::black_box(customers.get_value(&key).unwrap());
+            }
+        });
+        println!(
+            "BENCH|phases|{shape}|frame decode {decode:.2} us|parse {parse:.2} us (cached lookup {lookup:.2})|handler {handle:.2} us|executor {execute:.2} us|storage {storage:.2} us|response encode {encode:.2} us|{:.0} B/response",
+            encoded as f64 / (n + n / 5) as f64
+        );
+        let k = kinst.borrow();
+        if let [decode, parse, lookup, handle, execute, storage] = k[k.len() - 6..] {
+            println!(
+                "BENCH|phases kinst|{shape}|frame decode {decode:.1}|parse {parse:.1} (cached lookup {lookup:.1})|handler {:.1}|executor {execute:.1}|storage {storage:.1}|response encode {encode_kinst:.1}",
+                handle - encode_kinst
+            );
+        }
+    }
+    let get = time(&mut |r| {
+        let key = format!("o{:07}", r % docs);
+        std::hint::black_box(solidb::driver::handlers::document::handle_get(
+            &handler,
+            "bench_db".to_string(),
+            "orders".to_string(),
+            key,
+        ));
+    });
+    let point = time(&mut |r| {
+        std::hint::black_box(orders.get_value(&format!("o{:07}", r % docs)).unwrap());
+    });
+    println!("BENCH|phases|get|handler {get:.2} us|storage (decoded) {point:.2} us");
+    let k = kinst.borrow();
+    if let [get, point] = k[k.len() - 2..] {
+        println!("BENCH|phases kinst|get|handler {get:.1}|storage (decoded) {point:.1}");
+    }
+}
+
+/// User and system CPU time, in nanoseconds, of this process's threads
+/// whose name starts with `prefix` (Linux; zeros elsewhere), from each
+/// thread's `stat` (clock ticks, so only good over a second or more): what
+/// the server spends in its own code and what in the kernel's socket calls.
+fn threads_cpu_split_ns(prefix: &str) -> (u64, u64) {
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+        return (0, 0);
+    };
+    #[cfg(target_os = "linux")]
+    // SAFETY: sysconf only reads a configuration value.
+    let tick_ns = 1_000_000_000 / unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
+    #[cfg(not(target_os = "linux"))]
+    let tick_ns = 10_000_000u64;
+    tasks
+        .filter_map(|t| t.ok())
+        .filter(|t| {
+            std::fs::read_to_string(t.path().join("comm")).is_ok_and(|c| c.starts_with(prefix))
+        })
+        .filter_map(|t| std::fs::read_to_string(t.path().join("stat")).ok())
+        .filter_map(|s| {
+            // Fields after the parenthesised name: state is the 3rd field,
+            // utime the 14th and stime the 15th.
+            let rest = &s[s.rfind(')')? + 2..];
+            let mut f = rest.split_whitespace().skip(11);
+            Some((
+                f.next()?.parse::<u64>().ok()?,
+                f.next()?.parse::<u64>().ok()?,
+            ))
+        })
+        .fold((0, 0), |(u, k), (du, dk)| {
+            (u + du * tick_ns, k + dk * tick_ns)
+        })
+}
+
+/// User-space instruction counters on this process's threads whose name
+/// starts with a prefix (Linux, `perf_event_open`; empty elsewhere or when
+/// the kernel refuses): what a series costs in work, unmoved by the load of
+/// a shared host, where CPU time is not.
+struct InstructionCounters(Vec<i32>);
+
+impl InstructionCounters {
+    fn open(prefix: &str) -> Self {
+        let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+            return Self(Vec::new());
+        };
+        let tids: Vec<i32> = tasks
+            .filter_map(|t| t.ok())
+            .filter(|t| {
+                std::fs::read_to_string(t.path().join("comm")).is_ok_and(|c| c.starts_with(prefix))
+            })
+            .filter_map(|t| t.file_name().to_str()?.parse().ok())
+            .collect();
+        Self::of(tids)
+    }
+
+    /// A counter on the calling thread alone.
+    fn this_thread() -> Self {
+        #[cfg(target_os = "linux")]
+        // SAFETY: gettid has no preconditions.
+        let tid = unsafe { libc::syscall(libc::SYS_gettid) } as i32;
+        #[cfg(not(target_os = "linux"))]
+        let tid = 0;
+        Self::of(vec![tid])
+    }
+
+    fn of(tids: Vec<i32>) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            // `struct perf_event_attr`, PERF_ATTR_SIZE_VER5 (112 bytes):
+            // type PERF_TYPE_HARDWARE (0), config PERF_COUNT_HW_INSTRUCTIONS
+            // (1), flags exclude_kernel (bit 5) and exclude_hv (bit 6).
+            let mut attr = [0u64; 14];
+            attr[0] = 112 << 32;
+            attr[1] = 1;
+            attr[5] = (1 << 5) | (1 << 6);
+            let fds = tids
+                .into_iter()
+                .filter_map(|tid| {
+                    // SAFETY: `attr` is a valid, fully initialised
+                    // perf_event_attr of the size it declares.
+                    let fd = unsafe {
+                        libc::syscall(
+                            libc::SYS_perf_event_open,
+                            attr.as_ptr(),
+                            tid,
+                            -1i32,
+                            -1i32,
+                            0u64,
+                        )
+                    };
+                    (fd >= 0).then_some(fd as i32)
+                })
+                .collect();
+            Self(fds)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = tids;
+            Self(Vec::new())
+        }
+    }
+
+    /// Instructions counted so far, all threads together (0 when none).
+    fn read(&self) -> u64 {
+        #[cfg(target_os = "linux")]
+        {
+            self.0
+                .iter()
+                .map(|fd| {
+                    let mut count = 0u64;
+                    // SAFETY: reading 8 bytes into a u64 from a counter fd.
+                    let n = unsafe { libc::read(*fd, (&mut count as *mut u64).cast(), 8) };
+                    if n == 8 {
+                        count
+                    } else {
+                        0
+                    }
+                })
+                .sum()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            0
+        }
+    }
+}
+
+impl Drop for InstructionCounters {
+    fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        for fd in &self.0 {
+            // SAFETY: closing a descriptor this value owns.
+            unsafe { libc::close(*fd) };
+        }
+    }
+}
+
+/// What [`driver_series`] measured.
+struct Series {
+    /// Operations per second, all connections together.
+    ops: f64,
+    /// Latency percentiles, microseconds.
+    p50: f64,
+    p99: f64,
+    /// The server's CPU per operation, microseconds (`schedstat`), and its
+    /// user / kernel split (`stat`, in ticks: the two need not add up to it
+    /// exactly).
+    server_cpu: f64,
+    server_user: f64,
+    server_sys: f64,
+    /// The client's CPU per operation, microseconds: encoding the command,
+    /// decoding the response into `serde_json::Value`s, its socket calls.
+    client_cpu: f64,
+    /// User-space instructions per operation, thousands, server and client
+    /// ([`InstructionCounters`]; 0 where they cannot be read).
+    server_kinst: f64,
+    client_kinst: f64,
+}
+
+impl std::fmt::Display for Series {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:.0}/s|p50 {:.1} us|p99 {:.1} us|server cpu {:.1} us/op (user {:.1}, sys {:.1})|client cpu {:.1} us/op|kinst/op server {:.1} client {:.1}",
+            self.ops,
+            self.p50,
+            self.p99,
+            self.server_cpu,
+            self.server_user,
+            self.server_sys,
+            self.client_cpu,
+            self.server_kinst,
+            self.client_kinst
+        )
+    }
+}
+
 /// One measured series over the driver: `conc` connections, each sending
-/// `op` back to back for `secs` after `warm`. Ops per second, p50 and p99
-/// latency in microseconds, and the server's CPU microseconds per op.
+/// `op` back to back for `secs` after `warm`: throughput, latency and the
+/// CPU each side spends per operation.
 fn driver_series<F, Fut>(
     rt: &tokio::runtime::Runtime,
     addr: &str,
@@ -874,7 +1279,7 @@ fn driver_series<F, Fut>(
     warm: std::time::Duration,
     secs: std::time::Duration,
     op: F,
-) -> (f64, f64, f64, f64)
+) -> Series
 where
     F: Fn(solidb_client::SoliDBClient, u64) -> Fut + Copy + Send + 'static,
     Fut: std::future::Future<Output = solidb_client::SoliDBClient> + Send + 'static,
@@ -895,9 +1300,25 @@ where
         let (measure_from, until) = (start + warm, start + warm + secs);
         let cpu = tokio::spawn(async move {
             tokio::time::sleep_until(measure_from.into()).await;
-            let before = threads_cpu_ns("bench-server");
+            let counters = (
+                InstructionCounters::open("bench-server"),
+                InstructionCounters::open("bench-client"),
+            );
+            let before = (
+                threads_cpu_ns("bench-server"),
+                threads_cpu_split_ns("bench-server"),
+                threads_cpu_ns("bench-client"),
+                counters.0.read(),
+                counters.1.read(),
+            );
             tokio::time::sleep_until(until.into()).await;
-            threads_cpu_ns("bench-server") - before
+            let (user, sys) = threads_cpu_split_ns("bench-server");
+            (
+                threads_cpu_ns("bench-server") - before.0,
+                (user - before.1 .0, sys - before.1 .1),
+                threads_cpu_ns("bench-client") - before.2,
+                (counters.0.read() - before.3, counters.1.read() - before.4),
+            )
         });
         let tasks: Vec<_> = clients
             .into_iter()
@@ -930,13 +1351,19 @@ where
         }
         all.sort_unstable();
         let pct = |p: f64| all[((all.len() - 1) as f64 * p) as usize] as f64 / 1e3;
-        let cpu_us = cpu.await.unwrap() as f64 / 1e3 / all.len().max(1) as f64;
-        (
-            all.len() as f64 / secs.as_secs_f64(),
-            pct(0.5),
-            pct(0.99),
-            cpu_us,
-        )
+        let (server, (user, sys), client, (server_inst, client_inst)) = cpu.await.unwrap();
+        let per_op = |ns: u64| ns as f64 / 1e3 / all.len().max(1) as f64;
+        Series {
+            ops: all.len() as f64 / secs.as_secs_f64(),
+            p50: pct(0.5),
+            p99: pct(0.99),
+            server_cpu: per_op(server),
+            server_user: per_op(user),
+            server_sys: per_op(sys),
+            client_cpu: per_op(client),
+            server_kinst: per_op(server_inst),
+            client_kinst: per_op(client_inst),
+        }
     })
 }
 
@@ -951,14 +1378,20 @@ where
 /// First, on one thread and in process, what each stage of the raw-rows
 /// path costs: the index seek alone, then the documents fetched, then copied
 /// whole, then the executor around them, then the ordinary (decoding) path
-/// for comparison. Then the driver end to end on loopback TCP, at
-/// concurrency 1 and 32, the server on its own runtime.
+/// for comparison. Then, for the four shapes, the server's work on one
+/// request split by phase ([`phase_split`]: frame decode, parse and the
+/// parse-cache lookup, the handler, the executor, the storage reads, the
+/// response encode), in microseconds and in thousands of instructions. Then
+/// the driver end to end on loopback TCP, at concurrency 1 and 32, the
+/// server on its own runtime: throughput, p50 / p99, and per operation the
+/// server's CPU (user / kernel), the client's, and both sides' user-space
+/// instructions ([`InstructionCounters`], steady on a loaded host).
 ///
 /// `SOLIDB_BENCH_ORDERS` (200,000), `SOLIDB_BENCH_BLOCK_CACHE_MB` (the
 /// engine's default), `SOLIDB_BENCH_SECS` (5),
 /// `SOLIDB_BENCH_SERVER_THREADS` (8), `SOLIDB_BENCH_CONC` (`1,32`) and
-/// `SOLIDB_BENCH_SERIES` (`inproc,by_customer,get,recent,join`) override
-/// the defaults;
+/// `SOLIDB_BENCH_SERIES` (`inproc,phases,by_customer,get,recent,join`)
+/// override the defaults;
 /// `SOLIDB_ENGINE=solistore` runs it on solistore (built with
 /// `engine-solistore`).
 #[test]
@@ -1054,7 +1487,7 @@ fn benchmark_driver_by_customer() {
         );
     };
     let series = std::env::var("SOLIDB_BENCH_SERIES")
-        .unwrap_or_else(|_| "inproc,by_customer,get,recent,join".to_string());
+        .unwrap_or_else(|_| "inproc,phases,by_customer,get,recent,join".to_string());
     let runs = |name: &str| series.split(',').any(|s| s == name);
     let field = "customer_id";
     let binds = |c: &str| -> std::collections::HashMap<String, serde_json::Value> {
@@ -1235,6 +1668,27 @@ fn benchmark_driver_by_customer() {
         }
     });
 
+    if runs("phases") {
+        let binds_of =
+            move |shape: &str, r: u64| -> std::collections::HashMap<String, serde_json::Value> {
+                if shape == "by_customer" {
+                    return [("c".to_string(), json!(format!("c{:05}", r % customers)))]
+                        .into_iter()
+                        .collect();
+                }
+                window(r)
+            };
+        phase_split(
+            &engine,
+            &[
+                ("by_customer", q, &binds_of),
+                ("recent", Q_RECENT, &binds_of),
+                ("join", Q_JOIN, &binds_of),
+            ],
+            docs,
+        );
+    }
+
     let warm = std::time::Duration::from_secs(1);
     let concs: Vec<usize> = std::env::var("SOLIDB_BENCH_CONC")
         .unwrap_or_else(|_| "1,32".to_string())
@@ -1243,37 +1697,33 @@ fn benchmark_driver_by_customer() {
         .collect();
     for conc in concs {
         if runs("by_customer") {
-            let (ops, p50, p99, cpu) =
-                driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
-                    let id = format!("c{:05}", r % customers);
-                    async move {
-                        let vars = [("c".to_string(), json!(id))].into_iter().collect();
-                        c.query_with_cache("bench_db", q, Some(vars), false)
-                            .await
-                            .unwrap();
-                        c
-                    }
-                });
-            println!(
-                "BENCH|driver|by_customer|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op"
-            );
+            let series = driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
+                let id = format!("c{:05}", r % customers);
+                async move {
+                    let vars = [("c".to_string(), json!(id))].into_iter().collect();
+                    c.query_with_cache("bench_db", q, Some(vars), false)
+                        .await
+                        .unwrap();
+                    c
+                }
+            });
+            println!("BENCH|driver|by_customer|c={conc}|{series}");
         }
         if runs("get") {
-            let (ops, p50, p99, cpu) =
-                driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
-                    let key = format!("o{:07}", r % docs);
-                    async move {
-                        c.get("bench_db", "orders", &key).await.unwrap();
-                        c
-                    }
-                });
-            println!("BENCH|driver|get|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op");
+            let series = driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
+                let key = format!("o{:07}", r % docs);
+                async move {
+                    c.get("bench_db", "orders", &key).await.unwrap();
+                    c
+                }
+            });
+            println!("BENCH|driver|get|c={conc}|{series}");
         }
         for (label, q) in [("recent", Q_RECENT), ("join", Q_JOIN)] {
             if !runs(label) {
                 continue;
             }
-            let (ops, p50, p99, cpu) = driver_series(
+            let series = driver_series(
                 &client,
                 &addr,
                 conc,
@@ -1293,7 +1743,7 @@ fn benchmark_driver_by_customer() {
                     c
                 },
             );
-            println!("BENCH|driver|{label}|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op");
+            println!("BENCH|driver|{label}|c={conc}|{series}");
         }
     }
     println!(

@@ -373,8 +373,32 @@ guard it cannot clear (row policy, search view, columnar, sharded, row
 ceiling), falls back to the ordinary executor.
 
 Since 2.8.0 two more shapes take that path:
-- **An index-ordered read** (`FILTER … SORT v.f LIMIT n RETURN v | v.f | {…}`, the `index_sort` walk). Each candidate is checked against the FILTER on a decode of only the fields it reads (`raw_rows::project`), then copied.
+- **An index-ordered read** (`FILTER … SORT v.f LIMIT n RETURN v | v.f | {…}`, the `index_sort` walk). Each candidate is checked against the FILTER on its stored bytes when the FILTER compiles to the typed predicates of `typed_scan.rs` (`TypedFilters`: fields compared with constants or bind variables, AND / OR / NOT, IN), else on a decode of only the fields it reads (`raw_rows::project`), then copied.
 - **An index equality naming at most 64 documents.** It is answered on the connection's async worker instead of the blocking pool (`driver/handlers/query.rs`, `execute_raw_msgpack_small`); the index is read first to decide.
+
+A whole document (`RETURN v`) is copied as runs of its stored map entries,
+the system fields written where they sort (`raw_rows::write_whole_in_runs`),
+when its keys are UTF-8, strictly increasing and behind their shortest string
+header — what every writer stores; any other document is written entry by
+entry. The per-row LETs of an index-ordered read (`index_sort.rs`,
+`sorted_rows_out`) fetch a `LET v = DOCUMENT(id)` that the rest of the row
+reads only as `v.field` with just those fields decoded
+(`Collection::get_value_projected`), except where a row policy needs the whole
+document.
+
+### The parse cache
+
+`/cursor` and the driver look a query's text up in `sdbql/prepared.rs` before
+parsing it: one `Arc<Query>` per exact text (not a hash of it), shared by
+every request whatever its bind variables, at most 1,000 texts and 4 MiB of
+text, the least recently used quarter evicted past either, texts over 16 KiB
+never stored. That is only right while parsing stays a pure function of the
+text and nothing mutates a parsed tree: bind variables stay `@name` nodes
+resolved by the executor, and anything that rewrites a tree (constant
+folding, for EXPLAIN) works on a clone. Hand the shared `Arc` to a blocking
+task rather than cloning the tree. `/metrics` reports it as
+`solidb_query_parse_cache_{hits,misses}_total` and
+`solidb_query_parse_cache_entries`.
 
 Counts are read from an index the same way, on every transport:
 `FOR v IN c FILTER v.f == x COLLECT WITH COUNT INTO n RETURN …` and

@@ -296,6 +296,29 @@ pub fn write_prometheus(out: &mut String) {
     out.push_str("# HELP solidb_query_cache_entries Result-cache entries currently held\n");
     out.push_str("# TYPE solidb_query_cache_entries gauge\n");
     out.push_str(&format!("solidb_query_cache_entries {entries}\n\n"));
+
+    let parse = crate::sdbql::get_prepared_statement_cache().stats();
+    out.push_str(
+        "# HELP solidb_query_parse_cache_hits_total Queries whose text was found already parsed \
+         (HTTP /cursor and the driver)\n",
+    );
+    out.push_str("# TYPE solidb_query_parse_cache_hits_total counter\n");
+    out.push_str(&format!(
+        "solidb_query_parse_cache_hits_total {}\n\n",
+        parse.hits
+    ));
+    out.push_str("# HELP solidb_query_parse_cache_misses_total Queries whose text was parsed\n");
+    out.push_str("# TYPE solidb_query_parse_cache_misses_total counter\n");
+    out.push_str(&format!(
+        "solidb_query_parse_cache_misses_total {}\n\n",
+        parse.misses
+    ));
+    out.push_str("# HELP solidb_query_parse_cache_entries Parsed query texts currently held\n");
+    out.push_str("# TYPE solidb_query_parse_cache_entries gauge\n");
+    out.push_str(&format!(
+        "solidb_query_parse_cache_entries {}\n\n",
+        parse.entries
+    ));
 }
 
 #[cfg(test)]
@@ -399,5 +422,8 @@ mod tests {
         assert!(out.contains("# TYPE solidb_query_cache_hits_total counter\n"));
         assert!(out.contains("# TYPE solidb_query_cache_misses_total counter\n"));
         assert!(out.contains("# TYPE solidb_query_cache_entries gauge\n"));
+        assert!(out.contains("# TYPE solidb_query_parse_cache_hits_total counter\n"));
+        assert!(out.contains("# TYPE solidb_query_parse_cache_misses_total counter\n"));
+        assert!(out.contains("# TYPE solidb_query_parse_cache_entries gauge\n"));
     }
 }

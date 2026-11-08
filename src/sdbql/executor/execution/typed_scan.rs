@@ -354,6 +354,99 @@ impl TypedPlan {
     }
 }
 
+/// The FILTERs of a read in index order (`raw_scan`'s `raw_sorted`),
+/// compiled as a [`TypedPlan`]'s are: each document fetched is checked on
+/// its stored bytes, where the ordinary walk decodes the fields the FILTERs
+/// read into a row, binds it in a `Context` and evaluates them.
+#[derive(Debug)]
+pub(super) struct TypedFilters {
+    tops: Vec<String>,
+    slots: Vec<SlotPath>,
+    /// The sort field's slot: a document whose sort value is an array or an
+    /// object stops the read, as the ordinary walk stops on one (the index
+    /// orders those as JSON text, not as SORT does).
+    sort_slot: usize,
+    filters: Vec<Pred>,
+}
+
+/// What [`TypedFilters::check`] made of a document.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Check {
+    /// Every FILTER accepts it.
+    Pass,
+    /// A FILTER rejects it.
+    Fail,
+    /// Its sort value is an array or an object: the read must stop.
+    Stop,
+    /// Not readable here: check it the ordinary way.
+    Fallback,
+}
+
+impl TypedFilters {
+    /// `filters` (over the loop variable `var`) and the read of
+    /// `var.sort_field`, or `None` when any of them is not a field read or a
+    /// compilable condition.
+    pub(super) fn compile(
+        ex: &QueryExecutor<'_>,
+        var: &str,
+        filters: &[&Expression],
+        sort_field: &str,
+    ) -> Option<TypedFilters> {
+        if var.starts_with('@') {
+            return None;
+        }
+        let mut c = Compiler {
+            var,
+            ex,
+            tops: Vec::new(),
+            slots: Vec::new(),
+        };
+        let sort = Expression::FieldAccess(
+            Box::new(Expression::Variable(var.to_string())),
+            sort_field.to_string(),
+        );
+        let sort_slot = c.slot(&sort)?;
+        let filters = filters
+            .iter()
+            .map(|f| c.pred(f))
+            .collect::<Option<Vec<_>>>()?;
+        Some(TypedFilters {
+            tops: c.tops,
+            slots: c.slots,
+            sort_slot,
+            filters,
+        })
+    }
+
+    /// Check the stored document `bytes`. Allocates nothing for a document
+    /// whose fields read are scalars.
+    pub(super) fn check(&self, bytes: &[u8]) -> Check {
+        let mut tops = [None; MAX_SLOTS];
+        if !find_tops(bytes, &self.tops, &mut tops) {
+            return Check::Fallback;
+        }
+        let mut slots = [NULL; MAX_SLOTS];
+        for (i, slot) in self.slots.iter().enumerate() {
+            match read_slot(tops[slot.top], &slot.rest) {
+                Some(d) => slots[i] = d,
+                None => return Check::Fallback,
+            }
+        }
+        if matches!(&slots[self.sort_slot], Datum::Val(v) if v.is_array() || v.is_object()) {
+            return Check::Stop;
+        }
+        if self
+            .filters
+            .iter()
+            .all(|f| f.eval(&slots[..self.slots.len()]))
+        {
+            Check::Pass
+        } else {
+            Check::Fail
+        }
+    }
+}
+
 /// Reads documents with a [`TypedPlan`].
 pub(super) struct TypedReader<'p> {
     plan: &'p TypedPlan,

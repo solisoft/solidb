@@ -17,6 +17,7 @@
 
 use super::super::types::Context;
 use super::super::QueryExecutor;
+use super::typed_scan::{Check, TypedFilters};
 use crate::error::DbResult;
 use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression, ForClause, Query};
 use crate::storage::raw_rows::RawShape;
@@ -279,6 +280,11 @@ impl QueryExecutor<'_> {
         }
         fields.sort_unstable();
         fields.dedup();
+        // The FILTERs checked on the stored bytes when they compile (field
+        // compared with a constant or bind variable, AND / OR / NOT …), with
+        // no row built; any document that cannot be read that way, and any
+        // query whose FILTERs do not compile, the ordinary way below.
+        let typed = TypedFilters::compile(self, var, &plan.filters, plan.sort_field);
 
         let mut out = Vec::new();
         let mut kept = 0usize;
@@ -292,6 +298,19 @@ impl QueryExecutor<'_> {
             want,
             max_scan,
             &mut |bytes| {
+                let passed = match typed.as_ref().map(|t| t.check(bytes)) {
+                    Some(Check::Pass) => true,
+                    Some(Check::Fail) => return Some(None),
+                    Some(Check::Stop) => return None,
+                    Some(Check::Fallback) | None => false,
+                };
+                if passed {
+                    if kept >= target.offset {
+                        crate::storage::raw_rows::write_row(bytes, shape, &mut out)?;
+                    }
+                    kept += 1;
+                    return Some(Some(()));
+                }
                 let row = crate::storage::raw_rows::project(bytes, &fields)?;
                 // The ordinary walk gives up on these too.
                 if matches!(

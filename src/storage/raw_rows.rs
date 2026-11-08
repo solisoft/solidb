@@ -185,7 +185,7 @@ fn write_system(out: &mut Vec<u8>, doc: &StoredDocRef, name: &str) -> Option<()>
         UPDATED_AT_FIELD => doc.updated_at,
         _ => return None,
     };
-    let text = std::str::from_utf8(raw).ok()?;
+    let text = utf8(raw)?;
     rmp::encode::write_str(out, name).ok()?;
     if name == CREATED_AT_FIELD || name == UPDATED_AT_FIELD {
         // `stored_timestamp_to_rfc3339`'s common case, written in place.
@@ -210,6 +210,105 @@ fn value_of<'v>(doc: &StoredDocRef, field: &str, found: Option<&'v [u8]>) -> Opt
         return system_value(doc, field);
     }
     Some(found.map_or(Out::Nil, Out::Raw))
+}
+
+/// `bytes` as UTF-8 text: checked at once when ASCII, as keys and system
+/// strings nearly always are.
+#[inline]
+fn utf8(bytes: &[u8]) -> Option<&str> {
+    if bytes.is_ascii() {
+        // SAFETY: ASCII is valid UTF-8.
+        Some(unsafe { std::str::from_utf8_unchecked(bytes) })
+    } else {
+        std::str::from_utf8(bytes).ok()
+    }
+}
+
+/// [`write_row`]'s whole document, for one stored as every writer stores it:
+/// its keys UTF-8, in strictly increasing order, each behind the shortest
+/// string header (what re-encoding writes), and none named like a system
+/// field. Its entries are then exactly what the re-encoded map holds between
+/// the system fields, so they are copied as runs of stored bytes — usually
+/// one, as the system fields (`_…`) sort before lowercase keys — and the
+/// system fields written in between. `None`, with `out` as it was, for any
+/// other document; the caller then writes it entry by entry.
+fn write_whole_in_runs(doc: &StoredDocRef, out: &mut Vec<u8>) -> Option<()> {
+    let start = out.len();
+    let written = (|| {
+        let data = doc.data;
+        let marker = *data.first()?;
+        let (len, mut pos) = match marker {
+            0x80..=0x8f => ((marker & 0x0f) as usize, 1),
+            0xde => (
+                u16::from_be_bytes(data.get(1..3)?.try_into().ok()?) as usize,
+                3,
+            ),
+            0xdf => (
+                u32::from_be_bytes(data.get(1..5)?.try_into().ok()?) as usize,
+                5,
+            ),
+            _ => return None,
+        };
+        rmp::encode::write_map_len(out, (len + SYSTEM_FIELDS.len()) as u32).ok()?;
+        let mut system = SYSTEM_FIELDS_SORTED.iter().peekable();
+        let mut run = pos;
+        let mut previous: Option<&[u8]> = None;
+        for _ in 0..len {
+            let entry = pos;
+            let m = *data.get(pos)?;
+            // The key's length, from the shortest header that holds it only.
+            let (klen, hdr) = match m {
+                0xa0..=0xbf => ((m & 0x1f) as usize, 1),
+                0xd9 => (*data.get(pos + 1)? as usize, 2),
+                0xda => (
+                    u16::from_be_bytes(data.get(pos + 1..pos + 3)?.try_into().ok()?) as usize,
+                    3,
+                ),
+                0xdb => (
+                    u32::from_be_bytes(data.get(pos + 1..pos + 5)?.try_into().ok()?) as usize,
+                    5,
+                ),
+                _ => return None,
+            };
+            let shortest = match klen {
+                0..=31 => 1,
+                32..=255 => 2,
+                256..=65_535 => 3,
+                _ => 5,
+            };
+            if hdr != shortest {
+                return None;
+            }
+            let key = data.get(pos + hdr..pos + hdr + klen)?;
+            if previous.is_some_and(|p| p >= key)
+                || (key.first() == Some(&b'_') && SYSTEM_FIELDS.iter().any(|f| f.as_bytes() == key))
+            {
+                return None;
+            }
+            utf8(key)?;
+            if system.peek().is_some_and(|name| name.as_bytes() < key) {
+                out.extend_from_slice(&data[run..entry]);
+                while let Some(name) = system.next_if(|name| name.as_bytes() < key) {
+                    write_system(out, doc, name)?;
+                }
+                run = entry;
+            }
+            pos = skip_value(data, pos + hdr + klen)?;
+            previous = Some(key);
+        }
+        if pos != data.len() {
+            return None;
+        }
+        out.extend_from_slice(&data[run..pos]);
+        for name in system {
+            write_system(out, doc, name)?;
+        }
+        Some(())
+    })();
+    if written.is_none() {
+        out.truncate(start);
+    }
+    written
 }
 
 /// Append one row, for the stored document `bytes`, to `out`. `None` (with
@@ -252,6 +351,9 @@ pub fn write_row(bytes: &[u8], shape: &RawShape, out: &mut Vec<u8>) -> Option<()
             }
         }
         RawShape::Whole => {
+            if write_whole_in_runs(&doc, out).is_some() {
+                return Some(());
+            }
             // The data fields, less any named like a system field (the
             // header's value wins). They are stored in key order, being
             // serialized from a `BTreeMap`, so the system fields are merged
@@ -368,6 +470,11 @@ mod tests {
                    "arr": [1, "two", [3, {"four": 4}], {}], "obj": {"b": 2, "a": {"x": [null]}}}),
             json!({"_key": "shadowed", "zzz": "last", "_id": 5, "long": "x".repeat(70_000)}),
             json!({}),
+            // Keys that sort around the system fields (`_…`): digits and
+            // capitals before them, `_a` between them, lowercase and
+            // non-ASCII after them.
+            json!({"0": 0, "Zed": "z", "_": 1, "_a": 2, "_kez": 3, "_rew": 4, "_z": 5,
+                   "a": {"_key": "nested"}, "é": "e", "k".repeat(40): "long key"}),
         ]
     }
 

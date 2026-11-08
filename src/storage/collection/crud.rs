@@ -104,6 +104,20 @@ impl Collection {
         deserialize_doc_as_value(&bytes)
     }
 
+    /// [`Self::get_value`] with only `fields` kept (data and system fields
+    /// alike), the others stepped over in the stored bytes rather than
+    /// decoded: the same values for the fields it keeps
+    /// ([`deserialize_doc_projected`]).
+    pub fn get_value_projected(&self, key: &str, fields: &[String]) -> DbResult<Value> {
+        let cf = self.live_cf()?;
+        let bytes = self
+            .db
+            .get_pinned_ks(&cf, Self::doc_key(key))
+            .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
+            .ok_or_else(|| DbError::DocumentNotFound(key.to_string()))?;
+        deserialize_doc_projected(&bytes, fields)
+    }
+
     /// Get multiple documents by keys
     pub fn get_many(&self, keys: &[String]) -> Vec<Document> {
         keys.iter().filter_map(|k| self.get(k).ok()).collect()

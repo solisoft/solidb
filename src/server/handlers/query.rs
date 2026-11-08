@@ -820,7 +820,8 @@ pub async fn execute_query(
             let replication_log = state.replication_log.clone();
             let shard_coordinator = state.shard_coordinator.clone();
             let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
-            let query = (*query).clone();
+            // The cached tree, shared with the blocking task rather than copied.
+            let query = prepared.query.clone();
             let principal = principal_from_claims(&claims);
 
             // Collections this query invalidates, resolved before the executor
@@ -989,7 +990,7 @@ pub async fn explain_query(
     Json(req): Json<ExecuteQueryRequest>,
 ) -> Result<Json<crate::sdbql::QueryExplain>, DbError> {
     let prepared = crate::sdbql::get_prepared_statement_cache().parse_if_needed(&req.query)?;
-    let query = (*prepared.query).clone();
+    let query = prepared.query.clone();
     let bind_vars = req.bind_vars.clone();
     let storage = state.storage.clone();
     let shard_coordinator = state.shard_coordinator.clone();

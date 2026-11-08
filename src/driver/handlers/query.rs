@@ -202,8 +202,9 @@ pub async fn handle_query(
 
     // Execution runs on the blocking pool under a timeout, mirroring the HTTP
     // /cursor handler: the executor is synchronous CPU work and must not pin
-    // the async runtime thread or run without an upper time bound.
-    let exec_query = (*query).clone();
+    // the async runtime thread or run without an upper time bound. The tree
+    // goes with it shared, not copied.
+    let exec_query = prepared.query.clone();
     let mut task = tokio::task::spawn_blocking(move || {
         let mut executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database)
@@ -335,7 +336,7 @@ pub async fn handle_explain(
     // principal that run would get.
     let principal = handler.query_principal(&database);
     let storage = handler.storage.clone();
-    let exec_query = (*prepared.query).clone();
+    let exec_query = prepared.query.clone();
 
     let task = tokio::task::spawn_blocking(move || {
         let executor = if bind_vars.is_empty() {
@@ -414,6 +415,94 @@ mod tests {
                 encode_response(&Response::ok(Value::Array(ordinary))).unwrap(),
                 "{g}"
             );
+        }
+    }
+
+    /// The SORT … LIMIT reads in index order of `benchmarks/compare` —
+    /// `recent`, copied from the stored bytes, and `join`, evaluated with a
+    /// DOCUMENT per row (one customer missing) — are answered on the async
+    /// worker when the LIMIT keeps at most `INLINE_INDEX_ROWS` rows, and on
+    /// the blocking pool past that; the client receives the ordinary path's
+    /// bytes either way.
+    #[tokio::test]
+    async fn sorted_reads_and_their_joins_send_the_ordinary_bytes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        for name in ["orders", "customers"] {
+            db.create_collection(name.to_string(), None).unwrap();
+        }
+        let orders = db.get_collection("orders").unwrap();
+        orders
+            .create_index(
+                "idx_t".into(),
+                vec!["t".into()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+        let docs = (0..400)
+            .map(|i| {
+                json!({
+                    "_key": format!("o{i:03}"),
+                    "t": format!("2025-01-{:02}T{:02}", 1 + i % 3, i % 24),
+                    "c": format!("c{}", i % 7),
+                    "amount": i as f64 / 4.0,
+                    "items": [{"sku": i, "qty": 1}],
+                })
+            })
+            .collect();
+        orders.insert_batch(docs).unwrap();
+        let customers = (0..6)
+            .map(|c| json!({"_key": format!("c{c}"), "name": format!("Customer {c}"), "tier": c % 2}))
+            .collect();
+        db.get_collection("customers")
+            .unwrap()
+            .insert_batch(customers)
+            .unwrap();
+
+        let h = DriverHandler::new(engine.clone(), None);
+        let vars = HashMap::from([
+            ("lo".to_string(), json!("2025-01-02")),
+            ("hi".to_string(), json!("2025-01-03")),
+        ]);
+        let window = "FOR o IN orders FILTER o.t >= @lo AND o.t < @hi SORT o.t DESC";
+        let join = "LET c = DOCUMENT(CONCAT('customers/', o.c)) \
+                    RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}";
+        for (limit, inline) in [(20, true), (64, true), (100, false)] {
+            for (q, raw) in [
+                (format!("{window} LIMIT {limit} RETURN o"), true),
+                (format!("{window} LIMIT {limit} {join}"), false),
+            ] {
+                let query = crate::sdbql::parse(&q).unwrap();
+                let executor =
+                    QueryExecutor::with_database_and_bind_vars(&engine, "d".into(), vars.clone());
+                // What `handle_query` decides on.
+                let answered_inline = if raw {
+                    matches!(
+                        executor.execute_raw_msgpack_small(&query, INLINE_INDEX_ROWS),
+                        Ok(SmallRaw::Rows(_))
+                    )
+                } else {
+                    per_row_work_is_light(&query)
+                        && matches!(
+                            executor.execute_small_sorted(&query, INLINE_INDEX_ROWS),
+                            Ok(Some(_))
+                        )
+                };
+                assert_eq!(answered_inline, inline, "{q}");
+
+                let resp = handle_query(&h, "d".into(), q.clone(), Some(vars.clone()), false).await;
+                assert_eq!(matches!(resp, Response::RawRows { .. }), raw, "{q}");
+                let ordinary = executor.execute(&query).unwrap();
+                assert_eq!(ordinary.len(), limit.min(133), "{q}");
+                assert_eq!(
+                    encode_response(&resp).unwrap(),
+                    encode_response(&Response::ok(Value::Array(ordinary))).unwrap(),
+                    "{q}"
+                );
+            }
         }
     }
 }

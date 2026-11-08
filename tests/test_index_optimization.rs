@@ -628,6 +628,46 @@ fn test_index_sorted_reads_match_the_scan() {
              LET p = DOCUMENT(CONCAT('people/', d.owner)) \
              RETURN {{k: d._key, t: d.t, who: p.name}}"
         ),
+        // The FILTERs checked on the stored bytes: a nested path, OR / NOT,
+        // IN, a bare field, a missing field.
+        format!(
+            "FOR d IN COLL {window} FILTER d.nested.a != null AND (d.owner == 'p1' OR NOT (d.n < 40)) \
+             SORT d.t DESC LIMIT 12 RETURN d"
+        ),
+        format!(
+            "FOR d IN COLL {window} FILTER d.owner IN ['p2', 'p3'] FILTER d.n SORT d.t LIMIT 9 RETURN d._key"
+        ),
+        format!("FOR d IN COLL {window} FILTER d.missing == null SORT d.t DESC LIMIT 4 RETURN d"),
+        // DOCUMENT read whole, its fields read through a later LET, its
+        // system fields, a field it lacks, a key that is not there.
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/', d.owner)) RETURN {{k: d._key, p}}"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/', d.owner)) LET who = UPPER(p.name) \
+             RETURN {{k: d._key, who, key: p._key, id: p._id, nope: p.nope}}"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/x', d.owner)) RETURN [d._key, p.name, p]"
+        ),
+        // Rebound, an array of ids, an argument that is not pure: read as
+        // DOCUMENT reads it.
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/', d.owner)) LET p = p.name RETURN p"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT([CONCAT('people/', d.owner), 'people/p4']) RETURN p[*].name"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/', d.owner, LENGTH(DOCUMENT('people/zz')) > 0 ? 'x' : '')) \
+             RETURN p.name"
+        ),
     ] {
         let (expected, _, _) = run(&q, "plain");
         let (rows, raw, small) = run(&q, "indexed");
@@ -640,6 +680,34 @@ fn test_index_sorted_reads_match_the_scan() {
         if let Some(small) = small {
             assert_eq!(small, rows, "{q}");
         }
+    }
+    // A DOCUMENT that fails fails the same way, inline or not.
+    for q in [
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('nowhere/', d.owner)) RETURN p.name"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 LET p = DOCUMENT(d.owner) RETURN p.name"
+        ),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('_env/', d.owner)) RETURN p.name"
+        ),
+    ] {
+        let fail = |coll: &str| {
+            let query = parse(&q.replace("COLL", coll)).unwrap();
+            let executor = QueryExecutor::with_database(&engine, "db".to_string());
+            let small = executor.execute_small_sorted(&query, 64).err();
+            (
+                executor.execute(&query).unwrap_err().to_string(),
+                small.map(|e| e.to_string()),
+            )
+        };
+        let (expected, _) = fail("plain");
+        let (rows, small) = fail("indexed");
+        assert_eq!(rows, expected, "{q}");
+        assert_eq!(small, Some(expected), "{q}");
     }
     // Copied for the driver, evaluated otherwise.
     let q = format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 10 RETURN d");
