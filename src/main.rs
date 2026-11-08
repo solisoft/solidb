@@ -308,8 +308,9 @@ struct Args {
     #[arg(long)]
     tls_key: Option<String>,
 
-    /// Shared RocksDB block cache size (`512MB`, `2GB`, or a byte count).
-    /// Defaults to 512MB (prod) or 128MB (--dev).
+    /// Block cache size of either engine (`512MB`, `2GB`, or a byte count).
+    /// Defaults to 40% of (memory − 1 GiB), at least 64 MiB, where memory is
+    /// the process's cgroup limit or else the host's total; 128MB with --dev.
     #[arg(long, value_parser = parse_size, env = "SOLIDB_BLOCK_CACHE")]
     block_cache: Option<usize>,
 

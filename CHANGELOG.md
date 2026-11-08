@@ -2,6 +2,79 @@
 
 ## [Unreleased]
 
+## [2.8.0](https://github.com/solisoft/solidb/compare/v2.7.3...v2.8.0) (2026-11-08)
+
+Measured with `benchmarks/compare` on rocky-build2 (Ryzen 9 9950X; the
+database on 4 cores and 16 GB; 1,000,000 orders; the solistore engine),
+2.7.3 → this release, against the best of PostgreSQL 18, MongoDB 9,
+ArangoDB 3.12 and SurrealDB 4: bulk load from 8 connections 116k → 410k
+documents/s (PostgreSQL 291k); a key read at concurrency 32 563k → 699k/s
+(366k); an indexed equality of ~10 documents 112k → 179k/s (170k); a one-day
+window sorted and limited 24k → 85k/s (67k); the same joined to customers
+20k → 54k/s (47k); an update 113k → 183k/s (MongoDB 112k).
+
+### Performance
+
+* **Document writes cost about half the CPU, and concurrent bulk inserts
+  into one collection no longer run one at a time.** Document keys are now
+  locked one by one instead of in 256 striped mutexes, of which a batch of
+  1,000 keys took nearly all. Index maintenance reads only the indexed
+  fields; the schema and vector-index definitions are cached; change events
+  are built only when someone subscribes; a bulk insert serialises its
+  documents and builds its index entries before taking the locks and checks
+  existence with one multi-get; the native driver decodes write commands
+  directly; and a deferred replication log no longer costs a JSON encoding
+  per write. Cycles per operation: bulk load −50 to −60%, insert −37 to
+  −57%, update −32 to −45%.
+* **Index reads over the driver are copied from the stored bytes more
+  often, and small ones skip the blocking pool.** An equality read through
+  an index that names at most 64 documents is answered on the connection's
+  worker. A `FILTER … SORT f LIMIT n` read in index order and returning
+  documents or their fields is copied from the stored bytes, each candidate
+  checked against the FILTER on a decode of only the fields it reads; when
+  it returns computed rows (`LET c = DOCUMENT(…) RETURN {…}`), each row
+  decodes only the fields the query uses. Server CPU per request on
+  solistore: equality −33%, key read −27%, sorted window −79%, join −65%.
+* **A full-scan `COLLECT` reads its fields from the stored bytes, and on
+  RocksDB splits the scan across threads.** When the group keys and
+  aggregate arguments are fields of the loop variable and each FILTER
+  compares a field with a constant or a bind variable, they are read
+  straight from the stored MessagePack and no document is decoded (EXPLAIN:
+  `reading only amount, status from the stored bytes`): about 6,400 → 2,800
+  instructions per document. On engines with snapshots (RocksDB today), a
+  collection of 65,536 documents or more is split into key ranges read at
+  one snapshot and merged, when every aggregate merges exactly (COUNT, SUM,
+  AVG, MIN, MAX, COUNT_DISTINCT, BIT_*): 1,264 → 270 ms for 1M orders on 4
+  cores, with the same answer as one thread. New setting
+  `SOLIDB_SCAN_THREADS` (default: the CPUs the process may use; `1` turns it
+  off). Storage scans now borrow the engine's bytes instead of copying each
+  key and value.
+
+### Changed
+
+* **The block cache is sized from the memory available.** In production it
+  defaults to 40% of (memory − 1 GiB), at least 64 MiB, where memory is the
+  process's cgroup limit when there is one, else the host's total: 6 GiB in
+  a 16 GiB container, 25 GiB on a 62 GiB host. It was a fixed 512 MB. On a
+  host shared with other services, set `--block-cache` /
+  `SOLIDB_BLOCK_CACHE`; `--dev` keeps 128 MB. The startup log says how much
+  and why; `/metrics` has `solidb_block_cache_capacity_bytes`.
+* **`SUM` and `AVG` add exactly and round once**, in `COLLECT … AGGREGATE`
+  and on arrays, so the result no longer depends on the order of the
+  values (which a parallel scan needs). Ten `0.1` now sum to `1.0` (was
+  `0.9999999999999999`); `AVG([0.1,0.2,0.3])` is `0.19999999999999998` (was
+  `0.20000000000000004`). `SUM([])` is still `-0.0`; the `+` operator is
+  unchanged.
+
+### Bug Fixes
+
+* **A driver `update` with `merge: true` could lose a concurrent write.** It
+  read the document outside its lock and wrote back every field from that
+  read; it now reads and writes under the lock.
+* **A write racing an index creation could keep the old index
+  definitions** until the next index change, leaving documents out of the
+  new index.
+
 ## [2.7.3](https://github.com/solisoft/solidb/compare/v2.7.2...v2.7.3) (2026-11-08)
 
 ### Performance

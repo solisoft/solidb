@@ -9,6 +9,24 @@
     </p>
   </div>
 
+  <!-- 2.8.0 -->
+  <section id="v2-8-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.8.0</h2>
+      <span class="text-sm font-medium text-gray-400">November 8, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Writes cost about half the CPU, and concurrent bulk loads run side by side</strong> &mdash; document keys are locked one by one instead of in 256 stripes, which a batch of 1,000 keys nearly all took. Index maintenance reads only the indexed fields, definitions are cached, and the driver decodes write commands directly. Bulk load from 8 connections went from 116k to 410k documents/s on 4 cores (solistore, 1M orders).</li>
+        <li><strong class="text-white">Index reads over the driver copy stored bytes</strong> &mdash; small equality reads skip the blocking pool, and a <code>FILTER &hellip; SORT f LIMIT n</code> read in index order is copied from the stored bytes; a join over it decodes only the fields it uses. At concurrency 32: equality 112k &rarr; 179k/s, a sorted one-day window 24k &rarr; 85k/s, the same joined 20k &rarr; 54k/s.</li>
+        <li><strong class="text-white">A full-scan <code>COLLECT</code> reads its fields from the stored bytes</strong> &mdash; no document is decoded when the keys, aggregate arguments and FILTER operands are plain fields; on RocksDB the scan is also split across threads at one snapshot (1,264 &rarr; 270&nbsp;ms for 1M orders on 4 cores). New setting <code>SOLIDB_SCAN_THREADS</code>.</li>
+        <li><strong class="text-white">The block cache is sized from the memory available</strong> &mdash; 40% of (memory &minus; 1&nbsp;GiB), memory being the cgroup limit or else the host's, instead of a fixed 512&nbsp;MB. On a shared host, set <code>--block-cache</code>.</li>
+        <li><strong class="text-white"><code>SUM</code> and <code>AVG</code> are exact</strong> &mdash; values are added without rounding and the result rounded once, so it no longer depends on their order: ten <code>0.1</code> now sum to <code>1.0</code>.</li>
+        <li><strong class="text-white">Bug fixes</strong> &mdash; a driver <code>update</code> with <code>merge: true</code> could lose a concurrent write to another field; a write racing an index creation could leave documents out of the new index.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.7.3 -->
   <section id="v2-7-3" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
