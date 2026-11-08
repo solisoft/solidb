@@ -80,6 +80,12 @@ impl Observation {
         }
     }
 
+    /// Drop without recording: the work measured so far is handed on to
+    /// another observation that will record the query.
+    pub fn cancel(mut self) {
+        self.recorded = true;
+    }
+
     /// Record now and return the measured duration.
     pub fn finish(mut self) -> Duration {
         let elapsed = self.start.elapsed();

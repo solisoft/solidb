@@ -349,6 +349,37 @@ impl Kv {
         }
     }
 
+    /// Several keys of one column family at once, read at one point in
+    /// time, without copying the values: RocksDB's batched `MultiGet`
+    /// (one super-version, filters probed per batch) and pinned slices, or
+    /// solistore's shared buffers. In the order of `keys`.
+    pub fn multi_get_pinned_cf<K: AsRef<[u8]>>(
+        &self,
+        cf: &KvCf,
+        keys: &[K],
+    ) -> Vec<Result<Option<KvPinned<'_>>, KvError>> {
+        match (&self.engine, cf) {
+            (Engine::Rocks(db), KvCf::Rocks(h)) => db
+                .batched_multi_get_cf(h, keys.iter().map(|k| k.as_ref()), false)
+                .into_iter()
+                .map(|r| r.map(|v| v.map(KvPinned::Rocks)).map_err(KvError::from))
+                .collect(),
+            #[cfg(feature = "engine-solistore")]
+            (Engine::Solistore(db), KvCf::Solistore(h)) => match db.multi_get(h, keys) {
+                Ok(values) => values
+                    .into_iter()
+                    .map(|v| Ok(v.map(KvPinned::Solistore)))
+                    .collect(),
+                Err(e) => {
+                    let e = KvError::from(e);
+                    keys.iter().map(|_| Err(e.clone())).collect()
+                }
+            },
+            #[cfg(feature = "engine-solistore")]
+            _ => mixed_engines(),
+        }
+    }
+
     /// Several keys at once, read at one point in time.
     pub fn multi_get_cf<'c, 'h: 'c, K: AsRef<[u8]>>(
         &self,

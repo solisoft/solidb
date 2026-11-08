@@ -31,16 +31,17 @@ pub enum Response {
     Rows {
         data: SharedRows,
     },
-    /// An `Ok` whose rows are already an encoded MessagePack array, copied
-    /// from storage (`sdbql` raw scan). `encode_response` writes it around
-    /// the bytes; the `Serialize` below only runs inside a `Batch`.
+    /// An `Ok` whose data is already encoded MessagePack copied from
+    /// storage: an array of rows (`sdbql` raw scan) or one document (a
+    /// get). `encode_response` writes it around the bytes; the `Serialize`
+    /// below only runs inside a `Batch`.
     #[serde(rename = "ok", skip_deserializing)]
     RawRows {
         data: RawRows,
     },
 }
 
-/// A MessagePack array of rows, already encoded.
+/// MessagePack data (an array of rows, or one document), already encoded.
 #[derive(Debug, Clone)]
 pub struct RawRows(pub Vec<u8>);
 
@@ -77,7 +78,7 @@ impl Response {
         }
     }
 
-    /// Rows already encoded as a MessagePack array.
+    /// Data already encoded as MessagePack: an array of rows, or a value.
     pub fn raw_rows(rows: Vec<u8>) -> Self {
         Response::RawRows {
             data: RawRows(rows),

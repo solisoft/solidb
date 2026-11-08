@@ -1,11 +1,13 @@
 use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
 use crate::error::DbResult;
+use crate::sdbql::executor::SmallRaw;
 use crate::sdbql::{Query, QueryExecutor};
 // Shared with the HTTP /cursor handler so both protocols cache, invalidate,
 // and decide what needs the blocking pool on exactly the same terms.
 use crate::server::handlers::query::{
-    invalidate_collections, is_long_running_query, is_small_local_scan, mutated_collections,
+    expression_is_heavy, invalidate_collections, is_long_running_query, is_small_local_scan,
+    mutated_collections,
 };
 use crate::server::query_metrics::{Observation, QueryKind};
 use crate::storage::query_cache;
@@ -16,6 +18,11 @@ use std::collections::HashMap;
 /// port runs unbounded — the 30s HTTP cap only protected one of the two
 /// protocols.
 const QUERY_TIMEOUT_SECS: u64 = 30;
+
+/// Most rows an index equality may name and still be answered on the async
+/// worker (see `handle_query`): each is a point read of a document, so this
+/// bounds the time the worker is held to a few dozen of them.
+const INLINE_INDEX_ROWS: usize = 64;
 
 /// Execute an SDBQL query over the native driver protocol.
 ///
@@ -112,6 +119,63 @@ pub async fn handle_query(
     let replication = handler.replication.clone();
     let try_raw = cache_key.is_none() && !mutates;
 
+    // An equality read through an index that names a few documents is a
+    // handful of point reads: answered here, as a single-document get is,
+    // instead of on the blocking pool below, whose round trip (a pool
+    // thread woken, then this task woken back) cost more than the reads.
+    // The index is read first, and anything larger goes on to the pool
+    // with nothing fetched.
+    if !mutates && is_long_running_query(query) {
+        let executor = if bind_vars.is_empty() {
+            QueryExecutor::with_database(&storage, database.clone())
+        } else {
+            QueryExecutor::with_database_and_bind_vars(
+                &storage,
+                database.clone(),
+                bind_vars.clone(),
+            )
+        }
+        .with_principal(principal.clone())
+        .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
+        let observed = Observation::start(QueryKind::of(mutates));
+        if try_raw {
+            match executor.execute_raw_msgpack_small(query, INLINE_INDEX_ROWS) {
+                Ok(SmallRaw::Rows(rows)) => {
+                    observed.finish();
+                    return Response::raw_rows(rows);
+                }
+                Ok(SmallRaw::NotSmall | SmallRaw::Ordinary) => {}
+                Err(e) => {
+                    observed.finish();
+                    return Response::error(DriverError::DatabaseError(e.to_string()));
+                }
+            }
+        }
+        // The same for a SORT read in index order whose rows are evaluated
+        // (`LET c = DOCUMENT(…) RETURN {…}`), when what each row evaluates
+        // is itself cheap.
+        if per_row_work_is_light(query) {
+            match executor.execute_small_sorted(query, INLINE_INDEX_ROWS) {
+                Ok(Some(rows)) => {
+                    observed.finish();
+                    return respond(
+                        Ok(Rows::Values(rows)),
+                        cache_key,
+                        cache_generation,
+                        mutates,
+                        &invalidated,
+                    );
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    observed.finish();
+                    return Response::error(DriverError::DatabaseError(e.to_string()));
+                }
+            }
+        }
+        observed.cancel();
+    }
+
     // Point reads run inline. The HTTP handler gates `spawn_blocking` on the
     // same predicate: a thread handoff costs more than the query itself on a
     // single-document read, and this handler exists to close a CPU-per-request
@@ -191,6 +255,23 @@ pub async fn handle_query(
             )))
         }
     }
+}
+
+/// Whether everything `query` evaluates per row — its FILTERs and LETs, the
+/// LETs after its LIMIT, its RETURN — is cheap: no subquery, and none of the
+/// functions that scan or call out ([`expression_is_heavy`]).
+fn per_row_work_is_light(query: &Query) -> bool {
+    use crate::sdbql::BodyClause;
+    let light = |e: &crate::sdbql::Expression| !expression_is_heavy(e);
+    query.body_clauses.iter().skip(1).all(|c| match c {
+        BodyClause::Filter(f) => light(&f.expression),
+        BodyClause::Let(l) => light(&l.expression),
+        _ => false,
+    }) && query.post_limit_lets.iter().all(|l| light(&l.expression))
+        && query
+            .return_clause
+            .as_ref()
+            .is_some_and(|r| light(&r.expression))
 }
 
 /// Run `query`, copying the rows straight from storage when `try_raw` and the
@@ -282,5 +363,57 @@ pub async fn handle_explain(
             "Explain timeout: exceeded {} seconds",
             QUERY_TIMEOUT_SECS
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::protocol::encode_response;
+    use crate::storage::{IndexType, StorageEngine};
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+
+    /// An index equality naming at most `INLINE_INDEX_ROWS` documents is
+    /// answered on the async worker, one naming more on the blocking pool;
+    /// either way the client receives the bytes the ordinary path's rows
+    /// encode to.
+    #[tokio::test]
+    async fn small_and_large_index_reads_send_the_ordinary_bytes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.create_index(
+            "idx_g".into(),
+            vec!["g".into()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+        // More documents than a scan may read inline, so only the index
+        // read decides.
+        let docs = (0..300)
+            .map(|i| json!({"_key": format!("k{i:03}"), "g": if i < 3 { "few" } else { "many" }, "n": i}))
+            .collect();
+        coll.insert_batch(docs).unwrap();
+        let h = DriverHandler::new(engine.clone(), None);
+        let q = "FOR d IN c FILTER d.g == @g RETURN d";
+        for (g, n) in [("few", 3), ("many", 297), ("none", 0)] {
+            let vars = HashMap::from([("g".to_string(), json!(g))]);
+            let resp = handle_query(&h, "d".into(), q.into(), Some(vars.clone()), false).await;
+            assert!(matches!(resp, Response::RawRows { .. }), "{g}: {resp:?}");
+            let ordinary = QueryExecutor::with_database_and_bind_vars(&engine, "d".into(), vars)
+                .execute(&crate::sdbql::parse(q).unwrap())
+                .unwrap();
+            assert_eq!(ordinary.len(), n, "{g}");
+            assert_eq!(
+                encode_response(&resp).unwrap(),
+                encode_response(&Response::ok(Value::Array(ordinary))).unwrap(),
+                "{g}"
+            );
+        }
     }
 }

@@ -30,12 +30,12 @@ use crate::storage::{Collection, Document};
 /// The parts of `FOR v IN c FILTER … [LET …]* SORT v.f LIMIT …` this path
 /// serves: the loop, its FILTERs, the LETs after them, the sort field and
 /// direction.
-struct SortPlan<'q> {
-    for_clause: &'q ForClause,
-    filters: Vec<&'q Expression>,
-    lets: Vec<&'q LetClause>,
-    sort_field: &'q str,
-    ascending: bool,
+pub(super) struct SortPlan<'q> {
+    pub(super) for_clause: &'q ForClause,
+    pub(super) filters: Vec<&'q Expression>,
+    pub(super) lets: Vec<&'q LetClause>,
+    pub(super) sort_field: &'q str,
+    pub(super) ascending: bool,
 }
 
 fn sort_plan(query: &Query) -> Option<SortPlan<'_>> {
@@ -127,12 +127,12 @@ pub(in crate::sdbql::executor) struct SortedRead {
 
 /// What [`QueryExecutor::sorted_read_target`] finds: the query's parts, the
 /// collection, the read planned and the LIMIT.
-struct SortedTarget<'q> {
-    plan: SortPlan<'q>,
-    collection: Collection,
-    read: SortedReadPlan,
-    offset: usize,
-    count: usize,
+pub(super) struct SortedTarget<'q> {
+    pub(super) plan: SortPlan<'q>,
+    pub(super) collection: Collection,
+    pub(super) read: SortedReadPlan,
+    pub(super) offset: usize,
+    pub(super) count: usize,
 }
 
 impl QueryExecutor<'_> {
@@ -147,6 +147,16 @@ impl QueryExecutor<'_> {
             return Ok(None);
         };
         let offset = target.offset;
+        // The query reads only some fields of each row: decode just those.
+        if let Some((_, fields)) = super::super::projection::scan_projection(query) {
+            let cap = self.max_intermediate_rows();
+            if let Some(rows) = self.walk_sorted_projected(&target, bindings, &fields, cap)? {
+                return Ok(Some(QueryExecutionResult {
+                    results: self.sorted_rows_out(query, &target, rows)?,
+                    mutations: MutationStats::new(),
+                }));
+            }
+        }
         let Some((plan, docs, _)) = self.walk_sorted(target, bindings)? else {
             return Ok(None);
         };
@@ -214,7 +224,7 @@ impl QueryExecutor<'_> {
     /// Everything that decides whether `query` is read in index order — its
     /// shape, the collection's guards, the LIMIT and the index — with no
     /// document read (the planner may count index entries).
-    fn sorted_read_target<'q>(
+    pub(super) fn sorted_read_target<'q>(
         &self,
         query: &'q Query,
         bindings: &Context,
@@ -265,6 +275,117 @@ impl QueryExecutor<'_> {
             offset,
             count,
         })
+    }
+
+    /// [`Self::try_index_sort_limit`]'s rows, but only when its LIMIT keeps
+    /// at most `max_rows` rows, the query reads only some fields of each
+    /// (`projection::scan_projection`) and the walk reads at most four times
+    /// `max_rows` documents: a few point reads, which the driver answers
+    /// where a single-document get is answered. `Ok(None)` for anything
+    /// else, with nothing left half done: the query is then run as usual.
+    /// The caller checks the per-row LETs and the RETURN are cheap.
+    pub fn execute_small_sorted(
+        &self,
+        query: &Query,
+        max_rows: usize,
+    ) -> DbResult<Option<Vec<serde_json::Value>>> {
+        if !query.let_clauses.is_empty() {
+            return Ok(None);
+        }
+        self.reset_query_caches();
+        crate::sdbql::executor::builtins::crypto::reset_query_budget();
+        let bindings = Context::default();
+        let Some(target) = self.sorted_read_target(query, &bindings) else {
+            return Ok(None);
+        };
+        if target.offset + target.count > max_rows {
+            return Ok(None);
+        }
+        let Some((_, fields)) = super::super::projection::scan_projection(query) else {
+            return Ok(None);
+        };
+        let max_scan = max_rows.saturating_mul(4);
+        let Some(rows) = self.walk_sorted_projected(&target, &bindings, &fields, max_scan)? else {
+            return Ok(None);
+        };
+        self.sorted_rows_out(query, &target, rows).map(Some)
+    }
+
+    /// The RETURN of each row a sorted walk kept past the LIMIT's offset,
+    /// its LETs bound first.
+    fn sorted_rows_out(
+        &self,
+        query: &Query,
+        target: &SortedTarget<'_>,
+        rows: Vec<Context>,
+    ) -> DbResult<Vec<serde_json::Value>> {
+        let mut results = Vec::with_capacity(rows.len().saturating_sub(target.offset));
+        for mut ctx in rows.into_iter().skip(target.offset) {
+            for let_clause in target
+                .plan
+                .lets
+                .iter()
+                .copied()
+                .chain(&query.post_limit_lets)
+            {
+                self.bind_let(let_clause, &mut ctx)?;
+            }
+            if let Some(ref ret) = query.return_clause {
+                results.push(self.evaluate_expr_with_context(&ret.expression, &ctx)?);
+            }
+        }
+        Ok(results)
+    }
+
+    /// [`Self::walk_sorted`] for a query that reads only `fields` of each
+    /// row (`projection::scan_projection`): each document decoded to those
+    /// fields alone, straight from its stored bytes, and the rows kept as
+    /// the context the FILTERs saw. `Ok(None)` when the walk gives up or a
+    /// document cannot be read this way; the caller then walks with whole
+    /// documents, which decides.
+    fn walk_sorted_projected(
+        &self,
+        target: &SortedTarget<'_>,
+        bindings: &Context,
+        fields: &[String],
+        max_scan: usize,
+    ) -> DbResult<Option<Vec<Context>>> {
+        let plan = &target.plan;
+        let var = &plan.for_clause.variable;
+        let (lower, upper) = target.read.bounds();
+        let Some((rows, _)) = target.collection.index_sorted_range_by(
+            &target.read.index,
+            &target.read.eq_values,
+            lower,
+            upper,
+            plan.ascending,
+            target.offset + target.count,
+            max_scan,
+            &mut |bytes| {
+                let row = crate::storage::raw_rows::project(bytes, fields)?;
+                if matches!(
+                    row.get(plan.sort_field),
+                    Some(serde_json::Value::Array(_) | serde_json::Value::Object(_))
+                ) {
+                    return None;
+                }
+                let mut ctx = bindings.clone();
+                ctx.insert(var.clone(), row);
+                for filter in &plan.filters {
+                    if !self
+                        .evaluate_filter_with_context(filter, &ctx)
+                        .unwrap_or(false)
+                    {
+                        return Some(None);
+                    }
+                }
+                Some(Some(ctx))
+            },
+        ) else {
+            return Ok(None);
+        };
+        self.check_budget(rows.len())?;
+        Ok(Some(rows))
     }
 
     /// Walk the planned index range, keeping the first `offset + count` rows

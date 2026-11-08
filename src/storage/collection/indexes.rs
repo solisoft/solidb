@@ -1676,8 +1676,9 @@ impl Collection {
         Ok(Some(count))
     }
 
-    /// [`Self::index_lookup_eq`] then rows `offset..offset + limit`, written
-    /// for `shape` straight from the stored bytes (see
+    /// [`Self::index_eq_doc_keys`] then [`Self::raw_rows_of`] them: rows
+    /// `offset..offset + limit` of [`Self::index_lookup_eq`], written for
+    /// `shape` straight from the stored bytes (see
     /// [`crate::storage::raw_rows`]). `Ok(None)` when no single-field index
     /// serves `field`, or when a document is missing or cannot be copied
     /// this way: the caller then runs the query the ordinary way. The flag
@@ -1690,11 +1691,32 @@ impl Collection {
         offset: usize,
         limit: usize,
         shape: &crate::storage::raw_rows::RawShape,
-        mut check: impl FnMut(usize) -> DbResult<()>,
+        check: impl FnMut(usize) -> DbResult<()>,
     ) -> DbResult<Option<(usize, Vec<u8>, bool)>> {
+        let Some((keys, seen)) = self.index_eq_doc_keys(field, value, offset, limit, check)? else {
+            return Ok(None);
+        };
+        Ok(self
+            .raw_rows_of(&keys, shape)?
+            .map(|body| (keys.len(), body, seen)))
+    }
+
+    /// The storage keys (`doc:<key>`) of rows `offset..offset + limit` of
+    /// [`Self::index_lookup_eq`], in index order, read from the index alone.
+    /// `Ok(None)` when no single-field index serves `field`. The flag says
+    /// whether the index holds the value at all, rows skipped by `offset`
+    /// included. `check` is called every 4096 keys.
+    pub fn index_eq_doc_keys(
+        &self,
+        field: &str,
+        value: &Value,
+        offset: usize,
+        limit: usize,
+        mut check: impl FnMut(usize) -> DbResult<()>,
+    ) -> DbResult<Option<(Vec<Vec<u8>>, bool)>> {
         let prefix = match self.index_eq_prefix(field, value) {
             EqPrefix::NoIndex => return Ok(None),
-            EqPrefix::Empty => return Ok(Some((0, Vec::new(), false))),
+            EqPrefix::Empty => return Ok(Some((Vec::new(), false))),
             EqPrefix::Prefix(p) => p,
         };
         let Some(cf) = self.ks.handle(&self.db) else {
@@ -1712,16 +1734,35 @@ impl Collection {
                 skipped += 1;
                 return Ok(true);
             }
-            keys.push(Self::doc_key(&String::from_utf8_lossy(doc_key)));
+            let mut key = Vec::with_capacity(DOC_PREFIX.len() + doc_key.len());
+            key.extend_from_slice(DOC_PREFIX.as_bytes());
+            key.extend_from_slice(doc_key);
+            keys.push(key);
             if keys.len().is_multiple_of(4096) {
                 check(keys.len())?;
             }
             Ok(keys.len() < limit)
         })?;
-        let mut out = Vec::new();
-        for doc in self.db.multi_get_ks(&cf, keys.iter().map(|k| k.as_slice())) {
-            // A missing document is dropped by the ordinary path; leave the
-            // whole query to it rather than reproduce that here.
+        Ok(Some((keys, seen)))
+    }
+
+    /// The documents stored under `keys` (as [`Self::index_eq_doc_keys`]
+    /// returns them), each written as one row for `shape` straight from its
+    /// stored bytes, in order, read at one point in time without copying
+    /// them out of the engine first. `Ok(None)` when a document is missing
+    /// or cannot be copied this way: the ordinary path drops a missing one,
+    /// and the caller leaves the whole query to it rather than reproduce
+    /// that here.
+    pub fn raw_rows_of(
+        &self,
+        keys: &[Vec<u8>],
+        shape: &crate::storage::raw_rows::RawShape,
+    ) -> DbResult<Option<Vec<u8>>> {
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(None);
+        };
+        let mut out = Vec::with_capacity(keys.len() * 512);
+        for doc in self.db.multi_get_pinned_ks(&cf, keys) {
             let Ok(Some(bytes)) = doc else {
                 return Ok(None);
             };
@@ -1729,7 +1770,7 @@ impl Collection {
                 return Ok(None);
             }
         }
-        Ok(Some((keys.len(), out, seen)))
+        Ok(Some(out))
     }
 
     /// Documents of a multi-field `index` whose leading fields equal
@@ -2074,10 +2115,50 @@ impl Collection {
         max_scan: usize,
         accept: &mut dyn FnMut(&Document) -> bool,
     ) -> Option<(Vec<Document>, usize)> {
+        let sort_field = index.fields.last()?;
+        self.index_sorted_range_by(
+            index,
+            eq_values,
+            lower,
+            upper,
+            ascending,
+            want,
+            max_scan,
+            &mut |bytes| {
+                let Ok(doc) = deserialize_doc(bytes) else {
+                    return Some(None);
+                };
+                // `doc.data` holds the field as `to_value` has it: a system
+                // field it lacks is a string there, never an array or object.
+                if is_complex(&extract_field_value(&doc.data, sort_field)) {
+                    return None;
+                }
+                Some(accept(&doc).then_some(doc))
+            },
+        )
+    }
+
+    /// [`Self::index_sorted_range`] with each document's stored bytes handed
+    /// to `take`, which keeps it as a `T` (`Some(Some(t))`), rejects it
+    /// (`Some(None)`) or gives the whole read up (`None`, which the read
+    /// then returns: a sort value that is an array or object, a document it
+    /// cannot read). A document that is missing is skipped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn index_sorted_range_by<T>(
+        &self,
+        index: &crate::storage::index::Index,
+        eq_values: &[Value],
+        lower: Option<(&Value, bool)>,
+        upper: Option<(&Value, bool)>,
+        ascending: bool,
+        want: usize,
+        max_scan: usize,
+        take: &mut dyn FnMut(&[u8]) -> Option<Option<T>>,
+    ) -> Option<(Vec<T>, usize)> {
         const BATCH: usize = 256;
 
-        let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
-        let (sort_field, leading) = index.fields.split_last()?;
+        let complex = is_complex;
+        let (_, leading) = index.fields.split_last()?;
         if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
             || eq_values.len() != leading.len()
             || eq_values.iter().any(complex)
@@ -2158,19 +2239,13 @@ impl Collection {
             }
             for bytes in self
                 .db
-                .multi_get_ks(&cf, batch.iter().map(|k| k.as_slice()))
+                .multi_get_pinned_ks(&cf, &batch)
                 .into_iter()
                 .filter_map(|r| r.ok())
                 .flatten()
             {
-                let Ok(doc) = deserialize_doc(&bytes) else {
-                    continue;
-                };
-                if complex(&extract_field_value(&doc.to_value(), sort_field)) {
-                    return None;
-                }
-                if accept(&doc) {
-                    kept.push(doc);
+                if let Some(t) = take(&bytes)? {
+                    kept.push(t);
                 }
                 if kept.len() == want {
                     break;
@@ -2441,6 +2516,12 @@ impl Collection {
 
         Ok((keys_to_remove, geo_keys_to_remove))
     }
+}
+
+/// An array or object: what the index codec orders as JSON text rather
+/// than as SORT and the comparison operators do.
+fn is_complex(v: &Value) -> bool {
+    matches!(v, Value::Array(_) | Value::Object(_))
 }
 
 /// What an equality reads in a single-field index.

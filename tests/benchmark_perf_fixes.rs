@@ -736,6 +736,574 @@ fn benchmark_planner_cost_choice() {
     }
 }
 
+/// SplitMix64, as `benchmarks/compare/src/data.rs` draws its orders.
+fn mix(seed: u64, i: u64) -> u64 {
+    let mut z = seed ^ i.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+fn env_or<T: std::str::FromStr>(name: &str, default: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// Order `i` of `benchmarks/compare` (`data.rs`): about 500 B of JSON, keyed
+/// `o0000042`, whose customer (`c00042`, one of `customers`) is drawn at
+/// random, so that a customer's orders lie in unrelated places of the
+/// collection.
+fn compare_order(i: u64, customers: u64) -> serde_json::Value {
+    const STATUSES: [&str; 5] = ["delivered", "shipped", "pending", "cancelled", "returned"];
+    const COUNTRIES: [&str; 20] = [
+        "FR", "DE", "ES", "IT", "GB", "NL", "BE", "CH", "PT", "SE", "NO", "DK", "PL", "AT", "IE",
+        "US", "CA", "BR", "JP", "AU",
+    ];
+    const CITIES: [&str; 8] = [
+        "Lyon", "Paris", "Lille", "Nantes", "Bordeaux", "Berlin", "Madrid", "Milan",
+    ];
+    const STREETS: [&str; 4] = [
+        "rue des Lilas",
+        "avenue Jean Jaurès",
+        "boulevard Voltaire",
+        "place Bellecour",
+    ];
+    const TAGS: [&str; 12] = [
+        "gift",
+        "express",
+        "promo",
+        "first-order",
+        "b2b",
+        "fragile",
+        "bulky",
+        "subscription",
+        "loyalty",
+        "marketplace",
+        "pickup",
+        "eco",
+    ];
+    const NOTES: [&str; 4] = [
+        "Leave the parcel with the concierge if nobody answers the door.",
+        "Call before delivery; the intercom does not work.",
+        "Deliver to the side entrance, next to the bakery.",
+        "",
+    ];
+    let h = mix(4, i);
+    let items: Vec<_> = (0..3u64)
+        .map(|k| {
+            let h = mix(10 + k, i);
+            json!({
+                "sku": format!("SKU-{:05}", h % 50_000),
+                "qty": 1 + (h >> 20) % 4,
+                "price": (199 + (h >> 32) % 9_800) as f64 / 100.0,
+            })
+        })
+        .collect();
+    json!({
+        "_key": format!("o{i:07}"),
+        "customer_id": format!("c{:05}", mix(1, i) % customers),
+        "status": STATUSES[(mix(2, i) % 5) as usize],
+        "amount": (mix(3, i) % 100_000) as f64 / 100.0,
+        "currency": "EUR",
+        "created_at": format!(
+            "2025-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            1 + h % 12, 1 + (h >> 4) % 28, (h >> 9) % 24, (h >> 14) % 60, (h >> 20) % 60
+        ),
+        "country": COUNTRIES[(h % 20) as usize],
+        "channel": (["web", "mobile", "store", "phone"][(h >> 8) as usize % 4]),
+        "tags": [
+            TAGS[(h >> 12) as usize % 12],
+            TAGS[(h >> 16) as usize % 12],
+            TAGS[(h >> 20) as usize % 12],
+        ],
+        "items": items,
+        "address": {
+            "street": format!("{} {}", 1 + (h >> 24) % 180, STREETS[(h >> 32) as usize % 4]),
+            "city": CITIES[(h >> 36) as usize % 8],
+            "zip": format!("{:05}", 1000 + (h >> 40) % 94_000),
+        },
+        "note": NOTES[(h >> 48) as usize % 4],
+    })
+}
+
+/// This thread's CPU time in microseconds (Linux; wall-clock time from an
+/// arbitrary origin elsewhere), so that a stage timed on a loaded host does
+/// not count the time it waited for a core.
+fn thread_cpu_us() -> f64 {
+    #[cfg(target_os = "linux")]
+    {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: `ts` is a valid timespec for the call to fill.
+        if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) } == 0 {
+            return ts.tv_sec as f64 * 1e6 + ts.tv_nsec as f64 / 1e3;
+        }
+    }
+    static ORIGIN: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(Instant::now).elapsed().as_secs_f64() * 1e6
+}
+
+/// CPU time, in nanoseconds, of this process's threads whose name starts
+/// with `prefix` (Linux; 0 elsewhere). Read from `schedstat`, so a loaded
+/// host's waiting does not count, as it does in wall-clock throughput.
+fn threads_cpu_ns(prefix: &str) -> u64 {
+    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+        return 0;
+    };
+    tasks
+        .filter_map(|t| t.ok())
+        .filter(|t| {
+            std::fs::read_to_string(t.path().join("comm")).is_ok_and(|c| c.starts_with(prefix))
+        })
+        .filter_map(|t| std::fs::read_to_string(t.path().join("schedstat")).ok())
+        .filter_map(|s| s.split_whitespace().next()?.parse::<u64>().ok())
+        .sum()
+}
+
+/// One measured series over the driver: `conc` connections, each sending
+/// `op` back to back for `secs` after `warm`. Ops per second, p50 and p99
+/// latency in microseconds, and the server's CPU microseconds per op.
+fn driver_series<F, Fut>(
+    rt: &tokio::runtime::Runtime,
+    addr: &str,
+    conc: usize,
+    warm: std::time::Duration,
+    secs: std::time::Duration,
+    op: F,
+) -> (f64, f64, f64, f64)
+where
+    F: Fn(solidb_client::SoliDBClient, u64) -> Fut + Copy + Send + 'static,
+    Fut: std::future::Future<Output = solidb_client::SoliDBClient> + Send + 'static,
+{
+    rt.block_on(async move {
+        let mut clients = Vec::with_capacity(conc);
+        for _ in 0..conc {
+            clients.push(
+                solidb_client::SoliDBClientBuilder::new(addr)
+                    .auth("bench_db", "admin", "bench-password")
+                    .pool_size(1)
+                    .build()
+                    .await
+                    .unwrap(),
+            );
+        }
+        let start = Instant::now() + std::time::Duration::from_millis(50);
+        let (measure_from, until) = (start + warm, start + warm + secs);
+        let cpu = tokio::spawn(async move {
+            tokio::time::sleep_until(measure_from.into()).await;
+            let before = threads_cpu_ns("bench-server");
+            tokio::time::sleep_until(until.into()).await;
+            threads_cpu_ns("bench-server") - before
+        });
+        let tasks: Vec<_> = clients
+            .into_iter()
+            .enumerate()
+            .map(|(n, mut client)| {
+                tokio::spawn(async move {
+                    tokio::time::sleep_until(start.into()).await;
+                    let mut rng = mix(99, n as u64) | 1;
+                    let mut lat: Vec<u32> = Vec::with_capacity(1 << 16);
+                    loop {
+                        rng ^= rng << 13;
+                        rng ^= rng >> 7;
+                        rng ^= rng << 17;
+                        let t = Instant::now();
+                        if t >= until {
+                            break;
+                        }
+                        client = op(client, rng).await;
+                        if t >= measure_from {
+                            lat.push(t.elapsed().as_nanos() as u32);
+                        }
+                    }
+                    lat
+                })
+            })
+            .collect();
+        let mut all = Vec::new();
+        for t in tasks {
+            all.extend(t.await.unwrap());
+        }
+        all.sort_unstable();
+        let pct = |p: f64| all[((all.len() - 1) as f64 * p) as usize] as f64 / 1e3;
+        let cpu_us = cpu.await.unwrap() as f64 / 1e3 / all.len().max(1) as f64;
+        (
+            all.len() as f64 / secs.as_secs_f64(),
+            pct(0.5),
+            pct(0.99),
+            cpu_us,
+        )
+    })
+}
+
+/// Bonfire card #775: `FOR o IN orders FILTER o.customer_id == @c RETURN o`
+/// sent over the native driver with the query cache off, as
+/// `benchmarks/compare` sends it — about ten orders of about 500 B per
+/// customer, behind the sparse single-field persistent index the driver's
+/// CreateIndex makes — beside a one-key `Get` over the same driver, and the
+/// harness's `recent` and `join` (the newest 20 orders of a day through the
+/// index on `created_at`, alone and with each order's customer).
+///
+/// First, on one thread and in process, what each stage of the raw-rows
+/// path costs: the index seek alone, then the documents fetched, then copied
+/// whole, then the executor around them, then the ordinary (decoding) path
+/// for comparison. Then the driver end to end on loopback TCP, at
+/// concurrency 1 and 32, the server on its own runtime.
+///
+/// `SOLIDB_BENCH_ORDERS` (200,000), `SOLIDB_BENCH_BLOCK_CACHE_MB` (the
+/// engine's default), `SOLIDB_BENCH_SECS` (5),
+/// `SOLIDB_BENCH_SERVER_THREADS` (8), `SOLIDB_BENCH_CONC` (`1,32`) and
+/// `SOLIDB_BENCH_SERIES` (`inproc,by_customer,get,recent,join`) override
+/// the defaults;
+/// `SOLIDB_ENGINE=solistore` runs it on solistore (built with
+/// `engine-solistore`).
+#[test]
+#[ignore]
+fn benchmark_driver_by_customer() {
+    use solidb::storage::raw_rows::RawShape;
+    let docs: u64 = env_or("SOLIDB_BENCH_ORDERS", 200_000);
+    let secs = std::time::Duration::from_secs(env_or("SOLIDB_BENCH_SECS", 5));
+    let server_threads: usize = env_or("SOLIDB_BENCH_SERVER_THREADS", 8);
+    if let Some(mb) = std::env::var("SOLIDB_BENCH_BLOCK_CACHE_MB")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        let mut profile = solidb::storage::engine::EngineProfile::prod();
+        profile.block_cache_bytes = mb << 20;
+        solidb::storage::engine::set_engine_profile(profile);
+    }
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "bench-password");
+
+    let (engine, tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    // `create_index` makes them sparse, as the driver's CreateIndex does.
+    for field in ["customer_id", "created_at"] {
+        orders
+            .create_index(
+                format!("idx_{field}"),
+                vec![field.to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
+    let customers = (docs / 10).max(1);
+    db.create_collection("customers".to_string(), None).unwrap();
+    let customer_docs = db.get_collection("customers").unwrap();
+    for start in (0..customers).step_by(10_000) {
+        let batch: Vec<_> = (start..(start + 10_000).min(customers))
+            .map(|c| {
+                json!({
+                    "_key": format!("c{c:05}"),
+                    "name": format!("Customer {c}"),
+                    "email": format!("customer{c}@example.com"),
+                    "tier": (["bronze", "silver", "gold", "platinum"][(mix(5, c) % 4) as usize]),
+                })
+            })
+            .collect();
+        customer_docs.insert_batch(batch).unwrap();
+    }
+    let mut per_customer = vec![0u32; customers as usize];
+    let seeded = Instant::now();
+    for start in (0..docs).step_by(10_000) {
+        let batch: Vec<_> = (start..(start + 10_000).min(docs))
+            .map(|i| {
+                per_customer[(mix(1, i) % customers) as usize] += 1;
+                compare_order(i, customers)
+            })
+            .collect();
+        orders.insert_batch(batch).unwrap();
+    }
+    engine.flush().unwrap();
+    let sample = orders.get_value("o0000000").unwrap();
+    let mut data = sample.as_object().unwrap().clone();
+    data.retain(|k, _| !k.starts_with('_'));
+    println!(
+        "{}: seeded {docs} orders, {customers} customers in {:?}; one is {} B of JSON",
+        engine.engine_kind(),
+        seeded.elapsed(),
+        serde_json::to_string(&data).unwrap().len(),
+    );
+
+    // In process, one thread.
+    let q = "FOR o IN orders FILTER o.customer_id == @c RETURN o";
+    let ast = solidb::sdbql::parse(q).unwrap();
+    let customer_of = |r: u64| format!("c{:05}", mix(7, r) % customers);
+    let stage = |label: &str, f: &mut dyn FnMut(&str) -> usize| {
+        let n = 20_000u64;
+        for r in 0..2_000 {
+            f(&customer_of(r + 1_000_000));
+        }
+        let start = thread_cpu_us();
+        let mut rows = 0;
+        for r in 0..n {
+            rows += f(&customer_of(r));
+        }
+        let us = thread_cpu_us() - start;
+        println!(
+            "BENCH|in process|{label}|{:.2} us/query|{:.2} us/row|{:.1} rows/query",
+            us / n as f64,
+            us / rows.max(1) as f64,
+            rows as f64 / n as f64
+        );
+    };
+    let series = std::env::var("SOLIDB_BENCH_SERIES")
+        .unwrap_or_else(|_| "inproc,by_customer,get,recent,join".to_string());
+    let runs = |name: &str| series.split(',').any(|s| s == name);
+    let field = "customer_id";
+    let binds = |c: &str| -> std::collections::HashMap<String, serde_json::Value> {
+        [("c".to_string(), json!(c))].into_iter().collect()
+    };
+    if runs("inproc") {
+        stage("index seek alone (count)", &mut |c| {
+            orders
+                .index_count_eq(field, &json!(c), || Ok(()))
+                .unwrap()
+                .unwrap() as usize
+        });
+        stage("+ multi_get, _key copied", &mut |c| {
+            let shape = RawShape::Single("_key".to_string());
+            let r = orders.index_raw_eq(field, &json!(c), 0, usize::MAX, &shape, |_| Ok(()));
+            r.unwrap().unwrap().0
+        });
+        stage("+ whole documents copied", &mut |c| {
+            let r =
+                orders.index_raw_eq(
+                    field,
+                    &json!(c),
+                    0,
+                    usize::MAX,
+                    &RawShape::Whole,
+                    |_| Ok(()),
+                );
+            r.unwrap().unwrap().0
+        });
+        stage("executor, raw rows", &mut |c| {
+            let executor = QueryExecutor::with_database_and_bind_vars(
+                &engine,
+                "bench_db".to_string(),
+                binds(c),
+            );
+            let raw = executor
+                .execute_raw_msgpack(&ast)
+                .unwrap()
+                .expect("raw path");
+            rmp::decode::read_array_len(&mut raw.as_slice()).unwrap() as usize
+        });
+        stage("executor, ordinary path", &mut |c| {
+            let executor = QueryExecutor::with_database_and_bind_vars(
+                &engine,
+                "bench_db".to_string(),
+                binds(c),
+            );
+            executor.execute(&ast).unwrap().len()
+        });
+    }
+
+    // Over the driver, on loopback TCP.
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    let server = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(server_threads)
+        .thread_name("bench-server")
+        // Blocking-pool threads must outlive a series for their CPU to count.
+        .thread_keep_alive(std::time::Duration::from_secs(3600))
+        .enable_all()
+        .build()
+        .unwrap();
+    let storage = std::sync::Arc::new(engine.clone());
+    let listener = server
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    server.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            stream.set_nodelay(true).unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = solidb::driver::DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+    let client = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(8)
+        .thread_name("bench-client")
+        .enable_all()
+        .build()
+        .unwrap();
+
+    // Every answer checked before anything is timed.
+    client.block_on(async {
+        let mut c = solidb_client::SoliDBClientBuilder::new(&addr)
+            .auth("bench_db", "admin", "bench-password")
+            .pool_size(1)
+            .build()
+            .await
+            .unwrap();
+        for r in 0..200 {
+            let id = mix(7, r) % customers;
+            let vars = binds(&format!("c{id:05}"));
+            let rows = c
+                .query_with_cache("bench_db", q, Some(vars), false)
+                .await
+                .unwrap();
+            assert_eq!(rows.len(), per_customer[id as usize] as usize, "c{id:05}");
+        }
+    });
+
+    // `recent` and `join` of `benchmarks/compare`: the 20 most recent orders
+    // of a one-day window (about `docs / 336` orders), alone and with their
+    // customers.
+    const Q_RECENT: &str = "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi \
+         SORT o.created_at DESC LIMIT 20 RETURN o";
+    const Q_JOIN: &str = "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi \
+         SORT o.created_at DESC LIMIT 20 \
+         LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) \
+         RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}";
+    let window = |r: u64| -> std::collections::HashMap<String, serde_json::Value> {
+        let day = format!("2025-{:02}-{:02}", 1 + r % 12, 1 + (r / 12) % 28);
+        [
+            ("lo".to_string(), json!(format!("{day}T00:00:00Z"))),
+            ("hi".to_string(), json!(format!("{day}U"))),
+        ]
+        .into_iter()
+        .collect()
+    };
+    if runs("inproc") {
+        for (label, q) in [("recent", Q_RECENT), ("join", Q_JOIN)] {
+            let ast = solidb::sdbql::parse(q).unwrap();
+            let n = 2_000u64;
+            let start = thread_cpu_us();
+            let mut rows = 0;
+            for r in 0..n {
+                let executor = QueryExecutor::with_database_and_bind_vars(
+                    &engine,
+                    "bench_db".to_string(),
+                    window(r),
+                );
+                rows += match executor.execute_raw_msgpack(&ast).unwrap() {
+                    Some(raw) => rmp::decode::read_array_len(&mut raw.as_slice()).unwrap() as usize,
+                    None => executor.execute(&ast).unwrap().len(),
+                };
+            }
+            let us = thread_cpu_us() - start;
+            println!(
+                "BENCH|in process|{label}, as the driver runs it|{:.2} us/query|{:.2} us/row",
+                us / n as f64,
+                us / rows.max(1) as f64
+            );
+        }
+    }
+    client.block_on(async {
+        let mut c = solidb_client::SoliDBClientBuilder::new(&addr)
+            .auth("bench_db", "admin", "bench-password")
+            .pool_size(1)
+            .build()
+            .await
+            .unwrap();
+        for r in 0..50 {
+            let rows = c
+                .query_with_cache("bench_db", Q_RECENT, Some(window(r)), false)
+                .await
+                .unwrap();
+            assert_eq!(rows.len(), 20, "recent");
+            let created: Vec<&str> = rows
+                .iter()
+                .map(|o| o["created_at"].as_str().unwrap())
+                .collect();
+            assert!(created.windows(2).all(|w| w[0] >= w[1]), "newest first");
+            let rows = c
+                .query_with_cache("bench_db", Q_JOIN, Some(window(r)), false)
+                .await
+                .unwrap();
+            assert_eq!(
+                rows.iter().filter(|r| r["name"].is_string()).count(),
+                20,
+                "join"
+            );
+        }
+    });
+
+    let warm = std::time::Duration::from_secs(1);
+    let concs: Vec<usize> = std::env::var("SOLIDB_BENCH_CONC")
+        .unwrap_or_else(|_| "1,32".to_string())
+        .split(',')
+        .filter_map(|c| c.parse().ok())
+        .collect();
+    for conc in concs {
+        if runs("by_customer") {
+            let (ops, p50, p99, cpu) =
+                driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
+                    let id = format!("c{:05}", r % customers);
+                    async move {
+                        let vars = [("c".to_string(), json!(id))].into_iter().collect();
+                        c.query_with_cache("bench_db", q, Some(vars), false)
+                            .await
+                            .unwrap();
+                        c
+                    }
+                });
+            println!(
+                "BENCH|driver|by_customer|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op"
+            );
+        }
+        if runs("get") {
+            let (ops, p50, p99, cpu) =
+                driver_series(&client, &addr, conc, warm, secs, move |mut c, r| {
+                    let key = format!("o{:07}", r % docs);
+                    async move {
+                        c.get("bench_db", "orders", &key).await.unwrap();
+                        c
+                    }
+                });
+            println!("BENCH|driver|get|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op");
+        }
+        for (label, q) in [("recent", Q_RECENT), ("join", Q_JOIN)] {
+            if !runs(label) {
+                continue;
+            }
+            let (ops, p50, p99, cpu) = driver_series(
+                &client,
+                &addr,
+                conc,
+                warm,
+                secs,
+                move |mut c, r| async move {
+                    let day = format!("2025-{:02}-{:02}", 1 + r % 12, 1 + (r / 12) % 28);
+                    let vars = [
+                        ("lo".to_string(), json!(format!("{day}T00:00:00Z"))),
+                        ("hi".to_string(), json!(format!("{day}U"))),
+                    ]
+                    .into_iter()
+                    .collect();
+                    c.query_with_cache("bench_db", q, Some(vars), false)
+                        .await
+                        .unwrap();
+                    c
+                },
+            );
+            println!("BENCH|driver|{label}|c={conc}|{ops:.0}/s|p50 {p50:.1} us|p99 {p99:.1} us|server cpu {cpu:.1} us/op");
+        }
+    }
+    println!(
+        "block cache: {} MiB used",
+        engine.memory_breakdown().block_cache_bytes >> 20
+    );
+    client.shutdown_background();
+    server.shutdown_background();
+}
+
 /// Bonfire card #723, on `ORDERS` orders whose `created_at` (ISO strings)
 /// spreads over two years, behind the sparse persistent index the driver
 /// creates: the one-day window read newest first (`SORT … DESC LIMIT 20`),

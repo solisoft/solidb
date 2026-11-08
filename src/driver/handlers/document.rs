@@ -21,10 +21,21 @@ pub fn handle_get(
     key: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.get_value(&key) {
-            Ok(value) => Response::ok(value),
-            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-        },
+        Ok(coll) => {
+            // The stored bytes copied as the document decoding them and
+            // encoding the value would send (`storage::raw_rows`). A missing
+            // or unreadable document takes the decode, which reports it.
+            let doc_key = [crate::storage::Collection::doc_key(&key)];
+            if let Ok(Some(row)) =
+                coll.raw_rows_of(&doc_key, &crate::storage::raw_rows::RawShape::Whole)
+            {
+                return Response::raw_rows(row);
+            }
+            match coll.get_value(&key) {
+                Ok(value) => Response::ok(value),
+                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+            }
+        }
         Err(e) => Response::error(e),
     }
 }
@@ -179,5 +190,51 @@ pub fn handle_bulk_insert(
             }
         }
         Err(e) => Response::error(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::protocol::encode_response;
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    /// A get is copied from the stored bytes, and the client receives what
+    /// decoding them and encoding the value sends; a missing key is still
+    /// reported.
+    #[test]
+    fn get_sends_the_decoded_documents_bytes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.insert(json!({
+            "_key": "k1",
+            "n": -3,
+            "f": 1.5,
+            "s": "é",
+            "arr": [1, "two", {"three": null}],
+            "obj": {"b": 2, "a": [true]},
+        }))
+        .unwrap();
+        let h = DriverHandler::new(engine.clone(), None);
+
+        let resp = handle_get(&h, "d".into(), "c".into(), "k1".into());
+        assert!(matches!(resp, Response::RawRows { .. }), "{resp:?}");
+        let ordinary = Response::ok(coll.get_value("k1").unwrap());
+        assert_eq!(
+            encode_response(&resp).unwrap(),
+            encode_response(&ordinary).unwrap()
+        );
+
+        let missing = handle_get(&h, "d".into(), "c".into(), "nope".into());
+        assert!(
+            matches!(&missing, Response::Error { error } if error.to_string().contains("nope")),
+            "{missing:?}"
+        );
     }
 }

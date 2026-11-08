@@ -164,6 +164,44 @@ fn system_value(doc: &StoredDocRef, name: &str) -> Option<Out<'static>> {
     }))
 }
 
+/// [`SYSTEM_FIELDS`] in byte order, as a map's keys are written.
+const SYSTEM_FIELDS_SORTED: [&str; 5] = [
+    CREATED_AT_FIELD,
+    ID_FIELD,
+    KEY_FIELD,
+    REV_FIELD,
+    UPDATED_AT_FIELD,
+];
+
+/// The system field `name` and its value from the stored header, as
+/// [`system_value`] gives it, written as a map entry without building the
+/// string first.
+fn write_system(out: &mut Vec<u8>, doc: &StoredDocRef, name: &str) -> Option<()> {
+    let raw = match name {
+        KEY_FIELD => doc.key,
+        ID_FIELD => doc.id,
+        REV_FIELD => doc.rev,
+        CREATED_AT_FIELD => doc.created_at,
+        UPDATED_AT_FIELD => doc.updated_at,
+        _ => return None,
+    };
+    let text = std::str::from_utf8(raw).ok()?;
+    rmp::encode::write_str(out, name).ok()?;
+    if name == CREATED_AT_FIELD || name == UPDATED_AT_FIELD {
+        // `stored_timestamp_to_rfc3339`'s common case, written in place.
+        if let Some(base) = text.strip_suffix('Z') {
+            rmp::encode::write_str_len(out, (base.len() + 6) as u32).ok()?;
+            out.extend_from_slice(base.as_bytes());
+            out.extend_from_slice(b"+00:00");
+            return Some(());
+        }
+        rmp::encode::write_str(out, &stored_timestamp_to_rfc3339(text)).ok()?;
+        return Some(());
+    }
+    rmp::encode::write_str(out, text).ok()?;
+    Some(())
+}
+
 /// A field's value: from the header for a system field (which overrides a
 /// same-named data field, as in `Document::to_value`), else the stored
 /// bytes, or nil when absent.
@@ -214,23 +252,34 @@ pub fn write_row(bytes: &[u8], shape: &RawShape, out: &mut Vec<u8>) -> Option<()
             }
         }
         RawShape::Whole => {
-            let mut entries: Vec<(&[u8], &[u8])> = Vec::with_capacity(16);
-            visit_map(doc.data, |k, v| entries.push((k, v)))?;
-            let mut all: Vec<(&str, Out)> = Vec::with_capacity(entries.len() + 5);
-            for (k, v) in &entries {
-                let k = std::str::from_utf8(k).ok()?;
-                if !SYSTEM_FIELDS.contains(&k) {
-                    all.push((k, Out::Raw(v)));
+            // The data fields, less any named like a system field (the
+            // header's value wins). They are stored in key order, being
+            // serialized from a `BTreeMap`, so the system fields are merged
+            // into them as they are written: no sort, and no string built.
+            let mut entries: Vec<(&[u8], &[u8])> = Vec::with_capacity(24);
+            let mut sorted = true;
+            visit_map(doc.data, |k, v| {
+                if entries.last().is_some_and(|(last, _)| *last >= k) {
+                    sorted = false;
                 }
+                if !SYSTEM_FIELDS.iter().any(|f| f.as_bytes() == k) {
+                    entries.push((k, v));
+                }
+            })?;
+            if !sorted {
+                entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
             }
-            for name in SYSTEM_FIELDS {
-                all.push((name, system_value(&doc, name)?));
+            rmp::encode::write_map_len(out, (entries.len() + SYSTEM_FIELDS.len()) as u32).ok()?;
+            let mut system = SYSTEM_FIELDS_SORTED.iter().peekable();
+            for (k, v) in &entries {
+                while let Some(name) = system.next_if(|name| name.as_bytes() < *k) {
+                    write_system(out, &doc, name)?;
+                }
+                rmp::encode::write_str(out, std::str::from_utf8(k).ok()?).ok()?;
+                out.extend_from_slice(v);
             }
-            all.sort_unstable_by(|a, b| a.0.cmp(b.0));
-            rmp::encode::write_map_len(out, all.len() as u32).ok()?;
-            for (k, v) in &all {
-                rmp::encode::write_str(out, k).ok()?;
-                write_out(out, v);
+            for name in system {
+                write_system(out, &doc, name)?;
             }
         }
     }
@@ -385,6 +434,32 @@ mod tests {
         // Left to the serde path: not a map, not this format.
         assert_eq!(project(&stored(json!([1, 2])), &["a".into()]), None);
         assert_eq!(project(b"{\"a\":1}", &["a".into()]), None);
+    }
+
+    #[test]
+    fn system_fields_sorted_is_sorted() {
+        let mut sorted = SYSTEM_FIELDS.to_vec();
+        sorted.sort_unstable();
+        assert_eq!(sorted, SYSTEM_FIELDS_SORTED);
+    }
+
+    /// A stored map whose keys are out of order (no current writer makes
+    /// one) is still written in key order, as decoding it into a map does.
+    #[test]
+    fn unsorted_stored_fields_are_written_sorted() {
+        let mut bytes = stored(json!({"a": 1, "b": 2}));
+        // Swap the two entries of the stored data map in place.
+        let data = rmp_serde::to_vec_named(&json!({"a": 1, "b": 2})).unwrap();
+        let swapped = [&[0x82u8][..], &[0xa1, b'b', 0x02], &[0xa1, b'a', 0x01]].concat();
+        assert_eq!(data.len(), swapped.len());
+        let at = bytes
+            .windows(data.len())
+            .position(|w| w == data.as_slice())
+            .unwrap();
+        bytes[at..at + data.len()].copy_from_slice(&swapped);
+        let mut out = Vec::new();
+        write_row(&bytes, &RawShape::Whole, &mut out).unwrap();
+        assert_eq!(out, reference(&bytes, &RawShape::Whole));
     }
 
     #[test]

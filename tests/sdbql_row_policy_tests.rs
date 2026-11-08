@@ -186,6 +186,16 @@ fn index_only_counts_and_raw_rows_are_filtered() {
         .execute_raw_msgpack(&parse("FOR d IN orders FILTER d.n == 2 RETURN d").unwrap())
         .unwrap();
     assert!(raw.is_none(), "a policy sends the raw path to the scan");
+    let small = as_user(false)
+        .execute_raw_msgpack_small(
+            &parse("FOR d IN orders FILTER d.n == 2 RETURN d").unwrap(),
+            64,
+        )
+        .unwrap();
+    assert!(
+        matches!(small, solidb::sdbql::executor::SmallRaw::Ordinary),
+        "nor is it answered inline: {small:?}"
+    );
 }
 
 #[test]

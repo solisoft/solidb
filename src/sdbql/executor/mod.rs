@@ -29,6 +29,7 @@ pub mod types;
 pub mod utils;
 mod window;
 
+pub use execution::SmallRaw;
 pub use helpers::{
     compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,
     get_field_value, hash_value, to_bool, values_equal, ValueSet,

@@ -4,6 +4,7 @@
 
 use serde_json::json;
 use solidb::parse;
+use solidb::sdbql::executor::SmallRaw;
 use solidb::sdbql::QueryExecutor;
 use solidb::storage::{IndexType, StorageEngine};
 use tempfile::TempDir;
@@ -482,7 +483,10 @@ fn test_index_raw_rows_match_the_ordinary_path() {
         raw.is_some()
     };
 
-    for q in [
+    // The driver's inline form: the same bytes when the index names at most
+    // `cap` rows, nothing fetched (`NotSmall`) when it names more.
+    let small = |q: &str, cap: usize| executor.execute_raw_msgpack_small(&parse(q).unwrap(), cap);
+    let served = [
         "FOR u IN users FILTER u.city == 'Paris' RETURN u",
         "FOR u IN users FILTER u.city == 'Paris' RETURN {name: u.name, age: u.age}",
         "FOR u IN users FILTER 'London' == u.city RETURN u.name",
@@ -491,10 +495,25 @@ fn test_index_raw_rows_match_the_ordinary_path() {
         "FOR u IN users FILTER u.city == 'Paris' LIMIT 60, 10 RETURN u.age",
         "FOR u IN users FILTER u.city == 'Paris' LIMIT 0 RETURN u",
         "FOR u IN users FILTER u.city == 'Rome' RETURN u",
+        "FOR u IN users FILTER u.city == 'Atlantis' RETURN u",
         "FOR u IN users FILTER u.age == 42 RETURN u",
         "FOR u IN users FILTER u.age == 42.0 RETURN u",
-    ] {
+    ];
+    for q in served {
         assert!(same(q), "the index should serve {q}");
+        let query = parse(q).unwrap();
+        let rows = executor.execute(&query).unwrap();
+        let ordinary = rmp_serde::to_vec_named(&serde_json::Value::Array(rows.clone())).unwrap();
+        match small(q, rows.len()).unwrap() {
+            SmallRaw::Rows(raw) => assert_eq!(raw, ordinary, "{q}"),
+            other => panic!("{q}: {other:?}"),
+        }
+        if !rows.is_empty() {
+            assert!(
+                matches!(small(q, rows.len() - 1).unwrap(), SmallRaw::NotSmall),
+                "{q}"
+            );
+        }
     }
     // No index on `name`, a null, a range, `_key`: left to the ordinary path.
     for q in [
@@ -504,6 +523,156 @@ fn test_index_raw_rows_match_the_ordinary_path() {
         "FOR u IN users FILTER u._key == 'x' RETURN u",
     ] {
         assert!(!same(q), "{q} should take the ordinary path");
+        assert!(
+            matches!(small(q, 1_000).unwrap(), SmallRaw::Ordinary),
+            "{q}"
+        );
+    }
+    // A scan is never small, however few the documents.
+    assert!(matches!(
+        small("FOR u IN users RETURN u", 1_000_000).unwrap(),
+        SmallRaw::NotSmall
+    ));
+}
+
+/// `FOR v IN c FILTER … SORT v.f LIMIT n` read in index order (`index_sort`)
+/// gives the rows the scan gives: copied from the stored bytes for the
+/// driver (`execute_raw_msgpack`), evaluated on a decode of just the fields
+/// the query reads (a projected RETURN, LETs after the LIMIT), and inline
+/// (`execute_small_sorted`). A sort value that is an array or object, which
+/// the index orders as JSON text, sends every form back to the scan.
+#[test]
+fn test_index_sorted_reads_match_the_scan() {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database("db".to_string()).unwrap();
+    let db = engine.get_database("db").unwrap();
+    for name in ["indexed", "plain", "people"] {
+        db.create_collection(name.to_string(), None).unwrap();
+    }
+    db.get_collection("indexed")
+        .unwrap()
+        .create_index(
+            "idx_t".to_string(),
+            vec!["t".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    let docs: Vec<serde_json::Value> = (0..120)
+        .map(|i| {
+            let mut doc = json!({
+                "_key": format!("k{i:03}"),
+                // Ties on purpose: rows with an equal sort value come out in
+                // key order both ways, as the stable sort leaves them.
+                "t": format!("2025-01-{:02}", 1 + (i * 7) % 28),
+                "n": i,
+                "owner": format!("p{}", i % 5),
+                "nested": {"a": [i, {"b": "x"}]},
+            });
+            if i % 11 == 0 {
+                doc.as_object_mut().unwrap().remove("t");
+            }
+            doc
+        })
+        .collect();
+    for name in ["indexed", "plain"] {
+        db.get_collection(name)
+            .unwrap()
+            .insert_batch(docs.clone())
+            .unwrap();
+    }
+    db.get_collection("people")
+        .unwrap()
+        .insert_batch(
+            (0..5)
+                .map(|p| json!({"_key": format!("p{p}"), "name": format!("Person {p}")}))
+                .collect(),
+        )
+        .unwrap();
+
+    // The two collections' documents differ in their `_id`, `_rev` and
+    // timestamps only.
+    let same_data = |rows: &[serde_json::Value]| -> Vec<serde_json::Value> {
+        rows.iter()
+            .map(|r| match r {
+                serde_json::Value::Object(m) => serde_json::Value::Object(
+                    m.iter()
+                        .filter(|(k, _)| {
+                            !["_id", "_rev", "_created_at", "_updated_at"].contains(&k.as_str())
+                        })
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                ),
+                other => other.clone(),
+            })
+            .collect()
+    };
+    let run = |q: &str, coll: &str| {
+        let query = parse(&q.replace("COLL", coll)).unwrap();
+        let executor = QueryExecutor::with_database(&engine, "db".to_string());
+        let rows = executor.execute(&query).unwrap();
+        let raw = executor.execute_raw_msgpack(&query).unwrap();
+        let small = executor.execute_small_sorted(&query, 64).unwrap();
+        (rows, raw, small)
+    };
+    let window = "FILTER d.t >= '2025-01-05' AND d.t < '2025-01-20'";
+    for q in [
+        format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 10 RETURN d"),
+        format!("FOR d IN COLL {window} SORT d.t ASC LIMIT 10 RETURN d"),
+        format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 7, 10 RETURN d._key"),
+        format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 200 RETURN {{k: d._key, n: d.n}}"),
+        format!("FOR d IN COLL {window} FILTER d.n % 3 == 0 SORT d.t DESC LIMIT 5 RETURN d"),
+        format!(
+            "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+             LET p = DOCUMENT(CONCAT('people/', d.owner)) \
+             RETURN {{k: d._key, t: d.t, who: p.name}}"
+        ),
+    ] {
+        let (expected, _, _) = run(&q, "plain");
+        let (rows, raw, small) = run(&q, "indexed");
+        assert!(!expected.is_empty(), "{q}");
+        assert_eq!(same_data(&rows), same_data(&expected), "{q}");
+        if let Some(raw) = raw {
+            let encoded = rmp_serde::to_vec_named(&serde_json::Value::Array(rows.clone())).unwrap();
+            assert_eq!(raw, encoded, "{q}");
+        }
+        if let Some(small) = small {
+            assert_eq!(small, rows, "{q}");
+        }
+    }
+    // Copied for the driver, evaluated otherwise.
+    let q = format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 10 RETURN d");
+    assert!(run(&q, "indexed").1.is_some(), "a whole row is copied");
+    let q = format!(
+        "FOR d IN COLL {window} SORT d.t DESC LIMIT 6 \
+         LET p = DOCUMENT(CONCAT('people/', d.owner)) RETURN {{k: d._key, who: p.name}}"
+    );
+    let (_, raw, small) = run(&q, "indexed");
+    assert!(
+        raw.is_none() && small.is_some(),
+        "a projected row is evaluated inline"
+    );
+    // Past the inline bound: run as usual.
+    let q = format!("FOR d IN COLL {window} SORT d.t DESC LIMIT 100 RETURN d.n");
+    assert!(run(&q, "indexed").2.is_none());
+
+    // An array sort value inside an unbounded range: every form gives up
+    // and the scan answers.
+    let indexed = db.get_collection("indexed").unwrap();
+    let plain = db.get_collection("plain").unwrap();
+    for coll in [&indexed, &plain] {
+        coll.insert(json!({"_key": "arr", "t": ["2025-02-01"], "n": -1, "owner": "p0"}))
+            .unwrap();
+    }
+    for q in [
+        "FOR d IN COLL FILTER d.t >= '2025-01-25' SORT d.t DESC LIMIT 4 RETURN d",
+        "FOR d IN COLL FILTER d.t >= '2025-01-25' SORT d.t DESC LIMIT 4 RETURN {k: d._key}",
+    ] {
+        let (expected, _, _) = run(q, "plain");
+        let (rows, raw, small) = run(q, "indexed");
+        assert_eq!(same_data(&rows), same_data(&expected), "{q}");
+        assert!(raw.is_none() && small.is_none(), "{q}");
     }
 }
 

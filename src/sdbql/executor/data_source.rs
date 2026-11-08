@@ -513,7 +513,9 @@ impl<'a> QueryExecutor<'a> {
         key: &str,
         ctx: &Context,
     ) -> Option<Value> {
-        let doc = coll.get(key).ok()?.to_value();
+        // Decoded straight to the API value, as a scan's rows are: no
+        // `Document`, and no timestamp parsed only to be formatted again.
+        let doc = coll.get_value(key).ok()?;
         match self.row_policy_gate_for(coll, binding) {
             Some(gate) if !self.row_policy_allows(&gate, &doc, ctx) => None,
             _ => Some(doc),

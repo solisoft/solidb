@@ -364,6 +364,12 @@ pub trait KsDbExt {
         cf: &KsCf,
         keys: I,
     ) -> Vec<Result<Option<Vec<u8>>, KvError>>;
+    /// [`Kv::multi_get_pinned_cf`] on logical keys: the values without a copy.
+    fn multi_get_pinned_ks<K: AsRef<[u8]>>(
+        &self,
+        cf: &KsCf,
+        keys: &[K],
+    ) -> Vec<Result<Option<KvPinned<'_>>, KvError>>;
     /// Seek to the logical `prefix` and iterate forward to the end of the
     /// keyspace (like `prefix_iterator_cf` without a prefix extractor: the
     /// caller stops when keys no longer start with `prefix`).
@@ -433,6 +439,18 @@ impl KsDbExt for Kv {
     ) -> Vec<Result<Option<Vec<u8>>, KvError>> {
         let physical: Vec<Vec<u8>> = keys.into_iter().map(|k| cf.key(k.as_ref())).collect();
         self.multi_get_cf(physical.iter().map(|k| (&cf.cf, k)))
+    }
+
+    fn multi_get_pinned_ks<K: AsRef<[u8]>>(
+        &self,
+        cf: &KsCf,
+        keys: &[K],
+    ) -> Vec<Result<Option<KvPinned<'_>>, KvError>> {
+        if cf.prefix.is_legacy() {
+            return self.multi_get_pinned_cf(&cf.cf, keys);
+        }
+        let physical: Vec<Vec<u8>> = keys.iter().map(|k| cf.key(k.as_ref())).collect();
+        self.multi_get_pinned_cf(&cf.cf, &physical)
     }
 
     fn prefix_iterator_ks<P: AsRef<[u8]>>(&self, cf: &KsCf, prefix: P) -> KsIter<'_> {

@@ -243,7 +243,7 @@ const HEAVY_FUNCTIONS: &[&str] = &[
 /// Whether evaluating this expression can do work proportional to a
 /// collection or wait on I/O: a subquery anywhere inside it, or a call to a
 /// function in `HEAVY_FUNCTIONS`.
-fn expression_is_heavy(expr: &Expression) -> bool {
+pub(crate) fn expression_is_heavy(expr: &Expression) -> bool {
     use crate::sdbql::ast::Expression as E;
     match expr {
         E::Subquery(q) => {

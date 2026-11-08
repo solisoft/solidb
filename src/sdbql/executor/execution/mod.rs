@@ -36,4 +36,5 @@ mod subquery;
 // row-building loop shares.
 pub(super) use clauses::BUDGET_CHECK_INTERVAL;
 pub(super) use entry::has_window_functions;
+pub use raw_scan::SmallRaw;
 pub(super) use scan_collect::has_collect;
