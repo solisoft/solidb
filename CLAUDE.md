@@ -22,7 +22,7 @@ cargo test --profile ci <pattern>             # Tests matching pattern (e.g., ca
 cargo test --profile ci -- --nocapture        # Show test output
 cargo test --profile ci                       # FULL suite — CI's job, not yours. See below.
 
-# The five benchmarks that live in tests/ are behind a feature and #[ignore]d
+# The six benchmarks that live in tests/ are behind a feature and #[ignore]d
 cargo test --profile ci --features bench-tests -- --ignored
 
 # Code quality (required before commits)

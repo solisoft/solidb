@@ -242,7 +242,7 @@ lto = false
 # execute in seconds.
 #
 # Safe because no test that actually runs depends on optimisation: the only
-# files under tests/ that touch `Instant::now()` / `.elapsed()` are the five
+# files under tests/ that touch `Instant::now()` / `.elapsed()` are the six
 # benchmarks, and those are `#[ignore]`d behind the `bench-tests` feature.
 opt-level = 1
 # Deliberately NOT set here:
@@ -336,13 +336,13 @@ fuse = ["dep:fuser"]
 # Build solistore in beside RocksDB; `SOLIDB_ENGINE=solistore` picks it for a
 # new data directory.
 engine-solistore = ["dep:solistore"]
-# The five files in tests/ that are benchmarks rather than tests. Off by
+# The six files in tests/ that are benchmarks rather than tests. Off by
 # default, so `cargo test` does not build them — see the [[test]] blocks below.
 bench-tests = []
 
-# Benchmarks living in tests/. Every test in these five files is
+# Benchmarks living in tests/. Every test in these six files is
 # `#[test] #[ignore]`, so they were paying a full release link each and never
-# running — five of the ~96 link steps for nothing. They are also the only
+# running — a link step each, for nothing. They are also the only
 # files in tests/ that measure wall-clock time (`Instant::now()` / `elapsed()`),
 # which is exactly why they must not be run as part of the suite.
 #
@@ -374,6 +374,11 @@ required-features = ["bench-tests"]
 [[test]]
 name = "sdbql_string_bench"
 path = "tests/sdbql_string_bench.rs"
+required-features = ["bench-tests"]
+
+[[test]]
+name = "benchmark_writes"
+path = "tests/benchmark_writes.rs"
 required-features = ["bench-tests"]
 
 [[bin]]
