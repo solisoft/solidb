@@ -70,15 +70,21 @@ impl<'a> QueryExecutor<'a> {
         let mut collections = Vec::new();
         self.estimate_loops(query, None, 0, &mut collections, &mut warnings)?;
 
-        let sort_index = if super::execution::has_window_functions(query) {
-            None
+        // As the run decides it: a FILTER + SORT + LIMIT read in index order
+        // (with the entries of the range it would walk), else a bare SORT.
+        let (sort_index, sorted_entries) = if super::execution::has_window_functions(query) {
+            (None, None)
         } else {
-            self.bare_sort_index(query, &bindings)
+            match self.planned_sorted_read(query, &bindings) {
+                Some((name, entries)) => (Some(name), Some(entries)),
+                None => (self.bare_sort_index(query, &bindings), None),
+            }
         };
         if let (Some(name), Some(first)) = (&sort_index, collections.first_mut()) {
             if first.subquery.is_none() {
                 first.access_type = "index_sort".to_string();
                 first.index_used = Some(name.clone());
+                first.estimated_rows = sorted_entries;
             }
         }
 
@@ -426,14 +432,26 @@ impl<'a> QueryExecutor<'a> {
         // pipeline below runs: a count read from index entries, or rows read
         // in SORT order with an early stop.
         let counted = matches!(self.try_index_count(query, &initial_bindings), Ok(Some(_)));
+        // A FILTER + SORT + LIMIT read in index order is reported from the
+        // read itself: what it read, what each FILTER kept, no sort.
+        let sorted_start = Instant::now();
+        let mut sorted_read = if counted || super::execution::has_window_functions(query) {
+            None
+        } else {
+            self.index_sorted_read(query, &initial_bindings)
+                .ok()
+                .flatten()
+        };
+        let sorted_read_us = sorted_start.elapsed().as_micros() as u64;
         let sort_index = if counted || super::execution::has_window_functions(query) {
             None
         } else {
-            match self.index_sort_limit(query, &initial_bindings) {
-                Ok(Some((_, name))) => Some(name),
-                _ => self.bare_sort_index(query, &initial_bindings),
+            match &sorted_read {
+                Some(read) => Some(read.index.clone()),
+                None => self.bare_sort_index(query, &initial_bindings),
             }
         };
+        let read_in_sort_order = sorted_read.is_some();
         if let Some(name) = &sort_index {
             warnings.push(format!(
                 "optimizer: rows read in SORT order from index '{name}'"
@@ -502,11 +520,55 @@ impl<'a> QueryExecutor<'a> {
                     let mut index_type: Option<String> = None;
                     let mut estimated_rows: Option<usize> = None;
                     let mut auto_index_candidate: Option<String> = None;
+                    let mut walked = false;
 
                     // Check if the FILTERs after the FOR can use an index
                     // (all of them, as execution does).
                     let filters = leading_filters(clauses, i + 1);
-                    if let Some(index_filter) = conjunction(&filters) {
+                    let sorted_here = if collections_info.is_empty() {
+                        sorted_read.take()
+                    } else {
+                        None
+                    };
+                    if let Some(read) = sorted_here {
+                        // The first loop, read in SORT order: its rows are
+                        // those the walk kept, every FILTER already checked
+                        // on each document it read.
+                        used_index = true;
+                        walked = true;
+                        index_type = Some(read.index_type);
+                        estimated_rows = Some(read.entries);
+                        total_docs_scanned += read.read;
+                        collection_scan_us += sorted_read_us;
+                        rows = read
+                            .docs
+                            .iter()
+                            .map(|doc| {
+                                let mut ctx = initial_bindings.clone();
+                                ctx.insert(for_clause.variable.clone(), doc.to_value());
+                                ctx
+                            })
+                            .collect();
+                        for (filter, (before, after)) in filters.iter().zip(read.filter_counts) {
+                            self.explain_subqueries(
+                                filter,
+                                rows.first(),
+                                "FILTER",
+                                depth,
+                                &mut subquery_accesses,
+                                &mut warnings,
+                            );
+                            filters_info.push(FilterInfo {
+                                expression: format_expression(filter),
+                                index_candidate: None,
+                                can_use_index: false,
+                                documents_before: before,
+                                documents_after: after,
+                                time_us: 0,
+                            });
+                        }
+                        i += 1 + filters.len();
+                    } else if let Some(index_filter) = conjunction(&filters) {
                         let is_collection = if let Some(src) = &for_clause.source_variable {
                             src == &for_clause.collection
                         } else {
@@ -563,7 +625,9 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                     rows = new_rows;
                                     total_docs_scanned += docs.len();
-                                    i += 1 + filters.len(); // Skip the FOR and its FILTERs
+                                    // The FILTERs run next on these rows, as
+                                    // the run re-checks every one of them.
+                                    i += 1;
                                 } else if let Some(cond) = self.extract_indexable_condition(
                                     &index_filter,
                                     &for_clause.variable,
@@ -689,10 +753,15 @@ impl<'a> QueryExecutor<'a> {
                         auto_index_candidate,
                         subquery: None,
                         estimated: None,
-                        // Only what the FILTER's index read chose: an index
-                        // count or index-ordered read reports no estimate.
-                        estimated_rows: estimated_rows
-                            .filter(|_| used_index && !sorted_by_index && !(first && counted)),
+                        // What the FILTER's index read chose, or the
+                        // entries of the range an index-ordered read walked;
+                        // an index count or a bare index SORT reports none.
+                        estimated_rows: if walked {
+                            estimated_rows
+                        } else {
+                            estimated_rows
+                                .filter(|_| used_index && !sorted_by_index && !(first && counted))
+                        },
                     });
                 }
                 BodyClause::Filter(filter_clause) => {
@@ -749,8 +818,8 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Apply SORT
-        if let Some(sort) = &query.sort_clause {
+        // Apply SORT, unless the rows were read in its order.
+        if let Some(sort) = query.sort_clause.as_ref().filter(|_| !read_in_sort_order) {
             let sort_start = Instant::now();
             rows = self.sort_rows(rows, &sort.fields);
             sort_us = sort_start.elapsed().as_micros() as u64;

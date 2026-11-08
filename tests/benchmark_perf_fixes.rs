@@ -735,3 +735,148 @@ fn benchmark_planner_cost_choice() {
         println!("BENCH|{label}|{n}|{used}|{ms:.3}|{old_used}|{old_ms:.3}");
     }
 }
+
+/// Bonfire card #723, on `ORDERS` orders whose `created_at` (ISO strings)
+/// spreads over two years, behind the sparse persistent index the driver
+/// creates: the one-day window read newest first (`SORT … DESC LIMIT 20`),
+/// the same window returned whole, and the window joined to its customers.
+/// `SOLIDB_BENCH_ORDERS` overrides the 1,000,000 orders.
+///
+/// On 2.7.2 the window was read from one bound — every order before
+/// `@hi`, 498,630 of them — and then sorted: about 2.2 s for each shape.
+/// The window is now read as one interval (1,370 entries, 5.3 ms whole),
+/// and the SORT + LIMIT shapes walk it in index order and stop at the 20th
+/// row (0.1 ms; 0.18 ms joined).
+#[test]
+#[ignore]
+fn benchmark_range_window() {
+    let orders_n: usize = std::env::var("SOLIDB_BENCH_ORDERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1_000_000);
+    const CUSTOMERS: usize = 10_000;
+    const TWO_YEARS_SECS: i64 = 730 * 86_400;
+
+    let (engine, _tmp) = create_test_db();
+    let db = engine.get_database("bench_db").unwrap();
+    for c in ["orders", "customers"] {
+        db.create_collection(c.to_string(), None).unwrap();
+    }
+    let customers = db.get_collection("customers").unwrap();
+    customers
+        .insert_batch(
+            (0..CUSTOMERS)
+                .map(|i| {
+                    json!({
+                        "_key": format!("c{i}"),
+                        "name": format!("Customer {i}"),
+                        "tier": (["gold", "silver", "bronze"][i % 3]),
+                    })
+                })
+                .collect(),
+        )
+        .unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders
+        .create_index(
+            "idx_created_at".to_string(),
+            vec!["created_at".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    let base = chrono::DateTime::parse_from_rfc3339("2023-06-01T00:00:00Z")
+        .unwrap()
+        .timestamp();
+    let seeded = Instant::now();
+    for start in (0..orders_n).step_by(10_000) {
+        let batch: Vec<_> = (start..(start + 10_000).min(orders_n))
+            .map(|i| {
+                // A permutation of the slots, so key order is not time order.
+                let slot = (i as i64 * 7_919) % orders_n as i64;
+                let t = base + slot * TWO_YEARS_SECS / orders_n as i64;
+                json!({
+                    "customer_id": format!("c{}", i % CUSTOMERS),
+                    "status": (["open", "paid", "shipped", "cancelled"][i % 4]),
+                    "amount": (i % 997) as f64 + 0.5,
+                    "created_at": chrono::DateTime::from_timestamp(t, 0)
+                        .unwrap()
+                        .format("%Y-%m-%dT%H:%M:%SZ")
+                        .to_string(),
+                    "padding": "x".repeat(100),
+                })
+            })
+            .collect();
+        orders.insert_batch(batch).unwrap();
+    }
+    println!(
+        "seeded {orders_n} orders and {CUSTOMERS} customers in {:?}",
+        seeded.elapsed()
+    );
+
+    let window = "FILTER o.created_at >= @lo AND o.created_at < @hi";
+    let queries = [
+        (
+            "window, SORT DESC LIMIT 20",
+            format!("FOR o IN orders {window} SORT o.created_at DESC LIMIT 20 RETURN o"),
+        ),
+        (
+            "window, SORT ASC LIMIT 20",
+            format!("FOR o IN orders {window} SORT o.created_at ASC LIMIT 20 RETURN o"),
+        ),
+        (
+            "window, every row",
+            format!("FOR o IN orders {window} RETURN o"),
+        ),
+        (
+            "window, joined",
+            format!(
+                "FOR o IN orders {window} SORT o.created_at DESC LIMIT 20 \
+                 LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) \
+                 RETURN {{order: o._key, amount: o.amount, name: c.name, tier: c.tier}}"
+            ),
+        ),
+        (
+            "since @lo, SORT DESC LIMIT 20",
+            "FOR o IN orders FILTER o.created_at >= @lo SORT o.created_at DESC LIMIT 20 RETURN o"
+                .to_string(),
+        ),
+    ];
+    let binds: std::collections::HashMap<String, serde_json::Value> = [
+        ("lo".to_string(), json!("2024-06-01T00:00:00Z")),
+        ("hi".to_string(), json!("2024-06-02T00:00:00Z")),
+    ]
+    .into_iter()
+    .collect();
+    for (label, q) in &queries {
+        let ast = solidb::sdbql::parse(q).unwrap();
+        let executor = QueryExecutor::with_database_and_bind_vars(
+            &engine,
+            "bench_db".to_string(),
+            binds.clone(),
+        );
+        let e = executor.explain(&ast).unwrap();
+        let access = &e.collections[0];
+        let plan = format!(
+            "{} {} est={:?} scanned={} returned={}",
+            access.access_type,
+            access.index_used.as_deref().unwrap_or("-"),
+            access.estimated_rows,
+            e.documents_scanned,
+            e.documents_returned,
+        );
+        executor.execute(&ast).unwrap();
+        let mut times = Vec::new();
+        let mut rows = 0;
+        for _ in 0..7 {
+            let start = Instant::now();
+            rows = executor.execute(&ast).unwrap().len();
+            times.push(start.elapsed());
+        }
+        times.sort();
+        println!(
+            "BENCH|{label}|{rows}|{plan}|median {:.3} ms",
+            times[times.len() / 2].as_secs_f64() * 1e3
+        );
+    }
+}

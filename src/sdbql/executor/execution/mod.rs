@@ -6,7 +6,8 @@
 //! - clauses: Body clause processing (FOR, FILTER, JOIN, etc.)
 //! - collect: COLLECT grouping and streaming aggregation
 //! - index_count: `FILTER v.f == x COLLECT WITH COUNT` read from an index
-//! - index_sort: `FILTER v.a == x SORT v.b LIMIT n` read in order from a composite index
+//! - index_sort: `FILTER v.a == x SORT v.b LIMIT n` (or a range on `v.b`) read in
+//!   SORT order from an index, stopping at the LIMIT
 //! - hash_probe: a correlated FILTER no index serves, probed in a per-query hash
 //! - subquery: Correlated subquery execution
 //! - mutations: per-row INSERT / UPDATE / REPLACE / REMOVE with OPTIONS, OLD / NEW

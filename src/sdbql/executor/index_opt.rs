@@ -158,7 +158,9 @@ enum CompositeTerm {
 /// A bound of a key interval: `(value, inclusive)`, `None` when open.
 type IntervalBound = Option<(Value, bool)>;
 
-/// A read of a multi-field index planned by [`composite_plan`].
+/// A read of an index by key intervals: a multi-field index planned by
+/// [`composite_plan`], or the interval of a single field's ranges planned by
+/// [`single_field_interval`].
 struct CompositePlan {
     index: crate::storage::index::Index,
     /// The values each leading field may take, distinct by index encoding.
@@ -167,6 +169,10 @@ struct CompositePlan {
     /// and `!=` / `NOT IN` conditions. `None` when that field has none (one
     /// unbounded read); empty when they leave nothing (no read at all).
     next: Option<Vec<(IntervalBound, IntervalBound)>>,
+    /// The FILTER rejects every row whose index fields are all null — the
+    /// rows a sparse index leaves out — so a read with nothing fixed is
+    /// exact on a sparse index too.
+    nulls_rejected: bool,
 }
 
 impl CompositePlan {
@@ -218,6 +224,53 @@ fn empty_interval(lo: &IntervalBound, hi: &IntervalBound) -> bool {
     }
 }
 
+/// The tightest bounds the AND'd range conditions of `terms` put on `field`
+/// — every `<`, `<=`, `>`, `>=` on it, in any order, the field on either
+/// side (`composite_terms` turns `x < f` into `f > x`) — as `(lower,
+/// upper)`; on a tie, the exclusive bound. `None` when no range on `field`
+/// has a scalar value (an array or object is ordered by the codec as JSON
+/// text, so it bounds nothing).
+fn range_bounds(
+    field: &str,
+    terms: &[(String, CompositeTerm)],
+) -> Option<(IntervalBound, IntervalBound)> {
+    use std::cmp::Ordering::*;
+    let mut lower: IntervalBound = None;
+    let mut upper: IntervalBound = None;
+    let mut any = false;
+    for (f, term) in terms {
+        let CompositeTerm::Range(op, v) = term else {
+            continue;
+        };
+        if f != field || complex(v) {
+            continue;
+        }
+        any = true;
+        let inclusive = matches!(
+            op,
+            BinaryOperator::GreaterThanOrEqual | BinaryOperator::LessThanOrEqual
+        );
+        let is_lower = matches!(
+            op,
+            BinaryOperator::GreaterThan | BinaryOperator::GreaterThanOrEqual
+        );
+        // Keep the tighter of two bounds; on a tie, the exclusive one.
+        let slot = if is_lower { &mut lower } else { &mut upper };
+        let tighter = match slot {
+            None => true,
+            Some((cur, cur_inc)) => match (key_cmp(v, cur), is_lower) {
+                (Greater, true) | (Less, false) => true,
+                (Equal, _) => *cur_inc && !inclusive,
+                _ => false,
+            },
+        };
+        if tighter {
+            *slot = Some((v.clone(), inclusive));
+        }
+    }
+    any.then_some((lower, upper))
+}
+
 /// The intervals of the field after the fixed ones: the tightest range
 /// bounds, split around every excluded value. `None` when the field has no
 /// usable condition.
@@ -226,46 +279,20 @@ fn next_field_intervals(
     terms: &[(String, CompositeTerm)],
 ) -> Option<Vec<(IntervalBound, IntervalBound)>> {
     use std::cmp::Ordering::*;
-    let mut lower: IntervalBound = None;
-    let mut upper: IntervalBound = None;
+    let bounds = range_bounds(field, terms);
+    let mut constrained = bounds.is_some();
+    let (lower, upper) = bounds.unwrap_or((None, None));
     let mut excluded: Vec<&Value> = Vec::new();
-    let mut constrained = false;
     for (f, term) in terms {
+        let CompositeTerm::Not(values) = term else {
+            continue;
+        };
         if f != field {
             continue;
         }
-        match term {
-            CompositeTerm::Range(op, v) if !complex(v) => {
-                constrained = true;
-                let inclusive = matches!(
-                    op,
-                    BinaryOperator::GreaterThanOrEqual | BinaryOperator::LessThanOrEqual
-                );
-                let is_lower = matches!(
-                    op,
-                    BinaryOperator::GreaterThan | BinaryOperator::GreaterThanOrEqual
-                );
-                // Keep the tighter of two bounds; on a tie, the exclusive one.
-                let slot = if is_lower { &mut lower } else { &mut upper };
-                let tighter = match slot {
-                    None => true,
-                    Some((cur, cur_inc)) => match (key_cmp(v, cur), is_lower) {
-                        (Greater, true) | (Less, false) => true,
-                        (Equal, _) => *cur_inc && !inclusive,
-                        _ => false,
-                    },
-                };
-                if tighter {
-                    *slot = Some((v.clone(), inclusive));
-                }
-            }
-            CompositeTerm::Not(values) => {
-                for v in values.iter().filter(|v| !complex(v)) {
-                    constrained = true;
-                    excluded.push(v);
-                }
-            }
-            _ => {}
+        for v in values.iter().filter(|v| !complex(v)) {
+            constrained = true;
+            excluded.push(v);
         }
     }
     if !constrained {
@@ -316,6 +343,55 @@ fn best_composite_plan(
         .filter_map(|i| composite_plan(i, terms))
         .filter(|p| p.fields_used() >= min_fields)
         .max_by_key(|p| (p.fields_used(), std::cmp::Reverse(p.index.fields.len())))
+}
+
+/// A loop's rows read in the order of one field, planned by
+/// [`QueryExecutor::plan_sorted_read`] and walked by
+/// [`Collection::index_sorted_range`]: `index` ends with the sort field,
+/// `eq_values` fix every field before it, and the sort field lies within
+/// `lower` / `upper`.
+pub(super) struct SortedReadPlan {
+    pub(super) index: crate::storage::index::Index,
+    pub(super) eq_values: Vec<Value>,
+    lower: IntervalBound,
+    upper: IntervalBound,
+}
+
+impl SortedReadPlan {
+    /// The bounds on the sort field, as the storage reads take them.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn bounds(&self) -> (Option<(&Value, bool)>, Option<(&Value, bool)>) {
+        (
+            self.lower.as_ref().map(|(v, inc)| (v, *inc)),
+            self.upper.as_ref().map(|(v, inc)| (v, *inc)),
+        )
+    }
+
+    /// The index entries the walk covers, counted up to `bound` (more means
+    /// "at least that many").
+    pub(super) fn entries(&self, collection: &Collection, bound: usize) -> usize {
+        let (lower, upper) = self.bounds();
+        let (prefix, start, end) = Collection::index_key_range(
+            &self.index.name,
+            self.index.fields.len(),
+            &self.eq_values,
+            lower,
+            upper,
+        );
+        collection.count_key_range(&prefix, &start, &end, bound)
+    }
+}
+
+/// Whether `plan` reads the range conditions on `field` (alone, or merged
+/// into an interval) — the read a walk of `field`'s index in order replaces.
+fn reads_range_of(plan: &ReadPlan, field: &str) -> bool {
+    match plan {
+        ReadPlan::Single(cond, _, _) => cond.field == field && is_range_op(&cond.op),
+        ReadPlan::Composite(p) => {
+            p.eq_lists.is_empty() && p.index.fields.first().is_some_and(|f| f == field)
+        }
+        _ => false,
+    }
 }
 
 /// The value a FILTER's comparison stands for when the row it reads is not
@@ -519,6 +595,47 @@ fn composite_plan(
         index,
         eq_lists,
         next,
+        nulls_rejected: false,
+    })
+}
+
+/// The single-field `index` read over one interval: the tightest bounds the
+/// FILTER's range conditions (`terms`) put on its field, merged — `f >= lo
+/// AND f < hi` reads `[lo, hi)`, not everything from one bound. `None` when
+/// the field is not bounded on both sides (a lone bound is the single-field
+/// range read's), when the index is not a regular one, or when the read
+/// would miss rows: a sparse index has no entry for a null or missing value,
+/// so it serves the interval only when the FILTER rejects null. The bounds
+/// rank types as SDBQL does (`null < bool < number < string`), so an
+/// interval read returns every row the conditions accept whatever the types
+/// stored; the FILTER is re-checked on each.
+fn single_field_interval(
+    index: crate::storage::index::Index,
+    terms: &[(String, CompositeTerm)],
+) -> Option<CompositePlan> {
+    let [field] = index.fields.as_slice() else {
+        return None;
+    };
+    if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash) {
+        return None;
+    }
+    let (lower @ Some(_), upper @ Some(_)) = range_bounds(field, terms)? else {
+        return None;
+    };
+    let nulls_rejected = rejects_null(field, terms);
+    if index.sparse && !nulls_rejected {
+        return None;
+    }
+    let next = if empty_interval(&lower, &upper) {
+        Vec::new()
+    } else {
+        vec![(lower, upper)]
+    };
+    Some(CompositePlan {
+        index,
+        eq_lists: Vec::new(),
+        next: Some(next),
+        nulls_rejected,
     })
 }
 
@@ -994,7 +1111,14 @@ impl<'a> QueryExecutor<'a> {
                 out.push(ReadPlan::Composite(plan));
             }
         }
+        let mut intervals_listed = false;
         for cond in others {
+            // Each field's ranges merged into one interval come before the
+            // ranges they merge, which then never read fewer entries.
+            if is_range_op(&cond.op) && !intervals_listed {
+                intervals_listed = true;
+                self.push_range_intervals(collection, &terms, &mut out);
+            }
             single(cond, &mut out);
         }
         if let Some((index, grams)) = self.trigram_read(collection, filter, var_name, ctx) {
@@ -1014,6 +1138,42 @@ impl<'a> QueryExecutor<'a> {
             }
         }
         out
+    }
+
+    /// For each field the FILTER bounds on both sides (in FILTER order), the
+    /// read of its single-field index over the merged interval
+    /// ([`single_field_interval`]), unless a compound read of that same
+    /// index is already listed (a non-sparse index's, which also splits
+    /// around `!=`).
+    fn push_range_intervals(
+        &self,
+        collection: &Collection,
+        terms: &[(String, CompositeTerm)],
+        out: &mut Vec<ReadPlan>,
+    ) {
+        let indexes = collection.get_all_indexes();
+        let mut seen: Vec<&str> = Vec::new();
+        for (field, term) in terms {
+            if !matches!(term, CompositeTerm::Range(..)) || seen.contains(&field.as_str()) {
+                continue;
+            }
+            seen.push(field);
+            let on_field = || {
+                indexes
+                    .iter()
+                    .filter(|i| i.fields.len() == 1 && i.fields[0] == *field)
+            };
+            let listed = out.iter().any(|c| {
+                matches!(c, ReadPlan::Composite(p)
+                    if on_field().any(|i| i.name == p.index.name))
+            });
+            if listed {
+                continue;
+            }
+            if let Some(plan) = on_field().find_map(|i| single_field_interval(i.clone(), terms)) {
+                out.push(ReadPlan::Composite(plan));
+            }
+        }
     }
 
     /// Whether some index read, or a geo radius, may serve `filter` —
@@ -1122,6 +1282,120 @@ impl<'a> QueryExecutor<'a> {
         let estimate = estimate?;
         (self.read_name(collection, &chosen, var_name, ctx) == PlannedRead::Index(used.to_string()))
             .then_some(estimate)
+    }
+
+    /// The fewest index entries any of `candidates` would read, counted as
+    /// [`Self::rank_with_estimates`] counts (each only as far as it takes to
+    /// beat the cheapest so far, under a bound growing ×8 from 1,024), but
+    /// for a lone candidate too. `usize::MAX` when there is none, or when
+    /// every one reads past the row ceiling.
+    fn cheapest_estimate(
+        &self,
+        collection: &Collection,
+        candidates: &[ReadPlan],
+        var_name: &str,
+        ctx: &Context,
+    ) -> usize {
+        let cap = self.max_intermediate_rows().saturating_add(1);
+        let mut bound = 1024usize.min(cap);
+        loop {
+            let mut best = usize::MAX;
+            for candidate in candidates {
+                let upto = bound.min(best.saturating_sub(1));
+                let estimate = self.estimate_read(collection, candidate, upto, var_name, ctx);
+                if estimate <= upto {
+                    best = estimate;
+                }
+            }
+            if best <= bound || bound >= cap {
+                return best;
+            }
+            bound = bound.saturating_mul(8).min(cap);
+        }
+    }
+
+    /// How `FOR … FILTER filter SORT v.sort_field LIMIT …` can read its rows
+    /// in SORT order from an index, stopping at the LIMIT, decided without
+    /// reading a document; `None` when it cannot (the rows are then read and
+    /// sorted as usual).
+    ///
+    /// The index must end with `sort_field`. Either every field before it is
+    /// fixed by an `==` of the FILTER (a compound index: `tenant == x SORT
+    /// created`), or it is a single-field index and the FILTER bounds the
+    /// field (`created >= lo AND created < hi SORT created`). Range
+    /// conditions on the sort field bound the walk in both cases, so only
+    /// the interval is read. The walk must hold every row the FILTER can
+    /// accept: a sparse index leaves out rows whose fields are all null, so a
+    /// compound one needs a non-null fixed value and a single-field one a
+    /// FILTER that rejects null. The compound index fixing the most fields
+    /// wins.
+    ///
+    /// A single-field walk replaces the FILTER's own index read, so it is
+    /// taken only when no other read is cheaper: when the FILTER has another
+    /// condition an index serves (`customer_id == @c AND created >= @lo`),
+    /// the interval is counted against the cheapest such read and walked
+    /// only if it holds no more entries. The walk reads at most the
+    /// interval, and stops at the LIMIT.
+    pub(super) fn plan_sorted_read(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+        sort_field: &str,
+    ) -> Option<SortedReadPlan> {
+        let terms = self.composite_terms(filter, var_name, ctx);
+        let conditions = self.extract_equality_conditions(filter, var_name, ctx);
+        let condition_value = |field: &str| {
+            conditions
+                .iter()
+                .find(|c| c.field == field)
+                .map(|c| &c.value)
+        };
+        let bounds = range_bounds(sort_field, &terms);
+        let (index, eq_values) = collection
+            .get_all_indexes()
+            .into_iter()
+            .filter(|index| matches!(index.index_type, IndexType::Persistent | IndexType::Hash))
+            .filter_map(|index| {
+                let (last, leading) = index.fields.split_last()?;
+                if last != sort_field {
+                    return None;
+                }
+                let values: Vec<Value> = leading
+                    .iter()
+                    .map(|f| condition_value(f).cloned())
+                    .collect::<Option<_>>()?;
+                let whole = if values.is_empty() {
+                    bounds.is_some() && (!index.sparse || rejects_null(sort_field, &terms))
+                } else {
+                    !values.iter().any(complex) && index.holds(&values)
+                };
+                whole.then_some((index, values))
+            })
+            .max_by_key(|(_, values)| values.len())?;
+        let (lower, upper) = bounds.unwrap_or((None, None));
+        let plan = SortedReadPlan {
+            index,
+            eq_values,
+            lower,
+            upper,
+        };
+        if plan.eq_values.is_empty() {
+            let others: Vec<ReadPlan> = self
+                .read_candidates(collection, filter, var_name, ctx)
+                .into_iter()
+                .filter(|c| !reads_range_of(c, sort_field))
+                .collect();
+            if !others.is_empty() {
+                // `usize::MAX`: every other read passes the row ceiling.
+                let best = self.cheapest_estimate(collection, &others, var_name, ctx);
+                if best != usize::MAX && plan.entries(collection, best) > best {
+                    return None;
+                }
+            }
+        }
+        Some(plan)
     }
 
     /// The index entries `plan` would read, counted up to `bound`; more than
@@ -1653,6 +1927,7 @@ impl<'a> QueryExecutor<'a> {
                         lo.as_ref().map(|(v, inc)| (v, *inc)),
                         hi.as_ref().map(|(v, inc)| (v, *inc)),
                         cap - out.len(),
+                        plan.nulls_rejected,
                     )?;
                     out.extend(docs);
                     if out.len() >= cap {
@@ -1804,10 +2079,21 @@ impl<'a> QueryExecutor<'a> {
                         return Some(hit);
                     }
                 } else if index.fields.len() == 1 {
+                    let mut interval_tried = false;
                     for cond in candidates.iter().filter(|c| {
                         c.field == index.fields[0]
                             && self.range_read_is_exact(collection, c, &terms)
                     }) {
+                        // The field's ranges as one interval, before any
+                        // one of them alone.
+                        if is_range_op(&cond.op) && !interval_tried {
+                            interval_tried = true;
+                            if let Some(hit) = single_field_interval(index.clone(), &terms)
+                                .and_then(|plan| self.run_composite(collection, plan, limit))
+                            {
+                                return Some(hit);
+                            }
+                        }
                         if let Some(docs) = self.use_index_for_condition(collection, cond, limit) {
                             return Some((docs, index.name.clone(), type_str));
                         }
@@ -2862,6 +3148,9 @@ mod planning_tests {
             "d.b IN [1, 2] AND d.o <= 1",
             "d.n <= 2",
             "d.n <= 2 AND d.n >= 1",
+            "1 < d.n AND d.n <= 3 AND d.a == 4",
+            "d.n > 3 AND d.n < 1",
+            "d.s >= \"s1\" AND d.s < \"s3\"",
             "d.n > 1",
             "d.o == 1",
             "d._key == \"x\"",

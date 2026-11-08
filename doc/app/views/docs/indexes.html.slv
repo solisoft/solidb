@@ -682,7 +682,7 @@ FOR c IN cases FILTER c.owner_id == null RETURN c          // with an index on o
 FOR c IN cases FILTER c.owner_id IN [null, ""] RETURN c
 FOR c IN cases FILTER c.due_at &lt;= @now RETURN c           // rows with no due_at are null, so they match</code></pre>
               <p class="text-sm text-gray-400 mt-3">
-                On a sparse index these shapes are only read from the index after a fixed field of a compound index (<code>owner_id == @me AND status != "Closed"</code>), since every row under a non-null value is indexed. For the same reason a sparse index serves <code>f &lt; x</code> or <code>f &lt;= x</code> only when another condition on <code>f</code> rejects null (<code>f &gt;= 1 AND f &lt;= 5</code>), and an index-ordered <code>SORT f ASC</code> only when every document has an entry; otherwise the query scans, so that rows without a value are not lost. A non-sparse index costs one entry per document. On a unique index, <code>null</code> values never conflict with each other. Existing indexes stay sparse; drop and recreate one to change it.
+                On a sparse index these shapes are only read from the index after a fixed field of a compound index (<code>owner_id == @me AND status != "Closed"</code>), since every row under a non-null value is indexed. For the same reason a sparse index serves <code>f &lt; x</code> or <code>f &lt;= x</code> only when another condition on <code>f</code> rejects null (<code>f &gt;= 1 AND f &lt;= 5</code>), and an index-ordered <code>SORT f ASC</code> only when every document has an entry, or when the FILTER bounds <code>f</code> and rejects null; otherwise the query scans, so that rows without a value are not lost. A non-sparse index costs one entry per document. On a unique index, <code>null</code> values never conflict with each other. Existing indexes stay sparse; drop and recreate one to change it.
               </p>
             </div>
           </div>
@@ -735,9 +735,23 @@ FOR d IN deals
   RETURN d</code></pre>
             <ul class="space-y-1 text-sm text-gray-400 list-disc pl-5">
               <li>Counting stops as soon as a read can no longer beat the cheapest so far, so it costs about as much as the read chosen; two cheap reads cost a few microseconds more to compare.</li>
-              <li>Equal counts keep a fixed order: a compound index on two fields or more, single-field equalities and <code>IN</code>, a compound index on its first field, prefixes, ranges, trigrams, then unions, each in FILTER order.</li>
+              <li>Equal counts keep a fixed order: a compound index on two fields or more, single-field equalities and <code>IN</code>, a compound index on its first field, prefixes, ranges (a field bounded on both sides first, as one interval), trigrams, then unions, each in FILTER order.</li>
               <li>A range is a candidate from any conjunct. On a sparse index it must exclude null (<code>&gt;</code>, <code>&gt;=</code>, or a FILTER that rejects null), since null rows are not in the index.</li>
+              <li>The ranges on one field are read as one interval: <code>o.created_at &gt;= @lo AND o.created_at &lt; @hi</code> reads the entries between the two bounds, not everything above one of them. Any operator, in any order, with the field on either side (<code>@lo &lt;= o.created_at</code>); a bound repeated keeps the tightest, and an interval with nothing in it reads nothing. Bounds of different types follow SDBQL's order (<code>null &lt; bool &lt; number &lt; string</code>).</li>
               <li>EXPLAIN names the read in <code>index_used</code> and its count in <code>estimated_rows</code>. <code>OPTIONS { indexHint: "&hellip;" }</code> skips the comparison and reads the named index; EXPLAIN names it too, and warns when it cannot serve the FILTER.</li>
+            </ul>
+            <p class="text-gray-300 leading-relaxed">
+              When the query sorts on the field a range bounds, with a <code>LIMIT</code>, the interval is walked in index order instead &mdash; backwards for <code>DESC</code>, from its upper end &mdash; and the walk stops once <code>LIMIT</code> rows (offset included) pass the rest of the FILTER. The rows are not sorted again, so the cost follows the page, not the window. A compound index whose fields before the sort field are fixed by <code>==</code> is walked the same way, its range bounded by the sort field's conditions.
+            </p>
+            <pre><code class="language-sql text-sm">// one day of orders, newest first: the day is walked from @hi down, 20 rows read
+FOR o IN orders
+  FILTER o.created_at &gt;= @lo AND o.created_at &lt; @hi
+  SORT o.created_at DESC LIMIT 20
+  RETURN o</code></pre>
+            <ul class="space-y-1 text-sm text-gray-400 list-disc pl-5">
+              <li>On 1,000,000 orders spread over two years, behind the default sparse index, a one-day window (1,370 orders) read newest first takes 0.11 ms. Through 2.7.2 it took 2.2 s: the window was read from one bound &mdash; the 498,630 orders before <code>@hi</code> &mdash; then sorted. The whole window, without <code>SORT</code>, takes 5.3 ms instead of 2.2 s.</li>
+              <li>EXPLAIN reports <code>access_type: "index_sort"</code>, the entries of the interval in <code>estimated_rows</code> (the most the walk can read) and the documents it read in <code>documents_scanned</code>.</li>
+              <li>The walk is taken only where it returns what reading and sorting would. On a sparse index the FILTER must reject null. When another condition has a cheaper index read (<code>customer_id == @c</code> beside a year-long window), the interval is counted against it and that read is used, its rows sorted. A sort on several fields, an <code>indexHint</code>, and an array or object met in the range (the index orders those as JSON text) fall back to reading and sorting.</li>
             </ul>
           </div>
         </div>

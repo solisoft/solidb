@@ -2421,8 +2421,8 @@ fn run_cost(
 
 /// The planner reads the candidate with the fewest index entries, not the
 /// first that applies: a selective range over a common equality (in either
-/// conjunct order), a two-row union over a thousand-row `IN`, a range's
-/// tighter side. EXPLAIN reports what it counted.
+/// conjunct order), a two-row union over a thousand-row `IN`, the interval
+/// between a range's two sides. EXPLAIN reports what it counted.
 #[test]
 fn test_planner_reads_the_cheapest_candidate() {
     let (engine, _tmp) = create_cost_engine();
@@ -2439,9 +2439,10 @@ fn test_planner_reads_the_cheapest_candidate() {
             2,
             2,
         ),
-        // Both sides of a range on one field: the tighter one is read.
-        ("d.amount >= 10 AND d.amount < 20", "idx_amount", 20, 20),
-        ("d.amount >= 2990 AND d.amount < 2995", "idx_amount", 10, 10),
+        // Both sides of a range on one field: the interval between them,
+        // not the tighter side (20 and 10 entries through 2.7.2).
+        ("d.amount >= 10 AND d.amount < 20", "idx_amount", 10, 10),
+        ("d.amount >= 2990 AND d.amount < 2995", "idx_amount", 5, 5),
         // A rare trigram ("123" in thirteen names) over the open rows.
         (
             "LIKE(d.name, \"%client 123%\", true) AND d.status == \"open\"",
@@ -2661,4 +2662,443 @@ fn test_explain_hint_edge_cases() {
         assert_eq!(e.collections[0].index_used.as_deref(), Some("trg_name"));
         assert_eq!(e.collections[0].estimated_rows, None);
     }
+}
+
+// ============ Two-sided ranges on a single-field index (card #723) ============
+
+/// 600 rows with explicit keys (not in `t` order, so the tie order of the
+/// scan and of the index are the same and compared) in three collections:
+/// `plain` (no index), `sparse` (the default sparse index on `t`) and
+/// `dense` (a non-sparse one). `t` is mostly a timestamp string with many
+/// ties, and otherwise missing, null, a number, a bool, an array or an
+/// object. `kind` and `grp` are for residual conditions; `grp` is indexed,
+/// with four "rare" rows, two of them in the test's window.
+fn create_range_engine() -> (StorageEngine, TempDir) {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database("rangedb".to_string()).unwrap();
+    let db = engine.get_database("rangedb").unwrap();
+    let n = 600i64;
+    let docs: Vec<_> = (0..n)
+        .map(|i| {
+            let mut doc = json!({
+                "_key": format!("k{:04}", (i * 37) % n),
+                "seq": i,
+                "kind": i % 7,
+                "grp": if i % 150 == 26 { "rare" } else { "common" },
+            });
+            let t = match i % 20 {
+                0 => None,
+                1 => Some(json!(null)),
+                2 => Some(json!(i % 50)),
+                3 => Some(json!(i % 2 == 0)),
+                4 => Some(json!([i % 3])),
+                5 => Some(json!({ "x": i % 3 })),
+                _ => Some(json!(format!(
+                    "2024-06-{:02}T{:02}",
+                    (i * 11) % 28 + 1,
+                    i % 3
+                ))),
+            };
+            if let Some(t) = t {
+                doc["t"] = t;
+            }
+            doc
+        })
+        .collect();
+    for name in ["plain", "sparse", "dense"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        db.get_collection(name)
+            .unwrap()
+            .insert_batch(docs.clone())
+            .unwrap();
+    }
+    let sparse = db.get_collection("sparse").unwrap();
+    sparse
+        .create_index(
+            "idx_t".to_string(),
+            vec!["t".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    let dense = db.get_collection("dense").unwrap();
+    dense
+        .create_index_with(
+            "idx_t_dense".to_string(),
+            vec!["t".to_string()],
+            IndexType::Persistent,
+            false,
+            false,
+        )
+        .unwrap();
+    for coll in [&sparse, &dense] {
+        coll.create_index(
+            "idx_grp".to_string(),
+            vec!["grp".to_string()],
+            IndexType::Hash,
+            false,
+        )
+        .unwrap();
+    }
+    (engine, tmp)
+}
+
+/// `query` with `C` replaced by `coll`: its rows (sorted when the query does
+/// not sort), the collection scans it made, and EXPLAIN, ran and planned.
+fn run_range(
+    engine: &StorageEngine,
+    coll: &str,
+    query: &str,
+) -> (
+    Vec<serde_json::Value>,
+    u64,
+    solidb::sdbql::QueryExplain,
+    solidb::sdbql::QueryExplain,
+) {
+    let ast = parse(&query.replace(" C ", &format!(" {coll} "))).unwrap();
+    let executor = QueryExecutor::with_database(engine, "rangedb".to_string());
+    let mut rows = executor.execute(&ast).unwrap();
+    if !query.contains("SORT") {
+        rows.sort_by_key(|v| v.as_i64());
+    }
+    let scans = executor.collection_scans();
+    let ran = QueryExecutor::with_database(engine, "rangedb".to_string())
+        .explain(&ast)
+        .unwrap();
+    let plan = QueryExecutor::with_database(engine, "rangedb".to_string())
+        .explain_plan(&ast)
+        .unwrap();
+    (rows, scans, ran, plan)
+}
+
+/// Two-sided ranges, every operator in either order, the field on either
+/// side, duplicated bounds, across types: each reads the interval between
+/// its bounds (and no more), returns what the scan returns, and EXPLAIN —
+/// ran or planned — counts the interval's entries.
+#[test]
+fn test_two_sided_range_reads_the_interval() {
+    let (engine, _tmp) = create_range_engine();
+    let filters = [
+        "d.t >= \"2024-06-05\" AND d.t < \"2024-06-12\"",
+        "d.t > \"2024-06-05T00\" AND d.t <= \"2024-06-12T01\"",
+        "d.t < \"2024-06-12\" AND d.t >= \"2024-06-05\"",
+        "d.t <= \"2024-06-12T01\" AND d.t > \"2024-06-05T00\"",
+        // The field on the right-hand side.
+        "\"2024-06-05\" <= d.t AND \"2024-06-12\" > d.t",
+        "\"2024-06-12T01\" >= d.t AND d.t > \"2024-06-05T00\"",
+        // Duplicated bounds: the tightest of each side.
+        "d.t >= \"2024-06-01\" AND d.t > \"2024-06-05T00\" AND d.t < \"2024-06-20\" \
+         AND d.t <= \"2024-06-12T01\"",
+        // Equal bounds, one exclusive: the exclusive one.
+        "d.t >= \"2024-06-05T00\" AND d.t > \"2024-06-05T00\" AND d.t < \"2024-06-09\"",
+        // A point.
+        "d.t >= \"2024-06-08T01\" AND d.t <= \"2024-06-08T01\"",
+        // Numbers, and bounds of two types: numbers above 20, then every
+        // string below the 3rd, as SDBQL ranks types.
+        "d.t >= 10 AND d.t < 30",
+        "d.t > 20 AND d.t < \"2024-06-03\"",
+        "d.t > false AND d.t <= 5",
+        // Two FILTERs are one conjunction.
+        "d.t >= \"2024-06-05\" FILTER d.t < \"2024-06-12\"",
+    ];
+    for filter in filters {
+        let q = format!("FOR d IN C FILTER {filter} RETURN d.seq");
+        let (expected, _, _, _) = run_range(&engine, "plain", &q);
+        assert!(!expected.is_empty(), "the seed covers {filter}");
+        for (coll, index) in [("sparse", "idx_t"), ("dense", "idx_t_dense")] {
+            let (rows, scans, ran, plan) = run_range(&engine, coll, &q);
+            assert_eq!(rows, expected, "{coll}: {filter}");
+            assert_eq!(scans, 0, "{coll}: {filter}");
+            for e in [&ran, &plan] {
+                let access = &e.collections[0];
+                assert_eq!(access.access_type, "index_lookup", "{coll}: {filter}");
+                assert_eq!(
+                    access.index_used.as_deref(),
+                    Some(index),
+                    "{coll}: {filter}"
+                );
+                // Nothing but the range: the interval is the answer.
+                assert_eq!(
+                    access.estimated_rows,
+                    Some(expected.len()),
+                    "{coll}: {filter}"
+                );
+            }
+            assert_eq!(ran.documents_scanned, expected.len(), "{coll}: {filter}");
+            assert_eq!(ran.documents_returned, expected.len(), "{coll}: {filter}");
+            // The FILTERs are reported, with the rows they kept.
+            assert!(!ran.filters.is_empty(), "{coll}: {filter}");
+            assert_eq!(
+                ran.filters.last().unwrap().documents_after,
+                expected.len(),
+                "{coll}: {filter}"
+            );
+        }
+    }
+}
+
+/// An empty interval reads nothing; a FILTER that admits null keeps its old
+/// reads (the sparse index cannot serve it, the non-sparse one holds null).
+#[test]
+fn test_two_sided_range_edge_cases() {
+    let (engine, _tmp) = create_range_engine();
+    for filter in [
+        "d.t >= \"2024-06-12\" AND d.t < \"2024-06-05\"",
+        "d.t > \"2024-06-05T00\" AND d.t < \"2024-06-05T00\"",
+        "d.t > 30 AND d.t <= 10",
+    ] {
+        for coll in ["plain", "sparse", "dense"] {
+            let q = format!("FOR d IN C FILTER {filter} RETURN d.seq");
+            let (rows, _, ran, _) = run_range(&engine, coll, &q);
+            assert!(rows.is_empty(), "{coll}: {filter}");
+            if coll != "plain" {
+                assert_eq!(ran.documents_scanned, 0, "{coll}: {filter}");
+                assert_eq!(
+                    ran.collections[0].estimated_rows,
+                    Some(0),
+                    "{coll}: {filter}"
+                );
+            }
+            let q = format!("FOR d IN C FILTER {filter} SORT d.t DESC LIMIT 3 RETURN d.seq");
+            assert!(
+                run_range(&engine, coll, &q).0.is_empty(),
+                "{coll}: {filter}"
+            );
+        }
+    }
+
+    // `>= null` admits null and missing values.
+    for filter in [
+        "d.t >= null AND d.t < 5",
+        "d.t <= 5 AND d.t >= null",
+        "d.t < \"2024-06-03\" AND d.t >= false",
+    ] {
+        let q = format!("FOR d IN C FILTER {filter} RETURN d.seq");
+        let (expected, _, _, _) = run_range(&engine, "plain", &q);
+        assert!(!expected.is_empty(), "the seed covers {filter}");
+        let (rows, scans, ran, _) = run_range(&engine, "dense", &q);
+        assert_eq!(rows, expected, "dense: {filter}");
+        assert_eq!(scans, 0, "dense: {filter}");
+        assert_eq!(ran.collections[0].estimated_rows, Some(expected.len()));
+        let (rows, _, _, _) = run_range(&engine, "sparse", &q);
+        assert_eq!(rows, expected, "sparse: {filter}");
+    }
+    let q = "FOR d IN C FILTER d.t >= null AND d.t < 5 RETURN d.seq";
+    let (_, scans, ran, _) = run_range(&engine, "sparse", q);
+    assert!(scans > 0, "the sparse index lacks the null rows");
+    assert_eq!(ran.collections[0].access_type, "full_scan");
+}
+
+/// A residual condition that rejects most rows of the window: the interval
+/// is read, the condition checked on each row, and EXPLAIN reports the
+/// interval's entries, the rows read and the rows the FILTER kept.
+#[test]
+fn test_two_sided_range_with_a_residual_condition() {
+    let (engine, _tmp) = create_range_engine();
+    let window = "d.t >= \"2024-06-03\" AND d.t < \"2024-06-20\"";
+    let q = format!("FOR d IN C FILTER {window} RETURN d.seq");
+    let (window_rows, _, _, _) = run_range(&engine, "plain", &q);
+    let q = format!("FOR d IN C FILTER {window} AND d.kind == 3 RETURN d.seq");
+    let (expected, _, _, _) = run_range(&engine, "plain", &q);
+    assert!(expected.len() * 5 < window_rows.len());
+    for coll in ["sparse", "dense"] {
+        let (rows, scans, ran, plan) = run_range(&engine, coll, &q);
+        assert_eq!(rows, expected, "{coll}");
+        assert_eq!(scans, 0, "{coll}");
+        assert_eq!(ran.collections[0].estimated_rows, Some(window_rows.len()));
+        assert_eq!(plan.collections[0].estimated_rows, Some(window_rows.len()));
+        assert_eq!(ran.documents_scanned, window_rows.len(), "{coll}");
+        assert_eq!(ran.documents_returned, expected.len(), "{coll}");
+        assert_eq!(ran.filters.len(), 1);
+        assert_eq!(ran.filters[0].documents_before, window_rows.len());
+        assert_eq!(ran.filters[0].documents_after, expected.len());
+    }
+}
+
+/// `SORT` on the range's field with a LIMIT walks the interval in index
+/// order — backwards for DESC — and stops at the LIMIT: ASC and DESC, with
+/// an offset, past the end, with a residual condition, a lone bound, LETs
+/// after the FILTER and after the LIMIT. Ties come out in key order, as
+/// the scan's stable sort leaves them.
+#[test]
+fn test_range_sort_limit_reads_in_index_order() {
+    let (engine, _tmp) = create_range_engine();
+    let window = "d.t >= \"2024-06-05\" AND d.t < \"2024-06-12\"";
+    let shapes = [
+        format!("FOR d IN C FILTER {window} SORT d.t DESC LIMIT 7 RETURN [d.seq, d.t]"),
+        format!("FOR d IN C FILTER {window} SORT d.t ASC LIMIT 7 RETURN [d.seq, d.t]"),
+        format!("FOR d IN C FILTER {window} SORT d.t DESC LIMIT 4, 9 RETURN d.seq"),
+        format!("FOR d IN C FILTER {window} SORT d.t ASC LIMIT 4, 9 RETURN d.seq"),
+        format!("FOR d IN C FILTER {window} SORT d.t DESC LIMIT 1000 RETURN d.seq"),
+        format!("FOR d IN C FILTER {window} AND d.kind == 3 SORT d.t DESC LIMIT 5 RETURN d.seq"),
+        format!("FOR d IN C FILTER d.kind != 2 FILTER {window} SORT d.t ASC LIMIT 6 RETURN d.seq"),
+        format!(
+            "FOR d IN C FILTER {window} LET s = d.seq * 2 SORT d.t DESC LIMIT 5 \
+             LET u = s + 1 RETURN [s, u]"
+        ),
+        // Bounds of two types, ASC through numbers into strings.
+        "FOR d IN C FILTER d.t > 20 AND d.t < \"2024-06-03\" SORT d.t ASC LIMIT 15 \
+         RETURN d.seq"
+            .to_string(),
+        // A lone lower bound that rejects null: newest first.
+        "FOR d IN C FILTER d.t >= \"2024-06-20\" AND d.t < \"z\" SORT d.t DESC LIMIT 6 \
+         RETURN d.seq"
+            .to_string(),
+        "FOR d IN C FILTER d.t >= \"2024-06-20\" SORT d.t ASC LIMIT 6 RETURN d.seq".to_string(),
+    ];
+    for q in &shapes {
+        let (expected, _, _, _) = run_range(&engine, "plain", q);
+        assert!(!expected.is_empty(), "the seed covers {q}");
+        for (coll, index) in [("sparse", "idx_t"), ("dense", "idx_t_dense")] {
+            let (rows, scans, ran, plan) = run_range(&engine, coll, q);
+            assert_eq!(rows, expected, "{coll}: {q}");
+            assert_eq!(scans, 0, "{coll}: {q}");
+            for e in [&ran, &plan] {
+                assert_eq!(e.collections[0].access_type, "index_sort", "{coll}: {q}");
+                assert_eq!(
+                    e.collections[0].index_used.as_deref(),
+                    Some(index),
+                    "{coll}: {q}"
+                );
+                assert_eq!(e.sort.as_ref().unwrap().index.as_deref(), Some(index));
+            }
+            assert_eq!(
+                ran.collections[0].estimated_rows, plan.collections[0].estimated_rows,
+                "{coll}: {q}"
+            );
+            assert_eq!(ran.documents_returned, expected.len(), "{coll}: {q}");
+            assert_eq!(ran.timing.sort_us, 0, "{coll}: {q}");
+        }
+    }
+
+    // Ties in the page, so their order is part of what is compared.
+    let q = format!("FOR d IN C FILTER {window} SORT d.t DESC LIMIT 7 RETURN d.t");
+    let (page, _, _, _) = run_range(&engine, "plain", &q);
+    assert!(page.windows(2).any(|w| w[0] == w[1]), "{page:?}");
+
+    // The walk stops at the page: 7 rows read, not the window.
+    let q = format!("FOR d IN C FILTER {window} SORT d.t DESC LIMIT 7 RETURN d.seq");
+    let (_, _, ran, _) = run_range(&engine, "sparse", &q);
+    let window_rows = run_range(
+        &engine,
+        "plain",
+        &format!("FOR d IN C FILTER {window} RETURN d.seq"),
+    )
+    .0
+    .len();
+    assert_eq!(ran.documents_scanned, 7);
+    assert_eq!(ran.collections[0].estimated_rows, Some(window_rows));
+    assert_eq!(ran.filters[0].documents_before, 7);
+    assert_eq!(ran.filters[0].documents_after, 7);
+}
+
+/// Where the walk cannot be trusted the rows are read and sorted as before:
+/// arrays and objects inside the walked range (the codec orders them as
+/// JSON text), a sparse index and a range that admits null, a sort on
+/// another field, two sort keys, an index hint, and a cheaper read of
+/// another condition.
+#[test]
+fn test_range_sort_limit_falls_back() {
+    let (engine, _tmp) = create_range_engine();
+    let window = "d.t >= \"2024-06-05\" AND d.t < \"2024-06-12\"";
+    for (coll, q, walked) in [
+        // No upper bound: arrays and objects lie above every string. DESC
+        // meets them first and gives up; ASC fills the page before them.
+        (
+            "sparse",
+            "FOR d IN C FILTER d.t >= \"2024-06-20\" SORT d.t DESC LIMIT 6 RETURN d.seq".to_string(),
+            false,
+        ),
+        (
+            "sparse",
+            "FOR d IN C FILTER d.t >= \"2024-06-20\" SORT d.t ASC LIMIT 6 RETURN d.seq".to_string(),
+            true,
+        ),
+        // `<` alone admits null: not in the sparse index...
+        (
+            "sparse",
+            "FOR d IN C FILTER d.t < \"2024-06-03\" SORT d.t ASC LIMIT 6 RETURN d.seq".to_string(),
+            false,
+        ),
+        // ...but in the non-sparse one, where null sorts first.
+        (
+            "dense",
+            "FOR d IN C FILTER d.t < \"2024-06-03\" SORT d.t ASC LIMIT 6 RETURN d.seq".to_string(),
+            true,
+        ),
+        (
+            "dense",
+            "FOR d IN C FILTER d.t < \"2024-06-03\" SORT d.t DESC LIMIT 6 RETURN d.seq".to_string(),
+            true,
+        ),
+        (
+            "sparse",
+            format!("FOR d IN C FILTER {window} SORT d.seq DESC LIMIT 5 RETURN d.seq"),
+            false,
+        ),
+        (
+            "sparse",
+            format!("FOR d IN C FILTER {window} SORT d.t DESC, d.seq ASC LIMIT 5 RETURN d.seq"),
+            false,
+        ),
+        (
+            "sparse",
+            format!(
+                "FOR d IN C OPTIONS {{ indexHint: \"idx_t\" }} FILTER {window} \
+                 SORT d.t DESC LIMIT 5 RETURN d.seq"
+            ),
+            false,
+        ),
+        // Four "rare" rows against the window: the equality is read.
+        (
+            "sparse",
+            format!("FOR d IN C FILTER d.grp == \"rare\" AND {window} SORT d.t DESC LIMIT 5 RETURN d.seq"),
+            false,
+        ),
+        // Every row "common": the window is cheaper, and walked.
+        (
+            "sparse",
+            format!("FOR d IN C FILTER d.grp == \"common\" AND {window} SORT d.t DESC LIMIT 5 RETURN d.seq"),
+            true,
+        ),
+    ] {
+        let (expected, _, _, _) = run_range(&engine, "plain", &q);
+        let (rows, _, ran, plan) = run_range(&engine, coll, &q);
+        assert_eq!(rows, expected, "{coll}: {q}");
+        assert_eq!(
+            ran.collections[0].access_type == "index_sort",
+            walked,
+            "{coll}: {q}: {:?}",
+            ran.collections[0]
+        );
+        // The plan agrees, except where only the rows tell: the walk that
+        // meets an array gives up.
+        if walked || !q.contains(">= \"2024-06-20\" SORT d.t DESC") {
+            assert_eq!(
+                plan.collections[0].access_type == "index_sort",
+                walked,
+                "plan: {coll}: {q}"
+            );
+        }
+    }
+}
+
+/// An index hint naming the single-field index reads the merged interval
+/// too, not one of its bounds.
+#[test]
+fn test_hinted_two_sided_range_reads_the_interval() {
+    let (engine, _tmp) = create_range_engine();
+    let window = "d.t >= \"2024-06-05\" AND d.t < \"2024-06-12\"";
+    let (expected, _, _, _) = run_range(
+        &engine,
+        "plain",
+        &format!("FOR d IN C FILTER {window} RETURN d.seq"),
+    );
+    let q = format!("FOR d IN C OPTIONS {{ indexHint: \"idx_t\" }} FILTER {window} RETURN d.seq");
+    let (rows, scans, ran, _) = run_range(&engine, "sparse", &q);
+    assert_eq!(rows, expected);
+    assert_eq!(scans, 0);
+    assert_eq!(ran.collections[0].index_used.as_deref(), Some("idx_t"));
+    assert_eq!(ran.documents_scanned, expected.len());
 }

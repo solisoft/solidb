@@ -1748,8 +1748,10 @@ impl Collection {
     /// bound is given, when any value is an array or object (the codec orders
     /// those as JSON text, not as SDBQL compares them), or, for a sparse
     /// index, when `eq_values` is empty or all null (rows whose index fields
-    /// are all null are not in it). On a non-sparse index, with `eq_values`
-    /// empty, the bounds apply to the first field.
+    /// are all null are not in it) unless `nulls_rejected`: the caller's
+    /// FILTER rejects every such row, so the index still holds every match
+    /// (a single-field range that excludes null). On a non-sparse index, with
+    /// `eq_values` empty, the bounds apply to the first field.
     pub fn index_scan_composite(
         &self,
         index: &crate::storage::index::Index,
@@ -1757,6 +1759,7 @@ impl Collection {
         lower: Option<(&Value, bool)>,
         upper: Option<(&Value, bool)>,
         cap: usize,
+        nulls_rejected: bool,
     ) -> Option<Vec<Document>> {
         let n = eq_values.len();
         let has_range = lower.is_some() || upper.is_some();
@@ -1764,7 +1767,7 @@ impl Collection {
         if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
             || n > index.fields.len()
             || (n == index.fields.len() && has_range)
-            || (index.sparse && (n == 0 || eq_values.iter().all(Value::is_null)))
+            || (index.sparse && !nulls_rejected && (n == 0 || eq_values.iter().all(Value::is_null)))
             || eq_values.iter().any(complex)
             || lower.is_some_and(|(v, _)| complex(v))
             || upper.is_some_and(|(v, _)| complex(v))
@@ -2029,82 +2032,89 @@ impl Collection {
         Some(result)
     }
 
-    /// Documents matching `conditions` (field equalities) in `sort_field`
-    /// order, read from a composite index that ends with `sort_field` and
-    /// whose other fields are all equal to a condition value — the index with
-    /// the longest such prefix wins. Inside the exact prefix
-    /// `idx:<name>:hex(v1)_…_hex(vk)_` the entries are ordered by the sort
-    /// value (the codec is order-preserving and prefix-free), then by
-    /// document key, so the read walks that range — backwards for a
-    /// descending sort — and stops once `accept` has kept `want` documents.
+    /// The documents of `index` whose leading fields equal `eq_values` (every
+    /// field but the last) and whose last field lies within `lower`/`upper`
+    /// (`(value, inclusive)`, `None` for open), in the order of that last
+    /// field — the sort field. The range is the one
+    /// [`Self::index_key_range`] gives: inside it the entries are ordered by
+    /// the sort value (the codec is order-preserving and prefix-free), then
+    /// by document key, so the read walks it — backwards, from its upper end,
+    /// for a descending sort — and stops once `accept` has kept `want`
+    /// documents. With `eq_values` empty the index is a single-field one and
+    /// the range is the bounds alone.
     ///
     /// Rows with equal sort values come out in key order both ways, as the
     /// stable sort of a key-ordered scan leaves them: a backward read puts
     /// each run of equal values back in key order. That is why the sort field
     /// must be the index's last one.
     ///
+    /// The caller has established that the range holds every row the FILTER
+    /// can accept (a sparse index leaves out rows whose fields are all null).
     /// `accept` re-checks each document against the whole FILTER: the index
-    /// only narrows the candidates, and conditions outside the prefix are
-    /// left to it. Returns `None` when no index fits, when every prefix value
-    /// is null (such rows are not indexed), when a sort value is an array or
-    /// object (the codec orders those as JSON text, not as SORT does) or when
-    /// more than `max_scan` entries would be read; the caller then falls back
-    /// to the scan.
-    pub fn index_sorted_with_prefix(
+    /// only narrows the candidates, and conditions outside the range are left
+    /// to it. Documents are fetched in batches sized from what is still
+    /// wanted and how many of those read so far were kept, so a page whose
+    /// rows all pass costs about the page.
+    ///
+    /// Returns the documents kept and the number read. `None` — the caller
+    /// falls back to the scan — when the index is not a regular one, when
+    /// `eq_values` does not fix every field but the last, when a value or a
+    /// bound is an array or object, when a sort value read is an array or
+    /// object (the codec orders those as JSON text, not as SORT does), or
+    /// when more than `max_scan` entries would be read.
+    #[allow(clippy::too_many_arguments)]
+    pub fn index_sorted_range(
         &self,
-        conditions: &[(String, Value)],
-        sort_field: &str,
+        index: &crate::storage::index::Index,
+        eq_values: &[Value],
+        lower: Option<(&Value, bool)>,
+        upper: Option<(&Value, bool)>,
         ascending: bool,
         want: usize,
         max_scan: usize,
         accept: &mut dyn FnMut(&Document) -> bool,
-    ) -> Option<(crate::storage::index::Index, Vec<Document>)> {
+    ) -> Option<(Vec<Document>, usize)> {
         const BATCH: usize = 256;
 
-        let condition_value = |field: &str| {
-            conditions
-                .iter()
-                .find(|(cf, _)| cf == field)
-                .map(|(_, v)| v)
-        };
-        let (index, values) = self
-            .get_all_indexes()
-            .into_iter()
-            .filter(|index| matches!(index.index_type, IndexType::Persistent | IndexType::Hash))
-            .filter_map(|index| {
-                let (last, leading) = index.fields.split_last()?;
-                if last != sort_field {
-                    return None;
-                }
-                let values: Vec<Value> = leading
-                    .iter()
-                    .map(|f| condition_value(f).cloned())
-                    .collect::<Option<_>>()?;
-                (!values.is_empty() && index.holds(&values)).then_some((index, values))
-            })
-            .max_by_key(|(_, values)| values.len())?;
-
-        let prefix = format!(
-            "{}{}:{}_",
-            IDX_PREFIX,
-            index.name,
-            Self::encode_index_values(&values)
-        );
-        let prefix_bytes = prefix.as_bytes();
+        let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
+        let (sort_field, leading) = index.fields.split_last()?;
+        if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+            || eq_values.len() != leading.len()
+            || eq_values.iter().any(complex)
+            || lower.is_some_and(|(v, _)| complex(v))
+            || upper.is_some_and(|(v, _)| complex(v))
+        {
+            return None;
+        }
+        let (prefix, start, end) =
+            Self::index_key_range(&index.name, index.fields.len(), eq_values, lower, upper);
+        if start >= end || want == 0 {
+            return Some((Vec::new(), 0));
+        }
+        let prefix_bytes = prefix.as_slice();
         let cf = self.ks.handle(&self.db)?;
         let iter = if ascending {
-            self.db
-                .iterator_ks(&cf, IterMode::From(prefix_bytes, Direction::Forward))
+            self.db.iterator_ks_bounded(
+                &cf,
+                IterMode::From(&start, Direction::Forward),
+                Some(&start),
+                Some(&end),
+            )
         } else {
-            let mut seek_key = prefix_bytes.to_vec();
-            seek_key.push(0xFF);
+            // `end` is never an entry (it ends in a byte no entry has
+            // there), so the reverse seek lands on the last entry below it.
             self.db
-                .iterator_ks(&cf, IterMode::From(&seek_key, Direction::Reverse))
+                .iterator_ks(&cf, IterMode::From(&end, Direction::Reverse))
         };
         // `<prefix><hex(sort value)>:<doc key>`: the hex part is the tie group.
         let mut entries = iter
             .filter_map(|r| r.ok())
-            .take_while(|(k, _)| k.starts_with(prefix_bytes))
+            .skip_while(|(k, _)| k.as_ref() >= end.as_slice())
+            .take_while(|(k, _)| {
+                k.starts_with(prefix_bytes)
+                    && k.as_ref() >= start.as_slice()
+                    && k.as_ref() < end.as_slice()
+            })
             .map(|(k, v)| {
                 let rest = &k[prefix_bytes.len()..];
                 let group = rest.split(|b| *b == b':').next().unwrap_or(rest).to_vec();
@@ -2129,7 +2139,16 @@ impl Collection {
         let mut kept = Vec::new();
         let mut scanned = 0usize;
         while kept.len() < want {
-            let batch: Vec<Vec<u8>> = keys.by_ref().take(BATCH).collect();
+            // What is still wanted, scaled by the share kept so far (all of
+            // it read again when nothing was kept yet).
+            let missing = want - kept.len();
+            let size = if kept.is_empty() {
+                missing.max(scanned)
+            } else {
+                missing.saturating_mul(scanned).div_ceil(kept.len())
+            }
+            .clamp(1, BATCH);
+            let batch: Vec<Vec<u8>> = keys.by_ref().take(size).collect();
             if batch.is_empty() {
                 break;
             }
@@ -2147,10 +2166,7 @@ impl Collection {
                 let Ok(doc) = deserialize_doc(&bytes) else {
                     continue;
                 };
-                if matches!(
-                    extract_field_value(&doc.to_value(), sort_field),
-                    Value::Array(_) | Value::Object(_)
-                ) {
+                if complex(&extract_field_value(&doc.to_value(), sort_field)) {
                     return None;
                 }
                 if accept(&doc) {
@@ -2161,7 +2177,7 @@ impl Collection {
                 }
             }
         }
-        Some((index, kept))
+        Some((kept, scanned))
     }
 
     // ==================== Bloom/Cuckoo Filter Support ====================
