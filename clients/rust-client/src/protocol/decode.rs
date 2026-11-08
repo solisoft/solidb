@@ -674,15 +674,26 @@ mod tests {
             .raw(&[0xd0, 3]);
         fell_back(&w.0).unwrap();
         // Nesting deeper than the limit: read by rmp_serde, up to its own.
-        for depth in [MAX_DEPTH + 10, 2000] {
-            let mut data = vec![0x82, 0xa6];
-            data.extend_from_slice(b"status");
-            data.extend_from_slice(&[0xa2, b'o', b'k', 0xa4]);
-            data.extend_from_slice(b"data");
-            data.extend(std::iter::repeat_n(0x91, depth));
-            data.push(0xc0);
-            fell_back(&data).ok();
-        }
+        // rmp_serde (and dropping what it built) recurses once per level; in
+        // an unoptimised build 2,000 levels overflow a test thread's 2 MiB
+        // stack, as they would have with the old client, so give it room.
+        std::thread::Builder::new()
+            .stack_size(64 << 20)
+            .spawn(move || {
+                for depth in [MAX_DEPTH + 10, 2000] {
+                    let mut data = vec![0x82, 0xa6];
+                    data.extend_from_slice(b"status");
+                    data.extend_from_slice(&[0xa2, b'o', b'k', 0xa4]);
+                    data.extend_from_slice(b"data");
+                    data.extend(std::iter::repeat_n(0x91, depth));
+                    data.push(0xc0);
+                    assert!(Reader::new(&data).ok_response().is_none());
+                    same(&data).ok();
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     #[test]
