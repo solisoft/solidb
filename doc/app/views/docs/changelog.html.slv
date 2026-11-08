@@ -9,6 +9,24 @@
     </p>
   </div>
 
+  <!-- 2.7.3 -->
+  <section id="v2-7-3" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.7.3</h2>
+      <span class="text-sm font-medium text-gray-400">November 8, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A two-sided range is read as one interval, and <code>SORT &hellip; LIMIT</code> on its field in index order</strong> &mdash; <code>FILTER o.created_at &gt;= @lo AND o.created_at &lt; @hi</code> on a single-field index read every entry on one side of one bound and checked the other per row. It now reads only the entries between the two bounds, and with <code>SORT o.created_at DESC LIMIT 20</code> walks them from the upper end and stops at the 20th row. On 1,000,000 orders, a one-day window went from 2.2&nbsp;s to 0.11&nbsp;ms; thirty-two of those queries at once used to get the server OOM-killed in 16&nbsp;GB.</li>
+        <li><strong class="text-white">A full-scan <code>COLLECT</code> groups documents as it reads them</strong> &mdash; the whole collection used to be read into rows before grouping, so memory grew with it, and a collection over <code>SOLIDB_MAX_INTERMEDIATE_ROWS</code> could not be aggregated. Each document is now decoded (only the fields the query reads), filtered, folded into its group and dropped. On 1,000,000 orders, a five-group <code>COUNT</code> and <code>SUM</code> went from 6.2&nbsp;s and 5.7&nbsp;GB of extra memory to 0.92&nbsp;s and none.</li>
+        <li><strong class="text-white">The Docker image starts, listens and stops</strong> &mdash; every image from v2.5.0 to v2.7.2 exited at once: its Debian base had an older glibc than the release binary needs. The base is now <code>debian:trixie-slim</code>, the image sets <code>SOLIDB_HOST=0.0.0.0</code> so a published port reaches the server, and <code>docker stop</code> shuts it down cleanly. The release job now runs the image before pushing it.</li>
+        <li><strong class="text-white">A <code>LIMIT</code> after a <code>COLLECT</code> limits the groups</strong> &mdash; with no <code>SORT</code> and no <code>FILTER</code>, <code>COLLECT k = d.k LIMIT 2</code> grouped only the first two documents.</li>
+        <li><strong class="text-white">EXPLAIN reports what runs</strong> &mdash; after an index read it listed <code>filters: []</code> and counted every row the index returned; through a <code>COLLECT</code> it counted the rows before grouping. Both now report the rows that are actually kept.</li>
+        <li><strong class="text-white"><code>doc["a.b"]</code> in a projected scan</strong> &mdash; a scan decoding only the fields a query reads missed documents holding the path <code>a</code> &rarr; <code>b</code>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.7.2 -->
   <section id="v2-7-2" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

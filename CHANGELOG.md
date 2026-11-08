@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+## [2.7.3](https://github.com/solisoft/solidb/compare/v2.7.2...v2.7.3) (2026-11-08)
+
+### Performance
+
+* **A two-sided range is read as one interval, and `SORT … LIMIT` on its
+  field in index order.** `FILTER o.created_at >= @lo AND o.created_at < @hi`
+  on a single-field index read every entry on one side of one bound and
+  checked the other per row; it now reads only the entries between the two
+  bounds, whatever the operators, their order, or the side the field is on.
+  With `SORT o.created_at DESC LIMIT 20` the interval is walked from its
+  upper end and the walk stops at the 20th row that passes the FILTER. On
+  1,000,000 orders, a one-day window: 2.2 s → 0.11 ms sorted and limited,
+  5.3 ms for all 1,370 rows, 0.18 ms joined to the customers. Thirty-two of
+  those queries at once used to get the server OOM-killed in 16 GB. A
+  compound index read in SORT order is now bounded by the sort field's
+  ranges too. The walk is taken only when no other index read of the FILTER
+  counts fewer entries, and falls back to read-and-sort for several sort
+  keys, a hint, a sparse index with a range that admits null, or an array or
+  object in the range.
+* **A full-scan `COLLECT` groups documents as it reads them.**
+  `FOR x IN c [FILTER … | LET …]* COLLECT …` read the whole collection into
+  rows before grouping, so memory grew with the collection: 100,000 orders
+  of 500 bytes got a server in a 1 GB container OOM-killed answering a
+  five-group query, and a collection larger than
+  `SOLIDB_MAX_INTERMEDIATE_ROWS` could not be aggregated at all. Each
+  document is now decoded, filtered, folded into its group and dropped, and
+  only the fields the clauses read are decoded. Memory is one row per group
+  plus what `INTO` and the list aggregates keep, which the ceiling still
+  bounds; the documents read no longer count against it. On 1,000,000
+  orders, `COLLECT status … AGGREGATE COUNT(), SUM(amount)` went from 6.2 s
+  and 5.7 GB of extra memory to 0.92 s and none. A FILTER served by an
+  index, a columnar, sharded or search-view source, and `SYSTEM_TIME` or
+  valid-time loops keep the previous path; a row policy is applied per
+  document.
+
+### Bug Fixes
+
+* **The Docker image starts, listens and stops.** Every image published
+  from v2.5.0 to v2.7.2 exited at once: its base, `debian:bookworm-slim`
+  (glibc 2.36), was older than the host the release binary is built on
+  (glibc 2.39). The base is now `debian:trixie-slim`. Once started, the
+  server would have bound loopback, which a published port cannot reach;
+  the image now sets `SOLIDB_HOST=0.0.0.0`, as the k8s manifests do. And
+  `sh -c` no longer swallows `docker stop`'s SIGTERM: the server is PID 1
+  and shuts down cleanly. The release job now runs the image (version,
+  `/_api/health` on the published port, a clean stop) before pushing it.
+* **A `LIMIT` after a `COLLECT` limits the groups.** With no `SORT` and no
+  `FILTER`, `FOR d IN c COLLECT k = d.k LIMIT 2 RETURN k` grouped only the
+  first two documents, and `COLLECT WITH COUNT INTO n LIMIT 1` counted one
+  document. EXPLAIN made the same mistake.
+* **EXPLAIN reports what runs after an index read and through a
+  `COLLECT`.** It listed `filters: []` after an index read and counted
+  every row the index returned as returned; the FILTERs now run and are
+  listed with the rows they kept. `documents_returned` counted the rows
+  before grouping; it now counts the groups. An index-ordered read reports
+  the rows it read and the walked range's entries as `estimated_rows`.
+* **A projected scan reads `doc["a.b"]` correctly.** That expression reads
+  the key `a.b`, or the path `a` → `b` when the key is absent. A scan that
+  decoded only the fields a query reads kept `a.b` and dropped `a`, so the
+  path read null.
+
 ## [2.7.2](https://github.com/solisoft/solidb/compare/v2.7.1...v2.7.2) (2026-11-05)
 
 ### Features
