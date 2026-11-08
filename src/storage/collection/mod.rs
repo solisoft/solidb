@@ -29,6 +29,7 @@ pub mod hybrid;
 pub mod index_meta;
 pub mod indexes;
 pub mod locks;
+pub mod raw_insert;
 pub mod schema;
 pub mod ttl;
 pub mod txn;

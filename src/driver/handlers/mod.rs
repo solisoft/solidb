@@ -271,16 +271,23 @@ impl DriverHandler {
                 }
             }
 
-            // Decode command
-            let command: Command = match decode_command(&payload) {
-                Ok(cmd) => cmd,
-                Err(e) => {
-                    let resp = Response::error(e);
-                    if let Err(e) = self.send_response(&mut stream, &resp).await {
-                        tracing::warn!("Failed to send error response: {}", e);
+            // Decode command. A document write is first tried without
+            // decoding its documents (`document::prepare_raw`), which leaves
+            // undecoded only frames the decoder takes.
+            let raw = crate::driver::protocol::parse_raw_write(&payload)
+                .and_then(|write| document::prepare_raw(self, write));
+            let command: Option<Command> = match raw {
+                Some(_) => None,
+                None => match decode_command(&payload) {
+                    Ok(cmd) => Some(cmd),
+                    Err(e) => {
+                        let resp = Response::error(e);
+                        if let Err(e) = self.send_response(&mut stream, &resp).await {
+                            tracing::warn!("Failed to send error response: {}", e);
+                        }
+                        continue;
                     }
-                    continue;
-                }
+                },
             };
 
             // Periodically re-check the credential; a revoked one ends the
@@ -308,7 +315,15 @@ impl DriverHandler {
             }
 
             // Execute command
-            let response = self.execute_command(command).await;
+            let raw_response = raw.and_then(|write| document::run_raw(self, write));
+            let response = match (raw_response, command) {
+                (Some(response), _) => response,
+                (None, Some(command)) => self.execute_command(command).await,
+                (None, None) => match decode_command(&payload) {
+                    Ok(command) => self.execute_command(command).await,
+                    Err(e) => Response::error(e),
+                },
+            };
 
             // Send response
             if let Err(e) = self.send_response(&mut stream, &response).await {

@@ -372,27 +372,95 @@ struct StoredHeader<'a> {
 /// second one grown as it went — on every document write. The bytes are the
 /// same (`serialize_doc_matches_the_struct_encoding`).
 pub fn serialize_doc(doc: &Document) -> DbResult<Vec<u8>> {
+    serialize_stored(
+        &doc.key,
+        &doc.id,
+        &doc.rev,
+        &doc.created_at,
+        &doc.updated_at,
+        |bytes| write_msgpack(bytes, &doc.data),
+    )
+}
+
+/// The stored form of a document whose fields are already MessagePack, as
+/// [`write_msgpack`] writes them (`storage::raw_write` builds them from a
+/// client's bytes without decoding them), its timestamps already in their
+/// stored form ([`stored_timestamp`]): bincode writes a `DateTime` as the
+/// string its `Serialize` collects, so the bytes are the same.
+pub(crate) fn serialize_doc_raw(
+    key: &str,
+    id: &str,
+    rev: &str,
+    created_at: &str,
+    updated_at: &str,
+    data: &[u8],
+) -> DbResult<Vec<u8>> {
+    let header = StoredHeaderText {
+        version: DOC_FORMAT_VERSION,
+        key,
+        id,
+        rev,
+        created_at,
+        updated_at,
+    };
+    let mut bytes = Vec::with_capacity(
+        64 + key.len() + id.len() + rev.len() + created_at.len() + updated_at.len() + data.len(),
+    );
+    bytes.push(DOC_FORMAT_VERSION);
+    bincode::serialize_into(&mut bytes, &header)
+        .map_err(|e| DbError::InternalError(format!("Serialization failed: {}", e)))?;
+    bytes.extend_from_slice(&(data.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(data);
+    Ok(bytes)
+}
+
+/// [`StoredHeader`] with its timestamps as the strings they serialize to.
+#[derive(Serialize)]
+struct StoredHeaderText<'a> {
+    version: u8,
+    key: &'a str,
+    id: &'a str,
+    rev: &'a str,
+    created_at: &'a str,
+    updated_at: &'a str,
+}
+
+/// A timestamp as it is stored: what chrono's `Serialize` writes for a
+/// `DateTime<Utc>` (RFC 3339, fraction digits as needed, `Z`).
+pub(crate) fn stored_timestamp(at: &chrono::DateTime<chrono::Utc>) -> String {
+    at.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+}
+
+/// The header from borrowed fields, then `data`'s length and the bytes
+/// `write_data` appends.
+fn serialize_stored(
+    key: &str,
+    id: &str,
+    rev: &str,
+    created_at: &chrono::DateTime<chrono::Utc>,
+    updated_at: &chrono::DateTime<chrono::Utc>,
+    write_data: impl FnOnce(&mut Vec<u8>),
+) -> DbResult<Vec<u8>> {
     let header = StoredHeader {
         version: DOC_FORMAT_VERSION,
-        key: &doc.key,
-        id: &doc.id,
-        rev: &doc.rev,
-        created_at: &doc.created_at,
-        updated_at: &doc.updated_at,
+        key,
+        id,
+        rev,
+        created_at,
+        updated_at,
     };
     // Two version bytes, six lengths, two timestamps of ~32 bytes, the
     // three strings, and room for a typical document's fields.
-    let mut bytes = Vec::with_capacity(128 + doc.key.len() + doc.id.len() + doc.rev.len() + 512);
+    let mut bytes = Vec::with_capacity(128 + key.len() + id.len() + rev.len() + 512);
     bytes.push(DOC_FORMAT_VERSION);
     bincode::serialize_into(&mut bytes, &header)
         .map_err(|e| DbError::InternalError(format!("Serialization failed: {}", e)))?;
 
     // `data`: bincode writes a byte string as its length (u64, little
-    // endian) and the bytes. The length is filled in once the MessagePack is
-    // written.
+    // endian) and the bytes. The length is filled in once they are written.
     let len_at = bytes.len();
     bytes.extend_from_slice(&[0u8; 8]);
-    write_msgpack(&mut bytes, &doc.data);
+    write_data(&mut bytes);
     let data_len = (bytes.len() - len_at - 8) as u64;
     bytes[len_at..len_at + 8].copy_from_slice(&data_len.to_le_bytes());
     Ok(bytes)
@@ -562,6 +630,34 @@ mod tests {
             let mut ours = Vec::new();
             write_msgpack(&mut ours, &value);
             assert_eq!(ours, rmp_serde::to_vec(&value).unwrap(), "{value}");
+        }
+    }
+
+    /// A raw document's stored bytes, timestamps given as text, are the
+    /// document's.
+    #[test]
+    fn serialize_doc_raw_matches_serialize_doc() {
+        let mut doc = create_test_doc();
+        for nanos in [0u32, 1, 120_000_000, 123_456_000, 123_456_789, 999_999_999] {
+            doc.created_at = chrono::DateTime::from_timestamp(1_700_000_000, nanos).unwrap();
+            doc.updated_at = chrono::Utc::now();
+            let mut data = Vec::new();
+            write_msgpack(&mut data, &doc.data);
+            let raw = serialize_doc_raw(
+                &doc.key,
+                &doc.id,
+                &doc.rev,
+                &stored_timestamp(&doc.created_at),
+                &stored_timestamp(&doc.updated_at),
+                &data,
+            )
+            .unwrap();
+            assert_eq!(raw, serialize_doc(&doc).unwrap(), "{nanos}");
+            // And that is the string serde writes.
+            assert_eq!(
+                serde_json::to_value(doc.created_at).unwrap(),
+                serde_json::Value::String(stored_timestamp(&doc.created_at))
+            );
         }
     }
 

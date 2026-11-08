@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 /// The error for an insert whose `_key` is already taken. Single-document and
 /// batch inserts return the same conflict (audit D1: the single path used to
 /// overwrite silently, leaving the old document's index entries behind).
-fn key_exists_error(key: &str) -> DbError {
+pub(super) fn key_exists_error(key: &str) -> DbError {
     DbError::ConflictError(format!("Document with _key '{}' already exists", key))
 }
 
@@ -111,7 +111,7 @@ impl Collection {
 
     // ---------- per-document derived entries (idx / geo / ft / ttl) ----------
 
-    fn add_insert_entries(
+    pub(super) fn add_insert_entries(
         &self,
         batch: &mut KvBatch,
         cf: &KsCf,
@@ -122,11 +122,19 @@ impl Collection {
         for (entry_key, entry_value) in regular.into_iter().chain(geo) {
             batch.put_ks(cf, entry_key, entry_value);
         }
-        for (entry_key, entry_value) in self.compute_fulltext_entries_for_insert(key, doc_value) {
-            batch.put_ks(cf, entry_key, entry_value);
+        // Fulltext and TTL entries only where such an index exists: each
+        // lookup copies its definitions.
+        let meta = self.index_meta();
+        if meta.as_ref().is_none_or(|m| !m.fulltext.is_empty()) {
+            for (entry_key, entry_value) in self.compute_fulltext_entries_for_insert(key, doc_value)
+            {
+                batch.put_ks(cf, entry_key, entry_value);
+            }
         }
-        for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, doc_value) {
-            batch.put_ks(cf, entry_key, b"");
+        if meta.as_ref().is_none_or(|m| !m.ttl.is_empty()) {
+            for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, doc_value) {
+                batch.put_ks(cf, entry_key, b"");
+            }
         }
         Ok(())
     }
@@ -195,7 +203,11 @@ impl Collection {
     /// (audit D9: only the batch paths used to persist, so single-document
     /// vector changes waited for shutdown). The persist can serialize a whole
     /// index; holding the stripe through it would stall that key's writers.
-    fn with_key_locked<T>(&self, key: &str, f: impl FnOnce() -> DbResult<T>) -> DbResult<T> {
+    pub(super) fn with_key_locked<T>(
+        &self,
+        key: &str,
+        f: impl FnOnce() -> DbResult<T>,
+    ) -> DbResult<T> {
         let result = {
             let _key_guard = self.lock_keys([key]);
             f()
@@ -271,13 +283,16 @@ impl Collection {
     /// there are any, after a committed write. The event's values are only
     /// built for a subscriber: one that subscribes after this check did so
     /// after the commit, and reads it.
-    fn publish_change(&self, event: impl FnOnce() -> ChangeEvent) {
+    pub(super) fn publish_change(&self, event: impl FnOnce() -> ChangeEvent) {
         self.publish_changes(|| std::iter::once(event()));
     }
 
     /// [`Self::publish_change`] for the events of one batch: the cached
     /// results are dropped once for them all.
-    fn publish_changes<I: IntoIterator<Item = ChangeEvent>>(&self, events: impl FnOnce() -> I) {
+    pub(super) fn publish_changes<I: IntoIterator<Item = ChangeEvent>>(
+        &self,
+        events: impl FnOnce() -> I,
+    ) {
         self.invalidate_cached_queries();
         if self.change_sender.receiver_count() > 0 {
             for event in events() {
@@ -593,7 +608,7 @@ impl Collection {
                 })?;
             }
 
-            self.write_update_core(key, &old_view, doc_bytes, &new_value)?;
+            self.write_update_core(key, &old_view, &doc_bytes, &new_value)?;
 
             self.publish_change(|| {
                 // The old version: the new one with the replaced fields and
@@ -672,7 +687,7 @@ impl Collection {
         new_value: Value,
     ) -> DbResult<Document> {
         let doc_bytes = serialize_doc(&doc)?;
-        self.write_update_core(key, &old_value, doc_bytes, &new_value)?;
+        self.write_update_core(key, &old_value, &doc_bytes, &new_value)?;
 
         // Broadcast change event
         let _ = self.emit_change(ChangeEvent {
@@ -690,11 +705,11 @@ impl Collection {
     /// diff, and the vector indexes. `old_value` and `new_value` need only
     /// hold what index maintenance reads, except that a versioned
     /// collection records `new_value` whole.
-    fn write_update_core(
+    pub(super) fn write_update_core(
         &self,
         key: &str,
         old_value: &Value,
-        doc_bytes: Vec<u8>,
+        doc_bytes: &[u8],
         new_value: &Value,
     ) -> DbResult<()> {
         // A unique value the update claims is checked and written under that

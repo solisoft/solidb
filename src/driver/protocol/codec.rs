@@ -24,7 +24,10 @@ pub fn encode_response(resp: &Response) -> Result<Vec<u8>, DriverError> {
     // Serialized in place after a length placeholder, rather than into its
     // own buffer and then copied behind the length: one allocation and no
     // copy of what can be a large result set.
-    let mut buf = Vec::with_capacity(256);
+    let mut buf = Vec::with_capacity(match resp {
+        Response::RawRows { data } => data.0.len() + 32,
+        _ => 256,
+    });
     buf.extend_from_slice(&[0u8; 4]);
     if let Response::RawRows { data } = resp {
         // `{"status": "ok", "data": <rows>}`, written around the rows'
@@ -86,8 +89,41 @@ pub fn decode_command(data: &[u8]) -> Result<Command, DriverError> {
     decode_message(data)
 }
 
+/// A document write whose documents are kept as the client's MessagePack,
+/// for `storage::raw_write`: the frame read as [`decode_command`] reads it,
+/// minus decoding the documents. Only `insert`, `bulk_insert` and an
+/// `update` with `merge: true`.
+#[derive(Debug)]
+pub enum RawWrite<'a> {
+    Insert {
+        database: String,
+        collection: String,
+        key: Option<String>,
+        document: &'a [u8],
+    },
+    BulkInsert {
+        database: String,
+        collection: String,
+        documents: Vec<&'a [u8]>,
+    },
+    MergeUpdate {
+        database: String,
+        collection: String,
+        key: String,
+        document: &'a [u8],
+    },
+}
+
+/// The frame as a [`RawWrite`], when the direct decoder would read it and it
+/// is one; `None` otherwise. A document it returns may still be one the
+/// direct decoder refuses (a binary value, say): `storage::raw_write` refuses
+/// the same ones.
+pub fn parse_raw_write(data: &[u8]) -> Option<RawWrite<'_>> {
+    direct::raw(data)
+}
+
 mod direct {
-    use super::Command;
+    use super::{Command, RawWrite};
     use serde::de::IgnoredAny;
     use serde::Deserialize;
     use serde_json::Value;
@@ -161,6 +197,10 @@ mod direct {
         rmp_serde::from_slice(data).ok()
     }
 
+    pub(super) fn raw(data: &[u8]) -> Option<RawWrite<'_>> {
+        frame::parse_raw(data, leading_tag(data)?)
+    }
+
     pub(super) fn decode(data: &[u8]) -> Option<Command> {
         let tag = leading_tag(data)?;
         if let Some(command) = frame::parse(data, tag) {
@@ -219,7 +259,7 @@ mod direct {
     /// float through `Number::from_f64` (so not-a-number is `null`), a
     /// repeated map key keeping its last value.
     pub(super) mod frame {
-        use super::Command;
+        use super::{Command, RawWrite};
         use serde_json::{Map, Number, Value};
 
         /// `rmp_serde` allows 1,024 levels; deeper documents go to it.
@@ -288,7 +328,7 @@ mod direct {
             Some(Value::Object(fields))
         }
 
-        pub(super) fn value(rd: &mut &[u8], depth: u32) -> Option<Value> {
+        pub(crate) fn value(rd: &mut &[u8], depth: u32) -> Option<Value> {
             let marker = byte(rd)?;
             Some(match marker {
                 0x00..=0x7f => Value::Number(u64::from(marker).into()),
@@ -421,6 +461,96 @@ mod direct {
                     key: key??,
                 },
                 b"bulk_insert" => Command::BulkInsert {
+                    database,
+                    collection,
+                    documents: documents?,
+                },
+                _ => return None,
+            })
+        }
+
+        /// The bytes of the value at the front of `rd`, not decoded.
+        fn raw_value<'a>(rd: &mut &'a [u8]) -> Option<&'a [u8]> {
+            let end = crate::storage::raw_rows::skip_value(rd, 0)?;
+            let (value, rest) = rd.split_at(end);
+            *rd = rest;
+            Some(value)
+        }
+
+        /// An array's elements' bytes, under the checks `array` makes at
+        /// the top of a frame.
+        fn raw_array<'a>(rd: &mut &'a [u8]) -> Option<Vec<&'a [u8]>> {
+            let len = match byte(rd)? {
+                m @ 0x90..=0x9f => (m & 0x0f) as usize,
+                0xdc => u16::from_be_bytes(be(rd)?) as usize,
+                0xdd => u32::from_be_bytes(be(rd)?) as usize,
+                _ => return None,
+            };
+            if len > rd.len() {
+                return None;
+            }
+            let mut items = Vec::with_capacity(len);
+            for _ in 0..len {
+                items.push(raw_value(rd)?);
+            }
+            Some(items)
+        }
+
+        /// [`parse`] for the document writes, documents left as bytes:
+        /// field for field the same frame checks.
+        pub(crate) fn parse_raw<'a>(data: &'a [u8], tag: &[u8]) -> Option<RawWrite<'a>> {
+            if !matches!(tag, b"insert" | b"update" | b"bulk_insert") {
+                return None;
+            }
+            let mut rd = data;
+            let fields = map_len(&mut rd)?;
+            let (mut cmd, mut database, mut collection) = (None, None, None);
+            let (mut key, mut document, mut documents, mut merge) = (None, None, None, None);
+            for _ in 0..fields {
+                let name = string(&mut rd)?;
+                match (name.as_str(), tag) {
+                    ("cmd", _) => once(&mut cmd, string(&mut rd))?,
+                    ("database", _) => once(&mut database, string(&mut rd))?,
+                    ("collection", _) => once(&mut collection, string(&mut rd))?,
+                    ("key", b"insert") => {
+                        let k = if rd.first() == Some(&0xc0) {
+                            rd = &rd[1..];
+                            Some(None)
+                        } else {
+                            string(&mut rd).map(Some)
+                        };
+                        once(&mut key, k)?
+                    }
+                    ("key", _) => once(&mut key, string(&mut rd).map(Some))?,
+                    ("document", b"insert" | b"update") => once(&mut document, raw_value(&mut rd))?,
+                    ("documents", b"bulk_insert") => once(&mut documents, raw_array(&mut rd))?,
+                    ("merge", b"update") => {
+                        let m = match byte(&mut rd)? {
+                            0xc2 => Some(false),
+                            0xc3 => Some(true),
+                            _ => None,
+                        };
+                        once(&mut merge, m)?
+                    }
+                    _ => return None,
+                }
+            }
+            cmd?;
+            let (database, collection) = (database?, collection?);
+            Some(match tag {
+                b"insert" => RawWrite::Insert {
+                    database,
+                    collection,
+                    key: key.flatten(),
+                    document: document?,
+                },
+                b"update" if merge == Some(true) => RawWrite::MergeUpdate {
+                    database,
+                    collection,
+                    key: key??,
+                    document: document?,
+                },
+                b"bulk_insert" => RawWrite::BulkInsert {
                     database,
                     collection,
                     documents: documents?,
@@ -646,5 +776,269 @@ mod decode_command_tests {
                 "frame {bytes:?}"
             );
         }
+    }
+
+    /// What the direct decoder builds from `doc` at `depth`, as the decoded
+    /// write path stores it: its fields (system fields stripped, as
+    /// `Document::with_key` does) in MessagePack, and its `_key`.
+    fn decoded_fields(
+        doc: &[u8],
+        depth: u32,
+    ) -> Option<(Vec<u8>, crate::storage::raw_write::KeyField)> {
+        use crate::storage::raw_write::KeyField;
+        let mut rd = doc;
+        let value = direct::frame::value(&mut rd, depth)?;
+        if !rd.is_empty() {
+            return None;
+        }
+        let serde_json::Value::Object(mut map) = value else {
+            return None;
+        };
+        let key = match map.remove("_key") {
+            None => KeyField::Absent,
+            Some(serde_json::Value::String(s)) => KeyField::Str(s),
+            Some(_) => KeyField::Other,
+        };
+        for field in crate::storage::document::SYSTEM_FIELDS {
+            map.remove(field);
+        }
+        let mut out = Vec::new();
+        crate::storage::serializer::write_msgpack(&mut out, &serde_json::Value::Object(map));
+        Some((out, key))
+    }
+
+    /// A small deterministic generator of MessagePack documents, every
+    /// marker the decoder knows and some it refuses, keys repeated and out
+    /// of order, nesting near the limit.
+    struct Gen(u64);
+
+    impl Gen {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+
+        fn key(&mut self, out: &mut Vec<u8>) {
+            const KEYS: [&str; 12] = [
+                "a",
+                "b",
+                "z",
+                "_key",
+                "_rev",
+                "_id",
+                "_created_at",
+                "_updated_at",
+                "é",
+                "",
+                "status",
+                "Zed",
+            ];
+            let k = KEYS[self.below(KEYS.len() as u64) as usize];
+            match self.below(4) {
+                0 => {
+                    out.push(0xd9);
+                    out.push(k.len() as u8);
+                    out.extend_from_slice(k.as_bytes());
+                }
+                _ => rmp::encode::write_str(out, k).unwrap(),
+            }
+        }
+
+        fn value(&mut self, out: &mut Vec<u8>, depth: u32) {
+            use rmp::encode as e;
+            let pick = if depth > 4 {
+                self.below(18)
+            } else {
+                self.below(22)
+            };
+            match pick {
+                0 => out.push(0xc0),
+                1 => e::write_bool(out, self.below(2) == 0).unwrap(),
+                2 => out.push(self.below(128) as u8),
+                3 => out.push(0xe0 | self.below(32) as u8),
+                4 => e::write_u8(out, self.next() as u8).unwrap(),
+                5 => e::write_u16(out, self.next() as u16).unwrap(),
+                6 => e::write_u32(out, self.next() as u32).unwrap(),
+                7 => e::write_u64(out, self.next()).unwrap(),
+                8 => e::write_i8(out, self.next() as i8).unwrap(),
+                9 => e::write_i16(out, self.next() as i16).unwrap(),
+                10 => e::write_i32(out, self.next() as i32).unwrap(),
+                11 => e::write_i64(out, self.next() as i64).unwrap(),
+                12 => e::write_f32(out, f32::from_bits(self.next() as u32)).unwrap(),
+                13 => e::write_f64(out, f64::from_bits(self.next())).unwrap(),
+                14 => {
+                    let len = self.below(40) as usize;
+                    let s: String = (0..len).map(|i| ['x', 'é', '✓', '\u{0}'][i % 4]).collect();
+                    e::write_str(out, &s).unwrap()
+                }
+                15 => {
+                    // str8 for a short string, or bytes that are not UTF-8.
+                    if self.below(8) == 0 {
+                        out.extend_from_slice(&[0xa2, 0xc3, 0x28]);
+                    } else {
+                        out.extend_from_slice(&[0xd9, 3, b'a', b'b', b'c']);
+                    }
+                }
+                16 => {
+                    if self.below(10) == 0 {
+                        e::write_bin(out, b"bin").unwrap();
+                    } else {
+                        out.push(0xc2);
+                    }
+                }
+                17 => {
+                    if self.below(10) == 0 {
+                        out.extend_from_slice(&[0xd4, 1, 2]); // fixext1
+                    } else {
+                        out.push(0xc3);
+                    }
+                }
+                18 | 19 => {
+                    let len = self.below(5) as u32;
+                    if self.below(4) == 0 {
+                        out.push(0xdc);
+                        out.extend_from_slice(&(len as u16).to_be_bytes());
+                    } else {
+                        e::write_array_len(out, len).unwrap();
+                    }
+                    for _ in 0..len {
+                        self.value(out, depth + 1);
+                    }
+                }
+                _ => self.map(out, depth),
+            }
+        }
+
+        fn map(&mut self, out: &mut Vec<u8>, depth: u32) {
+            let len = self.below(7) as u32;
+            if self.below(5) == 0 {
+                out.push(0xde);
+                out.extend_from_slice(&(len as u16).to_be_bytes());
+            } else {
+                rmp::encode::write_map_len(out, len).unwrap();
+            }
+            for _ in 0..len {
+                if self.below(30) == 0 {
+                    out.push(0x07); // an integer key
+                } else {
+                    self.key(out);
+                }
+                self.value(out, depth + 1);
+            }
+        }
+    }
+
+    /// The transcoder takes exactly the documents the direct decoder takes,
+    /// and writes what the decoded path stores for them, for thousands of
+    /// generated documents and the deep and wide edge cases.
+    #[test]
+    fn raw_documents_are_what_the_decoder_builds() {
+        use crate::storage::raw_write::canonical_document;
+        let mut g = Gen(0x9e37_79b9_7f4a_7c15);
+        let (mut taken, mut refused) = (0, 0);
+        for _ in 0..20_000 {
+            let mut doc = Vec::new();
+            g.map(&mut doc, 0);
+            for depth in [0, 1] {
+                let raw = canonical_document(&doc, depth).map(|d| (d.data, d.key));
+                assert_eq!(
+                    raw,
+                    decoded_fields(&doc, depth),
+                    "{doc:02x?} at depth {depth}"
+                );
+                if raw.is_some() {
+                    taken += 1
+                } else {
+                    refused += 1
+                }
+            }
+        }
+        assert!(
+            taken > 10_000 && refused > 1_000,
+            "{taken} taken, {refused} refused"
+        );
+
+        // At the nesting limit, counted from the frame.
+        for levels in [253usize, 254, 255, 256, 257] {
+            let mut doc = vec![0x81, 0xa1, b'a'];
+            doc.extend(std::iter::repeat_n(0x91, levels));
+            doc.push(0xc0);
+            for depth in [0, 1] {
+                let raw = canonical_document(&doc, depth).map(|d| (d.data, d.key));
+                assert_eq!(
+                    raw,
+                    decoded_fields(&doc, depth),
+                    "{levels} levels at {depth}"
+                );
+            }
+        }
+    }
+
+    /// A raw write frame is read field for field as the decoder reads it.
+    #[test]
+    fn raw_write_frames_follow_the_decoder() {
+        let doc = json!({"a": 1, "_key": "k"});
+        let insert = payload(&Command::Insert {
+            database: "d".into(),
+            collection: "c".into(),
+            key: Some("k".into()),
+            document: doc.clone(),
+        });
+        assert!(matches!(
+            parse_raw_write(&insert),
+            Some(RawWrite::Insert { key: Some(ref k), document, .. })
+                if k == "k" && document == rmp_serde::to_vec(&doc).unwrap().as_slice()
+        ));
+        let bulk = payload(&Command::BulkInsert {
+            database: "d".into(),
+            collection: "c".into(),
+            documents: vec![doc.clone(), json!(7)],
+        });
+        assert!(matches!(
+            parse_raw_write(&bulk),
+            Some(RawWrite::BulkInsert { ref documents, .. }) if documents.len() == 2
+        ));
+        let merge = |merge| {
+            payload(&Command::Update {
+                database: "d".into(),
+                collection: "c".into(),
+                key: "k".into(),
+                document: doc.clone(),
+                merge,
+            })
+        };
+        assert!(matches!(
+            parse_raw_write(&merge(true)),
+            Some(RawWrite::MergeUpdate { .. })
+        ));
+        assert!(parse_raw_write(&merge(false)).is_none());
+        assert!(parse_raw_write(&payload(&Command::Delete {
+            database: "d".into(),
+            collection: "c".into(),
+            key: "k".into(),
+        }))
+        .is_none());
+        // Frames the decoder does not read directly are not raw either.
+        let unknown_field = rmp_serde::to_vec_named(&json!({
+            "cmd": "insert", "database": "d", "collection": "c", "document": {}, "extra": 1
+        }))
+        .unwrap();
+        assert!(parse_raw_write(&unknown_field).is_none());
+        // (`json!` sorts its keys, so this frame is written by hand.)
+        let mut late_tag = Vec::new();
+        rmp::encode::write_map_len(&mut late_tag, 4).unwrap();
+        for (k, v) in [("database", "d"), ("cmd", "insert"), ("collection", "c")] {
+            rmp::encode::write_str(&mut late_tag, k).unwrap();
+            rmp::encode::write_str(&mut late_tag, v).unwrap();
+        }
+        rmp::encode::write_str(&mut late_tag, "document").unwrap();
+        rmp::encode::write_map_len(&mut late_tag, 0).unwrap();
+        assert!(parse_raw_write(&late_tag).is_none());
     }
 }

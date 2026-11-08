@@ -38,7 +38,7 @@ const SYSTEM_FIELDS: [&str; 5] = [
 
 /// Offset just past the MessagePack value starting at `pos`, without
 /// decoding it. Iterative, so nesting depth cannot exhaust the stack.
-fn skip_value(buf: &[u8], mut pos: usize) -> Option<usize> {
+pub(crate) fn skip_value(buf: &[u8], mut pos: usize) -> Option<usize> {
     let mut pending: usize = 1;
     while pending > 0 {
         pending -= 1;

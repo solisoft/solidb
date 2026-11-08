@@ -385,6 +385,26 @@ the count rely on an index holding exactly one entry per document under the
 value's `encode_key` form; anything that changes that (array expansion,
 sparse entries) must change them too.
 
+### Raw writes: driver writes that never decode (2.8.x)
+
+The write-side twin. A driver `insert`, `bulk_insert` or `update` with
+`merge: true` is stored straight from the client's MessagePack:
+`storage/raw_write.rs` transcodes each document into its stored form
+(`canonical_document`) and decodes only the fields an index reads
+(`indexed_view`), `storage/collection/raw_insert.rs` writes it, and the reply
+is written from the stored bytes (`raw_rows`). The stored bytes, index entries,
+replies, events and errors must stay identical to the decoded path's, which
+tests check (`raw_write`, the fuzzed `codec` tests, `driver/handlers/document.rs`)
+— so the transcoder must take exactly what the driver's direct decoder
+(`codec.rs`, `frame::value`) takes and write what `write_msgpack` writes for
+the decoded value. A change to either, to the stored format, to
+`Document::with_key`/`update` (keys, revisions, timestamps, system fields) or
+to what `insert`/`merge_update` check has to be made there too. Collections
+whose writes need a decoded document — not a plain `document` collection, a
+schema, versioning, a vector index — an active replication log, and any
+document it refuses go the decoded way (`Collection::raw_write_ready`,
+`document::prepare_raw`).
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a

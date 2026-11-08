@@ -444,3 +444,125 @@ fn schema_changes_reach_every_handle() {
     ));
     assert!(writer.get("free").is_ok() && writer.get("bad").is_err());
 }
+
+/// Writes over a real driver connection, where inserts, bulk inserts and
+/// merge updates are stored from the client's bytes: what the client reads
+/// back and the errors it gets, including for writes that fall back to the
+/// decoded path (a schema'd collection, a `_key` that is not a string, a
+/// replace update) and frames the server cannot decode.
+#[test]
+fn driver_connection_writes() {
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "write-path-password");
+    let (engine, tmp) = setup();
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("schemed".to_string(), None).unwrap();
+    db.get_collection("schemed")
+        .unwrap()
+        .set_json_schema(CollectionSchema::new(
+            "s".into(),
+            json!({"type": "object", "required": ["status"]}),
+            SchemaValidationMode::Strict,
+        ))
+        .unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let listener = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let storage = engine.clone();
+    rt.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+
+    rt.block_on(async {
+        let mut c = solidb_client::SoliDBClientBuilder::new(&addr)
+            .auth(DB, "admin", "write-path-password")
+            .pool_size(1)
+            .build()
+            .await
+            .unwrap();
+        let coll = || engine.get_database(DB).unwrap().get_collection(COLL).unwrap();
+
+        // An insert answers with the stored document.
+        let doc = json!({"status": "pending", "customer_id": "c1", "items": [{"sku": "A", "qty": 2}],
+                         "zeta": 1.5, "alpha": -3, "_rev": "forged"});
+        let reply = c.insert(DB, COLL, Some("o1"), doc).await.unwrap();
+        assert_eq!(reply, coll().get("o1").unwrap().to_value());
+        assert_eq!(reply["alpha"], -3);
+        assert_ne!(reply["_rev"], "forged");
+        assert_eq!(c.get(DB, COLL, "o1").await.unwrap(), reply);
+
+        // A key taken: the decoded path's conflict.
+        let err = c
+            .insert(DB, COLL, Some("o1"), json!({"status": "x"}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Document with _key 'o1' already exists"), "{err}");
+
+        // A bulk insert; a duplicate key inside one.
+        let docs: Vec<Value> = (0..100)
+            .map(|i| json!({"_key": format!("b{i}"), "status": "new", "n": i}))
+            .collect();
+        assert_eq!(c.bulk_insert(DB, COLL, docs).await.unwrap(), 100);
+        let err = c
+            .bulk_insert(DB, COLL, vec![json!({"_key": "d"}), json!({"_key": "d"})])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Duplicate _key 'd' within batch"), "{err}");
+        assert_eq!(coll().count(), 101);
+        let indexed = coll().index_lookup_eq("status", &json!("new")).unwrap();
+        assert_eq!(indexed.len(), 100);
+
+        // A merge update answers with the merged document.
+        let reply = c
+            .update(DB, COLL, "b7", json!({"status": "shipped", "extra": {"x": 1}}), true)
+            .await
+            .unwrap();
+        let stored = coll().get("b7").unwrap().to_value();
+        assert_eq!(reply, stored);
+        assert_eq!(stored["n"], 7);
+        assert_eq!(stored["extra"], json!({"x": 1}));
+        assert_eq!(coll().index_lookup_eq("status", &json!("new")).unwrap().len(), 99);
+        let err = c
+            .update(DB, COLL, "nope", json!({"a": 1}), true)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("nope"), "{err}");
+
+        // A replace update, a schema'd collection, a `_key` that is not a
+        // string: the decoded path, with its answers.
+        let reply = c
+            .update(DB, COLL, "b8", json!({"only": true}), false)
+            .await
+            .unwrap();
+        assert_eq!(reply, coll().get("b8").unwrap().to_value());
+        let err = c
+            .insert(DB, "schemed", None, json!({"other": 1}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Schema validation failed"), "{err}");
+        let err = c
+            .insert(DB, COLL, None, json!({"_key": 5}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("_key must be a string"), "{err}");
+    });
+}

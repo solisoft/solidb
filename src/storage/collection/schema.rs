@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 /// A collection's stored schema with its hash, as last read from disk.
-type StoredSchema = Option<Arc<(u64, CollectionSchema)>>;
+pub(super) type StoredSchema = Option<Arc<(u64, CollectionSchema)>>;
 
 struct SchemaEntry {
     /// Pins the DB allocation, so an equal pointer is the same live instance.
@@ -44,7 +44,7 @@ impl Collection {
     }
 
     /// The stored schema and its hash, from the cache when it is current.
-    fn stored_schema(&self) -> StoredSchema {
+    pub(super) fn stored_schema(&self) -> StoredSchema {
         let cacheable = matches!(self.ks.id(), KsId::Shared(_));
         let epoch = SCHEMA_EPOCH.load(Ordering::Acquire);
         let key = (Arc::as_ptr(&self.db) as usize, self.ks.id().clone());
