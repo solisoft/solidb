@@ -73,8 +73,8 @@ pub(crate) fn open(path: &Path, required: &[&str]) -> Result<Kv, KvError> {
     opts.set_compression_type(DBCompressionType::Lz4);
     opts.set_compression_options(-14, -1, 0, 0);
 
-    // Block cache - shared 512MB cache across all CFs and DB instances
-    // Improves read performance by caching frequently accessed blocks
+    // Block cache - one cache shared by all CFs and DB instances, sized by
+    // the engine profile (`--block-cache`, else from the memory available)
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_cache(shared_block_cache());
     // Enable bloom filter for faster point lookups

@@ -236,6 +236,11 @@ pub async fn metrics_handler(
             mem.block_cache_bytes,
         ),
         (
+            "solidb_block_cache_capacity_bytes",
+            "Shared block cache capacity (--block-cache, else sized from memory)",
+            mem.block_cache_capacity_bytes,
+        ),
+        (
             "solidb_block_cache_pinned_bytes",
             "Portion of the shared block cache that cannot be evicted",
             mem.block_cache_pinned_bytes,

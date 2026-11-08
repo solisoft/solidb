@@ -77,7 +77,9 @@ pub struct EngineProfile {
 }
 
 impl EngineProfile {
-    /// Throughput-oriented defaults (production).
+    /// Throughput-oriented defaults (production), with the fixed 512 MB
+    /// block cache SoliDB used whatever the memory up to 2.7. The server
+    /// starts from [`Self::prod_sized`].
     pub const fn prod() -> Self {
         Self {
             block_cache_bytes: 512 * 1024 * 1024,
@@ -93,6 +95,17 @@ impl EngineProfile {
             cache_index_and_filter_blocks: false,
             max_total_wal_size: 2 * 1024 * 1024 * 1024,
             arena_block_size: 64 * 1024,
+        }
+    }
+
+    /// [`Self::prod`] with the block cache sized from the memory this process
+    /// may use — its cgroup's limit, else the host's — as
+    /// [`super::memory_limit::block_cache_for`] describes: 6 GiB under a
+    /// 16 GiB limit. `--block-cache` overrides it.
+    pub fn prod_sized() -> Self {
+        Self {
+            block_cache_bytes: super::memory_limit::block_cache_for(super::memory_limit::detected()),
+            ..Self::prod()
         }
     }
 
@@ -121,9 +134,9 @@ pub fn set_engine_profile(profile: EngineProfile) {
     let _ = PROFILE.set(profile);
 }
 
-/// The active engine profile (defaults to `prod` if never set).
+/// The active engine profile (defaults to `prod_sized` if never set).
 pub(crate) fn profile() -> EngineProfile {
-    *PROFILE.get_or_init(EngineProfile::prod)
+    *PROFILE.get_or_init(EngineProfile::prod_sized)
 }
 
 /// The main storage engine backed by RocksDB
@@ -968,6 +981,7 @@ impl StorageEngine {
         out.table_readers_bytes = mem.table_readers_bytes;
         out.sst_files = mem.table_files;
         out.block_cache_bytes = mem.block_cache_bytes;
+        out.block_cache_capacity_bytes = profile().block_cache_bytes as u64;
         out.block_cache_pinned_bytes = mem.block_cache_pinned_bytes;
 
         // The handles live in each `Database`'s own cache, not in the engine's
@@ -1205,8 +1219,11 @@ pub struct MemoryBreakdown {
     /// Index and filter blocks pinned per open SST, *outside* the block cache
     /// unless `--bounded-index-cache` is set. Never evicted.
     pub table_readers_bytes: u64,
-    /// The single shared block cache (`--block-cache`, 512 MB in prod).
+    /// Usage of the single shared block cache.
     pub block_cache_bytes: u64,
+    /// Its capacity: `--block-cache`, else sized from the memory in prod
+    /// (see [`EngineProfile::prod_sized`]).
+    pub block_cache_capacity_bytes: u64,
     /// The part of that cache that cannot be evicted.
     pub block_cache_pinned_bytes: u64,
     /// SST files across all levels of all column families.

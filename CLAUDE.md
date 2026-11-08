@@ -321,6 +321,7 @@ Rules for code that touches storage:
 | `SOLIDB_LEGACY_COLLECTION_CFS` | off | Create new collections as 1.x column families and skip the migration. For tests of the legacy path only. |
 | `SOLIDB_MIGRATION_SKIP_SPACE_CHECK` | off | Start the migration even when free disk is below 1.2 × the largest collection + 1 GiB. |
 | `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | Legacy collections only: grace before an emptied 1.x column family is dropped. |
+| `SOLIDB_BLOCK_CACHE` | 40% of (memory − 1 GiB), ≥ 64 MiB, prod / 128MB `--dev` | Block cache of either engine (`--block-cache`). "Memory" is the tightest cgroup `memory.max` on the process's cgroup path, else the host's total (`storage/memory_limit.rs`); 512MB when neither can be read. The startup log names the basis; `/metrics` has `solidb_block_cache_capacity_bytes`. |
 | `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap. Lowering it to save disk is a false economy — it produces thousands of tiny SSTs. Bound memory with `--memtable-budget`. |
 
 Per-collection `disk_usage` of a shared collection is RocksDB's approximate

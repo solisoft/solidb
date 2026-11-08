@@ -147,7 +147,11 @@ fn human_size(bytes: usize) -> String {
 /// scales with the number of write-active collections, and pinned index/filter
 /// blocks scale with the dataset. Printing them at startup is what makes the
 /// choice visible to whoever sized the box.
-fn log_storage_profile(base: &str, p: &solidb::storage::engine::EngineProfile) {
+fn log_storage_profile(
+    base: &str,
+    p: &solidb::storage::engine::EngineProfile,
+    block_cache_from: &str,
+) {
     let budget = p
         .db_write_buffer_size
         .map(human_size)
@@ -159,7 +163,8 @@ fn log_storage_profile(base: &str, p: &solidb::storage::engine::EngineProfile) {
     };
 
     tracing::info!(
-        "Storage profile: {base} — block_cache={}, write_buffer={}/collection, \
+        "Storage profile: {base} — block_cache={} ({block_cache_from}), \
+         write_buffer={}/collection, \
          memtable_budget={budget}, max_open_files={open_files}, \
          bounded_index_cache={}, background_jobs={}, wal_budget={}",
         human_size(p.block_cache_bytes),
@@ -716,11 +721,19 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let (base, mut storage_profile) = if args.dev {
         ("dev", EngineProfile::dev())
     } else {
-        ("prod", EngineProfile::prod())
+        ("prod", EngineProfile::prod_sized())
     };
-    if let Some(bytes) = args.block_cache {
-        storage_profile.block_cache_bytes = bytes;
-    }
+    let block_cache_from = match (args.block_cache, args.dev) {
+        (Some(bytes), _) => {
+            storage_profile.block_cache_bytes = bytes;
+            "--block-cache".to_string()
+        }
+        (None, true) => "the dev profile's".to_string(),
+        (None, false) => {
+            use solidb::storage::memory_limit::{block_cache_basis, detected};
+            block_cache_basis(detected())
+        }
+    };
     if let Some(bytes) = args.write_buffer_size {
         storage_profile.write_buffer_size = bytes;
     }
@@ -742,7 +755,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         storage_profile.max_total_wal_size = bytes;
     }
     set_engine_profile(storage_profile);
-    log_storage_profile(base, &storage_profile);
+    log_storage_profile(base, &storage_profile, &block_cache_from);
 
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.initialize()?;

@@ -1038,8 +1038,8 @@ kubectl -n solidb get pods -w</pre>
                   <tbody class="text-gray-400 divide-y divide-white/5">
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_BLOCK_CACHE</td>
-                      <td class="p-3">512MB / 128MB</td>
-                      <td class="p-3">Shared RocksDB block cache.</td>
+                      <td class="p-3">40% of (memory &minus; 1GB) / 128MB</td>
+                      <td class="p-3">Shared block cache: decoded data blocks, on either storage engine. In production it is sized from the memory the process may use &mdash; its cgroup&rsquo;s limit (<code class="text-amber-400">memory.max</code>, which a container&rsquo;s <code class="text-amber-400">--memory</code> or a systemd <code class="text-amber-400">MemoryMax=</code> sets) when there is one, else the host&rsquo;s total memory: two fifths of what is left once 1GB is set aside, and never under 64MB. A 16GB container gets 6GB; a 4GB one, 1.2GB. The rest is left to the memtables, the index and filter blocks of open tables, queries, and the page cache. The startup log (<code class="text-amber-400">Storage profile: &hellip; block_cache=</code>) says how much and why, and <code class="text-amber-400">solidb_block_cache_capacity_bytes</code> reports it on <code class="text-amber-400">/metrics</code>. Up to 2.7 it was a fixed 512MB whatever the memory.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_MEMTABLE_BUDGET</td>

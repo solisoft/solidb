@@ -17,6 +17,7 @@ pub mod keyspace;
 pub mod keyspace_gc;
 pub mod keyspace_migration;
 pub mod kv;
+pub mod memory_limit;
 pub mod pending_drops;
 pub mod protected;
 pub mod query_cache;
