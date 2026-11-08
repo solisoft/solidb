@@ -1543,7 +1543,7 @@ impl Collection {
 
     /// A read view of this collection's database, which the ranges of
     /// [`Self::doc_partitions`] can be read at from several threads as one
-    /// consistent scan; `None` when the engine has none (solistore 0.2).
+    /// consistent scan; `None` when the engine has none.
     pub fn scan_snapshot(&self) -> Option<KvSnapshot<'_>> {
         self.db.snapshot()
     }
@@ -1568,6 +1568,19 @@ impl Collection {
     /// key space. Fewer ranges come back when there are fewer distinct cut
     /// points (a tiny collection gets one).
     pub fn doc_partitions(&self, n: usize) -> Vec<(Vec<u8>, Vec<u8>)> {
+        self.doc_partitions_at(n, None)
+    }
+
+    /// [`Self::doc_partitions`] of what `snapshot` reads. Where the engine
+    /// can cut a key range itself (solistore's split points, from its table
+    /// indexes and memtables), its cuts are used; otherwise, or when it
+    /// finds the range too small to cut, they are placed as described
+    /// there.
+    pub fn doc_partitions_at(
+        &self,
+        n: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
         let (lower, upper) = doc_key_range();
         let whole = vec![(lower.clone(), upper.clone())];
         if n < 2 {
@@ -1576,6 +1589,20 @@ impl Collection {
         let Some(cf) = self.ks.handle(&self.db) else {
             return whole;
         };
+        if let Some(points) = self.db.split_points_ks(&cf, &lower, &upper, n, snapshot) {
+            let mut out = Vec::with_capacity(points.len() + 1);
+            let mut start = lower.clone();
+            for point in points {
+                if point > start && point < upper {
+                    out.push((start, point.clone()));
+                    start = point;
+                }
+            }
+            if !out.is_empty() {
+                out.push((start, upper));
+                return out;
+            }
+        }
         let mut first = None;
         let _ = self.db.for_each_ks(&cf, &lower, &upper, 0, None, |k, _| {
             first = Some(k.to_vec());

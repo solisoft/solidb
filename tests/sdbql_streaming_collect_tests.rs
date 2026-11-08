@@ -1142,6 +1142,66 @@ fn key_ranges_cover_every_document_once() {
     }
 }
 
+/// Key ranges cut where the engine says (solistore's split points, from its
+/// memtables and then its table indexes), or from size estimates (RocksDB),
+/// read at one snapshot: every document once, in order, before and after
+/// the data is flushed, and a write made after the snapshot is not seen.
+#[test]
+fn engine_cut_ranges_read_one_snapshot() {
+    let docs: Vec<Value> = (0..20_000)
+        .map(|i| json!({"_key": format!("e{i:06}"), "s": STATUSES3[i % 3], "v": i}))
+        .collect();
+    let (engine, _tmp) = engine_with(docs);
+    let coll = engine
+        .get_database(DB)
+        .unwrap()
+        .get_collection("c")
+        .unwrap();
+    assert!(coll.supports_parallel_scan());
+    let read_all = |ranges: &[(Vec<u8>, Vec<u8>)],
+                    snapshot: Option<&solidb::storage::kv::KvSnapshot<'_>>| {
+        let mut keys = Vec::new();
+        for (lo, hi) in ranges {
+            coll.for_each_doc_bytes_in(lo, hi, snapshot, |bytes| {
+                let doc = solidb::storage::serializer::deserialize_doc_as_value(bytes).unwrap();
+                keys.push(doc["_key"].as_str().unwrap().to_string());
+                Ok(true)
+            })
+            .unwrap();
+        }
+        keys
+    };
+    let expected: Vec<String> = (0..20_000).map(|i| format!("e{i:06}")).collect();
+    for flushed in [false, true] {
+        if flushed {
+            engine.flush().unwrap();
+        }
+        let snapshot = coll.scan_snapshot().unwrap();
+        let ranges = coll.doc_partitions_at(4, Some(&snapshot));
+        assert!(ranges.len() >= 2, "flushed {flushed}: {ranges:?}");
+        // Written after the snapshot: not in what it reads.
+        coll.insert(json!({"_key": format!("late{flushed}"), "s": "z"}))
+            .unwrap();
+        assert_eq!(
+            read_all(&ranges, Some(&snapshot)),
+            expected,
+            "flushed {flushed}"
+        );
+        drop(snapshot);
+        coll.delete(&format!("late{flushed}")).unwrap();
+    }
+    let binds = BindVars::new();
+    let q = "FOR d IN c COLLECT s = d.s AGGREGATE n = COUNT(), t = SUM(d.v) RETURN {s, n, t}";
+    let groups = same_everywhere(&engine, q, &binds).unwrap();
+    assert_eq!(groups.len(), 3, "{groups:?}");
+    let (run_note, plan_note) = notes(&engine, q, PARALLEL, &binds);
+    assert!(
+        run_note.contains("key ranges read in parallel"),
+        "{run_note}"
+    );
+    assert_eq!(run_note, plan_note);
+}
+
 /// An empty collection and a one-document one, asked for many threads.
 #[test]
 fn tiny_collections_under_parallel_settings() {

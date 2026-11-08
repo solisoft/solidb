@@ -186,7 +186,7 @@
                   such as <code>_key</code>) decodes the fields it needs, with the same result.
                 </p>
                 <p class="text-xs text-gray-500">
-                  Threads: on an engine that can read several key ranges at one snapshot (RocksDB), such a scan over
+                  Threads: on an engine that can read several key ranges at one snapshot (both do), such a scan over
                   a large collection is split into key ranges read on several threads and the partial groups are
                   merged &mdash; when every aggregate merges exactly: <code>COUNT</code>, <code>SUM</code>,
                   <code>AVG</code>, <code>MIN</code>, <code>MAX</code>, <code>COUNT_DISTINCT</code> and the
@@ -196,8 +196,8 @@
                   adds <code>4 key ranges read in parallel</code>. <code>SOLIDB_SCAN_THREADS</code> sets how many
                   threads a scan may use, its own included (by default the CPUs the server may use); the extra
                   threads of all scans running at once never exceed that number less one, so concurrent
-                  aggregations share the CPUs instead of multiplying the load. solistore cannot yet give
-                  several iterators one snapshot, so it reads on one thread.
+                  aggregations share the CPUs instead of multiplying the load. On solistore the key ranges
+                  are the engine's own split points, taken from its table indexes and memtables.
                 </p>
               </div>
             </div>

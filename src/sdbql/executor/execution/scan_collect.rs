@@ -34,7 +34,7 @@
 //!   the ordinary way, into the same fold.
 //! - Such a fold over a large collection is split into key ranges read on
 //!   several threads at one snapshot and merged (`fold_partitions`),
-//!   when the engine has snapshots (RocksDB; solistore 0.2 does not) and
+//!   when the engine has snapshots (RocksDB, and solistore since 0.3) and
 //!   every aggregate merges exactly. `with_typed_collect` and
 //!   `with_scan_threads` turn them off for tests.
 
@@ -422,7 +422,7 @@ impl QueryExecutor<'_> {
     /// How many key ranges a typed fold of `collection` would be read in,
     /// in parallel: 1 when it stays on one thread — the clause's aggregates
     /// cannot be merged exactly, the engine has no snapshot to read the
-    /// ranges at together (solistore 0.2), or the collection is too small.
+    /// ranges at together, or the collection is too small.
     fn planned_partitions(&self, collect: &CollectClause, collection: &Collection) -> usize {
         if !CollectFold::mergeable(collect) || !collection.supports_parallel_scan() {
             return 1;
@@ -462,13 +462,13 @@ impl QueryExecutor<'_> {
         if helpers.count() == 0 {
             return Ok(None);
         }
-        let ranges = collection.doc_partitions(helpers.count() + 1);
-        if ranges.len() < 2 {
-            return Ok(None);
-        }
         let Some(snapshot) = collection.scan_snapshot() else {
             return Ok(None);
         };
+        let ranges = collection.doc_partitions_at(helpers.count() + 1, Some(&snapshot));
+        if ranges.len() < 2 {
+            return Ok(None);
+        }
         let doc = TypedDoc {
             stages: plan.stages,
             var: &plan.for_clause.variable,

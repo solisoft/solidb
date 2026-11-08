@@ -1519,9 +1519,8 @@ fn reset_peak_rss() {
 /// - streamed, decoding the fields read (`with_typed_collect(false)`, the
 ///   2.7.3 path, now over borrowed storage bytes and the allocation-free fold);
 /// - streamed with typed reads, on one thread;
-/// - the same split across threads (`BENCH_THREADS`, default 4), where the
-///   engine can read key ranges at one snapshot (RocksDB; solistore 0.2
-///   cannot, and stays on one).
+/// - the same split across threads (`BENCH_THREADS`, default 4), at one
+///   snapshot (both engines; solistore from 0.3, cut at its split points).
 ///
 /// Median of three runs after one warm-up, and the peak RSS of a run of each;
 /// beside the cost of the scan alone (stored bytes only, then whole documents

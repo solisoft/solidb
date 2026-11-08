@@ -113,6 +113,7 @@ impl KvReadOptions {
         ::solistore::ReadOptions {
             lower_bound: self.lower.clone(),
             upper_bound: self.upper.clone(),
+            ..Default::default()
         }
     }
 }
@@ -533,6 +534,8 @@ impl Kv {
             (Engine::Rocks(db), KvCf::Rocks(h)) => {
                 let mut it = match snapshot {
                     Some(KvSnapshot::Rocks(s)) => s.raw_iterator_cf_opt(h, opts.to_rocks()),
+                    #[cfg(feature = "engine-solistore")]
+                    Some(KvSnapshot::Solistore(_)) => mixed_engines(),
                     None => db.raw_iterator_cf_opt(h, opts.to_rocks()),
                 };
                 it.seek(start);
@@ -546,17 +549,15 @@ impl Kv {
             }
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvCf::Solistore(h)) => {
-                // No snapshot to read at: `snapshot()` never returns one
-                // for solistore (see `supports_snapshot`).
-                debug_assert!(snapshot.is_none());
+                let mut read = opts.to_solistore();
+                read.snapshot = match snapshot {
+                    Some(KvSnapshot::Solistore(s)) => Some(s.clone()),
+                    Some(KvSnapshot::Rocks(_)) => mixed_engines(),
+                    None => None,
+                };
                 let mode = ::solistore::IteratorMode::From(start, ::solistore::Direction::Forward);
-                for item in db.iterator_opt(h, opts.to_solistore(), mode)? {
-                    let (k, v) = item?;
-                    if !f(&k, &v) {
-                        break;
-                    }
-                }
-                Ok(())
+                // Borrowed entries: no copy and no allocation per entry.
+                Ok(db.for_each(h, read, mode, f)?)
             }
             #[cfg(feature = "engine-solistore")]
             _ => mixed_engines(),
@@ -647,22 +648,60 @@ impl Kv {
     }
 
     /// Whether [`Self::snapshot`] gives a read view: one point in time that
-    /// several iterators — on several threads — can read together. RocksDB
-    /// has it; solistore 0.2 does not (each iterator reads the moment it is
-    /// created), so a scan split across threads would not be one consistent
-    /// read there, and callers stay sequential.
+    /// several iterators — on several threads — can read together. Both
+    /// engines have it (solistore since 0.3); an engine without one would
+    /// keep its scans on one thread, each iterator reading the moment it is
+    /// created.
     pub fn supports_snapshot(&self) -> bool {
-        matches!(self.engine, Engine::Rocks(_))
+        match &self.engine {
+            Engine::Rocks(_) => true,
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(_) => true,
+        }
     }
 
     /// A read view of the whole database as it is now, for
-    /// [`Self::for_each_cf_opt`]; `None` when the engine has none (see
-    /// [`Self::supports_snapshot`]). Released when dropped.
+    /// [`Self::for_each_cf_opt`] and [`Self::split_points_cf`]; `None` when
+    /// the engine has none (see [`Self::supports_snapshot`]). Released when
+    /// dropped; while it lives, the engine keeps what it reads (RocksDB the
+    /// old versions, solistore the memtables and table files of the time).
     pub fn snapshot(&self) -> Option<KvSnapshot<'_>> {
         match &self.engine {
             Engine::Rocks(db) => Some(KvSnapshot::Rocks(db.snapshot())),
             #[cfg(feature = "engine-solistore")]
-            Engine::Solistore(_) => None,
+            Engine::Solistore(db) => Some(KvSnapshot::Solistore(db.snapshot())),
+        }
+    }
+
+    /// Keys (physical) that cut `[lo, hi)` of `cf` into about `n` parts of
+    /// equal size, as `snapshot` reads it: at most `n - 1`, increasing and
+    /// strictly inside. `None` when the engine cannot say (RocksDB: the
+    /// caller places the cuts from size estimates); an empty list when the
+    /// range is too small to cut.
+    pub fn split_points_cf(
+        &self,
+        cf: &KvCf,
+        lo: &[u8],
+        hi: &[u8],
+        n: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+    ) -> Option<Vec<Vec<u8>>> {
+        match (&self.engine, cf) {
+            (Engine::Rocks(_), KvCf::Rocks(_)) => {
+                let _ = (lo, hi, n, snapshot);
+                None
+            }
+            #[cfg(feature = "engine-solistore")]
+            (Engine::Solistore(db), KvCf::Solistore(h)) => {
+                let points = match snapshot {
+                    Some(KvSnapshot::Solistore(s)) => s.split_points(h, lo, hi, n),
+                    Some(KvSnapshot::Rocks(_)) => mixed_engines(),
+                    None => db.split_points(h, lo, hi, n),
+                };
+                points.ok()
+            }
+            #[cfg(feature = "engine-solistore")]
+            _ => mixed_engines(),
         }
     }
 
@@ -823,6 +862,9 @@ impl Kv {
 /// together: see [`Kv::snapshot`].
 pub enum KvSnapshot<'a> {
     Rocks(rust_rocksdb::SnapshotWithThreadMode<'a, RawRocks>),
+    /// Holds its own `Arc`s: cheap to clone, and not tied to the `Kv`.
+    #[cfg(feature = "engine-solistore")]
+    Solistore(::solistore::Snapshot),
 }
 
 /// A handle on one column family of a [`Kv`].

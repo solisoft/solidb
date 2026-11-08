@@ -408,6 +408,15 @@ pub trait KsDbExt {
     /// Approximate sizes of logical `[start, end)` ranges (see
     /// [`Kv::approximate_sizes_cf`]).
     fn approximate_sizes_ks(&self, cf: &KsCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64>;
+    /// [`Kv::split_points_cf`] of logical `[lo, hi)`, as logical keys.
+    fn split_points_ks(
+        &self,
+        cf: &KsCf,
+        lo: &[u8],
+        hi: &[u8],
+        n: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+    ) -> Option<Vec<Vec<u8>>>;
 }
 
 impl KsDbExt for Kv {
@@ -541,6 +550,19 @@ impl KsDbExt for Kv {
         let start = cf.key(lower);
         let strip = cf.prefix.as_bytes().len();
         self.for_each_cf_opt(&cf.cf, opts, &start, snapshot, |k, v| f(&k[strip..], v))
+    }
+
+    fn split_points_ks(
+        &self,
+        cf: &KsCf,
+        lo: &[u8],
+        hi: &[u8],
+        n: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+    ) -> Option<Vec<Vec<u8>>> {
+        let strip = cf.prefix.as_bytes().len();
+        let points = self.split_points_cf(&cf.cf, &cf.key(lo), &cf.key(hi), n, snapshot)?;
+        Some(points.into_iter().map(|k| k[strip..].to_vec()).collect())
     }
 
     fn approximate_sizes_ks(&self, cf: &KsCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64> {
