@@ -440,13 +440,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # Build into the local daemon and run it before anything is pushed: from
+      # v2.5.0 to v2.7.2 every published image exited at start (its glibc was
+      # older than the binary's), and nothing noticed.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: solidb:candidate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the image starts, answers and stops cleanly
+        run: |
+          docker run --rm solidb:candidate solidb --version
+          docker run -d --name candidate -p 6745:6745 -e SOLIDB_ADMIN_PASSWORD=image-check solidb:candidate
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:6745/_api/health && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:6745/_api/health
+          start=$(date +%s)
+          docker stop -t 30 candidate
+          elapsed=$(( $(date +%s) - start ))
+          docker logs candidate 2>&1 | tail -20
+          code=$(docker inspect -f '{{.State.ExitCode}}' candidate)
+          echo "stopped in ${elapsed}s with exit code ${code}"
+          # SIGTERM must reach solidb (PID 1) and end it well inside the
+          # default 10-second grace period, not be killed at its end.
+          test "$code" = 0
+          test "$elapsed" -lt 10
+
+      - name: Push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
