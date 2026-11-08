@@ -3,7 +3,7 @@
 //! Processes incoming commands and executes them against the storage engine.
 
 use crate::driver::protocol::{
-    decode_message, encode_response, Command, DriverError, Response, MAX_MESSAGE_SIZE,
+    decode_command, encode_response, Command, DriverError, Response, MAX_MESSAGE_SIZE,
 };
 use crate::storage::StorageEngine;
 use crate::transaction::TransactionId;
@@ -272,7 +272,7 @@ impl DriverHandler {
             }
 
             // Decode command
-            let command: Command = match decode_message(&payload) {
+            let command: Command = match decode_command(&payload) {
                 Ok(cmd) => cmd,
                 Err(e) => {
                     let resp = Response::error(e);
@@ -1137,6 +1137,10 @@ impl DriverHandler {
             return;
         }
         if let Some(ref log) = self.replication {
+            // A deferred log writes nothing: do not encode the document for it.
+            if !log.is_active() {
+                return;
+            }
             log.log_document_op(
                 database,
                 collection,
@@ -1159,6 +1163,9 @@ impl DriverHandler {
             return;
         }
         if let Some(ref log) = self.replication {
+            if !log.is_active() {
+                return;
+            }
             let entries = docs
                 .iter()
                 .map(|doc| {

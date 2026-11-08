@@ -1,18 +1,13 @@
+//! Document commands of the native driver.
+//!
+//! None of these drops the shared query-result cache itself: every document
+//! write does it in the collection, once committed (`Collection::emit_change`
+//! and its batch form), whichever protocol it came over. These handlers used
+//! to drop it a second time.
+
 use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
-use crate::storage::query_cache;
 use crate::sync::protocol::Operation;
-
-/// Drop memoized read results for `collection`.
-///
-/// The HTTP document handlers do this on every insert/update/delete; without it
-/// a write over the driver leaves the shared query-result cache serving stale
-/// rows to both the driver and `/cursor` paths. The driver query handler
-/// started using that cache, so missing invalidation here is a correctness bug
-/// rather than a pure performance gap.
-fn invalidate_query_cache(collection: &str) {
-    query_cache::get_query_cache().invalidate_collection(collection);
-}
 
 pub fn handle_get(
     handler: &DriverHandler,
@@ -56,17 +51,15 @@ pub fn handle_insert(
                     obj.insert("_key".to_string(), serde_json::json!(k));
                 }
             }
-            match coll.insert(doc_data) {
-                Ok(doc) => {
-                    let value = doc.to_value();
+            match coll.insert_value(doc_data) {
+                Ok((key, value)) => {
                     handler.log_replication(
                         &database,
                         &collection,
                         Operation::Insert,
-                        &doc.key,
+                        &key,
                         Some(&value),
                     );
-                    invalidate_query_cache(&collection);
                     Response::ok(value)
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -87,36 +80,22 @@ pub fn handle_update(
     match handler.get_collection_for_write(&database, &collection) {
         Ok(coll) => {
             let result = if merge {
-                // Merge update: get existing doc and merge
-                match coll.get(&key) {
-                    Ok(existing) => {
-                        let mut merged = existing.data.clone();
-                        if let (Some(base), Some(updates)) =
-                            (merged.as_object_mut(), document.as_object())
-                        {
-                            for (k, v) in updates {
-                                base.insert(k.clone(), v.clone());
-                            }
-                        }
-                        coll.update(&key, merged)
-                    }
-                    Err(e) => Err(e),
-                }
+                // The stored document's fields with the given ones over them,
+                // read and written under the key's lock.
+                coll.merge_update(&key, document)
             } else {
-                coll.update(&key, document)
+                coll.update(&key, document).map(|doc| doc.to_value())
             };
 
             match result {
-                Ok(doc) => {
-                    let value = doc.to_value();
+                Ok(value) => {
                     handler.log_replication(
                         &database,
                         &collection,
                         Operation::Update,
-                        &doc.key,
+                        &key,
                         Some(&value),
                     );
-                    invalidate_query_cache(&collection);
                     Response::ok(value)
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -136,7 +115,6 @@ pub fn handle_delete(
         Ok(coll) => match coll.delete(&key) {
             Ok(_) => {
                 handler.log_replication(&database, &collection, Operation::Delete, &key, None);
-                invalidate_query_cache(&collection);
                 Response::ok_empty()
             }
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -183,7 +161,6 @@ pub fn handle_bulk_insert(
             match coll.insert_batch(documents) {
                 Ok(docs) => {
                     handler.log_replication_batch(&database, &collection, Operation::Insert, &docs);
-                    invalidate_query_cache(&collection);
                     Response::ok_count(docs.len())
                 }
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),

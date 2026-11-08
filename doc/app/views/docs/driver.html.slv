@@ -160,7 +160,7 @@
                   <tbody class="divide-y divide-gray-700">
                         <tr><td class="px-4 py-2 font-mono text-green-400">get</td><td class="px-4 py-2">Get document by key</td><td class="px-4 py-2 font-mono">database, collection, key</td></tr>
                         <tr><td class="px-4 py-2 font-mono text-green-400">insert</td><td class="px-4 py-2">Insert document</td><td class="px-4 py-2 font-mono">database, collection, key, document</td></tr>
-                        <tr><td class="px-4 py-2 font-mono text-green-400">update</td><td class="px-4 py-2">Update document</td><td class="px-4 py-2 font-mono">database, collection, key, document, merge</td></tr>
+                        <tr><td class="px-4 py-2 font-mono text-green-400">update</td><td class="px-4 py-2">Update document. With <code>merge: true</code>, the given top-level fields replace the stored ones and the others are kept; the document is read and written under its lock, so concurrent merges of different fields all land</td><td class="px-4 py-2 font-mono">database, collection, key, document, merge</td></tr>
                         <tr><td class="px-4 py-2 font-mono text-green-400">delete</td><td class="px-4 py-2">Delete document</td><td class="px-4 py-2 font-mono">database, collection, key</td></tr>
                         <tr><td class="px-4 py-2 font-mono text-green-400">list</td><td class="px-4 py-2">List documents</td><td class="px-4 py-2 font-mono">database, collection, limit, offset</td></tr>
                   </tbody>
@@ -212,7 +212,7 @@
                   <thead class="text-xs text-gray-200 uppercase bg-gray-700/50"><tr><th class="px-4 py-2">Command</th><th class="px-4 py-2">Description</th><th class="px-4 py-2">Fields</th></tr></thead>
                   <tbody class="divide-y divide-gray-700">
                       <tr><td class="px-4 py-2 font-mono text-green-400">batch</td><td class="px-4 py-2">Execute multiple commands</td><td class="px-4 py-2 font-mono">commands</td></tr>
-                      <tr><td class="px-4 py-2 font-mono text-green-400">bulk_insert</td><td class="px-4 py-2">Insert multiple documents</td><td class="px-4 py-2 font-mono">database, collection, documents</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">bulk_insert</td><td class="px-4 py-2">Insert multiple documents, all or none: a <code>_key</code> already taken fails the batch. Batches sent into one collection over several connections are written side by side</td><td class="px-4 py-2 font-mono">database, collection, documents</td></tr>
                   </tbody>
               </table>
           </div>

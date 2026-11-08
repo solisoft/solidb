@@ -14,8 +14,8 @@
 pub mod protocol;
 
 pub use protocol::{
-    decode_message, encode_command, encode_response, Command, DriverError, Response,
-    MAX_MESSAGE_SIZE,
+    decode_command, decode_message, encode_command, encode_response, Command, DriverError,
+    Response, MAX_MESSAGE_SIZE,
 };
 
 pub mod handlers;

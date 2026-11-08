@@ -9,7 +9,8 @@ pub mod response;
 pub mod types;
 
 pub use codec::{
-    decode_message, encode_command, encode_message, encode_response, DRIVER_MAGIC, MAX_MESSAGE_SIZE,
+    decode_command, decode_message, encode_command, encode_message, encode_response, DRIVER_MAGIC,
+    MAX_MESSAGE_SIZE,
 };
 pub use command::Command;
 pub use error::DriverError;
