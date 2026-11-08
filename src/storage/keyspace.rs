@@ -26,7 +26,7 @@
 
 use crate::error::{DbError, DbResult};
 use crate::storage::kv::{
-    Direction, IterMode, Kv, KvBatch, KvCf, KvError, KvIter, KvPinned, KvReadOptions,
+    Direction, IterMode, Kv, KvBatch, KvCf, KvError, KvIter, KvPinned, KvReadOptions, KvSnapshot,
 };
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
@@ -392,6 +392,22 @@ pub trait KsDbExt {
     fn iterator_ks_opt(&self, cf: &KsCf, opts: KvReadOptions, mode: IterMode) -> KsIter<'_>;
     /// Compact `[start, end)` (logical); `None` means the keyspace edge.
     fn compact_range_ks(&self, cf: &KsCf, start: Option<&[u8]>, end: Option<&[u8]>);
+    /// Call `f` with each logical key and value in `[lower, upper)`
+    /// (logical), in order, until it returns `false` — borrowed, see
+    /// [`Kv::for_each_cf_opt`]. `readahead` as in
+    /// [`KvReadOptions::set_readahead_size`].
+    fn for_each_ks(
+        &self,
+        cf: &KsCf,
+        lower: &[u8],
+        upper: &[u8],
+        readahead: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+        f: impl FnMut(&[u8], &[u8]) -> bool,
+    ) -> Result<(), KvError>;
+    /// Approximate sizes of logical `[start, end)` ranges (see
+    /// [`Kv::approximate_sizes_cf`]).
+    fn approximate_sizes_ks(&self, cf: &KsCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64>;
 }
 
 impl KsDbExt for Kv {
@@ -509,6 +525,28 @@ impl KsDbExt for Kv {
         let lo = start.map_or_else(|| cf.prefix.as_bytes().to_vec(), |s| cf.key(s));
         let hi = end.map_or_else(|| cf.prefix.upper().unwrap_or_default(), |e| cf.key(e));
         self.compact_range_cf(&cf.cf, Some(&lo), Some(&hi));
+    }
+
+    fn for_each_ks(
+        &self,
+        cf: &KsCf,
+        lower: &[u8],
+        upper: &[u8],
+        readahead: usize,
+        snapshot: Option<&KvSnapshot<'_>>,
+        mut f: impl FnMut(&[u8], &[u8]) -> bool,
+    ) -> Result<(), KvError> {
+        let mut opts = bounded_opts(cf.prefix, Some(lower), Some(upper));
+        opts.set_readahead_size(readahead);
+        let start = cf.key(lower);
+        let strip = cf.prefix.as_bytes().len();
+        self.for_each_cf_opt(&cf.cf, opts, &start, snapshot, |k, v| f(&k[strip..], v))
+    }
+
+    fn approximate_sizes_ks(&self, cf: &KsCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64> {
+        let physical: Vec<(Vec<u8>, Vec<u8>)> =
+            ranges.iter().map(|(s, e)| (cf.key(s), cf.key(e))).collect();
+        self.approximate_sizes_cf(&cf.cf, &physical)
     }
 }
 

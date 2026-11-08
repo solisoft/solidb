@@ -10,6 +10,7 @@
 use super::array::as_int;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::executor::compare_values;
+use crate::sdbql::executor::exact_sum::ExactSum;
 use serde_json::Value;
 
 /// Past ±308 decimals the scale factor under- or overflows an f64, so a
@@ -273,9 +274,17 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             }))
         }
         "SUM" if args.len() == 1 && args[0].is_array() => {
+            // Exact, rounded once: what `COLLECT … AGGREGATE SUM` gives. The
+            // sign of a zero is the running sum's, which started at -0.0:
+            // `-0.0` for no numbers or only `-0.0`s, else `+0.0`.
             let arr = args[0].as_array().unwrap();
-            let sum: f64 = arr.iter().filter_map(|v| v.as_f64()).sum();
-            Ok(Some(num(sum)))
+            let mut sum = ExactSum::default();
+            let mut negative_zero = true;
+            for x in arr.iter().filter_map(|v| v.as_f64()) {
+                negative_zero &= x == 0.0 && x.is_sign_negative();
+                sum.add(x);
+            }
+            Ok(Some(num(if negative_zero { -0.0 } else { sum.value() })))
         }
         "PRODUCT" => {
             // AQL: product of the numbers in the array; null is skipped and
@@ -292,14 +301,16 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         }
         "AVG" | "AVERAGE" if args.len() == 1 && args[0].is_array() => {
             let arr = args[0].as_array().unwrap();
-            let (sum, n) = arr
-                .iter()
-                .filter_map(|v| v.as_f64())
-                .fold((0.0f64, 0u64), |(s, n), x| (s + x, n + 1));
+            let mut sum = ExactSum::default();
+            let mut n = 0u64;
+            for x in arr.iter().filter_map(|v| v.as_f64()) {
+                sum.add(x);
+                n += 1;
+            }
             if n == 0 {
                 Ok(Some(Value::Null))
             } else {
-                Ok(Some(num(sum / n as f64)))
+                Ok(Some(num(sum.value() / n as f64)))
             }
         }
         "RAND" | "RANDOM" if args.is_empty() => {

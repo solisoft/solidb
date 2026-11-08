@@ -1512,10 +1512,20 @@ fn reset_peak_rss() {
     let _ = std::fs::write("/proc/self/clear_refs", "5");
 }
 
-/// The full-scan COLLECT shapes, materialised (`with_streaming_collect(false)`,
-/// the path `main` takes) against folded while scanned: median of three runs
-/// after one warm-up, and the peak RSS of a run of each, beside the cost of
-/// the scan alone (whole documents decoded, then only `status` and `amount`).
+/// The full-scan COLLECT shapes, every way they can run, on the engine
+/// `SOLIDB_ENGINE` selects (RocksDB unless it says `solistore`):
+///
+/// - materialised (`with_streaming_collect(false)`, the path before 2.7.3);
+/// - streamed, decoding the fields read (`with_typed_collect(false)`, the
+///   2.7.3 path, now over borrowed storage bytes and the allocation-free fold);
+/// - streamed with typed reads, on one thread;
+/// - the same split across threads (`BENCH_THREADS`, default 4), where the
+///   engine can read key ranges at one snapshot (RocksDB; solistore 0.2
+///   cannot, and stays on one).
+///
+/// Median of three runs after one warm-up, and the peak RSS of a run of each;
+/// beside the cost of the scan alone (stored bytes only, then whole documents
+/// decoded, then only `status` and `amount`). All the ways must agree.
 fn bench_full_scan_collect(docs: usize) {
     let (engine, _tmp) = create_test_db();
     let seed_start = Instant::now();
@@ -1528,10 +1538,21 @@ fn bench_full_scan_collect(docs: usize) {
     let sample = orders.scan_values(Some(1)).remove(0);
     let mut data = sample.as_object().unwrap().clone();
     data.retain(|k, _| !k.starts_with('_'));
+    let engine_name = std::env::var("SOLIDB_ENGINE").unwrap_or_else(|_| "rocksdb".to_string());
+    let threads: usize = std::env::var("BENCH_THREADS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
     println!(
-        "seeded {docs} orders in {:?}; one is {} B of JSON without system fields",
+        "seeded {docs} orders on {engine_name} in {:?}; one is {} B of JSON without system \
+         fields; parallel scans {}",
         seed_start.elapsed(),
-        serde_json::to_string(&data).unwrap().len()
+        serde_json::to_string(&data).unwrap().len(),
+        if orders.supports_parallel_scan() {
+            "available"
+        } else {
+            "unavailable (no snapshot)"
+        }
     );
 
     let median = |f: &mut dyn FnMut()| -> f64 {
@@ -1547,6 +1568,9 @@ fn bench_full_scan_collect(docs: usize) {
         times[1]
     };
     let fields = vec!["amount".to_string(), "status".to_string()];
+    let bytes_only = median(&mut || {
+        orders.for_each_doc_bytes(|_| Ok(true)).unwrap();
+    });
     let whole = median(&mut || {
         orders.for_each_value(None, |_| Ok(())).unwrap();
     });
@@ -1554,15 +1578,23 @@ fn bench_full_scan_collect(docs: usize) {
         orders.for_each_value(Some(&fields), |_| Ok(())).unwrap();
     });
     let per_doc = |ms: f64| ms * 1e3 / docs as f64;
-    println!(
-        "BENCH|scan alone, whole documents decoded|{docs}|{whole:.1} ms|{:.3} us/doc",
-        per_doc(whole)
-    );
-    println!(
-        "BENCH|scan alone, status + amount decoded|{docs}|{projected:.1} ms|{:.3} us/doc",
-        per_doc(projected)
-    );
+    for (label, ms) in [
+        ("scan alone, stored bytes only", bytes_only),
+        ("scan alone, whole documents decoded", whole),
+        ("scan alone, status + amount decoded", projected),
+    ] {
+        println!(
+            "BENCH|{engine_name}|{label}|{docs}|{ms:.1} ms|{:.3} us/doc",
+            per_doc(ms)
+        );
+    }
 
+    let modes: [(&str, bool, bool, usize); 4] = [
+        ("materialised", false, false, 1),
+        ("streamed, decoded", true, false, 1),
+        ("typed, 1 thread", true, true, 1),
+        ("typed, parallel", true, true, threads),
+    ];
     for (label, q) in [
         (
             "GROUP BY status, COUNT + SUM",
@@ -1581,10 +1613,12 @@ fn bench_full_scan_collect(docs: usize) {
     ] {
         let ast = solidb::sdbql::parse(q).unwrap();
         let mut results = Vec::new();
-        let mut line = format!("BENCH|{label}|{docs}");
-        for stream in [false, true] {
+        let mut line = format!("BENCH|{engine_name}|{label}|{docs}");
+        for (mode, stream, typed, threads) in modes {
             let executor = QueryExecutor::with_database(&engine, "bench_db".to_string())
-                .with_streaming_collect(stream);
+                .with_streaming_collect(stream)
+                .with_typed_collect(typed)
+                .with_scan_threads(threads, 16_384);
             reset_peak_rss();
             let before = peak_rss_mib();
             results.push(executor.execute(&ast).unwrap());
@@ -1595,13 +1629,25 @@ fn bench_full_scan_collect(docs: usize) {
             let ms = median(&mut || {
                 executor.execute(&ast).unwrap();
             });
+            // "…; 4 key ranges read in parallel)" when it was split.
+            let shape = executor
+                .explain(&ast)
+                .unwrap()
+                .warnings
+                .iter()
+                .find_map(|w| {
+                    let (head, _) = w.split_once(" key ranges read in parallel")?;
+                    head.rsplit(' ').next().map(|n| format!(", {n} ranges"))
+                })
+                .unwrap_or_default();
             line.push_str(&format!(
-                "|{}: {ms:.1} ms ({:.3} us/doc, {peak})",
-                if stream { "streamed" } else { "materialised" },
+                "|{mode}: {ms:.1} ms ({:.3} us/doc, {peak}{shape})",
                 per_doc(ms)
             ));
         }
-        assert_eq!(results[0], results[1], "{label}");
+        for r in &results[1..] {
+            assert_eq!(&results[0], r, "{label}");
+        }
         println!("{line}");
     }
 }

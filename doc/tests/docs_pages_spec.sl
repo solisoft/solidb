@@ -122,6 +122,14 @@ describe("Docs pages") do
     body = res_body(response)
     expect(body.include?("each document is grouped as it is read")).to_equal(true)
     expect(body.include?("COLLECT folded into the scan")).to_equal(true)
+    expect(body.include?("from the stored bytes")).to_equal(true)
+    expect(body.include?("SOLIDB_SCAN_THREADS")).to_equal(true)
+  end
+
+  test("the configuration lists the scan threads setting") do
+    response = get("/docs/getting-started")
+    expect(res_status(response)).to_equal(200)
+    expect(res_body(response).include?("SOLIDB_SCAN_THREADS")).to_equal(true)
   end
 
   test("an unknown docs page is a 404, not a template lookup") do

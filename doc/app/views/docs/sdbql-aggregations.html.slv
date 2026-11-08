@@ -137,8 +137,8 @@
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT()</td><td class="py-2 text-gray-400">Number of rows in the group.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT(expr)</td><td class="py-2 text-gray-400">Rows where <code>expr</code> is not null.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">LENGTH(expr)</td><td class="py-2 text-gray-400">Number of rows (AQL: same as <code>COUNT()</code>).</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SUM(expr)</td><td class="py-2 text-gray-400">Sum of the numeric values; other values are skipped.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">AVG(expr) / AVERAGE(expr)</td><td class="py-2 text-gray-400">Mean of the numeric values; <code>null</code> when there are none.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SUM(expr)</td><td class="py-2 text-gray-400">Sum of the numeric values; other values are skipped. The values are added exactly and the total is rounded once, so the result is the correctly rounded sum whatever order the documents are read in (ten <code>0.1</code> make <code>1.0</code>).</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">AVG(expr) / AVERAGE(expr)</td><td class="py-2 text-gray-400">Mean of the numeric values (their exact sum, rounded once, divided by their count); <code>null</code> when there are none.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">MIN(expr) / MINIMUM(expr)<br>MAX(expr) / MAXIMUM(expr)</td><td class="py-2 text-gray-400">Smallest / largest non-null value in AQL type order; the stored value is returned unchanged.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COUNT_DISTINCT(expr) / COUNT_UNIQUE(expr)</td><td class="py-2 text-gray-400">Number of distinct values (<code>1</code> and <code>1.0</code> are the same value).</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, as an array, in first-seen order.</td></tr>
@@ -173,6 +173,31 @@
                   <code>FILTER</code> an index serves reads the matching documents first, and a columnar,
                   sharded or search-view source, or a <code>SYSTEM_TIME</code> / valid-time loop, is read whole
                   before grouping.
+                </p>
+                <p class="text-xs text-gray-500">
+                  Speed: when the group keys and aggregate arguments are fields of <code>x</code>
+                  (<code>x.status</code>, <code>x.address.city</code>) and each <code>FILTER</code> compares a
+                  field with a constant or bind variable (<code>==</code>, <code>!=</code>, <code>&lt;</code>,
+                  <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>IN</code>, <code>NOT IN</code>,
+                  joined by <code>AND</code>, <code>OR</code>, <code>NOT</code>), those fields are read straight
+                  from the stored bytes: nothing is decoded into a document, and a document that joins an existing
+                  group allocates nothing. EXPLAIN then says <code>reading only amount, status from the stored
+                  bytes</code>. Anything else (a function call, a <code>LET</code>, <code>INTO</code>, a system field
+                  such as <code>_key</code>) decodes the fields it needs, with the same result.
+                </p>
+                <p class="text-xs text-gray-500">
+                  Threads: on an engine that can read several key ranges at one snapshot (RocksDB), such a scan over
+                  a large collection is split into key ranges read on several threads and the partial groups are
+                  merged &mdash; when every aggregate merges exactly: <code>COUNT</code>, <code>SUM</code>,
+                  <code>AVG</code>, <code>MIN</code>, <code>MAX</code>, <code>COUNT_DISTINCT</code> and the
+                  <code>BIT_*</code> functions (lists, <code>UNIQUE</code>, <code>MEDIAN</code> and the variance family
+                  stay on one thread). The answer is the one-thread answer, to the bit: sums are exact, and of equal
+                  extremes or equal keys (<code>1</code> and <code>1.0</code>) the first document's is kept. EXPLAIN
+                  adds <code>4 key ranges read in parallel</code>. <code>SOLIDB_SCAN_THREADS</code> sets how many
+                  threads a scan may use, its own included (by default the CPUs the server may use); the extra
+                  threads of all scans running at once never exceed that number less one, so concurrent
+                  aggregations share the CPUs instead of multiplying the load. solistore cannot yet give
+                  several iterators one snapshot, so it reads on one thread.
                 </p>
               </div>
             </div>

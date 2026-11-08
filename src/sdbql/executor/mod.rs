@@ -14,7 +14,9 @@ pub mod builtins;
 mod catalog;
 mod const_fold;
 mod data_source;
+mod datum;
 mod evaluate;
+mod exact_sum;
 mod execution;
 mod explain;
 mod expression;
@@ -92,6 +94,8 @@ pub struct QueryExecutor<'a> {
     /// it is read (`execution::scan_collect`) instead of materialising the
     /// scan first. On by default; tests turn it off to compare the two.
     pub(super) stream_collect: bool,
+    /// How a streamed `COLLECT` reads the collection: typed reads, threads.
+    pub(in crate::sdbql::executor) scan: execution::ScanSettings,
     /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
     caches: ExecCaches,
 }
@@ -227,6 +231,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
     }
@@ -245,6 +250,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
     }
@@ -263,6 +269,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
     }
@@ -285,6 +292,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
     }
@@ -344,6 +352,25 @@ impl<'a> QueryExecutor<'a> {
     /// held and the time taken differ.
     pub fn with_streaming_collect(mut self, on: bool) -> Self {
         self.stream_collect = on;
+        self
+    }
+
+    /// Allow or forbid the typed reads of a streamed `COLLECT` (group keys,
+    /// aggregate arguments and FILTER operands read from the stored bytes
+    /// instead of a decoded document). Results are the same either way; for
+    /// tests and benchmarks that compare the two.
+    pub fn with_typed_collect(mut self, on: bool) -> Self {
+        self.scan.typed = on;
+        self
+    }
+
+    /// The most threads a streamed `COLLECT` may scan with (1: one), instead
+    /// of `SOLIDB_SCAN_THREADS` or the CPUs available; and the fewest
+    /// documents worth a thread of their own (default 32,768). For tests and
+    /// benchmarks; the process-wide cap on scan threads still applies.
+    pub fn with_scan_threads(mut self, threads: usize, min_docs_per_thread: usize) -> Self {
+        self.scan.threads = Some(threads.max(1));
+        self.scan.min_docs_per_thread = min_docs_per_thread.max(1);
         self
     }
 

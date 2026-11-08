@@ -512,6 +512,57 @@ impl Kv {
         }
     }
 
+    /// Walk forward from `start` (physical) within the bounds of `opts`,
+    /// calling `f` with each key and value until it returns `false`. The
+    /// slices are borrowed from the engine: on RocksDB nothing is copied
+    /// (the iterator item of [`Self::iterator_cf_opt`] copies both); on
+    /// solistore the value is a slice of the cached block, and the key the
+    /// iterator's own copy. For long scans that look at each entry once.
+    ///
+    /// With `snapshot`, the walk reads that point in time (see
+    /// [`Self::snapshot`]) instead of the moment it starts.
+    pub fn for_each_cf_opt(
+        &self,
+        cf: &KvCf<'_>,
+        opts: KvReadOptions,
+        start: &[u8],
+        snapshot: Option<&KvSnapshot<'_>>,
+        mut f: impl FnMut(&[u8], &[u8]) -> bool,
+    ) -> Result<(), KvError> {
+        match (&self.engine, cf) {
+            (Engine::Rocks(db), KvCf::Rocks(h)) => {
+                let mut it = match snapshot {
+                    Some(KvSnapshot::Rocks(s)) => s.raw_iterator_cf_opt(h, opts.to_rocks()),
+                    None => db.raw_iterator_cf_opt(h, opts.to_rocks()),
+                };
+                it.seek(start);
+                while let Some((k, v)) = it.item() {
+                    if !f(k, v) {
+                        return Ok(());
+                    }
+                    it.next();
+                }
+                it.status().map_err(KvError::from)
+            }
+            #[cfg(feature = "engine-solistore")]
+            (Engine::Solistore(db), KvCf::Solistore(h)) => {
+                // No snapshot to read at: `snapshot()` never returns one
+                // for solistore (see `supports_snapshot`).
+                debug_assert!(snapshot.is_none());
+                let mode = ::solistore::IteratorMode::From(start, ::solistore::Direction::Forward);
+                for item in db.iterator_opt(h, opts.to_solistore(), mode)? {
+                    let (k, v) = item?;
+                    if !f(&k, &v) {
+                        break;
+                    }
+                }
+                Ok(())
+            }
+            #[cfg(feature = "engine-solistore")]
+            _ => mixed_engines(),
+        }
+    }
+
     /// Seek to `prefix` and walk forward to the end of the column family;
     /// the caller stops when keys no longer start with it (RocksDB's
     /// `prefix_iterator_cf` without a prefix extractor).
@@ -567,6 +618,51 @@ impl Kv {
             }
             #[cfg(feature = "engine-solistore")]
             _ => mixed_engines(),
+        }
+    }
+
+    /// [`Self::approximate_size_cf`] of each `[start, end)` range, unflushed
+    /// writes included where the engine can estimate them; in one call on
+    /// RocksDB. For choosing where to split a scan, not for accounting.
+    pub fn approximate_sizes_cf(&self, cf: &KvCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64> {
+        match (&self.engine, cf) {
+            (Engine::Rocks(db), KvCf::Rocks(h)) => {
+                let ranges: Vec<rust_rocksdb::Range> = ranges
+                    .iter()
+                    .map(|(s, e)| rust_rocksdb::Range::new(s, e))
+                    .collect();
+                let flags = rust_rocksdb::SizeApproximationFlags::INCLUDE_FILES
+                    | rust_rocksdb::SizeApproximationFlags::INCLUDE_MEMTABLE;
+                db.get_approximate_sizes_cf_with_flags(h, flags, &ranges)
+                    .unwrap_or_else(|_| vec![0; ranges.len()])
+            }
+            #[cfg(feature = "engine-solistore")]
+            (Engine::Solistore(db), KvCf::Solistore(h)) => ranges
+                .iter()
+                .map(|(s, e)| db.approximate_size(h, s, e).unwrap_or(0))
+                .collect(),
+            #[cfg(feature = "engine-solistore")]
+            _ => mixed_engines(),
+        }
+    }
+
+    /// Whether [`Self::snapshot`] gives a read view: one point in time that
+    /// several iterators — on several threads — can read together. RocksDB
+    /// has it; solistore 0.2 does not (each iterator reads the moment it is
+    /// created), so a scan split across threads would not be one consistent
+    /// read there, and callers stay sequential.
+    pub fn supports_snapshot(&self) -> bool {
+        matches!(self.engine, Engine::Rocks(_))
+    }
+
+    /// A read view of the whole database as it is now, for
+    /// [`Self::for_each_cf_opt`]; `None` when the engine has none (see
+    /// [`Self::supports_snapshot`]). Released when dropped.
+    pub fn snapshot(&self) -> Option<KvSnapshot<'_>> {
+        match &self.engine {
+            Engine::Rocks(db) => Some(KvSnapshot::Rocks(db.snapshot())),
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(_) => None,
         }
     }
 
@@ -721,6 +817,12 @@ impl Kv {
         }
         select::record(target, self.engine_kind())
     }
+}
+
+/// One point in time of a [`Kv`], which several scans (and threads) can read
+/// together: see [`Kv::snapshot`].
+pub enum KvSnapshot<'a> {
+    Rocks(rust_rocksdb::SnapshotWithThreadMode<'a, RawRocks>),
 }
 
 /// A handle on one column family of a [`Kv`].

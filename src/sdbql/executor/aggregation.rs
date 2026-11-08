@@ -11,6 +11,8 @@ use serde_json::Value;
 
 use super::builtins::array::as_int;
 use super::builtins::math::{median_of, Welford};
+use super::datum::Datum;
+use super::exact_sum::ExactSum;
 use super::types::Context;
 use super::{compare_values, hash_value, values_equal, QueryExecutor};
 use crate::error::{DbError, DbResult};
@@ -265,16 +267,23 @@ impl DistinctValues {
 /// Folding each row in as it arrives keeps the clause at O(groups) for every
 /// function except those whose output is (or needs) the values themselves:
 /// `COLLECT_LIST`, `UNIQUE`, `SORTED_UNIQUE`, `COUNT_DISTINCT`, `MEDIAN`.
+///
+/// `SUM` and `AVG` add exactly ([`ExactSum`]) and round once, so their result
+/// does not depend on the order the rows arrive in — which is what lets a
+/// scan read on several threads ([`Self::merge`]) give the answer of one.
 pub(super) enum AggregateAccumulator {
     CountRows(i64),
     CountNonNull(i64),
-    Sum(f64),
+    Sum(ExactSum),
     Avg {
-        sum: f64,
+        sum: ExactSum,
         count: i64,
     },
-    Min(Option<Value>),
-    Max(Option<Value>),
+    /// The extreme so far, and the ordinal of the row it came from: of equal
+    /// extremes the earliest row's is kept, which a merge of partial results
+    /// read out of order can still tell.
+    Min(Option<(Value, u64)>),
+    Max(Option<(Value, u64)>),
     CountDistinct(DistinctValues),
     Unique {
         values: DistinctValues,
@@ -300,11 +309,18 @@ impl AggregateAccumulator {
         let kind = AggKind::resolve(function, has_argument).ok_or_else(|| {
             DbError::ExecutionError(format!("Unknown aggregate function: {}", function))
         })?;
-        Ok(match kind {
+        Ok(Self::of_kind(kind))
+    }
+
+    pub(super) fn of_kind(kind: AggKind) -> Self {
+        match kind {
             AggKind::CountRows => Self::CountRows(0),
             AggKind::CountNonNull => Self::CountNonNull(0),
-            AggKind::Sum => Self::Sum(0.0),
-            AggKind::Avg => Self::Avg { sum: 0.0, count: 0 },
+            AggKind::Sum => Self::Sum(ExactSum::default()),
+            AggKind::Avg => Self::Avg {
+                sum: ExactSum::default(),
+                count: 0,
+            },
             AggKind::Min => Self::Min(None),
             AggKind::Max => Self::Max(None),
             AggKind::CountDistinct => Self::CountDistinct(DistinctValues::default()),
@@ -333,7 +349,7 @@ impl AggregateAccumulator {
                 acc: None,
                 invalid: false,
             },
-        })
+        }
     }
 
     /// Fold one row in. `value` is `None` when the aggregate has no argument,
@@ -342,8 +358,10 @@ impl AggregateAccumulator {
     /// distinct value not seen before).
     ///
     /// Returns whether the value was retained (as opposed to reduced), so the
-    /// caller can budget the memory this clause is holding on to.
-    pub(super) fn push(&mut self, value: Option<Cow<'_, Value>>) -> bool {
+    /// caller can budget the memory this clause is holding on to. `ordinal`
+    /// is the row's position in the input, increasing.
+    #[inline]
+    pub(super) fn push(&mut self, value: Option<Datum<'_>>, ordinal: u64) -> bool {
         match self {
             Self::CountRows(n) => {
                 *n += 1;
@@ -356,14 +374,14 @@ impl AggregateAccumulator {
                 false
             }
             Self::Sum(sum) => {
-                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
-                    *sum += n;
+                if let Some(n) = value.as_ref().and_then(Datum::as_f64) {
+                    sum.add(n);
                 }
                 false
             }
             Self::Avg { sum, count } => {
-                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
-                    *sum += n;
+                if let Some(n) = value.as_ref().and_then(Datum::as_f64) {
+                    sum.add(n);
                     *count += 1;
                 }
                 false
@@ -374,9 +392,9 @@ impl AggregateAccumulator {
                 if let Some(val) = value.filter(|v| !v.is_null()) {
                     if best
                         .as_ref()
-                        .is_none_or(|b| compare_values(&val, b) == std::cmp::Ordering::Less)
+                        .is_none_or(|(b, _)| val.cmp_value(b) == std::cmp::Ordering::Less)
                     {
-                        *best = Some(val.into_owned());
+                        *best = Some((val.into_value(), ordinal));
                     }
                 }
                 false
@@ -385,31 +403,31 @@ impl AggregateAccumulator {
                 if let Some(val) = value.filter(|v| !v.is_null()) {
                     if best
                         .as_ref()
-                        .is_none_or(|b| compare_values(&val, b) == std::cmp::Ordering::Greater)
+                        .is_none_or(|(b, _)| val.cmp_value(b) == std::cmp::Ordering::Greater)
                     {
-                        *best = Some(val.into_owned());
+                        *best = Some((val.into_value(), ordinal));
                     }
                 }
                 false
             }
             Self::CountDistinct(values) | Self::Unique { values, .. } => match value {
-                Some(v) => values.insert(v),
+                Some(v) => values.insert(v.into_cow()),
                 None => false,
             },
             Self::List(list) => match value {
                 Some(v) => {
-                    list.push(v.into_owned());
+                    list.push(v.into_value());
                     true
                 }
                 None => false,
             },
             Self::Stats { acc, .. } => {
-                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
+                if let Some(n) = value.as_ref().and_then(Datum::as_f64) {
                     acc.push(n);
                 }
                 false
             }
-            Self::Median(nums) => match value.as_deref().and_then(Value::as_f64) {
+            Self::Median(nums) => match value.as_ref().and_then(Datum::as_f64) {
                 Some(n) => {
                     nums.push(n);
                     true
@@ -417,17 +435,11 @@ impl AggregateAccumulator {
                 None => false,
             },
             Self::Bits { kind, acc, invalid } => {
-                match value.as_deref() {
-                    None | Some(Value::Null) => {}
-                    Some(v) => match as_int(v) {
-                        Some(n) => {
-                            *acc = Some(match (*acc, *kind) {
-                                (None, _) => n,
-                                (Some(a), AggKind::BitAnd) => a & n,
-                                (Some(a), AggKind::BitOr) => a | n,
-                                (Some(a), _) => a ^ n,
-                            });
-                        }
+                match &value {
+                    None => {}
+                    Some(v) if v.is_null() => {}
+                    Some(v) => match v.as_value().as_deref().and_then(as_int) {
+                        Some(n) => *acc = Some(bit_combine(*kind, *acc, n)),
                         None => *invalid = true,
                     },
                 }
@@ -436,13 +448,110 @@ impl AggregateAccumulator {
         }
     }
 
+    /// Whether [`Self::merge`] gives exactly what one accumulator would have
+    /// computed from all the rows, whichever rows each partial result saw
+    /// and in whatever order they are merged. Counts, exact sums and bit
+    /// operations do not depend on order; MIN and MAX keep their row's
+    /// ordinal to break ties as one pass would. The others keep values in
+    /// arrival order (lists, first-seen distinct values, the median's
+    /// `-0.0`/`0.0`) or round in it (the variance family).
+    pub(super) fn mergeable(kind: AggKind) -> bool {
+        matches!(
+            kind,
+            AggKind::CountRows
+                | AggKind::CountNonNull
+                | AggKind::Sum
+                | AggKind::Avg
+                | AggKind::Min
+                | AggKind::Max
+                | AggKind::CountDistinct
+                | AggKind::BitAnd
+                | AggKind::BitOr
+                | AggKind::BitXor
+        )
+    }
+
+    /// Fold in `other`, a partial result over other rows of the same group
+    /// (see [`Self::mergeable`]). Returns how many retained values `other`
+    /// held that are now dropped as duplicates.
+    pub(super) fn merge(&mut self, other: Self) -> usize {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        // Of two equal extremes, the one from the earlier row.
+        let better = |mine: &Option<(Value, u64)>, theirs: &(Value, u64), wanted| match mine {
+            None => true,
+            Some((v, at)) => match compare_values(&theirs.0, v) {
+                Equal => theirs.1 < *at,
+                o => o == wanted,
+            },
+        };
+        match (self, other) {
+            (Self::CountRows(a), Self::CountRows(b))
+            | (Self::CountNonNull(a), Self::CountNonNull(b)) => {
+                *a += b;
+                0
+            }
+            (Self::Sum(a), Self::Sum(b)) => {
+                a.merge(&b);
+                0
+            }
+            (
+                Self::Avg { sum, count },
+                Self::Avg {
+                    sum: other_sum,
+                    count: other_count,
+                },
+            ) => {
+                sum.merge(&other_sum);
+                *count += other_count;
+                0
+            }
+            (Self::Min(a), Self::Min(Some(b))) => {
+                if better(a, &b, Less) {
+                    *a = Some(b);
+                }
+                0
+            }
+            (Self::Max(a), Self::Max(Some(b))) => {
+                if better(a, &b, Greater) {
+                    *a = Some(b);
+                }
+                0
+            }
+            (Self::Min(_), Self::Min(None)) | (Self::Max(_), Self::Max(None)) => 0,
+            (Self::CountDistinct(a), Self::CountDistinct(b)) => {
+                let held = b.items.len();
+                let kept = b
+                    .items
+                    .into_iter()
+                    .filter(|v| a.insert(Cow::Borrowed(v)))
+                    .count();
+                held - kept
+            }
+            (
+                Self::Bits { kind, acc, invalid },
+                Self::Bits {
+                    acc: other_acc,
+                    invalid: other_invalid,
+                    ..
+                },
+            ) => {
+                if let Some(n) = other_acc {
+                    *acc = Some(bit_combine(*kind, *acc, n));
+                }
+                *invalid |= other_invalid;
+                0
+            }
+            _ => unreachable!("only mergeable accumulators of one kind are merged"),
+        }
+    }
+
     pub(super) fn finish(self) -> Value {
         match self {
             Self::CountRows(n) | Self::CountNonNull(n) => Value::Number(n.into()),
-            Self::Sum(sum) => float_value(sum),
+            Self::Sum(sum) => float_value(sum.value()),
             Self::Avg { count: 0, .. } => Value::Null,
-            Self::Avg { sum, count } => float_value(sum / count as f64),
-            Self::Min(v) | Self::Max(v) => v.unwrap_or(Value::Null),
+            Self::Avg { sum, count } => float_value(sum.value() / count as f64),
+            Self::Min(v) | Self::Max(v) => v.map_or(Value::Null, |(v, _)| v),
             Self::CountDistinct(values) => Value::Number((values.items.len() as i64).into()),
             Self::Unique { values, sorted } => {
                 let mut items = values.items;
@@ -465,6 +574,18 @@ impl AggregateAccumulator {
     }
 }
 
+/// One step of BIT_AND / BIT_OR / BIT_XOR: associative and commutative, so
+/// partial results combine in any grouping.
+#[inline]
+fn bit_combine(kind: AggKind, acc: Option<i64>, n: i64) -> i64 {
+    match (acc, kind) {
+        (None, _) => n,
+        (Some(a), AggKind::BitAnd) => a & n,
+        (Some(a), AggKind::BitOr) => a | n,
+        (Some(a), _) => a ^ n,
+    }
+}
+
 /// A float result; non-finite (an overflowing SUM) is null, as JSON has no
 /// representation for it.
 fn float_value(f: f64) -> Value {
@@ -480,8 +601,8 @@ mod tests {
 
     fn fold(function: &str, values: &[Value]) -> Value {
         let mut acc = AggregateAccumulator::new(function, true).unwrap();
-        for v in values {
-            acc.push(Some(Cow::Borrowed(v)));
+        for (i, v) in values.iter().enumerate() {
+            acc.push(Some(Datum::of(Cow::Borrowed(v))), i as u64);
         }
         acc.finish()
     }

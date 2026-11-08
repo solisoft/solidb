@@ -95,7 +95,7 @@ fn skip_value(buf: &[u8], mut pos: usize) -> Option<usize> {
 /// Call `f` with each key/value pair of the map `data` is: raw key bytes
 /// (UTF-8) and the value's encoded bytes. `None` unless `data` is exactly
 /// one well-formed map with string keys.
-fn visit_map<'a>(data: &'a [u8], mut f: impl FnMut(&'a [u8], &'a [u8])) -> Option<()> {
+pub(crate) fn visit_map<'a>(data: &'a [u8], mut f: impl FnMut(&'a [u8], &'a [u8])) -> Option<()> {
     let marker = *data.first()?;
     let (len, mut pos) = match marker {
         0x80..=0x8f => ((marker & 0x0f) as usize, 1),

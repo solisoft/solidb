@@ -457,8 +457,21 @@ fn explain_reports_the_fold() {
         .find(|w| w.contains(FOLDED))
         .unwrap_or_else(|| panic!("{:?}", explain.warnings));
     assert!(
-        note.contains("'c'") && note.contains("decoding only k, t, v"),
+        note.contains("'c'") && note.contains("reading only k, t, v from the stored bytes"),
         "{note}"
+    );
+    // Without the typed reads, the fields are decoded.
+    let generic = executor(&engine, true, &binds)
+        .with_typed_collect(false)
+        .explain(&query)
+        .unwrap();
+    assert!(
+        generic
+            .warnings
+            .iter()
+            .any(|w| w.contains(FOLDED) && w.contains("decoding only k, t, v")),
+        "{:?}",
+        generic.warnings
     );
     assert_eq!(explain.documents_scanned, 66);
     assert_eq!(explain.documents_returned, groups.len());
@@ -763,4 +776,418 @@ fn streaming_collect_holds_groups_not_documents() {
     over_ceiling(run(q, true), q);
     let q = "FOR o IN orders COLLECT n = o.n RETURN n";
     over_ceiling(run(q, true), q);
+}
+
+// ---------------------------------------------------------------------------
+// Typed reads and parallel scans (#776)
+// ---------------------------------------------------------------------------
+
+/// How a streamed COLLECT is run: typed reads or decoded documents, and
+/// with how many threads (`(threads, min_docs_per_thread)`).
+#[derive(Clone, Copy, Debug)]
+struct Mode {
+    typed: bool,
+    threads: usize,
+    min_docs: usize,
+}
+
+const GENERIC: Mode = Mode {
+    typed: false,
+    threads: 1,
+    min_docs: 1,
+};
+const TYPED: Mode = Mode {
+    typed: true,
+    threads: 1,
+    min_docs: 1,
+};
+/// Four threads for any collection of eight documents or more.
+const PARALLEL: Mode = Mode {
+    typed: true,
+    threads: 4,
+    min_docs: 2,
+};
+
+fn executor_in<'a>(engine: &'a StorageEngine, mode: Mode, binds: &BindVars) -> QueryExecutor<'a> {
+    executor(engine, true, binds)
+        .with_typed_collect(mode.typed)
+        .with_scan_threads(mode.threads, mode.min_docs)
+}
+
+fn run_in(
+    engine: &StorageEngine,
+    q: &str,
+    mode: Mode,
+    binds: &BindVars,
+) -> Result<Vec<Value>, String> {
+    let query = parse(q).unwrap_or_else(|e| panic!("parse {q}: {e}"));
+    executor_in(engine, mode, binds)
+        .execute(&query)
+        .map_err(|e| e.to_string())
+}
+
+/// The note EXPLAIN gives about the fold, run (`analyze`) and planned.
+fn notes(engine: &StorageEngine, q: &str, mode: Mode, binds: &BindVars) -> (String, String) {
+    let query = parse(q).unwrap();
+    let ex = executor_in(engine, mode, binds);
+    let find = |warnings: Vec<String>| {
+        warnings
+            .into_iter()
+            .find(|w| w.contains(FOLDED))
+            .unwrap_or_else(|| panic!("not folded: {q}"))
+    };
+    (
+        find(ex.explain(&query).unwrap().warnings),
+        find(ex.explain_plan(&query).unwrap().warnings),
+    )
+}
+
+/// The answer of every way to run `q` — materialised, streamed with decoded
+/// documents, streamed with typed reads on one thread and on four — after
+/// checking they are all the same, errors included.
+fn same_everywhere(
+    engine: &StorageEngine,
+    q: &str,
+    binds: &BindVars,
+) -> Result<Vec<Value>, String> {
+    let materialised = run(engine, q, false, binds);
+    for mode in [GENERIC, TYPED, PARALLEL] {
+        assert_eq!(
+            run_in(engine, q, mode, binds),
+            materialised,
+            "{q} in {mode:?}"
+        );
+    }
+    materialised
+}
+
+#[test]
+fn typed_reads_agree_with_decoded_documents() {
+    let (engine, _tmp) = engine_with(mixed_docs());
+    let mut binds = BindVars::new();
+    binds.insert("min".to_string(), json!(2));
+    binds.insert("tag".to_string(), json!("blue"));
+    binds.insert("set".to_string(), json!([1, "a", null, [1, 2]]));
+    let mergeable = "n = COUNT(), cn = COUNT(d.v), len = LENGTH(d.v), s = SUM(d.v), \
+         a = AVG(d.v), mn = MIN(d.v), mx = MAX(d.v), cd = COUNT_DISTINCT(d.v), \
+         ba = BIT_AND(d.i), bo = BIT_OR(d.i), bx = BIT_XOR(d.i), mi = MIN(d.i), mxs = MAX(d.t)";
+    let ordered = "u = UNIQUE(d.v), su = SORTED_UNIQUE(d.v), l = COLLECT_LIST(d.v), \
+         var = VARIANCE(d.v), sd = STDDEV_SAMPLE(d.v), med = MEDIAN(d.v)";
+    let typed = [
+        "FOR d IN c COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c COLLECT k = d.k, t = d.t RETURN [k, t]".to_string(),
+        "FOR d IN c COLLECT WITH COUNT INTO n RETURN n".to_string(),
+        format!("FOR d IN c COLLECT k = d.k AGGREGATE {mergeable} RETURN MERGE({{k}}, {{n, cn, len, s, a, mn, mx, cd, ba, bo, bx, mi, mxs}})"),
+        format!("FOR d IN c COLLECT AGGREGATE {mergeable} RETURN {{n, cn, len, s, a, mn, mx, cd, ba, bo, bx, mi, mxs}}"),
+        format!("FOR d IN c COLLECT t = d.t AGGREGATE {ordered} RETURN {{t, u, su, l, var, sd, med}}"),
+        "FOR d IN c COLLECT k = d.nested.deep AGGREGATE s = SUM(d.nested.deep) RETURN {k, s}".to_string(),
+        "FOR d IN c COLLECT k = d.v.a, m = d.v.missing WITH COUNT INTO n RETURN {k, m, n}".to_string(),
+        "FOR d IN c COLLECT k = d.nested.list WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.t == 'red' COLLECT k = d.k AGGREGATE s = SUM(d.v) RETURN {k, s}".to_string(),
+        "FOR d IN c FILTER d.v != null FILTER d.v > 2 COLLECT WITH COUNT INTO n RETURN n".to_string(),
+        "FOR d IN c FILTER 2 < d.v COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.v <= 'x' AND d.v >= -3 COLLECT WITH COUNT INTO n RETURN n".to_string(),
+        "FOR d IN c FILTER d.v >= @min AND d.t == @tag COLLECT k = d.k AGGREGATE s = SUM(d.v) RETURN {k, s}".to_string(),
+        "FOR d IN c FILTER d.k IN [1, 'a', null] COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.k NOT IN @set COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.t IN {red: 1} COLLECT WITH COUNT INTO n RETURN n".to_string(),
+        "FOR d IN c FILTER NOT (d.v < 3) OR d.t == 'blue' COLLECT t = d.t WITH COUNT INTO n RETURN {t, n}".to_string(),
+        "FOR d IN c FILTER d.v COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.nested.deep FILTER d.missing == null COLLECT WITH COUNT INTO n RETURN n".to_string(),
+        "FOR d IN c FILTER d.k == [1.0, 2] OR d.k == {x: 1} COLLECT k = d.k WITH COUNT INTO n RETURN {k, n}".to_string(),
+        "FOR d IN c FILTER d.v > 1000000000 COLLECT AGGREGATE s = SUM(d.v) RETURN s".to_string(),
+    ];
+    for q in &typed {
+        same_everywhere(&engine, q, &binds).unwrap_or_else(|e| panic!("{q}: {e}"));
+        let (run_note, plan_note) = notes(&engine, q, TYPED, &binds);
+        assert!(
+            run_note.contains("from the stored bytes"),
+            "{q}: {run_note}"
+        );
+        assert_eq!(run_note, plan_note, "{q}");
+    }
+
+    // Not compiled: decoded documents, the same answer.
+    for q in [
+        "FOR d IN c FILTER IS_NUMBER(d.v) COLLECT k = d.k AGGREGATE s = SUM(d.v) RETURN {k, s}",
+        "FOR d IN c COLLECT k = d._key RETURN k",
+        "FOR d IN c COLLECT x = d[\"a.b\"] WITH COUNT INTO n RETURN {x, n}",
+        "FOR d IN c LET y = d.v COLLECT k = y WITH COUNT INTO n RETURN {k, n}",
+        "FOR d IN c COLLECT k = d.k INTO g = d.t RETURN {k, g}",
+        "FOR d IN c FILTER d.v == d.i COLLECT WITH COUNT INTO n RETURN n",
+    ] {
+        same_everywhere(&engine, q, &binds).unwrap_or_else(|e| panic!("{q}: {e}"));
+        let (run_note, _) = notes(&engine, q, TYPED, &binds);
+        assert!(
+            !run_note.contains("from the stored bytes"),
+            "{q}: {run_note}"
+        );
+    }
+}
+
+const STATUSES3: [&str; 3] = ["new", "paid", "shipped"];
+
+/// `orders`-like documents where the order of addition shows in a float sum,
+/// where `1` and `1.0` (and `2` and `2.0` as extremes) are first met in the
+/// first key range, and where a group exists only in the last.
+fn tricky_docs(count: usize) -> Vec<Value> {
+    let amounts = [1e16, 0.1, -1e16, 3.3, 1e-7, 2.5, -0.3];
+    (0..count)
+        .map(|i| {
+            // The first rows of group 1 carry 1.0, later ones 1; in group
+            // 0 the least `x` is 2.0 in the first rows, an equal 2 later.
+            let g = match i % 7 {
+                1 if i < count / 8 => json!(1.0),
+                g => json!(g),
+            };
+            let x = if i % 7 == 0 && i < count / 8 {
+                json!(2.0)
+            } else if i % 11 == 0 {
+                json!(2)
+            } else {
+                json!(i % 50 + 3)
+            };
+            let mut doc = json!({
+                "_key": format!("k{i:05}"),
+                "g": g,
+                "x": x,
+                "amount": amounts[i % amounts.len()] * (1.0 + (i % 13) as f64),
+                "status": STATUSES3[i % 3],
+                "flags": i as i64 & 0xff,
+                "items": [{"sku": format!("S{}", i % 17), "qty": i % 4}],
+            });
+            if i >= count - count / 10 {
+                doc["status"] = json!("late");
+            }
+            doc
+        })
+        .collect()
+}
+
+#[test]
+fn parallel_scans_give_the_sequential_answer() {
+    let (engine, _tmp) = engine_with(tricky_docs(3_000));
+    let binds = BindVars::new();
+    let coll = engine
+        .get_database(DB)
+        .unwrap()
+        .get_collection("c")
+        .unwrap();
+    for q in [
+        "FOR d IN c COLLECT g = d.g AGGREGATE n = COUNT(), s = SUM(d.amount), a = AVG(d.amount), \
+         mn = MIN(d.x), mx = MAX(d.x), cd = COUNT_DISTINCT(d.status), bo = BIT_OR(d.flags), \
+         bx = BIT_XOR(d.flags) RETURN {g, n, s, a, mn, mx, cd, bo, bx}",
+        "FOR d IN c COLLECT status = d.status AGGREGATE n = COUNT(), total = SUM(d.amount) \
+         RETURN {status, n, total}",
+        "FOR d IN c FILTER d.amount > 0 COLLECT status = d.status AGGREGATE n = COUNT(), \
+         total = SUM(d.amount) RETURN {status, n, total}",
+        "FOR d IN c COLLECT WITH COUNT INTO n RETURN n",
+        "FOR d IN c COLLECT AGGREGATE s = SUM(d.amount), mn = MIN(d.g) RETURN {s, mn}",
+        "FOR d IN c FILTER d.status == 'late' COLLECT g = d.g WITH COUNT INTO n RETURN {g, n}",
+        "FOR d IN c FILTER d.status == 'nobody' COLLECT g = d.g WITH COUNT INTO n RETURN {g, n}",
+        "FOR d IN c FILTER d.status == 'nobody' COLLECT AGGREGATE s = SUM(d.amount) RETURN s",
+    ] {
+        let groups = same_everywhere(&engine, q, &binds).unwrap_or_else(|e| panic!("{q}: {e}"));
+        assert!(!groups.is_empty() || q.contains("nobody"), "{q}");
+    }
+
+    // The group key and the extreme are the first row's: 1.0 and 2.0.
+    let first = run_in(
+        &engine,
+        "FOR d IN c COLLECT g = d.g AGGREGATE mn = MIN(d.x) RETURN {g, mn}",
+        PARALLEL,
+        &binds,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&first[1]["g"]).unwrap(),
+        "1.0",
+        "{first:?}"
+    );
+    assert_eq!(
+        serde_json::to_string(&first[0]["mn"]).unwrap(),
+        "2.0",
+        "{first:?}"
+    );
+
+    // The run was split where the engine can read ranges at one snapshot.
+    let q = "FOR d IN c COLLECT status = d.status AGGREGATE n = COUNT() RETURN {status, n}";
+    let parallel = |note: &str| note.contains("key ranges read in parallel");
+    let (mut run_note, plan_note) = notes(&engine, q, PARALLEL, &binds);
+    if coll.supports_parallel_scan() {
+        // Other tests may hold the process's scan threads for a moment.
+        for _ in 0..20 {
+            if parallel(&run_note) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            run_note = notes(&engine, q, PARALLEL, &binds).0;
+        }
+        assert!(parallel(&run_note), "{run_note}");
+        assert_eq!(run_note, plan_note);
+    } else {
+        assert!(!parallel(&run_note) && !parallel(&plan_note), "{run_note}");
+    }
+    // Aggregates whose partial results do not merge exactly stay on one
+    // thread.
+    let (note, plan) = notes(
+        &engine,
+        "FOR d IN c COLLECT s = d.status AGGREGATE l = COLLECT_LIST(d.g) RETURN {s, l}",
+        PARALLEL,
+        &binds,
+    );
+    assert!(!parallel(&note) && !parallel(&plan), "{note}");
+    // One thread asked for, one used.
+    let (note, _) = notes(&engine, q, TYPED, &binds);
+    assert!(!parallel(&note), "{note}");
+}
+
+/// Sums whose value depends on the order of addition give one answer: the
+/// correctly rounded sum, whatever the split.
+#[test]
+fn float_sums_do_not_depend_on_the_split() {
+    let values = [1e16, 1.0, -1e16, 0.1, 0.2, 0.3, 1e-9, 3.3, -2.2];
+    let docs: Vec<Value> = (0..900)
+        .map(|i| json!({"_key": format!("f{i:04}"), "v": values[i % values.len()], "g": i % 2}))
+        .collect();
+    let (engine, _tmp) = engine_with(docs);
+    let binds = BindVars::new();
+    let q = "FOR d IN c COLLECT g = d.g AGGREGATE s = SUM(d.v), a = AVG(d.v) RETURN {g, s, a}";
+    let expected = same_everywhere(&engine, q, &binds).unwrap();
+    for (threads, min_docs) in [(2, 2), (3, 2), (7, 2), (16, 2)] {
+        let mode = Mode {
+            typed: true,
+            threads,
+            min_docs,
+        };
+        assert_eq!(
+            run_in(&engine, q, mode, &binds).unwrap(),
+            expected,
+            "{threads}"
+        );
+    }
+    // The array builtins add the same way; a zero keeps the running sum's
+    // sign, which started at -0.0.
+    let ret = |q: &str| serde_json::to_string(&run(&engine, q, true, &binds).unwrap()).unwrap();
+    assert_eq!(
+        ret("RETURN SUM([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])"),
+        "[1.0]"
+    );
+    assert_eq!(ret("RETURN AVG([0.1, 0.2, 0.3])"), "[0.19999999999999998]");
+    assert_eq!(
+        ret("RETURN [SUM([]), SUM([-0.0]), SUM([1, -1]), SUM(['x'])]"),
+        "[[-0.0,-0.0,0.0,-0.0]]"
+    );
+
+    // 100 repetitions of the nine values per group: exactly 100 times their
+    // sum, which a running f64 sum misses.
+    let per_cycle: f64 = 1.0 + 0.1 + 0.2 + 0.3 + 1e-9 + 3.3 - 2.2;
+    let total: f64 = expected.iter().map(|g| g["s"].as_f64().unwrap()).sum();
+    assert!((total - 100.0 * per_cycle).abs() < 1e-9, "{expected:?}");
+}
+
+/// The key ranges a scan is split into cover every document once, in
+/// order, whatever their number and however the keys are spread.
+#[test]
+fn key_ranges_cover_every_document_once() {
+    let mut key_sets: Vec<Vec<String>> = vec![
+        vec![],
+        vec!["only".to_string()],
+        vec!["a".to_string(), "b".to_string()],
+        (0..1000).map(|i| format!("{i:06}")).collect(),
+    ];
+    // Skewed: many keys under one prefix, a few far away.
+    let mut skewed: Vec<String> = (0..500).map(|i| format!("aaa{i:04}")).collect();
+    skewed.extend((0..5).map(|i| format!("zz{i}")));
+    key_sets.push(skewed);
+    // Keys that are prefixes of one another.
+    key_sets.push(vec![
+        "x".into(),
+        "xx".into(),
+        "xxx".into(),
+        "xxxx".into(),
+        "y".into(),
+    ]);
+    for keys in key_sets {
+        let docs: Vec<Value> = keys.iter().map(|k| json!({"_key": k, "v": 1})).collect();
+        let (engine, _tmp) = engine_with(docs);
+        let coll = engine
+            .get_database(DB)
+            .unwrap()
+            .get_collection("c")
+            .unwrap();
+        for n in [1usize, 2, 3, 4, 8, 16, 64] {
+            let ranges = coll.doc_partitions(n);
+            assert!(!ranges.is_empty() && ranges.len() <= n, "{n}: {ranges:?}");
+            assert_eq!(ranges[0].0, b"doc:".to_vec());
+            assert_eq!(ranges.last().unwrap().1, b"doc;".to_vec());
+            for pair in ranges.windows(2) {
+                assert_eq!(pair[0].1, pair[1].0, "ranges must touch");
+                assert!(pair[0].0 < pair[0].1, "empty range {pair:?}");
+            }
+            let snapshot = coll.scan_snapshot();
+            let mut seen = Vec::new();
+            for (lo, hi) in &ranges {
+                coll.for_each_doc_bytes_in(lo, hi, snapshot.as_ref(), |bytes| {
+                    let doc = solidb::storage::serializer::deserialize_doc_as_value(bytes).unwrap();
+                    seen.push(doc["_key"].as_str().unwrap().to_string());
+                    Ok(true)
+                })
+                .unwrap();
+            }
+            let mut expected = keys.clone();
+            expected.sort();
+            assert_eq!(seen, expected, "{n} ranges: {ranges:?}");
+        }
+    }
+}
+
+/// An empty collection and a one-document one, asked for many threads.
+#[test]
+fn tiny_collections_under_parallel_settings() {
+    for docs in [vec![], vec![json!({"_key": "one", "s": "a", "v": 1.5})]] {
+        let (engine, _tmp) = engine_with(docs);
+        let binds = BindVars::new();
+        let mode = Mode {
+            typed: true,
+            threads: 8,
+            min_docs: 1,
+        };
+        for q in [
+            "FOR d IN c COLLECT WITH COUNT INTO n RETURN n",
+            "FOR d IN c COLLECT s = d.s AGGREGATE n = COUNT(), t = SUM(d.v) RETURN {s, n, t}",
+            "FOR d IN c COLLECT AGGREGATE t = SUM(d.v), m = MAX(d.v) RETURN {t, m}",
+        ] {
+            let expected = run(&engine, q, false, &binds);
+            assert_eq!(run_in(&engine, q, mode, &binds), expected, "{q}");
+        }
+    }
+}
+
+/// The row ceiling holds across the key ranges: folds that would hold more
+/// than it between them fall back to the one-thread fold, which answers or
+/// fails exactly as before.
+#[test]
+fn the_row_ceiling_holds_across_key_ranges() {
+    let docs: Vec<Value> = (0..6_000)
+        .map(|i| json!({"_key": format!("r{i:05}"), "n": i, "s": if i % 2 == 0 { "a" } else { "b" }}))
+        .collect();
+    let (engine, _tmp) = engine_with(docs);
+    let run_capped = |q: &str, mode: Mode| {
+        executor_in(&engine, mode, &BindVars::new())
+            .with_max_intermediate_rows(2_000)
+            .execute(&parse(q).unwrap())
+            .map_err(|e| e.to_string())
+    };
+    let many = "FOR d IN c COLLECT n = d.n RETURN n";
+    for mode in [TYPED, PARALLEL] {
+        let err = run_capped(many, mode).expect_err(many);
+        assert!(err.contains("intermediate row limit"), "{err}");
+    }
+    let few = "FOR d IN c COLLECT s = d.s WITH COUNT INTO k RETURN {s, k}";
+    assert_eq!(run_capped(few, PARALLEL), run_capped(few, TYPED));
+    assert_eq!(
+        run_capped(few, PARALLEL).unwrap(),
+        vec![json!({"s": "a", "k": 3000}), json!({"s": "b", "k": 3000})]
+    );
 }

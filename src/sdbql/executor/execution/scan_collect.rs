@@ -24,6 +24,21 @@
 //! policy is applied per document, as the scan applies it. Anything else
 //! runs the ordinary way. `QueryExecutor::with_streaming_collect(false)`
 //! turns the path off, so tests can compare the two.
+//!
+//! Two accelerations on top (#776), neither of which can change an answer:
+//!
+//! - When the keys, aggregate arguments and FILTERs only read fields of the
+//!   loop variable, they are read from the stored bytes (`typed_scan`): no
+//!   document is decoded, and one that joins an existing group allocates
+//!   nothing. A document that reader cannot read is decoded and evaluated
+//!   the ordinary way, into the same fold.
+//! - Such a fold over a large collection is split into key ranges read on
+//!   several threads at one snapshot and merged (`fold_partitions`),
+//!   when the engine has snapshots (RocksDB; solistore 0.2 does not) and
+//!   every aggregate merges exactly. `with_typed_collect` and
+//!   `with_scan_threads` turn them off for tests.
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use serde_json::Value;
 
@@ -31,8 +46,12 @@ use super::super::types::Context;
 use super::super::{contains_window_functions, QueryExecutor};
 use super::clauses::BUDGET_CHECK_INTERVAL;
 use super::collect::CollectFold;
-use crate::error::DbResult;
+use super::scan_threads::Helpers;
+use super::typed_scan::{Read, TypedPlan, TypedReader};
+use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{expression_mutates, BodyClause, CollectClause, ForClause, Query};
+use crate::storage::serializer::{deserialize_doc_as_value, deserialize_doc_projected};
+use crate::storage::Collection;
 
 /// The body clauses a streaming COLLECT replaces: the loop, the FILTER and
 /// LET clauses up to the COLLECT, and the COLLECT.
@@ -160,6 +179,61 @@ fn projection(var: &str, stages: &[BodyClause], collect: &CollectClause) -> Opti
     Some(fields)
 }
 
+/// What a scan split into key ranges gave: the merged fold, and the counts
+/// a sequential scan keeps.
+struct Partitioned<'c> {
+    fold: CollectFold<'c>,
+    scanned: usize,
+    passes: Vec<(usize, usize)>,
+    partitions: usize,
+}
+
+/// The parts of a plan the typed path needs for one document.
+#[derive(Clone, Copy)]
+struct TypedDoc<'p> {
+    stages: &'p [BodyClause],
+    var: &'p str,
+    /// What the ordinary decode reads, for a document the typed reader
+    /// cannot: `None` for the whole document.
+    fields: Option<&'p [String]>,
+}
+
+impl TypedDoc<'_> {
+    /// Fold the stored document `bytes`: read typed, or — when the reader
+    /// cannot read it — decoded and evaluated the ordinary way, into the
+    /// same fold. Returns whether the document counted as read (the
+    /// ordinary scan skips one that does not decode).
+    fn fold(
+        &self,
+        ex: &QueryExecutor<'_>,
+        bytes: &[u8],
+        reader: &mut TypedReader<'_>,
+        fold: &mut CollectFold<'_>,
+        scratch: &mut Context,
+        passes: &mut [(usize, usize)],
+    ) -> DbResult<bool> {
+        let read = reader.read(bytes, passes, |key, args| {
+            let ordinal = fold.next_ordinal();
+            fold.push_datums(ex, key, args, ordinal)
+        })?;
+        if !matches!(read, Read::Fallback) {
+            return Ok(true);
+        }
+        let decoded = match self.fields {
+            Some(fields) => deserialize_doc_projected(bytes, fields),
+            None => deserialize_doc_as_value(bytes),
+        };
+        let Ok(doc) = decoded else {
+            return Ok(false);
+        };
+        bind_in_place(scratch, self.var, doc);
+        if ex.run_stages(self.stages, scratch, passes)? {
+            fold.push_ref(ex, scratch)?;
+        }
+        Ok(true)
+    }
+}
+
 impl QueryExecutor<'_> {
     /// Run `clauses[i]`, a FOR, and the clauses up to its COLLECT as one
     /// streaming fold over the collection, for each of `rows`; `Ok(None)`
@@ -203,11 +277,61 @@ impl QueryExecutor<'_> {
             .count();
         let mut passes = vec![(0usize, 0usize); filter_count];
 
+        // Keys, arguments and FILTERs read from the stored bytes, when they
+        // are all fields of the loop variable (`typed_scan`).
+        let typed = if gate.is_none() && self.scan.typed {
+            TypedPlan::compile(self, var, plan.stages, plan.collect)
+        } else {
+            None
+        };
+
         let mut fold = CollectFold::new(plan.collect);
         let mut scanned = 0usize;
+        let mut partitions = 1;
         for outer in rows {
             // One collection read per row, as `get_for_source_docs` counts.
             self.caches.count_collection_scan();
+            if let Some(typed) = &typed {
+                // A scan of its own for one outer row: split across threads
+                // when the engine and the collection allow it.
+                if rows.len() == 1 {
+                    if let Some(run) =
+                        self.fold_partitions(&plan, typed, &collection, outer, fields)?
+                    {
+                        fold = run.fold;
+                        scanned = run.scanned;
+                        passes = run.passes;
+                        partitions = run.partitions;
+                        continue;
+                    }
+                }
+                let mut reader = TypedReader::new(typed);
+                let mut scratch = outer.clone();
+                let mut visited = 0usize;
+                collection.for_each_doc_bytes(|bytes| {
+                    visited += 1;
+                    if visited.is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                        self.check_budget(fold.held())?;
+                    }
+                    let doc = TypedDoc {
+                        stages: plan.stages,
+                        var,
+                        fields,
+                    };
+                    if doc.fold(
+                        self,
+                        bytes,
+                        &mut reader,
+                        &mut fold,
+                        &mut scratch,
+                        &mut passes,
+                    )? {
+                        scanned += 1;
+                    }
+                    Ok(true)
+                })?;
+                continue;
+            }
             let mut scratch = outer.clone();
             collection.for_each_value(fields, |doc| {
                 scanned += 1;
@@ -237,10 +361,18 @@ impl QueryExecutor<'_> {
         let groups = fold.finish()?;
         self.check_budget(groups.len())?;
 
-        let decoded = match (&gate, &plan.fields) {
-            (None, Some(fields)) if fields.is_empty() => "decoding no field".to_string(),
-            (None, Some(fields)) => format!("decoding only {}", fields.join(", ")),
+        let decoded = match (&gate, &plan.fields, &typed) {
+            (_, _, Some(typed)) => {
+                format!("reading only {} from the stored bytes", typed.describe())
+            }
+            (None, Some(fields), None) if fields.is_empty() => "decoding no field".to_string(),
+            (None, Some(fields), None) => format!("decoding only {}", fields.join(", ")),
             _ => "decoding whole documents".to_string(),
+        };
+        let decoded = if partitions > 1 {
+            format!("{decoded}; {partitions} key ranges read in parallel")
+        } else {
+            decoded
         };
         Ok(Some(ScanCollectRun {
             rows: groups,
@@ -285,6 +417,177 @@ impl QueryExecutor<'_> {
             return None;
         }
         Some(collection)
+    }
+
+    /// How many key ranges a typed fold of `collection` would be read in,
+    /// in parallel: 1 when it stays on one thread — the clause's aggregates
+    /// cannot be merged exactly, the engine has no snapshot to read the
+    /// ranges at together (solistore 0.2), or the collection is too small.
+    fn planned_partitions(&self, collect: &CollectClause, collection: &Collection) -> usize {
+        if !CollectFold::mergeable(collect) || !collection.supports_parallel_scan() {
+            return 1;
+        }
+        self.scan.wanted(collection.count())
+    }
+
+    /// The typed fold of `collection`, split into key ranges read on
+    /// several threads at one snapshot and merged; `Ok(None)` when it is to
+    /// run on this thread alone (see [`Self::planned_partitions`]; also when
+    /// the process's scan threads are all taken, or when the folds would
+    /// hold more than the row ceiling between them — the sequential fold
+    /// then decides, holding fewer).
+    ///
+    /// The result is the sequential fold's, exactly: each range is folded
+    /// in key order with its rows numbered after every earlier range's, and
+    /// the folds are merged with only aggregates whose partial results
+    /// combine exactly ([`CollectFold::mergeable`]): counts, exact sums
+    /// (`SUM`/`AVG` add without rounding, see `exact_sum`), bit operations,
+    /// distinct counts, and MIN/MAX — of equal extremes, and of the values
+    /// `1` and `1.0` that make one group, the earliest row's is kept, as one
+    /// pass keeps it. Errors are reported for the earliest range that had
+    /// one. Each range's fold holds O(groups).
+    fn fold_partitions<'c>(
+        &self,
+        plan: &Plan<'c>,
+        typed: &TypedPlan,
+        collection: &Collection,
+        outer: &Context,
+        fields: Option<&[String]>,
+    ) -> DbResult<Option<Partitioned<'c>>> {
+        let wanted = self.planned_partitions(plan.collect, collection);
+        if wanted < 2 {
+            return Ok(None);
+        }
+        let helpers = Helpers::take(wanted - 1);
+        if helpers.count() == 0 {
+            return Ok(None);
+        }
+        let ranges = collection.doc_partitions(helpers.count() + 1);
+        if ranges.len() < 2 {
+            return Ok(None);
+        }
+        let Some(snapshot) = collection.scan_snapshot() else {
+            return Ok(None);
+        };
+        let doc = TypedDoc {
+            stages: plan.stages,
+            var: &plan.for_clause.variable,
+            fields,
+        };
+        // Set by the first range to fail, or to find the folds too large:
+        // the others stop at their next check.
+        let stop = AtomicBool::new(false);
+        let over_ceiling = AtomicBool::new(false);
+        // Values the range folds hold between them, for the row ceiling.
+        let held = AtomicUsize::new(0);
+        let collect = plan.collect;
+        let run = |p: usize, (lower, upper): &(Vec<u8>, Vec<u8>)| -> DbResult<_> {
+            let mut fold = CollectFold::for_partition(collect, (p as u64) << 40);
+            let mut reader = TypedReader::new(typed);
+            let mut scratch = outer.clone();
+            let mut passes = vec![(0usize, 0usize); typed.filter_count()];
+            let (mut scanned, mut visited, mut published) = (0usize, 0usize, 0usize);
+            let result = collection.for_each_doc_bytes_in(lower, upper, Some(&snapshot), |bytes| {
+                visited += 1;
+                if visited.is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                    if stop.load(Ordering::Relaxed) {
+                        return Ok(false);
+                    }
+                    let mine = fold.held();
+                    let total = if mine >= published {
+                        held.fetch_add(mine - published, Ordering::Relaxed) + (mine - published)
+                    } else {
+                        held.fetch_sub(published - mine, Ordering::Relaxed) - (published - mine)
+                    };
+                    published = mine;
+                    if total > self.max_intermediate_rows {
+                        over_ceiling.store(true, Ordering::Relaxed);
+                        stop.store(true, Ordering::Relaxed);
+                        return Ok(false);
+                    }
+                    // The deadline.
+                    self.check_budget(0)?;
+                }
+                if doc.fold(
+                    self,
+                    bytes,
+                    &mut reader,
+                    &mut fold,
+                    &mut scratch,
+                    &mut passes,
+                )? {
+                    scanned += 1;
+                }
+                Ok(true)
+            });
+            if result.is_err() {
+                stop.store(true, Ordering::Relaxed);
+            }
+            result.map(|_| (fold, scanned, passes))
+        };
+        let results: Vec<DbResult<_>> = std::thread::scope(|s| {
+            let others: Vec<_> = ranges[1..]
+                .iter()
+                .enumerate()
+                .map(|(i, range)| {
+                    std::thread::Builder::new()
+                        .name("solidb-scan".to_string())
+                        .spawn_scoped(s, move || run(i + 1, range))
+                })
+                .collect();
+            let mut results = vec![run(0, &ranges[0])];
+            for handle in others {
+                results.push(match handle {
+                    Ok(h) => h.join().unwrap_or_else(|_| {
+                        Err(DbError::InternalError("a scan thread panicked".to_string()))
+                    }),
+                    // No thread to be had: read that range here.
+                    Err(_) => {
+                        let p = results.len();
+                        run(p, &ranges[p])
+                    }
+                });
+            }
+            results
+        });
+        drop(helpers);
+        if over_ceiling.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let mut merged: Option<Partitioned<'c>> = None;
+        for result in results {
+            let (fold, scanned, passes) = result?;
+            match &mut merged {
+                None => {
+                    merged = Some(Partitioned {
+                        fold,
+                        scanned,
+                        passes,
+                        partitions: 1,
+                    })
+                }
+                Some(m) => {
+                    m.fold.merge(fold);
+                    m.scanned += scanned;
+                    for (total, part) in m.passes.iter_mut().zip(passes) {
+                        total.0 += part.0;
+                        total.1 += part.1;
+                    }
+                    m.partitions += 1;
+                }
+            }
+        }
+        // Over the ceiling between them (each range checks its share only
+        // every few thousand documents): the one-thread fold decides, and
+        // reports it as it always has.
+        if merged
+            .as_ref()
+            .is_some_and(|m| m.fold.held() > self.max_intermediate_rows)
+        {
+            return Ok(None);
+        }
+        self.check_budget(0)?;
+        Ok(merged)
     }
 
     /// Run the FILTER and LET `stages` on `ctx`, in order, as the
@@ -342,10 +645,35 @@ impl QueryExecutor<'_> {
         {
             bound.insert(name.clone(), Value::Null);
         }
-        self.scan_collect_source(plan.for_clause, &[bound])?;
+        let collection = self.scan_collect_source(plan.for_clause, &[bound])?;
+        // As the run decides: typed reads unless a row policy needs whole
+        // documents, and the key ranges it would read in parallel.
+        let gate = self.row_policy_gate(&plan.for_clause.collection);
+        let typed = if gate.is_none() && self.scan.typed {
+            TypedPlan::compile(self, &plan.for_clause.variable, plan.stages, plan.collect)
+        } else {
+            None
+        };
+        let how = match &typed {
+            Some(typed) => {
+                let wanted = self.planned_partitions(plan.collect, &collection);
+                let ranges = if wanted > 1 {
+                    collection.doc_partitions(wanted).len()
+                } else {
+                    1
+                };
+                let read = format!("reading only {} from the stored bytes", typed.describe());
+                if ranges > 1 {
+                    format!(" ({read}; {ranges} key ranges read in parallel)")
+                } else {
+                    format!(" ({read})")
+                }
+            }
+            None => String::new(),
+        };
         Some(format!(
             "optimizer: COLLECT folded into the scan of '{}': documents are grouped as they \
-             are read, never held as rows",
+             are read, never held as rows{how}",
             plan.for_clause.collection
         ))
     }

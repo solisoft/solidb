@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::kv::KvBatch;
-use crate::storage::kv::{Direction, IterMode, KvReadOptions};
+use crate::storage::kv::{Direction, IterMode, KvReadOptions, KvSnapshot};
 use crate::storage::serializer::{
     deserialize_doc, deserialize_doc_as_value, deserialize_doc_projected, serialize_doc,
 };
@@ -1456,39 +1456,223 @@ impl Collection {
         fields: Option<&[String]>,
         mut f: impl FnMut(Value) -> DbResult<()>,
     ) -> DbResult<usize> {
-        let Some(cf) = self.ks.handle(&self.db) else {
-            // Dropped mid-operation (concurrent database delete): nothing
-            // to read, as the other scans answer.
-            return Ok(0);
-        };
-        let prefix = DOC_PREFIX.as_bytes();
-        let mut read_opts = KvReadOptions::default();
-        let readahead = match self.count() {
-            n if n <= 10 => 0,
-            n if n <= 100 => 16 * 1024,
-            _ => 256 * 1024,
-        };
-        if readahead > 0 {
-            read_opts.set_readahead_size(readahead);
-        }
-        let iter =
-            self.db
-                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
         let mut handed = 0usize;
-        for (key, value) in iter.flatten() {
-            if !key.starts_with(prefix) {
-                break;
-            }
+        self.for_each_doc_bytes(|bytes| {
             let decoded = match fields {
-                Some(fields) => deserialize_doc_projected(&value, fields),
-                None => deserialize_doc_as_value(&value),
+                Some(fields) => deserialize_doc_projected(bytes, fields),
+                None => deserialize_doc_as_value(bytes),
             };
             if let Ok(doc) = decoded {
                 handed += 1;
                 f(doc)?;
             }
-        }
+            Ok(true)
+        })?;
         Ok(handed)
+    }
+
+    /// Every stored document, in key order, as the bytes the engine holds,
+    /// lent to `f` until it returns `Ok(false)` or an error (which stops the
+    /// scan and is returned). Nothing is copied or allocated per document on
+    /// RocksDB; on solistore the iterator copies the key. Returns how many
+    /// documents `f` saw. Like the other scans, an engine error ends the
+    /// scan where it happened (logged), and a dropped collection reads as
+    /// empty.
+    pub fn for_each_doc_bytes(&self, f: impl FnMut(&[u8]) -> DbResult<bool>) -> DbResult<usize> {
+        let (lower, upper) = doc_key_range();
+        self.for_each_doc_bytes_in(&lower, &upper, None, f)
+    }
+
+    /// [`Self::for_each_doc_bytes`] over the documents whose keys (logical,
+    /// `doc:` included) are in `[lower, upper)` — one of
+    /// [`Self::doc_partitions`] — read at `snapshot` when one is given.
+    pub fn for_each_doc_bytes_in(
+        &self,
+        lower: &[u8],
+        upper: &[u8],
+        snapshot: Option<&KvSnapshot<'_>>,
+        mut f: impl FnMut(&[u8]) -> DbResult<bool>,
+    ) -> DbResult<usize> {
+        let Some(cf) = self.ks.handle(&self.db) else {
+            // Dropped mid-operation (concurrent database delete): nothing
+            // to read, as the other scans answer.
+            return Ok(0);
+        };
+        let readahead = match self.count() {
+            n if n <= 10 => 0,
+            n if n <= 100 => 16 * 1024,
+            _ => 256 * 1024,
+        };
+        let mut seen = 0usize;
+        let mut failed = None;
+        let scanned = self
+            .db
+            .for_each_ks(&cf, lower, upper, readahead, snapshot, |_, value| {
+                seen += 1;
+                match f(value) {
+                    Ok(go_on) => go_on,
+                    Err(e) => {
+                        failed = Some(e);
+                        false
+                    }
+                }
+            });
+        if let Some(e) = failed {
+            return Err(e);
+        }
+        if let Err(e) = scanned {
+            tracing::warn!("scan of '{}' stopped early: {}", self.name, e);
+        }
+        Ok(seen)
+    }
+
+    /// A read view of this collection's database, which the ranges of
+    /// [`Self::doc_partitions`] can be read at from several threads as one
+    /// consistent scan; `None` when the engine has none (solistore 0.2).
+    pub fn scan_snapshot(&self) -> Option<KvSnapshot<'_>> {
+        self.db.snapshot()
+    }
+
+    /// Whether [`Self::scan_snapshot`] gives a view.
+    pub fn supports_parallel_scan(&self) -> bool {
+        self.db.supports_snapshot()
+    }
+
+    /// The documents' key range cut into at most `n` consecutive ranges of
+    /// about the same size on disk, `[lower, upper)` each (logical keys),
+    /// together covering every document key exactly once and in order.
+    ///
+    /// The cut points are not keys of documents: they are placed by
+    /// interpolating between the first and the last key (the eight bytes
+    /// after their common prefix, read as a number), and balanced with the
+    /// engine's size estimates of `16 n` slices of that interval — a slice
+    /// that holds too much is cut finer, up to three times, since keys made
+    /// of a few byte values (hex, digits) crowd into few slices. Sizes are
+    /// estimates, so the ranges are only roughly equal; with no estimate at
+    /// all (an empty engine, or one that cannot say) the slices are equal in
+    /// key space. Fewer ranges come back when there are fewer distinct cut
+    /// points (a tiny collection gets one).
+    pub fn doc_partitions(&self, n: usize) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let (lower, upper) = doc_key_range();
+        let whole = vec![(lower.clone(), upper.clone())];
+        if n < 2 {
+            return whole;
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return whole;
+        };
+        let mut first = None;
+        let _ = self.db.for_each_ks(&cf, &lower, &upper, 0, None, |k, _| {
+            first = Some(k.to_vec());
+            false
+        });
+        let last = self
+            .db
+            .iterator_ks_bounded(&cf, IterMode::End, Some(&lower), Some(&upper))
+            .next()
+            .and_then(|r| r.ok())
+            .map(|(k, _)| k.to_vec());
+        let (Some(first), Some(last)) = (first, last) else {
+            return whole;
+        };
+        if first >= last {
+            return whole;
+        }
+        let common = first.iter().zip(&last).take_while(|(a, b)| a == b).count();
+        let window = |k: &[u8]| -> u128 {
+            let mut w = [0u8; 8];
+            let tail = &k[common.min(k.len())..];
+            let take = tail.len().min(8);
+            w[..take].copy_from_slice(&tail[..take]);
+            u64::from_be_bytes(w) as u128
+        };
+        let (a, b) = (window(&first), window(&last) + 1);
+        if b - a < n as u128 {
+            return whole;
+        }
+        let key_at = |x: u128| -> Vec<u8> {
+            let mut k = first[..common].to_vec();
+            k.extend_from_slice(&(x as u64).to_be_bytes());
+            k
+        };
+        // The key of a point of the interval; its ends are the range's.
+        let key_of = |x: u128| -> Vec<u8> {
+            if x <= a {
+                lower.clone()
+            } else if x >= b {
+                upper.clone()
+            } else {
+                key_at(x)
+            }
+        };
+        let sizes_of = |points: &[(u128, u128)]| -> Vec<u64> {
+            let ranges: Vec<(Vec<u8>, Vec<u8>)> = points
+                .iter()
+                .map(|&(s, e)| (key_of(s), key_of(e)))
+                .collect();
+            self.db.approximate_sizes_ks(&cf, &ranges)
+        };
+        // 16 n slices of [a, b), with their estimated sizes. Keys made of a
+        // few byte values (hex, digits) put the documents in few of them, so
+        // a slice holding more than a quarter of a range's share is cut in
+        // 16 again, up to three times.
+        let split = |s: u128, e: u128, parts: u128| -> Vec<(u128, u128)> {
+            let parts = parts.min(e - s).max(1);
+            (0..parts)
+                .map(|i| (s + (e - s) * i / parts, s + (e - s) * (i + 1) / parts))
+                .collect()
+        };
+        let mut slices = split(a, b, 16 * n as u128);
+        let mut sizes = sizes_of(&slices);
+        for _ in 0..3 {
+            let total: u64 = sizes.iter().sum();
+            let heavy = |size: u64| size as u128 * 4 * n as u128 > total as u128;
+            if total == 0 || !sizes.iter().any(|&z| heavy(z)) {
+                break;
+            }
+            let mut next_slices = Vec::with_capacity(slices.len() + 64);
+            let mut next_sizes = Vec::with_capacity(slices.len() + 64);
+            for (&(s, e), &size) in slices.iter().zip(&sizes) {
+                if heavy(size) && e - s > 1 {
+                    let parts = split(s, e, 16);
+                    next_sizes.extend(sizes_of(&parts));
+                    next_slices.extend(parts);
+                } else {
+                    next_slices.push((s, e));
+                    next_sizes.push(size);
+                }
+            }
+            slices = next_slices;
+            sizes = next_sizes;
+        }
+        let total: u64 = sizes.iter().sum();
+        // The slice ends where the running size first reaches each k/n of
+        // the total; equal slices when there is no estimate.
+        let mut cuts: Vec<u128> = Vec::with_capacity(n - 1);
+        if total == 0 {
+            cuts.extend((1..n).map(|k| a + (b - a) * k as u128 / n as u128));
+        } else {
+            let mut running = 0u64;
+            let mut k = 1;
+            for (&(_, end), &size) in slices.iter().zip(&sizes) {
+                running += size;
+                while k < n && running as u128 * n as u128 >= total as u128 * k as u128 {
+                    cuts.push(end);
+                    k += 1;
+                }
+            }
+        }
+        let mut out = Vec::with_capacity(cuts.len() + 1);
+        let mut start = lower.clone();
+        for cut in cuts {
+            let key = key_of(cut);
+            if key > start && key < upper {
+                out.push((start, key.clone()));
+                start = key;
+            }
+        }
+        out.push((start, upper));
+        out
     }
 
     /// Rows for `shape`, written straight from the stored bytes (see
@@ -1840,6 +2024,15 @@ impl Collection {
 
         Ok(())
     }
+}
+
+/// The logical key range of a collection's documents: `doc:` up to `doc;`
+/// (';' follows ':'), which bounds exactly the keys starting with `doc:`.
+fn doc_key_range() -> (Vec<u8>, Vec<u8>) {
+    let lower = DOC_PREFIX.as_bytes().to_vec();
+    let mut upper = lower.clone();
+    *upper.last_mut().expect("non-empty prefix") += 1;
+    (lower, upper)
 }
 
 #[cfg(test)]

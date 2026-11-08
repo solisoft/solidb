@@ -21,23 +21,25 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
 
-use super::super::aggregation::AggregateAccumulator;
+use super::super::aggregation::{AggKind, AggregateAccumulator};
+use super::super::datum::{key_hash, value_key_hash, Datum, PreHashedBuild};
 use super::super::types::Context;
-use super::super::{compare_values, hash_value, values_equal, QueryExecutor};
+use super::super::{compare_values, QueryExecutor};
 use super::clauses::BUDGET_CHECK_INTERVAL;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{CollectClause, Expression};
 
 /// One group under construction.
 struct Group {
-    /// The group key: one value per group variable, in declaration order.
+    /// The group key: one value per group variable, in declaration order —
+    /// those of the group's first row (`1` and `1.0` are one group, which
+    /// shows the one it met first).
     key: Vec<Value>,
-    /// The group variables, later extended with INTO / COUNT / AGGREGATE.
-    ctx: Context,
+    /// The ordinal of that first row.
+    first: u64,
     count: i64,
     /// Projected rows for `INTO`; stays empty without one.
     members: Vec<Value>,
@@ -45,15 +47,17 @@ struct Group {
 }
 
 /// A `COLLECT` in progress: rows go in one at a time with [`Self::push`] (or
-/// [`Self::push_ref`]), and [`Self::finish`] returns one row per group.
+/// [`Self::push_ref`], or [`Self::push_datums`] for keys and arguments read
+/// without a row), and [`Self::finish`] returns one row per group.
 pub(super) struct CollectFold<'c> {
     collect: &'c CollectClause,
     // Groups are found by hashing their key values and confirmed with
     // `values_equal` — the equality `==` uses — rather than by comparing
     // JSON serialisations, which split `1` from `1.0` and cost a string
-    // allocation per group variable per row.
+    // allocation per group variable per row. The hash is computed once per
+    // row (`datum::key_hash`); the table does not hash it again.
     groups: Vec<Group>,
-    index: HashMap<u64, Vec<usize>>,
+    index: HashMap<u64, Vec<usize>, PreHashedBuild>,
     // Per-row values still alive in `groups` (INTO members, COLLECT_LIST
     // items). Over materialised rows it never exceeds what the previous
     // stage already passed the ceiling with; over a scan it is the only
@@ -61,7 +65,29 @@ pub(super) struct CollectFold<'c> {
     // what lets the deadline interrupt a long fold.
     retained: usize,
     seen: usize,
+    /// Ordinal of this fold's first row: rows are numbered `base + seen`.
+    /// A fold over one partition of a scan starts where no earlier
+    /// partition's numbers reach, so that merged folds still know which of
+    /// two rows came first.
+    base: u64,
+    /// Whether the periodic check bounds the values held; off for a fold
+    /// over one partition, whose caller bounds them across partitions.
+    check_held: bool,
     keep_validated: bool,
+    /// Buffers for a row's key and arguments, kept between rows (emptied,
+    /// they hold nothing borrowed).
+    key_buf: Vec<Datum<'static>>,
+    arg_buf: Vec<Option<Datum<'static>>>,
+}
+
+/// An empty buffer of `Datum<'b>` from one of `Datum<'a>`, keeping its
+/// allocation: a row's key and arguments borrow from that row, so the buffer
+/// cannot outlive it with its lifetime, only emptied.
+fn relifetime<T, U>(mut buf: Vec<T>) -> Vec<U> {
+    buf.clear();
+    // Same size and alignment (one type at two lifetimes): the standard
+    // library collects in place, so no allocation happens.
+    buf.into_iter().map(|_| unreachable!("emptied")).collect()
 }
 
 impl<'c> CollectFold<'c> {
@@ -69,10 +95,24 @@ impl<'c> CollectFold<'c> {
         Self {
             collect,
             groups: Vec::new(),
-            index: HashMap::new(),
+            index: HashMap::default(),
             retained: 0,
             seen: 0,
+            base: 0,
+            check_held: true,
             keep_validated: collect.into_var.is_none() || collect.keep_vars.is_empty(),
+            key_buf: Vec::new(),
+            arg_buf: Vec::new(),
+        }
+    }
+
+    /// A fold over one partition of a scan, numbering its rows from `base`,
+    /// whose caller bounds the values held (across all partitions) itself.
+    pub(super) fn for_partition(collect: &'c CollectClause, base: u64) -> Self {
+        Self {
+            base,
+            check_held: false,
+            ..Self::new(collect)
         }
     }
 
@@ -110,11 +150,33 @@ impl<'c> CollectFold<'c> {
         self.tick(ex)
     }
 
+    /// Fold in one row given as its group key and aggregate arguments, read
+    /// by the caller (the typed scan): what [`Self::push_ref`] does with the
+    /// values it evaluates. `ordinal` is the row's position in the input
+    /// (see [`Self::next_ordinal`]). Not for a COLLECT with `INTO`.
+    pub(super) fn push_datums<'r>(
+        &mut self,
+        ex: &QueryExecutor<'_>,
+        key: &[Datum<'r>],
+        args: impl Iterator<Item = Option<Datum<'r>>>,
+        ordinal: u64,
+    ) -> DbResult<()> {
+        debug_assert!(self.collect.into_var.is_none());
+        self.fold_datums(key, args, ordinal)?;
+        self.tick(ex)
+    }
+
+    /// The ordinal the next row pushed without one gets: rows are numbered
+    /// in the order they arrive.
+    pub(super) fn next_ordinal(&self) -> u64 {
+        self.base + self.seen as u64
+    }
+
     /// The deadline and the values held, every `BUDGET_CHECK_INTERVAL` rows.
     fn tick(&mut self, ex: &QueryExecutor<'_>) -> DbResult<()> {
         self.seen += 1;
         if self.seen.is_multiple_of(BUDGET_CHECK_INTERVAL) {
-            ex.check_budget(self.held())?;
+            ex.check_budget(if self.check_held { self.held() } else { 0 })?;
         }
         Ok(())
     }
@@ -126,19 +188,18 @@ impl<'c> CollectFold<'c> {
         // Keys and arguments are borrowed from the row when they are plain
         // variable or field reads, so a row that lands in an existing group
         // copies nothing; a new group takes its key's values.
-        let mut key: Vec<Cow<'_, Value>> = Vec::with_capacity(collect.group_vars.len());
+        let mut key: Vec<Datum<'_>> = relifetime(std::mem::take(&mut self.key_buf));
         for (_, expr) in &collect.group_vars {
-            key.push(eval_cow(ex, expr, ctx)?);
+            key.push(Datum::of(eval_cow(ex, expr, ctx)?));
         }
-        let key_hash = group_key_hash(&key);
 
         // Every aggregate argument is evaluated before the group is looked
         // up: an argument's error is reported ahead of an unknown aggregate
         // function's, as it always was.
-        let mut agg_values = Vec::with_capacity(collect.aggregates.len());
+        let mut args: Vec<Option<Datum<'_>>> = relifetime(std::mem::take(&mut self.arg_buf));
         for agg in &collect.aggregates {
-            agg_values.push(match &agg.argument {
-                Some(expr) => Some(eval_cow(ex, expr, ctx)?),
+            args.push(match &agg.argument {
+                Some(expr) => Some(Datum::of(eval_cow(ex, expr, ctx)?)),
                 None => None,
             });
         }
@@ -157,28 +218,90 @@ impl<'c> CollectFold<'c> {
             self.keep_validated = true;
         }
 
-        let bucket = self.index.entry(key_hash).or_default();
-        let found = bucket
+        let ordinal = self.next_ordinal();
+        let gi = self.fold_datums(&key, args.drain(..), ordinal)?;
+        self.key_buf = relifetime(key);
+        self.arg_buf = relifetime(args);
+        Ok(gi)
+    }
+
+    /// Fold one row's key and arguments into its group; the group's index.
+    #[inline]
+    fn fold_datums<'r>(
+        &mut self,
+        key: &[Datum<'r>],
+        args: impl Iterator<Item = Option<Datum<'r>>>,
+        ordinal: u64,
+    ) -> DbResult<usize> {
+        let hash = key_hash(key);
+        let bucket = self.index.entry(hash).or_default();
+        let groups = &mut self.groups;
+        let gi = match bucket
             .iter()
             .copied()
-            .find(|&i| keys_equal(&self.groups[i].key, &key));
-        let gi = match found {
+            .find(|&i| keys_equal(&groups[i].key, key))
+        {
             Some(i) => i,
             None => {
-                bucket.push(self.groups.len());
-                let key = key.into_iter().map(Cow::into_owned).collect();
-                self.groups.push(new_group(collect, key)?);
-                self.groups.len() - 1
+                bucket.push(groups.len());
+                let key = key.iter().map(|d| d.clone().into_value()).collect();
+                groups.push(new_group(self.collect, key, ordinal)?);
+                groups.len() - 1
             }
         };
-        let group = &mut self.groups[gi];
+        let group = &mut groups[gi];
         group.count += 1;
-        for (acc, value) in group.aggregates.iter_mut().zip(agg_values) {
-            if acc.push(value) {
+        for (acc, value) in group.aggregates.iter_mut().zip(args) {
+            if acc.push(value, ordinal) {
                 self.retained += 1;
             }
         }
         Ok(gi)
+    }
+
+    /// Whether two folds of this COLLECT over different rows can be
+    /// [merged](Self::merge) into exactly what one fold over all of them
+    /// would hold: no `INTO` (its members are kept in row order), and only
+    /// aggregates whose partial results combine exactly in any order.
+    pub(super) fn mergeable(collect: &CollectClause) -> bool {
+        collect.into_var.is_none()
+            && collect.aggregates.iter().all(|a| {
+                AggKind::resolve(&a.function, a.argument.is_some())
+                    .is_some_and(AggregateAccumulator::mergeable)
+            })
+    }
+
+    /// Fold in `other`, a fold of the same COLLECT over other rows, numbered
+    /// in the same sequence: the result is the fold of all the rows, in
+    /// whatever order or interleaving the two saw them. A group's key is the
+    /// one of its earliest row. Only for [`Self::mergeable`] clauses.
+    pub(super) fn merge(&mut self, other: CollectFold<'_>) {
+        self.seen += other.seen;
+        for group in other.groups {
+            let hash = value_key_hash(&group.key);
+            let bucket = self.index.entry(hash).or_default();
+            let groups = &mut self.groups;
+            let found = bucket
+                .iter()
+                .copied()
+                .find(|&i| values_keys_equal(&groups[i].key, &group.key));
+            let Some(i) = found else {
+                bucket.push(groups.len());
+                groups.push(group);
+                continue;
+            };
+            let mine = &mut groups[i];
+            if group.first < mine.first {
+                mine.key = group.key;
+                mine.first = group.first;
+            }
+            mine.count += group.count;
+            for (acc, theirs) in mine.aggregates.iter_mut().zip(group.aggregates) {
+                let dropped = acc.merge(theirs);
+                self.retained = self.retained.saturating_sub(dropped);
+            }
+        }
+        self.retained += other.retained;
     }
 
     /// One row per group, ordered by key.
@@ -188,12 +311,13 @@ impl<'c> CollectFold<'c> {
         // row — over empty input `WITH COUNT INTO n` is 0 and the aggregates
         // are their empty values, not an empty result.
         if collect.group_vars.is_empty() && self.groups.is_empty() {
-            self.groups.push(new_group(collect, Vec::new())?);
+            self.groups.push(new_group(collect, Vec::new(), 0)?);
         }
 
         // Groups come out ordered by key (AQL's default sorted COLLECT), not
-        // in hash order. The sort is stable: groups that compare equal keep
-        // the order their first rows arrived in.
+        // in hash order. No two groups compare equal (`compare_values` is
+        // `Equal` exactly when `values_equal` holds, and such keys are one
+        // group), so the order the groups were created in cannot show.
         self.groups.sort_by(|a, b| {
             a.key
                 .iter()
@@ -206,12 +330,22 @@ impl<'c> CollectFold<'c> {
         let mut out = Vec::with_capacity(self.groups.len());
         for group in self.groups {
             let Group {
-                key: _,
-                mut ctx,
+                key,
+                first: _,
                 count,
                 members,
                 aggregates,
             } = group;
+            let mut ctx = Context::with_capacity_and_hasher(
+                collect.group_vars.len()
+                    + collect.aggregates.len()
+                    + usize::from(collect.into_var.is_some())
+                    + usize::from(collect.count_var.is_some()),
+                Default::default(),
+            );
+            for ((name, _), val) in collect.group_vars.iter().zip(key) {
+                ctx.insert(name.clone(), val);
+            }
             if let Some(into_var) = &collect.into_var {
                 ctx.insert(into_var.clone(), Value::Array(members));
             }
@@ -255,17 +389,7 @@ fn eval_cow<'v>(
     })
 }
 
-fn new_group(collect: &CollectClause, key: Vec<Value>) -> DbResult<Group> {
-    let mut ctx = Context::with_capacity_and_hasher(
-        collect.group_vars.len()
-            + collect.aggregates.len()
-            + usize::from(collect.into_var.is_some())
-            + usize::from(collect.count_var.is_some()),
-        Default::default(),
-    );
-    for ((name, _), val) in collect.group_vars.iter().zip(&key) {
-        ctx.insert(name.clone(), val.clone());
-    }
+fn new_group(collect: &CollectClause, key: Vec<Value>, first: u64) -> DbResult<Group> {
     let aggregates = collect
         .aggregates
         .iter()
@@ -273,23 +397,22 @@ fn new_group(collect: &CollectClause, key: Vec<Value>) -> DbResult<Group> {
         .collect::<DbResult<Vec<_>>>()?;
     Ok(Group {
         key,
-        ctx,
+        first,
         count: 0,
         members: Vec::new(),
         aggregates,
     })
 }
 
-fn group_key_hash(key: &[Cow<'_, Value>]) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    for v in key {
-        hash_value(v).hash(&mut h);
-    }
-    h.finish()
+fn keys_equal(a: &[Value], b: &[Datum<'_>]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| y.eq_value(x))
 }
 
-fn keys_equal(a: &[Value], b: &[Cow<'_, Value>]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| values_equal(x, y))
+fn values_keys_equal(a: &[Value], b: &[Value]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(x, y)| super::super::values_equal(x, y))
 }
 
 /// The object stored for one row under `INTO`: every variable in scope, or
