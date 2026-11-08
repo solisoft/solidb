@@ -116,6 +116,14 @@ describe("Docs pages") do
     expect(body.include?("cannot contain")).to_equal(true)
   end
 
+  test("the aggregations page says what a COLLECT holds") do
+    response = get("/docs/sdbql-aggregations")
+    expect(res_status(response)).to_equal(200)
+    body = res_body(response)
+    expect(body.include?("each document is grouped as it is read")).to_equal(true)
+    expect(body.include?("COLLECT folded into the scan")).to_equal(true)
+  end
+
   test("an unknown docs page is a 404, not a template lookup") do
     response = get("/docs/not-a-real-page")
     expect(res_status(response)).to_equal(404)

@@ -416,6 +416,14 @@ impl<'a> QueryExecutor<'a> {
                         continue;
                     }
 
+                    // A scan that only feeds a COLLECT: each document is
+                    // folded into its group as it is read, never held as a row.
+                    if let Some(run) = self.try_scan_collect(clauses, i, &rows)? {
+                        rows = run.rows;
+                        i += run.consumed;
+                        continue;
+                    }
+
                     // Normal FOR processing (no index)
                     let mut new_rows = Vec::new();
                     for ctx in &rows {

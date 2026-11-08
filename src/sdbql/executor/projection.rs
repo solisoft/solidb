@@ -47,6 +47,11 @@ pub(crate) fn scan_projection(query: &Query) -> Option<(&ForClause, Vec<String>)
     }
 
     let var = for_clause.variable.as_str();
+    // A `` `@x` `` loop variable is what a missing bind var `@x` reads, and
+    // the walk below takes a bind variable for a constant.
+    if var.starts_with('@') {
+        return None;
+    }
     let mut fields = Vec::new();
     for clause in rest {
         match clause {
@@ -82,13 +87,19 @@ pub(crate) fn scan_projection(query: &Query) -> Option<(&ForClause, Vec<String>)
 
 /// Record the fields of `var` read by `expr`; `None` if `expr` uses `var` in
 /// any other way, or contains something this walk does not understand.
-fn collect(expr: &Expression, var: &str, out: &mut Vec<String>) -> Option<()> {
+pub(super) fn collect(expr: &Expression, var: &str, out: &mut Vec<String>) -> Option<()> {
     use Expression as E;
     match expr {
         E::Variable(name) => (name != var).then_some(()),
         E::FieldAccess(base, field) | E::OptionalFieldAccess(base, field) => {
             if matches!(base.as_ref(), E::Variable(name) if name == var) {
                 out.push(field.clone());
+                // `doc["a.b"]` is a field access on "a.b", which reads that
+                // key when the document has it and the path `a` → `b` when
+                // it does not (`get_field_ref`): both must be decoded.
+                if let Some((head, _)) = field.split_once('.') {
+                    out.push(head.to_string());
+                }
                 Some(())
             } else {
                 collect(base, var, out)
@@ -170,6 +181,14 @@ mod tests {
                  RETURN CONCAT(d.c.x, $\"k=${d._key}\")"
             ),
             Some(vec!["_key".into(), "a".into(), "b".into(), "c".into()])
+        );
+    }
+
+    #[test]
+    fn a_dotted_key_also_decodes_its_first_segment() {
+        assert_eq!(
+            fields("FOR d IN c FILTER d[\"a.b\"] == 1 RETURN d.x"),
+            Some(vec!["a".into(), "a.b".into(), "x".into()])
         );
     }
 

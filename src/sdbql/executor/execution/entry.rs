@@ -503,7 +503,13 @@ impl<'a> QueryExecutor<'a> {
                 .filter(|c| matches!(c, BodyClause::Filter(_)))
                 .count();
 
-            if for_count == 1 && filter_count == 0 && !has_windows {
+            // A LIMIT pushed past a COLLECT would cap the documents
+            // grouped, not the groups returned.
+            if for_count == 1
+                && filter_count == 0
+                && !has_windows
+                && !super::has_collect(&query.body_clauses)
+            {
                 query.limit_clause.as_ref().and_then(|l| {
                     let (offset, count) = self.eval_limit(l, &initial_bindings);
                     // No count means no upper bound: nothing to push down.

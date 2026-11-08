@@ -160,6 +160,20 @@
                   group variable always returns exactly one row, even over no input:
                   <code>FOR u IN [] COLLECT WITH COUNT INTO n RETURN n</code> is <code>[0]</code>.
                 </p>
+                <p class="text-xs text-gray-500">
+                  Memory: a <code>COLLECT</code> holds one row per group, plus what <code>INTO</code> and
+                  <code>COLLECT_LIST</code>, <code>UNIQUE</code>, <code>SORTED_UNIQUE</code>,
+                  <code>COUNT_DISTINCT</code> and <code>MEDIAN</code> keep. When it reads a collection scan
+                  directly &mdash; <code>FOR x IN c</code>, then only <code>FILTER</code> and <code>LET</code>
+                  clauses, then the <code>COLLECT</code> &mdash; each document is grouped as it is read and
+                  dropped, and only the fields of <code>x</code> the clauses use are decoded. The collection's
+                  size then neither grows memory nor counts against <code>SOLIDB_MAX_INTERMEDIATE_ROWS</code>;
+                  only the rows the <code>COLLECT</code> keeps do. EXPLAIN reports it as
+                  <code>COLLECT folded into the scan of 'c'</code> in <code>warnings</code>. A loop whose
+                  <code>FILTER</code> an index serves reads the matching documents first, and a columnar,
+                  sharded or search-view source, or a <code>SYSTEM_TIME</code> / valid-time loop, is read whole
+                  before grouping.
+                </p>
               </div>
             </div>
 

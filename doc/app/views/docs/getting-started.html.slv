@@ -923,7 +923,7 @@ kubectl -n solidb get pods -w</pre>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_MAX_INTERMEDIATE_ROWS</td>
                       <td class="p-3">5000000</td>
-                      <td class="p-3">Rows a single query may materialise, checked inside the executor. It bounds nested <code class="text-amber-400">FOR</code> cartesian products, which no <code class="text-amber-400">LIMIT</code> reaches. A query over the limit fails; the server keeps running. Invalid or <code class="text-amber-400">0</code> falls back to the default.</td>
+                      <td class="p-3">Rows a single query may materialise, checked inside the executor. It bounds nested <code class="text-amber-400">FOR</code> cartesian products, which no <code class="text-amber-400">LIMIT</code> reaches. A query over the limit fails; the server keeps running. Invalid or <code class="text-amber-400">0</code> falls back to the default. A <code class="text-amber-400">COLLECT</code> that groups a collection scan as it reads it counts only the rows it keeps (its groups, and what <code class="text-amber-400">INTO</code> stores), not the documents it reads.</td>
                     </tr>
                     <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_GZIP_MIN_BYTES</td>

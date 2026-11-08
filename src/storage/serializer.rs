@@ -238,6 +238,10 @@ impl<'de> serde::de::Visitor<'de> for ProjectedMap<'_> {
 /// and system fields alike). Same values for the fields it keeps; anything
 /// the fast path cannot read falls back to the full decode and drops the rest.
 pub fn deserialize_doc_projected(bytes: &[u8], fields: &[String]) -> DbResult<serde_json::Value> {
+    // One pass that steps over the fields not asked for by their length.
+    if let Some(value) = super::raw_rows::project(bytes, fields) {
+        return Ok(value);
+    }
     if bytes.first() == Some(&2) {
         if let Ok(stored) = bincode::deserialize::<StoredDocRef>(&bytes[1..]) {
             let mut de = rmp_serde::Deserializer::from_read_ref(stored.data);

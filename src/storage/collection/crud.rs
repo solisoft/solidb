@@ -1224,6 +1224,53 @@ impl Collection {
         results
     }
 
+    /// Every document in key order, decoded as [`Self::scan_values`] decodes
+    /// it — or only `fields` of it, as [`Self::scan_values_projected`] does —
+    /// and handed to `f` one at a time. Nothing is collected: a caller that
+    /// folds the documents into something small (a streaming `COLLECT`)
+    /// reads any number of them in constant memory. A document that does not
+    /// decode is skipped, as those scans skip it. Returns how many documents
+    /// were handed over, or the first error `f` returns, which stops the scan.
+    pub fn for_each_value(
+        &self,
+        fields: Option<&[String]>,
+        mut f: impl FnMut(Value) -> DbResult<()>,
+    ) -> DbResult<usize> {
+        let Some(cf) = self.ks.handle(&self.db) else {
+            // Dropped mid-operation (concurrent database delete): nothing
+            // to read, as the other scans answer.
+            return Ok(0);
+        };
+        let prefix = DOC_PREFIX.as_bytes();
+        let mut read_opts = KvReadOptions::default();
+        let readahead = match self.count() {
+            n if n <= 10 => 0,
+            n if n <= 100 => 16 * 1024,
+            _ => 256 * 1024,
+        };
+        if readahead > 0 {
+            read_opts.set_readahead_size(readahead);
+        }
+        let iter =
+            self.db
+                .iterator_ks_opt(&cf, read_opts, IterMode::From(prefix, Direction::Forward));
+        let mut handed = 0usize;
+        for (key, value) in iter.flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let decoded = match fields {
+                Some(fields) => deserialize_doc_projected(&value, fields),
+                None => deserialize_doc_as_value(&value),
+            };
+            if let Ok(doc) = decoded {
+                handed += 1;
+                f(doc)?;
+            }
+        }
+        Ok(handed)
+    }
+
     /// Rows for `shape`, written straight from the stored bytes (see
     /// [`crate::storage::raw_rows`]): documents `offset..offset + limit` in
     /// key order, as the concatenated MessagePack of each row. `check` runs

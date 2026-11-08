@@ -702,16 +702,26 @@ fn test_collect_scan_stops_at_row_ceiling() {
         solidb::parse("FOR d IN big COLLECT g = d.g AGGREGATE total = SUM(d.v) RETURN {g, total}")
             .unwrap();
 
-    // At the ceiling: the scan holds at most ceiling + 1 documents and the
-    // budget check rejects the query rather than the OOM killer.
+    // At the ceiling: a scan materialised into rows holds at most ceiling + 1
+    // documents and the budget check rejects the query rather than the OOM
+    // killer.
     let err = solidb::QueryExecutor::new(&engine)
         .with_max_intermediate_rows(5)
+        .with_streaming_collect(false)
         .execute(&query)
         .expect_err("20 rows must not fit a 5-row ceiling");
     assert!(
         err.to_string().contains("intermediate row limit (6 > 5)"),
         "scan should stop one past the ceiling, got: {err}"
     );
+
+    // Folded into the scan, the COLLECT holds its three groups, never the
+    // documents: the same query fits the same ceiling.
+    let streamed = solidb::QueryExecutor::new(&engine)
+        .with_max_intermediate_rows(5)
+        .execute(&query)
+        .unwrap();
+    assert_eq!(streamed.len(), 3);
 
     // Under the ceiling the query is unaffected.
     let results = solidb::QueryExecutor::new(&engine)

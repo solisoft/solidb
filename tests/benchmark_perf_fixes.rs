@@ -880,3 +880,172 @@ fn benchmark_range_window() {
         );
     }
 }
+
+/// `orders` as in the full-scan aggregate report (Bonfire #725): about 500 B
+/// of JSON each, with a status (5 values), a float amount, a customer id, a
+/// date, three tags, three nested line items and an address object.
+fn seed_orders(engine: &StorageEngine, count: usize) {
+    let db = engine.get_database("bench_db").unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    let statuses = ["pending", "paid", "shipped", "delivered", "cancelled"];
+    let cities = ["Paris", "Lyon", "Marseille", "Toulouse", "Bordeaux"];
+    for start in (0..count).step_by(10_000) {
+        let batch: Vec<_> = (start..(start + 10_000).min(count))
+            .map(|i| {
+                let item = |n: usize, price: f64| {
+                    json!({
+                        "sku": format!("SKU-{:05}", (i * 31 + n) % 10_000),
+                        "name": format!("Product {}", (i + n) % 997),
+                        "qty": 1 + (i + n) % 4,
+                        "price": price,
+                    })
+                };
+                json!({
+                    "status": statuses[i % 5],
+                    "amount": ((i * 7919) % 100_000) as f64 / 100.0,
+                    "customer_id": format!("cust-{:06}", i % 20_000),
+                    "created_at": format!(
+                        "2026-{:02}-{:02}T{:02}:{:02}:00Z",
+                        1 + i % 12, 1 + i % 28, i % 24, i % 60
+                    ),
+                    "tags": ["priority", format!("region-{}", i % 7), format!("channel-{}", i % 3)],
+                    "items": [item(0, 9.99), item(1, 24.5), item(2, 3.25)],
+                    "address": {
+                        "street": format!("{} rue de la République", i % 900),
+                        "city": cities[i % 5],
+                        "zip": format!("{:05}", 75_000 + i % 1000),
+                        "country": "FR",
+                    },
+                })
+            })
+            .collect();
+        orders.insert_batch(batch).unwrap();
+    }
+}
+
+/// Peak resident set size since the last reset, in MiB (Linux only).
+fn peak_rss_mib() -> Option<f64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let line = status.lines().find(|l| l.starts_with("VmHWM:"))?;
+    let kib: f64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kib / 1024.0)
+}
+
+/// Reset the peak RSS to the current RSS (Linux only), after handing freed
+/// heap back to the system: glibc keeps it, and a query would otherwise
+/// reuse what the previous one freed without raising the peak.
+fn reset_peak_rss() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only releases free heap pages; no pointer is involved.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
+}
+
+/// The full-scan COLLECT shapes, materialised (`with_streaming_collect(false)`,
+/// the path `main` takes) against folded while scanned: median of three runs
+/// after one warm-up, and the peak RSS of a run of each, beside the cost of
+/// the scan alone (whole documents decoded, then only `status` and `amount`).
+fn bench_full_scan_collect(docs: usize) {
+    let (engine, _tmp) = create_test_db();
+    let seed_start = Instant::now();
+    seed_orders(&engine, docs);
+    let orders = engine
+        .get_database("bench_db")
+        .unwrap()
+        .get_collection("orders")
+        .unwrap();
+    let sample = orders.scan_values(Some(1)).remove(0);
+    let mut data = sample.as_object().unwrap().clone();
+    data.retain(|k, _| !k.starts_with('_'));
+    println!(
+        "seeded {docs} orders in {:?}; one is {} B of JSON without system fields",
+        seed_start.elapsed(),
+        serde_json::to_string(&data).unwrap().len()
+    );
+
+    let median = |f: &mut dyn FnMut()| -> f64 {
+        f();
+        let mut times: Vec<f64> = (0..3)
+            .map(|_| {
+                let start = Instant::now();
+                f();
+                start.elapsed().as_secs_f64() * 1e3
+            })
+            .collect();
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        times[1]
+    };
+    let fields = vec!["amount".to_string(), "status".to_string()];
+    let whole = median(&mut || {
+        orders.for_each_value(None, |_| Ok(())).unwrap();
+    });
+    let projected = median(&mut || {
+        orders.for_each_value(Some(&fields), |_| Ok(())).unwrap();
+    });
+    let per_doc = |ms: f64| ms * 1e3 / docs as f64;
+    println!(
+        "BENCH|scan alone, whole documents decoded|{docs}|{whole:.1} ms|{:.3} us/doc",
+        per_doc(whole)
+    );
+    println!(
+        "BENCH|scan alone, status + amount decoded|{docs}|{projected:.1} ms|{:.3} us/doc",
+        per_doc(projected)
+    );
+
+    for (label, q) in [
+        (
+            "GROUP BY status, COUNT + SUM",
+            "FOR o IN orders COLLECT status = o.status \
+             AGGREGATE n = COUNT(), total = SUM(o.amount) RETURN {status, n, total}",
+        ),
+        (
+            "FILTER amount > 500, GROUP BY status",
+            "FOR o IN orders FILTER o.amount > 500 COLLECT status = o.status \
+             AGGREGATE n = COUNT(), total = SUM(o.amount) RETURN {status, n, total}",
+        ),
+        (
+            "COLLECT WITH COUNT INTO",
+            "FOR o IN orders COLLECT WITH COUNT INTO n RETURN n",
+        ),
+    ] {
+        let ast = solidb::sdbql::parse(q).unwrap();
+        let mut results = Vec::new();
+        let mut line = format!("BENCH|{label}|{docs}");
+        for stream in [false, true] {
+            let executor = QueryExecutor::with_database(&engine, "bench_db".to_string())
+                .with_streaming_collect(stream);
+            reset_peak_rss();
+            let before = peak_rss_mib();
+            results.push(executor.execute(&ast).unwrap());
+            let peak = match (before, peak_rss_mib()) {
+                (Some(b), Some(p)) => format!("+{:.0} MiB peak", p - b),
+                _ => "peak n/a".to_string(),
+            };
+            let ms = median(&mut || {
+                executor.execute(&ast).unwrap();
+            });
+            line.push_str(&format!(
+                "|{}: {ms:.1} ms ({:.3} us/doc, {peak})",
+                if stream { "streamed" } else { "materialised" },
+                per_doc(ms)
+            ));
+        }
+        assert_eq!(results[0], results[1], "{label}");
+        println!("{line}");
+    }
+}
+
+#[test]
+#[ignore]
+fn benchmark_full_scan_collect() {
+    bench_full_scan_collect(100_000);
+}
+
+#[test]
+#[ignore]
+fn benchmark_full_scan_collect_1m() {
+    bench_full_scan_collect(1_000_000);
+}

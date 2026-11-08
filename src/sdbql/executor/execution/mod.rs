@@ -5,6 +5,7 @@
 //! - streaming: Bulk insert and mutation logging
 //! - clauses: Body clause processing (FOR, FILTER, JOIN, etc.)
 //! - collect: COLLECT grouping and streaming aggregation
+//! - scan_collect: a full-scan COLLECT folded while the collection is read
 //! - index_count: `FILTER v.f == x COLLECT WITH COUNT` read from an index
 //! - index_sort: `FILTER v.a == x SORT v.b LIMIT n` (or a range on `v.b`) read in
 //!   SORT order from an index, stopping at the LIMIT
@@ -26,6 +27,7 @@ mod mutations;
 mod paths;
 mod raw_scan;
 mod return_moves;
+mod scan_collect;
 mod streaming;
 mod subquery;
 
@@ -34,3 +36,4 @@ mod subquery;
 // row-building loop shares.
 pub(super) use clauses::BUDGET_CHECK_INTERVAL;
 pub(super) use entry::has_window_functions;
+pub(super) use scan_collect::has_collect;

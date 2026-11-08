@@ -87,6 +87,10 @@ pub struct QueryExecutor<'a> {
     /// default; tests turn it off to compare results against plain per-row
     /// execution.
     pub(super) reuse_within_query: bool,
+    /// Whether a full-scan `COLLECT` folds each document into its group as
+    /// it is read (`execution::scan_collect`) instead of materialising the
+    /// scan first. On by default; tests turn it off to compare the two.
+    pub(super) stream_collect: bool,
     /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
     caches: ExecCaches,
 }
@@ -221,6 +225,7 @@ impl<'a> QueryExecutor<'a> {
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
+            stream_collect: true,
             caches: ExecCaches::default(),
         }
     }
@@ -238,6 +243,7 @@ impl<'a> QueryExecutor<'a> {
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
+            stream_collect: true,
             caches: ExecCaches::default(),
         }
     }
@@ -255,6 +261,7 @@ impl<'a> QueryExecutor<'a> {
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
+            stream_collect: true,
             caches: ExecCaches::default(),
         }
     }
@@ -276,6 +283,7 @@ impl<'a> QueryExecutor<'a> {
             deadline: None,
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
+            stream_collect: true,
             caches: ExecCaches::default(),
         }
     }
@@ -327,6 +335,14 @@ impl<'a> QueryExecutor<'a> {
     /// amount of work differs.
     pub fn with_reuse_within_query(mut self, on: bool) -> Self {
         self.reuse_within_query = on;
+        self
+    }
+
+    /// Allow or forbid folding a full-scan `COLLECT` into the scan (see
+    /// `stream_collect`). Results are the same either way; only the memory
+    /// held and the time taken differ.
+    pub fn with_streaming_collect(mut self, on: bool) -> Self {
+        self.stream_collect = on;
         self
     }
 

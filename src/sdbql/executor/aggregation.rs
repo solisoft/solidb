@@ -4,6 +4,7 @@
 //! - AggregateAccumulator: streaming COUNT/SUM/AVG/MIN/MAX/... for COLLECT groups
 //! - try_columnar_aggregation: Optimized columnar aggregation path
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -243,14 +244,14 @@ pub(super) struct DistinctValues {
 }
 
 impl DistinctValues {
-    /// Returns whether `v` was new (and is now held).
-    fn insert(&mut self, v: Value) -> bool {
+    /// Returns whether `v` was new (and is now held). Copied only then.
+    fn insert(&mut self, v: Cow<'_, Value>) -> bool {
         let bucket = self.index.entry(hash_value(&v)).or_default();
         if bucket.iter().any(|&i| values_equal(&self.items[i], &v)) {
             return false;
         }
         bucket.push(self.items.len());
-        self.items.push(v);
+        self.items.push(v.into_owned());
         true
     }
 }
@@ -336,11 +337,13 @@ impl AggregateAccumulator {
     }
 
     /// Fold one row in. `value` is `None` when the aggregate has no argument,
-    /// in which case only the row counts have anything to count.
+    /// in which case only the row counts have anything to count. A borrowed
+    /// value is copied only when it is kept (a new extreme, a list item, a
+    /// distinct value not seen before).
     ///
     /// Returns whether the value was retained (as opposed to reduced), so the
     /// caller can budget the memory this clause is holding on to.
-    pub(super) fn push(&mut self, value: Option<Value>) -> bool {
+    pub(super) fn push(&mut self, value: Option<Cow<'_, Value>>) -> bool {
         match self {
             Self::CountRows(n) => {
                 *n += 1;
@@ -353,13 +356,13 @@ impl AggregateAccumulator {
                 false
             }
             Self::Sum(sum) => {
-                if let Some(n) = value.as_ref().and_then(Value::as_f64) {
+                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
                     *sum += n;
                 }
                 false
             }
             Self::Avg { sum, count } => {
-                if let Some(n) = value.as_ref().and_then(Value::as_f64) {
+                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
                     *sum += n;
                     *count += 1;
                 }
@@ -373,7 +376,7 @@ impl AggregateAccumulator {
                         .as_ref()
                         .is_none_or(|b| compare_values(&val, b) == std::cmp::Ordering::Less)
                     {
-                        *best = Some(val);
+                        *best = Some(val.into_owned());
                     }
                 }
                 false
@@ -384,7 +387,7 @@ impl AggregateAccumulator {
                         .as_ref()
                         .is_none_or(|b| compare_values(&val, b) == std::cmp::Ordering::Greater)
                     {
-                        *best = Some(val);
+                        *best = Some(val.into_owned());
                     }
                 }
                 false
@@ -395,18 +398,18 @@ impl AggregateAccumulator {
             },
             Self::List(list) => match value {
                 Some(v) => {
-                    list.push(v);
+                    list.push(v.into_owned());
                     true
                 }
                 None => false,
             },
             Self::Stats { acc, .. } => {
-                if let Some(n) = value.as_ref().and_then(Value::as_f64) {
+                if let Some(n) = value.as_deref().and_then(Value::as_f64) {
                     acc.push(n);
                 }
                 false
             }
-            Self::Median(nums) => match value.as_ref().and_then(Value::as_f64) {
+            Self::Median(nums) => match value.as_deref().and_then(Value::as_f64) {
                 Some(n) => {
                     nums.push(n);
                     true
@@ -414,7 +417,7 @@ impl AggregateAccumulator {
                 None => false,
             },
             Self::Bits { kind, acc, invalid } => {
-                match value.as_ref() {
+                match value.as_deref() {
                     None | Some(Value::Null) => {}
                     Some(v) => match as_int(v) {
                         Some(n) => {
@@ -478,7 +481,7 @@ mod tests {
     fn fold(function: &str, values: &[Value]) -> Value {
         let mut acc = AggregateAccumulator::new(function, true).unwrap();
         for v in values {
-            acc.push(Some(v.clone()));
+            acc.push(Some(Cow::Borrowed(v)));
         }
         acc.finish()
     }

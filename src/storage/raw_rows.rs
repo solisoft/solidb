@@ -237,6 +237,53 @@ pub fn write_row(bytes: &[u8], shape: &RawShape, out: &mut Vec<u8>) -> Option<()
     Some(())
 }
 
+/// The `fields` of a stored document, as
+/// [`super::serializer::deserialize_doc_projected`] returns them: one pass over
+/// the stored map that decodes the values asked for and steps over the others
+/// by their encoded length, never visiting them. A scan that reads two fields
+/// of a 500-byte document with nested arrays and objects spends its time on
+/// those two. `None` for anything this cannot read (another storage format, a
+/// document that is not one map, a key or system string that is not UTF-8, a
+/// value that does not decode); the caller then takes the serde path, which
+/// decides what those mean.
+pub(crate) fn project(bytes: &[u8], fields: &[String]) -> Option<serde_json::Value> {
+    let doc = StoredDocRef::parse(bytes)?;
+    let mut map = serde_json::Map::new();
+    let mut readable = true;
+    visit_map(doc.data, |k, v| {
+        if !readable {
+            return;
+        }
+        let Ok(key) = std::str::from_utf8(k) else {
+            readable = false;
+            return;
+        };
+        if fields.iter().any(|f| f == key) {
+            match rmp_serde::from_slice::<serde_json::Value>(v) {
+                // A repeated key keeps its last value, as a map decode does.
+                Ok(value) => {
+                    map.insert(key.to_owned(), value);
+                }
+                Err(_) => readable = false,
+            }
+        }
+    })?;
+    if !readable {
+        return None;
+    }
+    // System fields last, overriding a same-named data field, as the full
+    // decode does.
+    for field in fields {
+        if SYSTEM_FIELDS.contains(&field.as_str()) {
+            let Out::Str(text) = system_value(&doc, field)? else {
+                return None;
+            };
+            map.insert(field.clone(), serde_json::Value::String(text));
+        }
+    }
+    Some(serde_json::Value::Object(map))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +349,42 @@ mod tests {
                 assert_eq!(out, reference(&bytes, shape), "{data} {shape:?}");
             }
         }
+    }
+
+    /// The single-pass projection keeps exactly the fields asked for, with
+    /// the values (system fields included, shadowing a data field of the
+    /// same name) the full decode gives them.
+    #[test]
+    fn projection_matches_the_full_decode() {
+        let field_sets: [&[&str]; 5] = [
+            &["title", "views"],
+            &["obj", "arr", "missing"],
+            &["_key", "_id", "zzz", "_created_at", "_updated_at", "_rev"],
+            &["long", "s", "big", "neg", "f", "t", "z", "n"],
+            &[],
+        ];
+        for data in docs() {
+            let bytes = stored(data.clone());
+            let full = deserialize_doc_as_value(&bytes).unwrap();
+            for set in field_sets {
+                let fields: Vec<String> = set.iter().map(|f| f.to_string()).collect();
+                let expected: serde_json::Map<String, Value> = full
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .filter(|(k, _)| fields.contains(k))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                assert_eq!(
+                    project(&bytes, &fields),
+                    Some(Value::Object(expected)),
+                    "{data} {set:?}"
+                );
+            }
+        }
+        // Left to the serde path: not a map, not this format.
+        assert_eq!(project(&stored(json!([1, 2])), &["a".into()]), None);
+        assert_eq!(project(b"{\"a\":1}", &["a".into()]), None);
     }
 
     #[test]

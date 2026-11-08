@@ -69,6 +69,13 @@ impl<'a> QueryExecutor<'a> {
         ];
         let mut collections = Vec::new();
         self.estimate_loops(query, None, 0, &mut collections, &mut warnings)?;
+        // A first loop left to a scan may fold into its COLLECT.
+        let scanned_first = collections
+            .first()
+            .is_some_and(|c| c.subquery.is_none() && c.access_type == "full_scan");
+        if scanned_first {
+            warnings.extend(self.scan_collect_note(query));
+        }
 
         // As the run decides it: a FILTER + SORT + LIMIT read in index order
         // (with the entries of the range it would walk), else a bare SORT.
@@ -487,7 +494,10 @@ impl<'a> QueryExecutor<'a> {
                 .filter(|c| matches!(c, BodyClause::Filter(_)))
                 .count();
 
-            if for_count == 1 && filter_count == 0 {
+            if for_count == 1
+                && filter_count == 0
+                && !super::execution::has_collect(&query.body_clauses)
+            {
                 query.limit_clause.as_ref().and_then(|l| {
                     let (offset, count) = self.eval_limit(l, &initial_bindings);
                     // No count means no upper bound: nothing to push down.
@@ -674,7 +684,35 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A scan folded into its COLLECT, as execution runs it.
+                    let mut streamed = false;
                     if !used_index {
+                        if let Some(run) = self.try_scan_collect(clauses, i, &rows)? {
+                            let folded = &clauses[i + 1..i + run.consumed - 1];
+                            let folded_filters = folded.iter().filter_map(|c| match c {
+                                BodyClause::Filter(f) => Some(&f.expression),
+                                _ => None,
+                            });
+                            for (expr, (before, after)) in folded_filters.zip(run.filters) {
+                                filters_info.push(FilterInfo {
+                                    expression: format_expression(expr),
+                                    index_candidate: None,
+                                    can_use_index: false,
+                                    documents_before: before,
+                                    documents_after: after,
+                                    // Inside the scan's time.
+                                    time_us: 0,
+                                });
+                            }
+                            warnings.push(run.note);
+                            rows = run.rows;
+                            total_docs_scanned += run.scanned;
+                            i += run.consumed;
+                            streamed = true;
+                        }
+                    }
+
+                    if !used_index && !streamed {
                         // Full Scan or Range
                         let mut new_rows = Vec::new();
                         let mut clause_docs_scanned = 0;
@@ -807,6 +845,12 @@ impl<'a> QueryExecutor<'a> {
                         self.bind_let(let_clause, ctx)?;
                     }
                     let_clauses_us += let_start.elapsed().as_micros() as u64;
+                    i += 1;
+                }
+                // Grouped as execution groups them, so the rows counted after
+                // it are the groups.
+                BodyClause::Collect(collect) => {
+                    rows = self.execute_collect(collect, rows)?;
                     i += 1;
                 }
                 BodyClause::Insert(_) | BodyClause::Update(_) | BodyClause::Remove(_) => {
