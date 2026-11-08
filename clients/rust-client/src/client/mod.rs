@@ -13,19 +13,130 @@ pub use builder::Transport;
 pub use http_client::HttpClient;
 
 use serde_json::Value;
+use std::ops::Range;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 
+use super::protocol::codec::encode_command_into;
 use super::protocol::{
-    decode_message, encode_command, Command, DriverError, Response, DRIVER_MAGIC, MAX_MESSAGE_SIZE,
+    decode_response, Command, DriverError, Response, DRIVER_MAGIC, MAX_MESSAGE_SIZE,
 };
 
 const DEFAULT_POOL_SIZE: usize = 4;
 
+/// What a connection's read buffer starts with. A response that fits is read
+/// with one `recv`, and a read that leaves room in the buffer is what tells
+/// tokio the socket is drained — so the next request waits for its response
+/// without first trying a `recv` that can only say "not yet".
+const READ_BUFFER: usize = 32 * 1024;
+
+/// A connection keeps buffers that grew for a large frame up to this size;
+/// a larger one is given back once the frame has been handled.
+const KEEP_BUFFER: usize = 1024 * 1024;
+
 struct PooledConnection {
     read: OwnedReadHalf,
     write: OwnedWriteHalf,
+    /// Bytes read from the socket: the frames handed out end at `consumed`,
+    /// anything after it belongs to the next one.
+    rbuf: Vec<u8>,
+    consumed: usize,
+    /// The request frame, encoded in place each time.
+    wbuf: Vec<u8>,
+}
+
+impl PooledConnection {
+    fn new(read: OwnedReadHalf, write: OwnedWriteHalf) -> Self {
+        Self {
+            read,
+            write,
+            rbuf: Vec::with_capacity(READ_BUFFER),
+            consumed: 0,
+            wbuf: Vec::new(),
+        }
+    }
+
+    /// Send `command` as one frame: its length and payload in one `write`.
+    async fn send(&mut self, command: &Command) -> Result<(), DriverError> {
+        self.wbuf.clear();
+        encode_command_into(command, &mut self.wbuf)?;
+        let sent = self.write.write_all(&self.wbuf).await;
+        if self.wbuf.capacity() > KEEP_BUFFER {
+            self.wbuf = Vec::new();
+        }
+        sent.map_err(|e| DriverError::ConnectionError(format!("Write failed: {}", e)))?;
+        self.write
+            .flush()
+            .await
+            .map_err(|e| DriverError::ConnectionError(format!("Flush failed: {}", e)))
+    }
+
+    /// Read the next frame and return where its payload lies in `rbuf`.
+    ///
+    /// The payload is read into the connection's buffer, where it is
+    /// decoded in place: no buffer allocated and zeroed for each response,
+    /// and the length and the payload usually come in the same `recv`.
+    /// Bytes past the frame stay buffered for the next call, as they stayed
+    /// in the socket when the frame was read with two `read_exact`s; the
+    /// errors are theirs too.
+    async fn receive(&mut self) -> Result<Range<usize>, DriverError> {
+        self.discard_consumed();
+        self.fill(4, "Read length failed").await?;
+        let msg_len =
+            u32::from_be_bytes([self.rbuf[0], self.rbuf[1], self.rbuf[2], self.rbuf[3]]) as usize;
+        if msg_len > MAX_MESSAGE_SIZE {
+            self.consumed = 4;
+            return Err(DriverError::MessageTooLarge);
+        }
+        let end = 4 + msg_len;
+        self.fill(end, "Read payload failed").await?;
+        self.consumed = end;
+        Ok(4..end)
+    }
+
+    fn discard_consumed(&mut self) {
+        if self.consumed == self.rbuf.len() {
+            self.rbuf.clear();
+        } else {
+            self.rbuf.drain(..self.consumed);
+        }
+        self.consumed = 0;
+    }
+
+    /// Read until `rbuf` holds at least `want` bytes, into its spare
+    /// capacity: as much as the socket has, never less than what is missing.
+    async fn fill(&mut self, want: usize, what: &str) -> Result<(), DriverError> {
+        while self.rbuf.len() < want {
+            self.rbuf.reserve(want - self.rbuf.len());
+            let n = self
+                .read
+                .read_buf(&mut self.rbuf)
+                .await
+                .map_err(|e| DriverError::ConnectionError(format!("{}: {}", what, e)))?;
+            if n == 0 {
+                // What `read_exact` reports when the socket closes first.
+                return Err(DriverError::ConnectionError(format!("{}: early eof", what)));
+            }
+        }
+        Ok(())
+    }
+
+    /// One command, its response handed to `decode` where it was read.
+    async fn round_trip<T>(
+        &mut self,
+        command: &Command,
+        decode: impl FnOnce(&[u8]) -> Result<T, DriverError>,
+    ) -> Result<T, DriverError> {
+        self.send(command).await?;
+        let payload = self.receive().await?;
+        let decoded = decode(&self.rbuf[payload]);
+        if self.rbuf.capacity() > KEEP_BUFFER {
+            self.discard_consumed();
+            self.rbuf.shrink_to(READ_BUFFER);
+        }
+        decoded
+    }
 }
 
 pub struct SoliDBClient {
@@ -57,7 +168,7 @@ impl SoliDBClient {
                 DriverError::ConnectionError(format!("Failed to send magic header: {}", e))
             })?;
 
-            pool_connections.push(PooledConnection { read, write });
+            pool_connections.push(PooledConnection::new(read, write));
         }
 
         Ok(Self {
@@ -89,56 +200,19 @@ impl SoliDBClient {
         idx: usize,
         command: Command,
     ) -> Result<Response, DriverError> {
-        let payload = self.send_command_raw_on(idx, command).await?;
-        decode_message(&payload)
+        self.pool[idx].round_trip(&command, decode_response).await
     }
 
-    /// Send a command and hand back the undecoded response payload, so a
+    /// Send a command and decode its response payload with `decode`, so a
     /// caller can deserialize it straight into its own types (see
     /// [`query_as`](Self::query_as)).
-    pub(crate) async fn send_command_raw(
+    pub(crate) async fn send_command_with<T>(
         &mut self,
         command: Command,
-    ) -> Result<Vec<u8>, DriverError> {
+        decode: impl FnOnce(&[u8]) -> Result<T, DriverError>,
+    ) -> Result<T, DriverError> {
         let idx = self.next_connection_index();
-        self.send_command_raw_on(idx, command).await
-    }
-
-    async fn send_command_raw_on(
-        &mut self,
-        idx: usize,
-        command: Command,
-    ) -> Result<Vec<u8>, DriverError> {
-        let conn = &mut self.pool[idx];
-
-        let data = encode_command(&command)?;
-        conn.write
-            .write_all(&data)
-            .await
-            .map_err(|e| DriverError::ConnectionError(format!("Write failed: {}", e)))?;
-        conn.write
-            .flush()
-            .await
-            .map_err(|e| DriverError::ConnectionError(format!("Flush failed: {}", e)))?;
-
-        let mut len_buf = [0u8; 4];
-        conn.read
-            .read_exact(&mut len_buf)
-            .await
-            .map_err(|e| DriverError::ConnectionError(format!("Read length failed: {}", e)))?;
-
-        let msg_len = u32::from_be_bytes(len_buf) as usize;
-        if msg_len > MAX_MESSAGE_SIZE {
-            return Err(DriverError::MessageTooLarge);
-        }
-
-        let mut payload = vec![0u8; msg_len];
-        conn.read
-            .read_exact(&mut payload)
-            .await
-            .map_err(|e| DriverError::ConnectionError(format!("Read payload failed: {}", e)))?;
-
-        Ok(payload)
+        self.pool[idx].round_trip(&command, decode).await
     }
 
     pub(crate) fn extract_data(response: Response) -> Result<Option<Value>, DriverError> {

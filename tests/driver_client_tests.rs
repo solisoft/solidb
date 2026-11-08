@@ -551,3 +551,180 @@ fn test_response_ok_count_large() {
         _ => panic!("Expected Ok response"),
     }
 }
+
+// ============================================================================
+// Reads over a real connection
+// ============================================================================
+
+/// What the client returns for reads, against an in-process server over
+/// loopback TCP: the client decodes responses by hand and reads them into a
+/// buffer it keeps, so each answer is checked against what the server
+/// computes for itself — through the raw-rows path (stored bytes copied
+/// into the response), the ordinary executor, a one-document get, an error,
+/// and responses larger than the client's buffer. Values are compared
+/// through `Debug`, which tells `1` from `1.0`.
+#[test]
+fn reads_over_a_real_connection_match_the_server() {
+    use serde_json::Value;
+    use solidb::sdbql::QueryExecutor;
+    use solidb::storage::{IndexType, StorageEngine};
+    use std::collections::HashMap;
+
+    const DB: &str = "reads";
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "reads-password");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let engine = std::sync::Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database(DB.to_string()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+    let orders = db.get_collection("orders").unwrap();
+    orders
+        .create_index(
+            "idx_customer".into(),
+            vec!["customer_id".into()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    let docs: Vec<Value> = (0..300u64)
+        .map(|i| {
+            json!({
+                "_key": format!("o{i:04}"),
+                "customer_id": format!("c{}", i % 7),
+                "amount": i as f64 / 4.0,
+                "qty": i,
+                "delta": -(i as i64),
+                "big": u64::MAX - i,
+                "name": format!("Zoë ✓ {i}"),
+                "tags": ["a", "b", i.to_string()],
+                "items": [{"sku": format!("S{i}"), "price": 1.5, "n": null, "ok": i % 2 == 0}],
+                "address": {"city": "Lyon", "zip": "69007", "geo": [45.75, 4.85]},
+            })
+        })
+        .collect();
+    orders.insert_batch(docs).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let listener = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let storage = engine.clone();
+    rt.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = solidb::driver::DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+
+    let server_side = |q: &str, vars: &HashMap<String, Value>| -> Vec<Value> {
+        let ast = solidb::sdbql::parse(q).unwrap();
+        QueryExecutor::with_database_and_bind_vars(&engine, DB.to_string(), vars.clone())
+            .execute(&ast)
+            .unwrap()
+    };
+    let by_key = |mut rows: Vec<Value>| {
+        rows.sort_by(|a, b| a["_key"].as_str().cmp(&b["_key"].as_str()));
+        format!("{rows:?}")
+    };
+
+    rt.block_on(async {
+        // Two connections, so the round robin reaches both buffers.
+        let mut c = SoliDBClientBuilder::new(&addr)
+            .auth(DB, "admin", "reads-password")
+            .pool_size(2)
+            .build()
+            .await
+            .unwrap();
+
+        // Whole documents through the index: the raw-rows path.
+        let q = "FOR o IN orders FILTER o.customer_id == @c RETURN o";
+        for customer in 0..7 {
+            let vars: HashMap<String, Value> =
+                [("c".to_string(), json!(format!("c{customer}")))].into();
+            let got = c
+                .query_with_cache(DB, q, Some(vars.clone()), false)
+                .await
+                .unwrap();
+            assert!(got.len() > 40);
+            assert_eq!(by_key(got), by_key(server_side(q, &vars)));
+        }
+
+        // Every document, whole, and projections, through the executor.
+        for q in [
+            "FOR o IN orders RETURN o",
+            "FOR o IN orders SORT o.qty DESC LIMIT 25 RETURN {k: o._key, a: o.amount, d: o.delta, b: o.big, t: o.tags}",
+            "RETURN [1, -1, 1.5, 0.0, -0.5, 4294967296, -4294967296, \"é\", null, true, {z: 1, a: [2]}]",
+            "FOR i IN 1..2000 RETURN {i, s: CONCAT(\"row \", i), f: i / 8}",
+        ] {
+            let none = HashMap::new();
+            let got = c.query_with_cache(DB, q, None, false).await.unwrap();
+            assert_eq!(format!("{got:?}"), format!("{:?}", server_side(q, &none)), "{q}");
+        }
+
+        // A single document.
+        let got = c.get(DB, "orders", "o0042").await.unwrap();
+        assert_eq!(
+            format!("{got:?}"),
+            format!("{:?}", orders.get("o0042").unwrap().to_value())
+        );
+
+        // An error, then the connection carries on.
+        let err = c
+            .query_with_cache(DB, "FOR o IN", None, false)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("error"), "{err}");
+
+        // Past the buffer a connection keeps (1 MiB), then small again.
+        let q = format!(
+            "FOR i IN 1..3000 RETURN {{i, pad: CONCAT(\"{}\", i)}}",
+            "0123456789abcdef".repeat(25)
+        );
+        let q = q.as_str();
+        for _ in 0..2 {
+            let got = c.query_with_cache(DB, q, None, false).await.unwrap();
+            assert_eq!(got.len(), 3000);
+            assert_eq!(got[2999]["i"], json!(3000));
+        }
+        let big = c
+            .query_with_cache(
+                DB,
+                "FOR o IN orders FOR p IN orders FILTER p.qty < 20 RETURN o",
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(big.len(), 300 * 20);
+        assert!(c.ping().await.is_ok());
+        let got = c.get(DB, "orders", "o0001").await.unwrap();
+        assert_eq!(got["delta"], json!(-1));
+
+        // Straight into the caller's type.
+        #[derive(serde::Deserialize)]
+        struct Row {
+            qty: u64,
+            big: u64,
+            name: String,
+        }
+        let rows: Vec<Row> = c
+            .query_as(DB, "FOR o IN orders FILTER o.qty == 7 RETURN o", None, false)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].qty, rows[0].big, rows[0].name.as_str()),
+            (7, u64::MAX - 7, "Zoë ✓ 7")
+        );
+    });
+}

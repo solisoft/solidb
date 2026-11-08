@@ -20,6 +20,29 @@ pub fn encode_command(cmd: &Command) -> Result<Vec<u8>, DriverError> {
     Ok(buf)
 }
 
+/// Append `cmd`'s frame to `buf`: the bytes [`encode_command`] returns,
+/// written into a buffer the connection keeps from one request to the next
+/// instead of into two new ones (the payload, then the payload behind its
+/// length). On an error `buf` is left as it was.
+pub(crate) fn encode_command_into(cmd: &Command, buf: &mut Vec<u8>) -> Result<(), DriverError> {
+    let start = buf.len();
+    buf.extend_from_slice(&[0u8; 4]);
+    if let Err(e) = rmp_serde::encode::write_named(buf, cmd) {
+        buf.truncate(start);
+        return Err(DriverError::ProtocolError(format!(
+            "Serialization failed: {}",
+            e
+        )));
+    }
+    let payload_len = buf.len() - start - 4;
+    if payload_len > MAX_MESSAGE_SIZE {
+        buf.truncate(start);
+        return Err(DriverError::MessageTooLarge);
+    }
+    buf[start..start + 4].copy_from_slice(&(payload_len as u32).to_be_bytes());
+    Ok(())
+}
+
 pub fn encode_response(resp: &Response) -> Result<Vec<u8>, DriverError> {
     let payload = rmp_serde::to_vec_named(resp)
         .map_err(|e| DriverError::ProtocolError(format!("Serialization failed: {}", e)))?;

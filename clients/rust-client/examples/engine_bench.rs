@@ -38,7 +38,7 @@ fn doc(i: u64) -> Value {
         "name": format!("user {i}"),
         "email": format!("user{i}@example.com"),
         "score": (i * 7919) % 10_000,
-        "tags": ["alpha", "beta", if i % 2 == 0 { "even" } else { "odd" }],
+        "tags": ["alpha", "beta", if i.is_multiple_of(2) { "even" } else { "odd" }],
         "bio": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.",
     })
 }

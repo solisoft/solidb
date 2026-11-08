@@ -1347,6 +1347,13 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
                             continue;
                         }
                     };
+                    // Every protocol on this port answers a request and then
+                    // waits for the next one, so Nagle's algorithm can only
+                    // hold a response back: one that leaves in more than one
+                    // write (TLS records, a `write_all` the socket buffer
+                    // splits) waited for the client's delayed ACK. The
+                    // driver clients already set this on their end.
+                    let _ = stream.set_nodelay(true);
 
                     let http_tx = http_tx.clone();
                     let sync_tx = sync_tx.clone();

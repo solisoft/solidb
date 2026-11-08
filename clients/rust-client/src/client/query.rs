@@ -60,15 +60,16 @@ impl SoliDBClient {
         bind_vars: Option<HashMap<String, Value>>,
         cache: bool,
     ) -> Result<Vec<T>, DriverError> {
-        let payload = self
-            .send_command_raw(Command::Query {
+        self.send_command_with(
+            Command::Query {
                 database: database.to_string(),
                 sdbql: sdbql.to_string(),
                 bind_vars,
                 cache,
-            })
-            .await?;
-        rows_from_payload(&payload)
+            },
+            rows_from_payload,
+        )
+        .await
     }
 
     pub async fn explain(
