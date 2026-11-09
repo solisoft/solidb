@@ -322,7 +322,7 @@ Rules for code that touches storage:
 | `SOLIDB_MIGRATION_SKIP_SPACE_CHECK` | off | Start the migration even when free disk is below 1.2 × the largest collection + 1 GiB. |
 | `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | Legacy collections only: grace before an emptied 1.x column family is dropped. |
 | `SOLIDB_BLOCK_CACHE` | 40% of (memory − 1 GiB), ≥ 64 MiB, prod / 128MB `--dev` | Block cache of either engine (`--block-cache`). "Memory" is the tightest cgroup `memory.max` on the process's cgroup path, else the host's total (`storage/memory_limit.rs`); 512MB when neither can be read. The startup log names the basis; `/metrics` has `solidb_block_cache_capacity_bytes`. |
-| `SOLIDB_SCAN_THREADS` | the CPUs the process may use (cgroup `cpu.max`, else `available_parallelism`) | Threads a full-scan `COLLECT` may split into, and a process-wide cap on scan threads (`execution/scan_threads.rs`). `1` turns parallel scans off. Only engines with snapshots run them (RocksDB today; solistore once it has them); a collection under 65,536 documents stays on one thread. |
+| `SOLIDB_SCAN_THREADS` | the CPUs the process may use (cgroup `cpu.max`, else `available_parallelism`) | Threads a full-scan `COLLECT` may split into, and a process-wide cap on scan threads (`execution/scan_threads.rs`). `1` turns parallel scans off. Only engines with snapshots run them, which both have (solistore since 0.3); a collection under 65,536 documents stays on one thread. |
 | `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap. Lowering it to save disk is a false economy — it produces thousands of tiny SSTs. Bound memory with `--memtable-budget`. |
 
 Per-collection `disk_usage` of a shared collection is RocksDB's approximate
