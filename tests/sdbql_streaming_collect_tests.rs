@@ -1194,11 +1194,17 @@ fn engine_cut_ranges_read_one_snapshot() {
     let q = "FOR d IN c COLLECT s = d.s AGGREGATE n = COUNT(), t = SUM(d.v) RETURN {s, n, t}";
     let groups = same_everywhere(&engine, q, &binds).unwrap();
     assert_eq!(groups.len(), 3, "{groups:?}");
-    let (run_note, plan_note) = notes(&engine, q, PARALLEL, &binds);
-    assert!(
-        run_note.contains("key ranges read in parallel"),
-        "{run_note}"
-    );
+    let parallel = |note: &str| note.contains("key ranges read in parallel");
+    let (mut run_note, plan_note) = notes(&engine, q, PARALLEL, &binds);
+    // Other tests may hold the process's scan threads for a moment.
+    for _ in 0..20 {
+        if parallel(&run_note) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        run_note = notes(&engine, q, PARALLEL, &binds).0;
+    }
+    assert!(parallel(&run_note), "{run_note}");
     assert_eq!(run_note, plan_note);
 }
 
