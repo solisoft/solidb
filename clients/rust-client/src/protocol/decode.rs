@@ -258,7 +258,10 @@ impl<'a> Reader<'a> {
         if depth >= MAX_DEPTH {
             return None;
         }
-        let mut map = Map::new();
+        // Sized up front, as `array` is: with serde_json's `preserve_order`
+        // a map grown one insert at a time reallocates and rehashes its
+        // index on the way. An entry takes at least two bytes.
+        let mut map = Map::with_capacity(len.min((self.data.len() - self.pos) / 2));
         for n in 0..len {
             let key = self.str()?;
             if n == 0 && key.starts_with(SERDE_JSON_PRIVATE) {
