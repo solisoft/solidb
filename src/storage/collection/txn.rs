@@ -523,25 +523,64 @@ impl Collection {
 
     /// Current value of `key`, provided it is still the revision the
     /// operation was based on.
+    ///
+    /// Against storage only the revision is read, from the stored header:
+    /// a revision is never written twice, so when it is still the one the
+    /// operation was based on, the stored document is `based_on` itself. A
+    /// full read and decode of every document a commit writes was ~4% of a
+    /// money transfer's CPU.
     fn txn_expect_unchanged(
         &self,
         pending: &HashMap<String, Option<Value>>,
         key: &str,
         based_on: &Value,
     ) -> DbResult<Value> {
-        let current = self.txn_current(pending, key)?.ok_or_else(|| {
+        let deleted = || {
             DbError::TransactionConflict(format!(
                 "Document '{}' in {} was deleted after the transaction read it",
                 key, self.name
             ))
-        })?;
-        if current.get("_rev") != based_on.get("_rev") {
-            return Err(DbError::TransactionConflict(format!(
+        };
+        let modified = || {
+            DbError::TransactionConflict(format!(
                 "Document '{}' in {} was modified after the transaction read it",
                 key, self.name
-            )));
+            ))
+        };
+        if let Some(state) = pending.get(key) {
+            let current = state.clone().ok_or_else(deleted)?;
+            if current.get("_rev") != based_on.get("_rev") {
+                return Err(modified());
+            }
+            return Ok(current);
         }
-        Ok(current)
+        let stored = self.stored_rev(key)?.ok_or_else(deleted)?;
+        if based_on.get("_rev").and_then(Value::as_str) != Some(stored.as_str()) {
+            return Err(modified());
+        }
+        Ok(based_on.clone())
+    }
+
+    /// The revision `key` is stored at, from the stored header without
+    /// decoding the document (a document in an older format is decoded);
+    /// `None` when it does not exist.
+    fn stored_rev(&self, key: &str) -> DbResult<Option<String>> {
+        let cf = self.live_cf()?;
+        let Some(bytes) = self
+            .db
+            .get_pinned_ks(&cf, Self::doc_key(key))
+            .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))?
+        else {
+            return Ok(None);
+        };
+        if let Some(rev) = crate::storage::serializer::StoredDocRef::parse(&bytes)
+            .and_then(|doc| std::str::from_utf8(doc.rev).ok().map(str::to_owned))
+        {
+            return Ok(Some(rev));
+        }
+        Ok(Some(
+            crate::storage::serializer::deserialize_doc(&bytes)?.rev,
+        ))
     }
 
     /// Rebuild the stored `Document` from a transaction's value, keeping the
