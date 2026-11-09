@@ -409,7 +409,7 @@ the count rely on an index holding exactly one entry per document under the
 value's `encode_key` form; anything that changes that (array expansion,
 sparse entries) must change them too.
 
-### Raw writes: driver writes that never decode (2.8.x)
+### Raw writes: driver writes that never decode (2.9.0)
 
 The write-side twin. A driver `insert`, `bulk_insert` or `update` with
 `merge: true` is stored straight from the client's MessagePack:

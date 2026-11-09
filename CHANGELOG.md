@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+## [2.9.0](https://github.com/solisoft/solidb/compare/v2.8.0...v2.9.0) (2026-11-09)
+
+Measured with `benchmarks/compare` on rocky-build2 (Ryzen 9 9950X; the
+database on 4 cores and 16 GB; 1,000,000 orders; the solistore engine;
+every client decoding rows into the same structs), a build of this
+release's code against the best of PostgreSQL 18, MongoDB 9, ArangoDB 3.12
+and SurrealDB 4, at 32 clients: bulk load from 8 connections 476k
+documents/s (PostgreSQL 302k); a key read 742k/s (378k); an indexed
+equality of ~10 documents 224k/s (177k); a one-day window sorted and
+limited 114k/s (68k); the same joined to customers 72k/s (44k); an update
+189k/s (MongoDB 115k); a full-scan COLLECT over 1M orders 36 ms
+(PostgreSQL 70 ms). Still behind: the join at one client (76 µs against
+PostgreSQL's 71) and inserts fsynced before they are acknowledged at 32
+clients (83k/s against PostgreSQL's 90k).
+
+### Performance
+
+* **Driver writes are stored from the client's MessagePack.** An insert, a
+  bulk insert or a merge update arriving over the native driver is
+  transcoded straight into its stored form, only the fields an index reads
+  are decoded, and the reply is written from the stored bytes. It used to
+  be decoded into a JSON tree, copied, encoded again and freed. A
+  collection that needs a decoded document (a schema, versioning, a vector
+  index) and an active replication log keep the old path. Server CPU per
+  operation on solistore: bulk load 14.4 → 8.0 µs per document, inserts at
+  concurrency 32 33.0 → 28.3 µs. The write locks hash keys with SeaHash
+  instead of SipHash, and index keys of string fields are sized once.
+* **Reads copy and evaluate less.** A whole document is copied into a
+  response as runs of its stored entries instead of key by key; an
+  index-ordered `FILTER … SORT … LIMIT` checks its FILTER on the stored
+  bytes; a `LET v = DOCUMENT(id)` read only as `v.field` fetches those
+  fields alone. Server instructions per request: key read −12%, indexed
+  equality −15%, sorted window −26%, join −17%.
+* **A full-scan `COLLECT` splits across threads on solistore too**, now
+  that solistore has snapshots and split points: grouping 1M orders by
+  status takes 64 ms on 4 threads, where it took 394 ms on one.
+* **solistore 0.3.1**: point reads 37–55% faster, a multi-get read as one
+  batch, full scans twice as fast warm, and writes past the level-0
+  trigger slowed gradually instead of sleeping 1 ms per commit group
+  (sustained-insert p99 2.3 → 0.7 ms).
+* **The Rust client in `clients/rust-client`** reads each response into a
+  kept buffer with one `recv` and decodes it by hand: ten orders −15% at
+  the median, twenty −13%, a quarter fewer client instructions.
+
+### Changed
+
+* **Parsed queries are kept by their exact text**: up to 1,000 texts and
+  4 MiB, the least recently used quarter evicted past either, texts over
+  16 KiB never stored. A value spliced into the text misses every time, so
+  values belong in bind variables. `/metrics` has
+  `solidb_query_parse_cache_hits_total`, `_misses_total` and `_entries`.
+* **Connections on the multiplexed port set `TCP_NODELAY`**, so a response
+  that leaves in several writes no longer waits for the client's delayed
+  ACK.
+
+### Bug Fixes
+
+* **Two query texts could share one parsed tree.** The parse cache was
+  keyed by a 64-bit hash of the text with fixed keys, so two texts that
+  collided, or a text crafted to collide, ran the other's query. It is
+  keyed by the text itself.
+
 ## [2.8.0](https://github.com/solisoft/solidb/compare/v2.7.3...v2.8.0) (2026-11-08)
 
 Measured with `benchmarks/compare` on rocky-build2 (Ryzen 9 9950X; the

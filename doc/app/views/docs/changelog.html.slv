@@ -9,6 +9,24 @@
     </p>
   </div>
 
+  <!-- 2.9.0 -->
+  <section id="v2-9-0" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.9.0</h2>
+      <span class="text-sm font-medium text-gray-400">November 9, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Driver writes are stored from the client's MessagePack</strong> &mdash; an insert, a bulk insert or a merge update over the native driver is transcoded straight into its stored form, decoding only the fields an index reads. Server CPU on solistore: bulk load 14.4 &rarr; 8.0&nbsp;&micro;s per document. A collection with a schema, versioning or a vector index keeps the decoded path.</li>
+        <li><strong class="text-white">Reads copy and evaluate less</strong> &mdash; whole documents are copied in runs of their stored entries, an index-ordered <code>FILTER &hellip; SORT &hellip; LIMIT</code> checks its FILTER on the stored bytes, and <code>LET v = DOCUMENT(id)</code> read only as <code>v.field</code> fetches those fields alone. Server instructions per request: &minus;12% to &minus;26%.</li>
+        <li><strong class="text-white">A full-scan <code>COLLECT</code> splits across threads on solistore too</strong> &mdash; grouping 1M orders takes 64&nbsp;ms on 4 threads, where it took 394&nbsp;ms on one.</li>
+        <li><strong class="text-white">solistore 0.3.1</strong> &mdash; point reads 37&ndash;55% faster, multi-gets read as one batch, full scans twice as fast, and no 1&nbsp;ms sleep per commit group past the level-0 trigger.</li>
+        <li><strong class="text-white">Parsed queries are kept by their exact text</strong> &mdash; up to 1,000 texts and 4&nbsp;MiB, so values belong in bind variables. New metrics <code>solidb_query_parse_cache_hits_total</code>, <code>_misses_total</code> and <code>_entries</code>.</li>
+        <li><strong class="text-white">Bug fix</strong> &mdash; the parse cache was keyed by a 64-bit hash of the query text, so two texts that collided, or one crafted to collide, could run each other's query.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.8.0 -->
   <section id="v2-8-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
