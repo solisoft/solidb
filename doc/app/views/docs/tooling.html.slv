@@ -36,7 +36,7 @@
             <p class="text-gray-300 mb-6 leading-relaxed">
               SoliDB provides essential command-line tools for data management:
             </p>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <div class="flex items-center mb-3">
                   <i class="fas fa-terminal text-xl text-yellow-400 mr-3"></i>
@@ -50,6 +50,13 @@
                   <h3 class="text-white font-bold">solidb scripts</h3>
                 </div>
                 <p class="text-sm text-gray-400">Manage Lua scripts from IDE with folder-based conventions.</p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-users text-xl text-sky-400 mr-3"></i>
+                  <h3 class="text-white font-bold"><a href="#solidb-user" class="hover:underline">solidb user</a></h3>
+                </div>
+                <p class="text-sm text-gray-400">Create, delete and reset users, grant and revoke roles.</p>
               </div>
               <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
                 <div class="flex items-center mb-3">
@@ -426,6 +433,127 @@ end
 
 <span class="text-gray-500"># 6. Edit in your IDE - changes auto-deploy!</span></pre>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- solidb user -->
+      <section id="solidb-user" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              solidb user
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-300 mb-6 leading-relaxed">
+              Manage users and their roles from a shell, the way <code class="bg-gray-800 px-1 rounded text-xs">createuser</code>, <code class="bg-gray-800 px-1 rounded text-xs">dropuser</code> and <code class="bg-gray-800 px-1 rounded text-xs">ALTER ROLE … PASSWORD</code> do for PostgreSQL. It calls the server's <a href="/docs/api-auth" class="text-indigo-400 hover:underline">user endpoints</a>, so the caller must be an admin and every change is replicated.
+            </p>
+
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-sky-500/20 text-sky-300 text-xs px-2 py-1 rounded border border-sky-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
+              <code class="text-green-400">solidb user [OPTIONS] &lt;COMMAND&gt;</code>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Commands</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Command</th>
+                    <th class="px-4 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">list [--json]</td>
+                    <td class="px-4 py-3">Users and their roles. Alias <code>ls</code>.</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">create &lt;USER&gt; [--role R [--database DB]] [--password-stdin]</td>
+                    <td class="px-4 py-3">Create a user; its password is prompted for, twice. With <code>--role</code>, the role is assigned too, limited to <code>--database</code> if given. If the role cannot be assigned, the user is not kept.</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">delete &lt;USER&gt;</td>
+                    <td class="px-4 py-3">Delete a user and its role assignments. Alias <code>rm</code>.</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">passwd [USER] [--password-stdin]</td>
+                    <td class="px-4 py-3">Without <code>USER</code>, change your own password. With one, reset that user's password (admin; the old one is not needed).</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">roles &lt;USER&gt; [--json]</td>
+                    <td class="px-4 py-3">Roles assigned to a user, with the database each is limited to.</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">grant &lt;USER&gt; &lt;ROLE&gt; [--database DB]</td>
+                    <td class="px-4 py-3">Assign <code>admin</code>, <code>editor</code>, <code>viewer</code> or a custom role, on every database or on one.</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">revoke &lt;USER&gt; &lt;ROLE&gt; [--database DB]</td>
+                    <td class="px-4 py-3">Remove an assignment. <code>--database</code> must match the one it was granted with.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Options</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Option</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">-s, --server</td>
+                    <td class="px-4 py-3">Server URL (or <code>SOLIDB_URL</code>)</td>
+                    <td class="px-4 py-3">http://localhost:6745</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">-u, --username</td>
+                    <td class="px-4 py-3">Admin to log in as. Its password comes from <code>SOLIDB_PASSWORD</code>, <code>--password-file</code>, or a prompt.</td>
+                    <td class="px-4 py-3">admin</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">--password-file</td>
+                    <td class="px-4 py-3">Read the admin password from a file (one trailing newline is ignored)</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                  <tr>
+                    <td class="px-4 py-3 font-mono text-sky-300">-k, --api-key</td>
+                    <td class="px-4 py-3">Admin API key (<code>sk_…</code>) or JWT instead of logging in (or <code>SOLIDB_API_KEY</code>)</td>
+                    <td class="px-4 py-3">-</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="bg-sky-500/10 border-l-4 border-sky-500 p-4 rounded-r-lg mb-8">
+              <p class="text-sm text-gray-300">Passwords are never taken on the command line, where <code>ps</code> and shell history would keep them. <code>solidb</code> reads a <code>.env</code> in the current directory: run from an application's folder, its <code>SOLIDB_PASSWORD</code> may be the application's password rather than the admin's, and the error says so.</p>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Exit codes</h3>
+            <p class="text-gray-300 mb-8 leading-relaxed">
+              <code>0</code> done, <code>1</code> any other error, <code>2</code> invalid arguments, <code>3</code> not found, <code>4</code> already exists, <code>5</code> authentication or permission refused. A provisioning script can treat <code>4</code> from <code>create</code> as success.
+            </p>
+
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+            <div class="bg-gray-950 rounded-lg p-4 font-mono text-sm overflow-x-auto border border-white/10 text-gray-300 space-y-3">
+              <div><span class="text-gray-500"># An application user, read-write on its own database only</span><br>
+                <span class="text-green-400">solidb user</span> create shop_app --role editor --database shop</div>
+              <div><span class="text-gray-500"># From a script, against a remote server</span><br>
+                <span class="text-green-400">printf '%s\n' "$APP_PASSWORD"</span> | <span class="text-green-400">solidb user</span> -s https://db.example.com --password-file /run/secrets/admin \<br>
+                &nbsp;&nbsp;create shop_app --role editor --database shop --password-stdin || [ $? -eq 4 ]</div>
+              <div><span class="text-gray-500"># Reset a lost password, then check what the user may do</span><br>
+                <span class="text-green-400">solidb user</span> passwd shop_app<br>
+                <span class="text-green-400">solidb user</span> roles shop_app</div>
             </div>
           </div>
         </div>

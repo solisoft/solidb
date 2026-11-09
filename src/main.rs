@@ -370,6 +370,8 @@ enum Command {
     Tui(solidb::cli::tui::TuiArgs),
     /// Update SoliDB to the latest release
     Update,
+    /// Manage users and their roles (create, delete, passwd, grant, revoke)
+    User(solidb::cli::user::UserArgs),
 }
 
 /// Raise the soft open-file limit to the hard one. Every connection is a
@@ -481,6 +483,13 @@ fn main() -> anyhow::Result<()> {
             Command::Scripts(scripts_args) => solidb::cli::scripts::execute(scripts_args),
             Command::Tui(tui_args) => solidb::cli::tui::execute(tui_args),
             Command::Update => solidb::cli::update::execute(),
+            Command::User(user_args) => {
+                if let Err(error) = solidb::cli::user::execute(user_args) {
+                    eprintln!("Error: {:#}", error);
+                    std::process::exit(solidb::cli::user::exit_code(&error));
+                }
+                Ok(())
+            }
         };
     }
 

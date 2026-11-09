@@ -719,6 +719,10 @@ pub fn create_router(
             "/_api/auth/users/{username}",
             delete(super::role_handlers::delete_user),
         )
+        .route(
+            "/_api/auth/users/{username}/password",
+            put(super::role_handlers::set_user_password),
+        )
         // User role management
         .route(
             "/_api/auth/users/{username}/roles",
