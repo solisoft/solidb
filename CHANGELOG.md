@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Security
+
+* **The Rust client bundles SQLite 3.54** (`rusqlite` 0.40 → 0.41,
+  `libsqlite3-sys` 0.39): RUSTSEC-2026-0459 / CVE-2026-119375, where SQLite
+  before 3.54.0 could return uninitialised page-cache memory when opening a
+  database beside a `-wal` of another page size. It concerns the client's
+  offline sync only; the server does not link SQLite. `openssl` 0.10.82
+  (RUSTSEC-2026-0463, `aes::unwrap_key`, which SoliDB does not call) on the
+  Linux TLS path. Card #791.
+
 ## [2.9.2](https://github.com/solisoft/solidb/compare/v2.9.1...v2.9.2) (2026-11-09)
 
 Transactions over the native driver can run queries that write, which
