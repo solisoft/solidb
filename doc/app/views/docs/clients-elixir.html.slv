@@ -369,25 +369,24 @@ IO.puts(doc["_key"])  # Auto-generated key
       <section id="transactions" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">ACID Transactions</h3>
         <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
-          <pre><code class="language-elixir"># Begin a transaction
-{:ok, tx_id} = SoliDB.Client.begin_transaction(client, "mydb", "read_committed")
-# Isolation levels: read_uncommitted, read_committed, repeatable_read, serializable
+          <pre><code class="language-elixir"># Commits when the function returns {:ok, value}; rolls back when it
+# returns {:error, reason} or raises.
+{:ok, :transferred} =
+  SoliDB.Client.transaction(client, "mydb", fn tx ->
+    {:ok, _} = SoliDB.Client.insert(tx, "mydb", "accounts", %{id: 1, balance: 1000})
+    {:ok, _} = SoliDB.Client.insert(tx, "mydb", "accounts", %{id: 2, balance: 500})
+    {:ok, :transferred}
+  end)
 
-try do
-  # Perform operations within transaction
-  {:ok, _} = SoliDB.Client.insert(client, "mydb", "accounts", %{id: 1, balance: 1000})
-  {:ok, _} = SoliDB.Client.insert(client, "mydb", "accounts", %{id: 2, balance: 500})
-
-  # Commit if all operations succeed
-  :ok = SoliDB.Client.commit_transaction(client, tx_id)
-  IO.puts("Transaction committed")
-rescue
-  error ->
-    # Rollback on any error
-    SoliDB.Client.rollback_transaction(client, tx_id)
-    IO.puts("Transaction rolled back: #{inspect(error)}")
-end</code></pre>
+# Or step by step: the writes go through the client in_transaction/2 returns.
+{:ok, tx_id} = SoliDB.Client.begin_transaction(client, "mydb")
+tx = SoliDB.Client.in_transaction(client, tx_id)
+{:ok, _} = SoliDB.Client.update(tx, "mydb", "accounts", "1", %{balance: 900})
+{:ok, _} = SoliDB.Client.commit_transaction(client, tx_id)  # or rollback_transaction/2</code></pre>
         </div>
+        <p class="text-gray-400 text-sm leading-relaxed mb-6">
+          Inside a transaction, <code class="text-blue-400">insert</code>, <code class="text-blue-400">update</code> and <code class="text-blue-400">delete</code> are staged and applied at the commit; a read-only <code class="text-blue-400">query</code> runs on committed data and does not see the transaction's own writes, nor does <code class="text-blue-400">get</code>; a query that writes is refused. Writes made through the plain <code class="text-blue-400">client</code> are not part of the transaction: they apply at once.
+        </p>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead class="bg-white/5">
@@ -401,6 +400,8 @@ end</code></pre>
               <tr><td class="px-4 py-3"><code class="text-blue-400">begin_transaction(client, db, isolation \\\\ nil)</code></td><td class="px-4 py-3 text-gray-500">{:ok, string}</td><td class="px-4 py-3 text-gray-400">Start transaction, returns tx_id</td></tr>
               <tr><td class="px-4 py-3"><code class="text-blue-400">commit_transaction(client, tx_id)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Commit transaction</td></tr>
               <tr><td class="px-4 py-3"><code class="text-blue-400">rollback_transaction(client, tx_id)</code></td><td class="px-4 py-3 text-gray-500">:ok</td><td class="px-4 py-3 text-gray-400">Rollback transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">in_transaction(client, tx_id)</code></td><td class="px-4 py-3 text-gray-500">client</td><td class="px-4 py-3 text-gray-400">A client whose insert, update, delete and query run in the transaction</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-blue-400">transaction(client, db, fun, isolation \\\\ "read_committed")</code></td><td class="px-4 py-3 text-gray-500">fun's {:ok, v} or {:error, r}</td><td class="px-4 py-3 text-gray-400">Run fun in a transaction: commit on {:ok, _}, roll back on an error or a raise</td></tr>
             </tbody>
           </table>
         </div>

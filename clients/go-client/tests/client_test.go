@@ -28,6 +28,12 @@ func TestClient(t *testing.T) {
 		t.Errorf("Ping failed: %v", err)
 	}
 
+	// Every command below needs a login. Errors used to come back as
+	// successes, so this test passed against a server that refused them all.
+	if err := client.Auth("_system", env("SOLIDB_USER", "admin"), env("SOLIDB_PASSWORD", "admin")); err != nil {
+		t.Fatalf("Auth failed: %v", err)
+	}
+
 	dbName := "go_test_db"
 	colName := "users"
 
@@ -106,4 +112,11 @@ func TestClient(t *testing.T) {
 	if err != nil {
 		t.Errorf("Final cleanup failed: %v", err)
 	}
+}
+
+func env(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
 }

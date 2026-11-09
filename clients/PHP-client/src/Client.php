@@ -18,6 +18,19 @@ class Client
     // Default max message size (16 MB)
     private const MAX_MESSAGE_SIZE = 16777216;
 
+    /**
+     * Inside a transaction the server stages these when they arrive wrapped in
+     * a `transaction_command` (a read-only query runs on committed data; a
+     * writing one is refused there).
+     */
+    private const STAGED_IN_TRANSACTION = ['insert', 'update', 'delete', 'query'];
+
+    /** These cannot be staged: refused rather than applied outside the transaction. */
+    private const REFUSED_IN_TRANSACTION = ['bulk_insert', 'batch', 'begin_transaction'];
+
+    /** The open driver transaction; the server keeps it on this client's one connection. */
+    private ?string $txId = null;
+
     private $packer = null;
     private $unpacker = null;
 
@@ -221,6 +234,17 @@ class Client
         return msgpack_pack($data);
     }
 
+    /**
+     * `$values` as a MessagePack map, even when empty (an empty PHP array packs
+     * as an array). The `(object)` cast this replaces only works with
+     * ext-msgpack: rybakit/msgpack, the required dependency, refuses stdClass,
+     * so every query and explain failed without the extension.
+     */
+    private function asMap(array $values)
+    {
+        return $this->packer ? new \MessagePack\Type\Map($values) : (object) $values;
+    }
+
     private function unpack($data)
     {
         if ($this->unpacker) {
@@ -239,6 +263,16 @@ class Client
 
         // Construct command payload
         $command = array_merge(['cmd' => $cmdName], $params);
+        if ($this->txId !== null) {
+            if (in_array($cmdName, self::STAGED_IN_TRANSACTION, true)) {
+                $command = ['cmd' => 'transaction_command', 'tx_id' => $this->txId, 'command' => $command];
+            } elseif (in_array($cmdName, self::REFUSED_IN_TRANSACTION, true)) {
+                throw new DriverException(
+                    "$cmdName cannot run inside a transaction: commit or roll back first",
+                    "transaction_error"
+                );
+            }
+        }
 
         // Pack payload
         try {
@@ -479,7 +513,7 @@ class Client
         $res = $this->sendCommand('query', [
             'database' => $database,
             'sdbql' => $sdbql,
-            'bind_vars' => (object) $bindVars // Ensure map
+            'bind_vars' => $this->asMap($bindVars)
         ]);
         return $res['data'] ?? [];
     }
@@ -489,7 +523,7 @@ class Client
         $res = $this->sendCommand('explain', [
             'database' => $database,
             'sdbql' => $sdbql,
-            'bind_vars' => (object) $bindVars
+            'bind_vars' => $this->asMap($bindVars)
         ]);
         return $res['data'] ?? [];
     }
@@ -528,22 +562,53 @@ class Client
 
     // --- Transactions ---
 
+    /**
+     * Open a transaction and return its id.
+     *
+     * Until it is committed or rolled back, insert, update and delete are
+     * staged in it and applied at commit, and a read-only query runs on
+     * committed data (it does not see the transaction's own writes); a query
+     * that writes and a second beginTransaction are refused. get is not part
+     * of the transaction: it reads committed data. One transaction at a time
+     * per client.
+     */
     public function beginTransaction(string $database, string $isolationLevel = 'read_committed'): string
     {
         $res = $this->sendCommand('begin_transaction', [
             'database' => $database,
             'isolation_level' => $isolationLevel
         ]);
-        return $res['tx_id'];
+        if (!isset($res['tx_id']) || !is_string($res['tx_id'])) {
+            throw new DriverException("begin_transaction: no transaction id in the response", "protocol_error");
+        }
+        $this->txId = $res['tx_id'];
+        return $this->txId;
     }
 
+    /** Commit the open transaction. */
     public function commitTransaction(string $txId): void
     {
-        $this->sendCommand('commit_transaction', ['tx_id' => $txId]);
+        $this->endTransaction('commit_transaction', $txId);
     }
 
+    /** Roll back the open transaction: nothing it staged is applied. */
     public function rollbackTransaction(string $txId): void
     {
-        $this->sendCommand('rollback_transaction', ['tx_id' => $txId]);
+        $this->endTransaction('rollback_transaction', $txId);
+    }
+
+    public function inTransaction(): bool
+    {
+        return $this->txId !== null;
+    }
+
+    private function endTransaction(string $cmdName, string $txId): void
+    {
+        if ($this->txId === null || $this->txId !== $txId) {
+            throw new DriverException("transaction $txId is not open on this client", "transaction_error");
+        }
+        // Whatever the outcome, the client has no open transaction afterwards.
+        $this->txId = null;
+        $this->sendCommand($cmdName, ['tx_id' => $txId]);
     }
 }

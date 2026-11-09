@@ -19,6 +19,14 @@ export class ServerError extends SoliDBError {
     }
 }
 
+/** A transaction call made out of turn, or a command that cannot run in one. */
+export class TransactionError extends SoliDBError {
+    constructor(message: string) {
+        super(message);
+        this.name = 'TransactionError';
+    }
+}
+
 export class ProtocolError extends SoliDBError {
     constructor(message: string) {
         super(message);

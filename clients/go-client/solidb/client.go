@@ -24,7 +24,18 @@ type Client struct {
 	br       *bufio.Reader
 	bw       *bufio.Writer
 	database string
+	// The open driver transaction, if any. The client has one connection,
+	// which is the one the server keeps the transaction on.
+	tx interface{}
 }
+
+// Inside a transaction the server stages these when they arrive wrapped in a
+// `transaction_command` (a read-only query runs on committed data; a writing
+// one is refused there).
+var stagedInTransaction = map[string]bool{"insert": true, "update": true, "delete": true, "query": true}
+
+// These cannot be staged: refused rather than applied outside the transaction.
+var refusedInTransaction = map[string]bool{"bulk_insert": true, "batch": true, "begin_transaction": true}
 
 func NewClient(host string, port int) *Client {
 	return &Client{
@@ -82,6 +93,17 @@ func (c *Client) sendCommand(cmd string, args map[string]interface{}) (interface
 	payload["cmd"] = cmd
 	for k, v := range args {
 		payload[k] = v
+	}
+	if c.tx != nil {
+		if stagedInTransaction[cmd] {
+			payload = map[string]interface{}{
+				"cmd":     "transaction_command",
+				"tx_id":   c.tx,
+				"command": payload,
+			}
+		} else if refusedInTransaction[cmd] {
+			return nil, &TransactionError{SoliDBError{Message: cmd + " cannot run inside a transaction: commit or roll back first"}}
+		}
 	}
 
 	data, err := msgpack.Marshal(payload)
@@ -146,20 +168,47 @@ func (c *Client) receiveResponse() (interface{}, error) {
 		}
 
 		if status == "error" {
-			msg := "unknown error"
-			if m, ok := body.(string); ok {
-				msg = m
-			} else if m, ok := body.(map[string]interface{}); ok {
-				for _, v := range m {
-					msg = fmt.Sprintf("%v", v)
-					break
+			return nil, &ServerError{SoliDBError{Message: errorMessage(body)}}
+		}
+	}
+
+	// The server answers `{status, data, count, tx_id, error}`. This map was
+	// returned as it was: every result came back wrapped in it (an insert had
+	// no `_key`), and every error came back as a success.
+	if m, ok := res.(map[string]interface{}); ok {
+		if status, ok := m["status"].(string); ok {
+			switch status {
+			case "error":
+				return nil, &ServerError{SoliDBError{Message: errorMessage(m["error"])}}
+			case "ok", "pong":
+				if data, ok := m["data"]; ok {
+					return data, nil
 				}
+				if txID, ok := m["tx_id"]; ok {
+					return txID, nil
+				}
+				if count, ok := m["count"]; ok {
+					return count, nil
+				}
+				return nil, nil
 			}
-			return nil, &ServerError{SoliDBError{Message: msg}}
 		}
 	}
 
 	return res, nil
+}
+
+// errorMessage reads the server's error: a string, or {Kind: "message"}.
+func errorMessage(body interface{}) string {
+	if m, ok := body.(string); ok {
+		return m
+	}
+	if m, ok := body.(map[string]interface{}); ok {
+		for _, v := range m {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return "unknown error"
 }
 
 // API Methods
@@ -330,22 +379,62 @@ func (c *Client) Query(database, sdbql string, bindVars map[string]interface{}) 
 	return nil, nil
 }
 
+// BeginTransaction opens a transaction and returns its id.
+//
+// Until it is committed or rolled back, Insert, Update and Delete are staged
+// in it and applied at commit, and a read-only Query runs on committed data
+// (it does not see the transaction's own writes); a query that writes and a
+// second BeginTransaction are refused. Get is not part of the transaction: it
+// reads committed data. One transaction at a time per client.
 func (c *Client) BeginTransaction(database string, isolationLevel *string) (interface{}, error) {
 	args := map[string]interface{}{"database": database}
 	if isolationLevel != nil {
 		args["isolation_level"] = *isolationLevel
 	}
-	return c.sendCommand("begin_transaction", args)
+	txID, err := c.sendCommand("begin_transaction", args)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := txID.(string); !ok {
+		return nil, &ProtocolError{SoliDBError{Message: "begin_transaction: no transaction id in the response"}}
+	}
+	c.mu.Lock()
+	c.tx = txID
+	c.mu.Unlock()
+	return txID, nil
 }
 
+// CommitTransaction commits the open transaction.
 func (c *Client) CommitTransaction(txID interface{}) error {
-	_, err := c.sendCommand("commit_transaction", map[string]interface{}{"tx_id": txID})
+	return c.endTransaction("commit_transaction", txID)
+}
+
+// RollbackTransaction rolls back the open transaction: nothing it staged is
+// applied.
+func (c *Client) RollbackTransaction(txID interface{}) error {
+	return c.endTransaction("rollback_transaction", txID)
+}
+
+func (c *Client) endTransaction(cmd string, txID interface{}) error {
+	c.mu.Lock()
+	open := c.tx != nil && c.tx == txID
+	if open {
+		// Whatever the outcome, the client has no open transaction afterwards.
+		c.tx = nil
+	}
+	c.mu.Unlock()
+	if !open {
+		return &TransactionError{SoliDBError{Message: fmt.Sprintf("transaction %v is not open on this client", txID)}}
+	}
+	_, err := c.sendCommand(cmd, map[string]interface{}{"tx_id": txID})
 	return err
 }
 
-func (c *Client) RollbackTransaction(txID interface{}) error {
-	_, err := c.sendCommand("rollback_transaction", map[string]interface{}{"tx_id": txID})
-	return err
+// InTransaction reports whether a transaction is open on this client.
+func (c *Client) InTransaction() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tx != nil
 }
 
 // --- Database Context for Management APIs ---

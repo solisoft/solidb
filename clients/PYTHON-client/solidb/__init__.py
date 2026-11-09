@@ -14,7 +14,7 @@ from .client import (
     TtlClient,
     ColumnarClient,
 )
-from .exceptions import SoliDBError, ConnectionError, AuthError, ServerError
+from .exceptions import SoliDBError, ConnectionError, AuthError, ServerError, TransactionError
 from .ai import (
     AIClient,
     AIClientError,
@@ -50,6 +50,7 @@ __all__ = [
     "ConnectionError",
     "AuthError",
     "ServerError",
+    "TransactionError",
     # AI Client
     "AIClient",
     "AIClientError",

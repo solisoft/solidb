@@ -14,6 +14,22 @@
   read-only query runs there too, and `bulk_insert`, `batch` and a second
   `begin_transaction` are refused. Found by the fault harness (`faults/`,
   card #792); `tests/driver_client_transaction_tests.rs`.
+* **The other SDKs' transactions stage their writes too** (JS, Python, Go,
+  PHP, Ruby, Elixir). None of them could send a write inside a transaction:
+  `begin_transaction` then `insert` wrote at once. While a transaction is open
+  their `insert` / `update` / `delete` / `query` are now sent as
+  `transaction_command` (Elixir: through `in_transaction/2` or
+  `transaction/3`), on the connection that began it. Fixed on the way, each
+  found by the new tests against a 2.9.0 server: the JS, Python and Ruby
+  clients logged in only one of their four pooled connections, so three
+  requests in four were refused; JS and Python returned no id from
+  `begin_transaction`; the Go and Elixir clients returned the server's
+  response map as the result and **every error as a success** (Go: an insert
+  had no `_key`); the Elixir client did not compile and could not send a
+  command (`Msgpax.pack` iodata); every PHP `query` and `explain` failed
+  without ext-msgpack (a `stdClass` the required msgpack library refuses); JS
+  errors read "[object Object]"; the Python package did not declare
+  `requests`. Each SDK has a transaction test against a running server.
 * **`POST …/transaction/{id}/query` reads `bindVars`**, the spelling `/cursor`
   takes, as well as `bind_vars`. It read only `bind_vars` and dropped the
   other without a word, and an unbound variable evaluates to null: a filtered

@@ -4,4 +4,6 @@ module SoliDB
   class AuthError < Error; end
   class ServerError < Error; end
   class ProtocolError < Error; end
+  # A transaction call made out of turn, or a command that cannot run in one.
+  class TransactionError < Error; end
 end

@@ -9,6 +9,13 @@ module SoliDB
     MAX_MESSAGE_SIZE = 16 * 1024 * 1024
     DEFAULT_POOL_SIZE = 4
 
+    # Inside a transaction the server stages these when they arrive wrapped in
+    # a `transaction_command` on the connection that began it (a read-only
+    # query runs on committed data; a writing one is refused there).
+    STAGED_IN_TRANSACTION = %w[insert update delete query].freeze
+    # These cannot be staged: refused rather than applied outside the transaction.
+    REFUSED_IN_TRANSACTION = %w[bulk_insert batch begin_transaction].freeze
+
     attr_reader :host, :port, :database
 
     def initialize(host = '127.0.0.1', port = 6745, pool_size = DEFAULT_POOL_SIZE)
@@ -20,6 +27,9 @@ module SoliDB
       @pool_mutex = Mutex.new
       @connected = false
       @database = nil
+      # The open transaction and the pooled connection it lives on: the
+      # server keeps a driver transaction per connection.
+      @tx = nil
     end
 
     def use_database(name)
@@ -120,14 +130,15 @@ module SoliDB
       (Time.now - start) * 1000 # returns ms
     end
 
+    # Authentication is per connection: every pooled one must log in, or the
+    # commands that land on the others are refused (3 in 4 with the default
+    # pool, when only the first one was).
     def auth(database, username, password)
-      send_command("auth", database: database, username: username, password: password)
-      nil
+      auth_all("cmd" => "auth", "database" => database, "username" => username, "password" => password)
     end
 
     def auth_with_api_key(database, api_key)
-      send_command("auth", database: database, username: "", password: "", api_key: api_key)
-      nil
+      auth_all("cmd" => "auth", "database" => database, "username" => "", "password" => "", "api_key" => api_key)
     end
 
     # --- Database Operations ---
@@ -230,47 +241,39 @@ module SoliDB
 
     # --- Transaction Operations ---
     
+    # Open a transaction on one of the pool's connections and return its id.
+    #
+    # Until it is committed or rolled back, insert, update and delete are
+    # staged in it and applied at commit, and a read-only query runs on
+    # committed data (it does not see the transaction's own writes); a query
+    # that writes and a second begin_transaction are refused. get is not part
+    # of the transaction: it reads committed data. One transaction at a time
+    # per client.
     def begin_transaction(database, isolation_level = "read_committed")
-       res = send_command("begin_transaction", database: database, isolation_level: isolation_level)
-       # The response IS the tx_id string? Or contained in body?
-       # Protocol: Response::ok_tx(tx_id). 
-       # Structure: ["ok", {tx_id: "..."}] ?? No, definition was Ok { ... tx_id: Some(...) }.
-       # If serialized as tuple, maybe ["ok", [null, null, tx_id]]?
-       # Or if flattened?
-       # We'll see during tests. Assuming it returns tx_id directly or we need to parse.
-       
-       # Wait, previously we saw `["ok", {_key: ...}]` for insert.
-       # That was `Ok { data: Some(val) }`.
-       # `ok_tx` is `Ok { tx_id: Some(id) }`.
-       # If rmp_serde flattens structs...
-       # The map `{"_key":...}` WAS the value.
-       
-       # If tx_id is separate field in Ok struct.
-       # It might be returned as a map `{"tx_id": "..."}` or simply ignored if standard parsing logic assumes data.
-       # I need to return the WHOLE body if it's a map.
-       # If it return tx_id, caller expects string.
-       
-       # If result is Hash, look for tx_id?
-       if res.is_a?(Hash) && res["tx_id"]
-         return res["tx_id"]
-       end
-       
-       # If implementation changed to return tx_id as data?
-       # No, protocol helper `ok_tx` sets `tx_id` field, `data` is None.
-       
-       res
+      raise TransactionError, "a transaction is already open on this client: commit or roll it back first" if @tx
+      connect unless @connected && !@pool.empty?
+      socket = get_next_connection
+      tx_id = send_on(socket, "cmd" => "begin_transaction", "database" => database,
+                              "isolation_level" => isolation_level)
+      raise ProtocolError, "begin_transaction: no transaction id in the response" unless tx_id.is_a?(String)
+      @tx = { id: tx_id, socket: socket }
+      tx_id
     end
 
+    # Commit the open transaction, on the connection that began it.
     def commit_transaction(tx_id)
-      send_command("commit_transaction", tx_id: tx_id)
-      nil
+      end_transaction("commit_transaction", tx_id)
     end
 
+    # Roll back the open transaction: nothing it staged is applied.
     def rollback_transaction(tx_id)
-      send_command("rollback_transaction", tx_id: tx_id)
-      nil
+      end_transaction("rollback_transaction", tx_id)
     end
-    
+
+    def in_transaction?
+      !@tx.nil?
+    end
+
     # --- Index Operations ---
      def create_index(database, collection, name, fields, unique = false, sparse = false)
         send_command("create_index", 
@@ -294,10 +297,23 @@ module SoliDB
     def send_command(cmd_name, params = {})
       connect unless @connected && !@pool.empty?
 
-      socket = get_next_connection
       command = params.merge("cmd" => cmd_name)
       command = command.transform_keys(&:to_s)
+      if @tx
+        if STAGED_IN_TRANSACTION.include?(cmd_name)
+          return send_on(@tx[:socket],
+                         "cmd" => "transaction_command", "tx_id" => @tx[:id], "command" => command)
+        end
+        if REFUSED_IN_TRANSACTION.include?(cmd_name)
+          raise TransactionError, "#{cmd_name} cannot run inside a transaction: commit or roll back first"
+        end
+      end
+      send_on(get_next_connection, command)
+    end
 
+    private
+
+    def send_on(socket, command)
       payload = MessagePack.pack(command)
       header = [payload.bytesize].pack("N")
 
@@ -308,7 +324,29 @@ module SoliDB
       raise ConnectionError, "Connection lost: #{e.message}"
     end
 
-    private
+    def auth_all(command)
+      connect unless @connected && !@pool.empty?
+      @pool.each { |socket| send_on(socket, command) }
+      nil
+    end
+
+    def end_transaction(cmd_name, tx_id)
+      tx = @tx
+      raise TransactionError, "transaction #{tx_id} is not open on this client" if tx.nil? || tx[:id] != tx_id
+
+      # Whatever the outcome, the client has no open transaction afterwards.
+      @tx = nil
+      send_on(tx[:socket], "cmd" => cmd_name, "tx_id" => tx_id)
+      nil
+    end
+
+    # The server's error as text: a string, or {Kind => "message"}.
+    def error_message(body)
+      return body if body.is_a?(String)
+      return body.values.first.to_s if body.is_a?(Hash) && body.size == 1
+
+      body.inspect
+    end
 
     def receive_response(socket)
       header = socket.read(4)
@@ -336,13 +374,7 @@ module SoliDB
         when "ok"
            return body
         when "error"
-           msg = body.inspect
-           if body.is_a?(Hash) && body.size == 1
-             msg = body.values.first
-           elsif body.is_a?(String)
-             msg = body
-           end
-           raise ServerError, msg
+           raise ServerError, error_message(body)
         when "pong"
            return body
         else
@@ -351,9 +383,9 @@ module SoliDB
       end
 
       if response.is_a?(Hash)
-         if response["status"] == "error"
-            raise ServerError, response["error"].inspect
-         end
+         raise ServerError, error_message(response["error"]) if response["status"] == "error"
+         # A begin answers with `tx_id` and no data.
+         return response["tx_id"] if !response.key?("data") && response.key?("tx_id")
          return response["data"]
       end
 

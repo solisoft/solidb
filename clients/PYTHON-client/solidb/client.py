@@ -6,7 +6,22 @@ import json
 import urllib.request
 import urllib.error
 from typing import Optional, Dict, Any, List
-from .exceptions import ConnectionError, ServerError, ProtocolError, AuthError
+from .exceptions import ConnectionError, ServerError, ProtocolError, AuthError, TransactionError
+
+
+# Inside a transaction the server stages these when they arrive wrapped in a
+# `transaction_command` on the connection that began it (a read-only query
+# runs on committed data; a writing one is refused there).
+_STAGED_IN_TRANSACTION = {"insert", "update", "delete", "query"}
+# These cannot be staged: refused rather than applied outside the transaction.
+_REFUSED_IN_TRANSACTION = {"bulk_insert", "batch", "begin_transaction"}
+
+
+def _error_message(body):
+    """The server's error as text: a string, or `{Kind: "message"}`."""
+    if isinstance(body, dict) and len(body) == 1:
+        return str(list(body.values())[0])
+    return str(body)
 
 
 class Client:
@@ -23,6 +38,9 @@ class Client:
         self._pool_lock = threading.Lock()
         self.connected = False
         self.packer = msgpack.Packer(use_bin_type=True)
+        # The open transaction and the pooled socket it lives on: the server
+        # keeps a driver transaction per connection.
+        self._tx: Optional[Dict[str, Any]] = None
 
         self._database: Optional[str] = None
 
@@ -86,10 +104,22 @@ class Client:
         if not self.connected or not self._pool:
             self.connect()
 
-        sock = self._get_next_socket()
         command = {"cmd": cmd_name}
         command.update(kwargs)
+        if self._tx is not None:
+            if cmd_name in _STAGED_IN_TRANSACTION:
+                return self._send_on(self._tx["sock"], {
+                    "cmd": "transaction_command",
+                    "tx_id": self._tx["id"],
+                    "command": command,
+                })
+            if cmd_name in _REFUSED_IN_TRANSACTION:
+                raise TransactionError(
+                    f"{cmd_name} cannot run inside a transaction: commit or roll back first"
+                )
+        return self._send_on(self._get_next_socket(), command)
 
+    def _send_on(self, sock, command):
         try:
             payload = self.packer.pack(command)
             header = struct.pack(">I", len(payload))
@@ -136,10 +166,7 @@ class Client:
             if status == "ok":
                 return body
             elif status == "error":
-                msg = str(body)
-                if isinstance(body, dict) and len(body) == 1:
-                    msg = list(body.values())[0]
-                raise ServerError(msg)
+                raise ServerError(_error_message(body))
             elif status == "pong":
                 return body
             else:
@@ -147,8 +174,11 @@ class Client:
 
         if isinstance(response, dict):
             if response.get("status") == "error":
-                raise ServerError(str(response.get("error", "Unknown error")))
+                raise ServerError(_error_message(response.get("error", "Unknown error")))
             if response.get("status") == "ok":
+                # A begin answers with `tx_id` and no data.
+                if "data" not in response and "tx_id" in response:
+                    return response["tx_id"]
                 return response.get("data")
             return response
 
@@ -160,11 +190,20 @@ class Client:
         self._send_command("ping")
         return True
 
+    # Authentication is per connection: every pooled socket must log in, or
+    # the commands that land on the others are refused (3 in 4 with the
+    # default pool, when only the first one was).
     def auth(self, database, username, password):
-        self._send_command("auth", database=database, username=username, password=password)
+        self._auth_all({"cmd": "auth", "database": database, "username": username, "password": password})
 
     def auth_with_api_key(self, database, api_key):
-        self._send_command("auth", database=database, username="", password="", api_key=api_key)
+        self._auth_all({"cmd": "auth", "database": database, "username": "", "password": "", "api_key": api_key})
+
+    def _auth_all(self, command):
+        if not self.connected or not self._pool:
+            self.connect()
+        for sock in list(self._pool):
+            self._send_on(sock, command)
 
     # Database
     def list_databases(self):
@@ -219,13 +258,46 @@ class Client:
 
     # Transactions
     def begin_transaction(self, database, isolation_level="read_committed"):
-        return self._send_command("begin_transaction", database=database, isolation_level=isolation_level)
-    
+        """Open a transaction on one of the pool's sockets and return its id.
+
+        Until it is committed or rolled back, `insert`, `update` and `delete`
+        are staged in it and applied at commit, and a read-only `query` runs on
+        committed data (it does not see the transaction's own writes); a query
+        that writes and a second `begin_transaction` are refused. `get` is not
+        part of the transaction: it reads committed data. One transaction at a
+        time per client.
+        """
+        if self._tx is not None:
+            raise TransactionError("a transaction is already open on this client: commit or roll it back first")
+        if not self.connected or not self._pool:
+            self.connect()
+        sock = self._get_next_socket()
+        tx_id = self._send_on(sock, {"cmd": "begin_transaction", "database": database,
+                                     "isolation_level": isolation_level})
+        if not isinstance(tx_id, str):
+            raise ProtocolError("begin_transaction: no transaction id in the response")
+        self._tx = {"id": tx_id, "sock": sock}
+        return tx_id
+
     def commit_transaction(self, tx_id):
-        self._send_command("commit_transaction", tx_id=tx_id)
+        """Commit the open transaction, on the socket that began it."""
+        self._end_transaction("commit_transaction", tx_id)
 
     def rollback_transaction(self, tx_id):
-        self._send_command("rollback_transaction", tx_id=tx_id)
+        """Roll back the open transaction: nothing it staged is applied."""
+        self._end_transaction("rollback_transaction", tx_id)
+
+    def _end_transaction(self, cmd_name, tx_id):
+        tx = self._tx
+        if tx is None or tx["id"] != tx_id:
+            raise TransactionError(f"transaction {tx_id} is not open on this client")
+        # Whatever the outcome, the client has no open transaction afterwards.
+        self._tx = None
+        self._send_on(tx["sock"], {"cmd": cmd_name, "tx_id": tx_id})
+
+    @property
+    def in_transaction(self):
+        return self._tx is not None
 
     # Index
     def create_index(self, database, collection, name, fields, unique=False, sparse=False):

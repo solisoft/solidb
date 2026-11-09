@@ -1,11 +1,29 @@
 import * as net from 'net';
 import { encode, decode } from '@msgpack/msgpack';
-import { ConnectionError, ServerError, ProtocolError } from './errors';
+import { ConnectionError, ServerError, ProtocolError, TransactionError } from './errors';
 
 const MAGIC_HEADER = Buffer.from('solidb-drv-v1\0');
 const MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 const DEFAULT_POOL_SIZE = 4;
 const SOCKET_BUFFER_SIZE = 1024 * 1024;
+
+// Inside a transaction the server stages these when they arrive wrapped in a
+// `transaction_command` on the connection that began it (a read-only query
+// runs on committed data; a writing one is refused there).
+const STAGED_IN_TRANSACTION = new Set(['insert', 'update', 'delete', 'query']);
+// These cannot be staged: refused rather than applied outside the transaction.
+const REFUSED_IN_TRANSACTION = new Set(['bulk_insert', 'batch', 'begin_transaction']);
+
+/** The server's error as text: a string, or `{Kind: "message"}`. */
+function errorMessage(body: any): string {
+    if (typeof body === 'string') return body;
+    if (body && typeof body === 'object') {
+        const vals = Object.values(body);
+        if (vals.length > 0) return String(vals[0]);
+        return JSON.stringify(body);
+    }
+    return 'Unknown error';
+}
 
 interface PooledConnection {
     socket: net.Socket;
@@ -38,6 +56,9 @@ export class Client {
     private nextConnIndex: number = 0;
     private connected: boolean = false;
     private _database: string = '';
+    // The open transaction and the pooled connection it lives on: the server
+    // keeps a driver transaction per connection.
+    private tx: { id: string; conn: PooledConnection } | null = null;
 
     // Sub-clients
     public readonly scripts: ScriptsClient;
@@ -203,14 +224,7 @@ export class Client {
                 if (status === 'ok' || status === 'pong') {
                     req.resolve(body);
                 } else if (status === 'error') {
-                    let msg = "Unknown error";
-                    if (typeof body === 'string') msg = body;
-                    else if (typeof body === 'object' && body) {
-                        const vals = Object.values(body);
-                        if (vals.length > 0) msg = String(vals[0]);
-                        else msg = JSON.stringify(body);
-                    }
-                    req.reject(new ServerError(msg));
+                    req.reject(new ServerError(errorMessage(body)));
                 } else {
                     req.resolve(body);
                 }
@@ -218,9 +232,12 @@ export class Client {
             }
             if (response && typeof response === 'object' && !Array.isArray(response)) {
                 if (response.status === 'error') {
-                    req.reject(new ServerError(response.error || "Unknown error"));
+                    // `{Kind: "message"}`: was passed to Error as an object,
+                    // and read "[object Object]".
+                    req.reject(new ServerError(errorMessage(response.error)));
                 } else {
-                    req.resolve(response.data);
+                    // A begin answers with `tx_id` and no data.
+                    req.resolve(response.data !== undefined ? response.data : response.tx_id);
                 }
                 return;
             }
@@ -262,10 +279,26 @@ export class Client {
             await this.connect();
         }
 
-        const conn = this.getNextConnection();
+        if (this.tx) {
+            if (STAGED_IN_TRANSACTION.has(cmd)) {
+                return this.sendOn(this.tx.conn, {
+                    cmd: 'transaction_command',
+                    tx_id: this.tx.id,
+                    command: { cmd, ...args },
+                });
+            }
+            if (REFUSED_IN_TRANSACTION.has(cmd)) {
+                throw new TransactionError(
+                    `${cmd} cannot run inside a transaction: commit or roll back first`
+                );
+            }
+        }
+        return this.sendOn(this.getNextConnection(), { cmd, ...args });
+    }
 
+    private sendOn(conn: PooledConnection, command: Record<string, any>): Promise<any> {
+        conn.inUse = true;
         return new Promise((resolve, reject) => {
-            const command = { cmd, ...args };
             try {
                 const payload = encode(command);
                 const header = Buffer.alloc(4);
@@ -287,12 +320,22 @@ export class Client {
         await this.sendCommand('ping');
     }
 
+    // Authentication is per connection: every pooled one must log in, or the
+    // commands that land on the others are refused (3 in 4 with the default
+    // pool, when only the first one was).
     public async auth(database: string, username: string, password: string): Promise<void> {
-        await this.sendCommand('auth', { database, username, password });
+        await this.authAll({ cmd: 'auth', database, username, password });
     }
 
     public async authWithApiKey(database: string, apiKey: string): Promise<void> {
-        await this.sendCommand('auth', { database, username: '', password: '', api_key: apiKey });
+        await this.authAll({ cmd: 'auth', database, username: '', password: '', api_key: apiKey });
+    }
+
+    private async authAll(command: Record<string, any>): Promise<void> {
+        if (!this.connected || this.pool.length === 0) {
+            await this.connect();
+        }
+        await Promise.all(this.pool.map((conn) => this.sendOn(conn, command)));
     }
 
     // Database
@@ -352,15 +395,53 @@ export class Client {
     }
 
     // Transactions
+    /**
+     * Open a transaction on one of the pool's connections and return its id.
+     *
+     * Until it is committed or rolled back, `insert`, `update` and `delete`
+     * are staged in it and applied at commit, and a read-only `query` runs on
+     * committed data (it does not see the transaction's own writes); a query
+     * that writes, `batch` and a second `beginTransaction` are refused. `get`
+     * is not part of the transaction: it reads committed data. One transaction
+     * at a time per client.
+     */
     public async beginTransaction(database: string, isolationLevel: string = 'read_committed'): Promise<string> {
-        return await this.sendCommand('begin_transaction', { database, isolation_level: isolationLevel });
+        if (this.tx) {
+            throw new TransactionError('a transaction is already open on this client: commit or roll it back first');
+        }
+        if (!this.connected || this.pool.length === 0) {
+            await this.connect();
+        }
+        const conn = this.getNextConnection();
+        const id = await this.sendOn(conn, { cmd: 'begin_transaction', database, isolation_level: isolationLevel });
+        if (typeof id !== 'string') {
+            throw new ProtocolError('begin_transaction: no transaction id in the response');
+        }
+        this.tx = { id, conn };
+        return id;
     }
 
+    /** Commit the open transaction, on the connection that began it. */
     public async commitTransaction(txId: string): Promise<void> {
-        await this.sendCommand('commit_transaction', { tx_id: txId });
+        await this.endTransaction('commit_transaction', txId);
     }
 
+    /** Roll back the open transaction: nothing it staged is applied. */
     public async rollbackTransaction(txId: string): Promise<void> {
-        await this.sendCommand('rollback_transaction', { tx_id: txId });
+        await this.endTransaction('rollback_transaction', txId);
+    }
+
+    private async endTransaction(cmd: string, txId: string): Promise<void> {
+        const tx = this.tx;
+        if (!tx || tx.id !== txId) {
+            throw new TransactionError(`transaction ${txId} is not open on this client`);
+        }
+        // Whatever the outcome, the client has no open transaction afterwards.
+        this.tx = null;
+        await this.sendOn(tx.conn, { cmd, tx_id: txId });
+    }
+
+    public get inTransaction(): boolean {
+        return this.tx !== null;
     }
 }

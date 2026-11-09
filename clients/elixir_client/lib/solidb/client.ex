@@ -7,7 +7,16 @@ defmodule SoliDB.Client do
   @max_message_size 16 * 1024 * 1024
   @default_pool_size 4
 
-  defstruct [:host, :port, :pool, :pool_index, :database]
+  # Inside a transaction the server stages these when they arrive wrapped in a
+  # `transaction_command` on the connection that began it (a read-only query
+  # runs on committed data; a writing one is refused there).
+  @staged_in_transaction ~w(insert update delete query)
+  # These cannot be staged: refused rather than applied outside the transaction.
+  @refused_in_transaction ~w(bulk_insert batch begin_transaction)
+
+  # `tx_id`: the transaction this client value's commands belong to, set by
+  # `in_transaction/2`.
+  defstruct [:host, :port, :pool, :pool_index, :database, :tx_id]
 
   def connect(host \\ "127.0.0.1", port \\ 6745, pool_size \\ @default_pool_size) do
     connect_with_pool(host, port, pool_size)
@@ -35,14 +44,6 @@ defmodule SoliDB.Client do
         {:error, "Failed to establish all connections"}
     end
   end
-      end)
-
-    if Enum.all?(sockets, &is_port(&1)) do
-      {:ok, %__MODULE__{host: host, port: port, pool: sockets, pool_index: 0, database: nil}}
-    else
-      {:error, "Failed to establish all connections"}
-    end
-  end
 
   def close(%__MODULE__{pool: pool}) do
     Enum.each(pool, &:gen_tcp.close/1)
@@ -56,17 +57,22 @@ defmodule SoliDB.Client do
 
   def ping(client), do: send_command(client, "ping", %{})
 
+  # Authentication is per connection: every pooled socket logs in.
   def auth(client, database, username, password) do
-    send_command(client, "auth", %{database: database, username: username, password: password})
+    auth_all(client, %{database: database, username: username, password: password})
   end
 
   def auth_with_api_key(client, database, api_key) do
-    send_command(client, "auth", %{
-      database: database,
-      username: "",
-      password: "",
-      api_key: api_key
-    })
+    auth_all(client, %{database: database, username: "", password: "", api_key: api_key})
+  end
+
+  defp auth_all(client, args) do
+    Enum.reduce_while(0..(length(client.pool) - 1), {:ok, nil}, fn idx, _ ->
+      case send_command(%{client | pool_index: idx, tx_id: nil}, "auth", args) do
+        {:ok, _} = ok -> {:cont, ok}
+        error -> {:halt, error}
+      end
+    end)
   end
 
   def list_databases(client), do: send_command(client, "list_databases", %{})
@@ -122,47 +128,97 @@ defmodule SoliDB.Client do
     send_command(client, "query", %{database: database, sdbql: sdbql, bind_vars: bind_vars})
   end
 
+  @doc """
+  Open a transaction and return `{:ok, tx_id}`.
+
+  The writes of the transaction are made through `in_transaction/2` (or
+  `transaction/3`), on the same socket: the server keeps a driver transaction
+  per connection.
+  """
   def begin_transaction(client, database, isolation_level \\ "read_committed") do
-    send_command(client, "begin_transaction", %{
+    send_command(%{client | tx_id: nil}, "begin_transaction", %{
       database: database,
       isolation_level: isolation_level
     })
   end
 
   def commit_transaction(client, tx_id) do
-    send_command(client, "commit_transaction", %{tx_id: tx_id})
+    send_command(%{client | tx_id: nil}, "commit_transaction", %{tx_id: tx_id})
   end
 
   def rollback_transaction(client, tx_id) do
-    send_command(client, "rollback_transaction", %{tx_id: tx_id})
+    send_command(%{client | tx_id: nil}, "rollback_transaction", %{tx_id: tx_id})
   end
 
-  defp get_next_socket(client) do
-    idx = client.pool_index
-    socket = Enum.at(client.pool, idx)
-    new_idx = rem(idx + 1, length(client.pool))
-    %{client | pool_index: new_idx}
+  @doc """
+  The client, with its commands made inside transaction `tx_id`.
+
+  `insert`, `update` and `delete` made through it are staged in the
+  transaction and applied at commit; a read-only `query` runs on committed data
+  (it does not see the transaction's own writes); a query that writes and
+  `begin_transaction` are refused. `get` is not part of the transaction: it
+  reads committed data. Writes through the plain client are not part of it
+  either: they used to be the only way, and applied at once.
+
+      {:ok, tx_id} = SoliDB.Client.begin_transaction(client, "mydb")
+      tx = SoliDB.Client.in_transaction(client, tx_id)
+      {:ok, _} = SoliDB.Client.insert(tx, "mydb", "accounts", %{"balance" => 1000})
+      {:ok, _} = SoliDB.Client.commit_transaction(client, tx_id)
+  """
+  def in_transaction(%__MODULE__{} = client, tx_id), do: %{client | tx_id: tx_id}
+
+  @doc """
+  Run `fun` with a client in a new transaction: commit when it returns
+  `{:ok, value}`, roll back when it returns `{:error, reason}` or raises.
+  """
+  def transaction(client, database, fun, isolation_level \\ "read_committed") do
+    with {:ok, tx_id} <- begin_transaction(client, database, isolation_level) do
+      try do
+        case fun.(in_transaction(client, tx_id)) do
+          {:ok, value} ->
+            with {:ok, _} <- commit_transaction(client, tx_id), do: {:ok, value}
+
+          {:error, _} = error ->
+            rollback_transaction(client, tx_id)
+            error
+        end
+      rescue
+        e ->
+          rollback_transaction(client, tx_id)
+          reraise e, __STACKTRACE__
+      end
+    end
   end
 
+  # One client value always talks on the same socket: `pool_index` is part of
+  # the value, and the advanced index was never handed back, so the "round
+  # robin" this used to do never moved.
   def send_command(client, cmd, args) do
-    client = get_next_socket(client)
     payload = Map.put(args, :cmd, cmd)
-    {:ok, data} = Msgpax.pack(payload)
 
-    len = byte_size(data)
+    cond do
+      client.tx_id != nil and cmd in @staged_in_transaction ->
+        send_payload(client, %{cmd: "transaction_command", tx_id: client.tx_id, command: payload})
 
-    :ok =
-      :gen_tcp.send(
-        Enum.at(client.pool, client.pool_index - 1),
-        <<len::big-integer-size(32), data::binary>>
-      )
+      client.tx_id != nil and cmd in @refused_in_transaction ->
+        {:error, "#{cmd} cannot run inside a transaction: commit or roll back first"}
 
-    receive_response(client)
+      true ->
+        send_payload(client, payload)
+    end
   end
 
-  defp receive_response(client) do
-    socket = Enum.at(client.pool, client.pool_index - 1)
+  defp send_payload(client, payload) do
+    socket = Enum.at(client.pool, client.pool_index || 0)
+    # A binary, not the iodata Msgpax returns by default: byte_size/1 below
+    # raised on every command.
+    {:ok, data} = Msgpax.pack(payload, iodata: false)
+    len = byte_size(data)
+    :ok = :gen_tcp.send(socket, <<len::big-integer-size(32), data::binary>>)
+    receive_response(socket)
+  end
 
+  defp receive_response(socket) do
     case :gen_tcp.recv(socket, 4) do
       {:ok, <<len::big-integer-size(32)>>} ->
         if len > @max_message_size do
@@ -194,16 +250,28 @@ defmodule SoliDB.Client do
         {:ok, body}
 
       ["error", body] ->
-        msg =
-          case body do
-            m when is_map(m) -> List.first(Map.values(m)) || "Unknown error"
-            m -> m
-          end
+        {:error, error_message(body)}
 
-        {:error, msg}
+      # What the server sends: `{status, data, count, tx_id, error}`. It was
+      # returned as it was, so every error came back as `{:ok, map}`.
+      %{"status" => "error"} = m ->
+        {:error, error_message(Map.get(m, "error"))}
+
+      %{"status" => status} = m when status in ["ok", "pong"] ->
+        cond do
+          Map.has_key?(m, "data") -> {:ok, m["data"]}
+          Map.has_key?(m, "tx_id") -> {:ok, m["tx_id"]}
+          Map.has_key?(m, "count") -> {:ok, m["count"]}
+          true -> {:ok, nil}
+        end
 
       other ->
         {:ok, other}
     end
   end
+
+  # The server's error as text: a string, or %{"Kind" => "message"}.
+  defp error_message(body) when is_binary(body), do: body
+  defp error_message(body) when is_map(body), do: body |> Map.values() |> List.first() |> to_string()
+  defp error_message(body), do: inspect(body)
 end

@@ -9,6 +9,8 @@ setup(
     packages=find_packages(),
     install_requires=[
         "msgpack>=1.0.5",
+        # solidb/ai.py imports it when the package loads.
+        "requests>=2.25",
     ],
     python_requires=">=3.7",
 )

@@ -25,3 +25,9 @@ type ServerError struct {
 type ProtocolError struct {
 	SoliDBError
 }
+
+// TransactionError is a transaction call made out of turn, or a command that
+// cannot run inside a transaction.
+type TransactionError struct {
+	SoliDBError
+}
