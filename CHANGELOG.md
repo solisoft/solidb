@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.9.1](https://github.com/solisoft/solidb/compare/v2.9.0...v2.9.1) (2026-11-09)
+
+Correctness fixes found by the fault harness (`faults/`, card #792): SDBQL
+`UPDATE` no longer loses concurrent writes, and the client SDKs'
+transactions now contain their writes.
+
 ### Bug Fixes
 
 * **`UPDATE d WITH {n: d.n + 1}` no longer loses concurrent updates** (card

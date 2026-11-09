@@ -9,6 +9,21 @@
     </p>
   </div>
 
+  <!-- 2.9.1 -->
+  <section id="v2-9-1" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.9.1</h2>
+      <span class="text-sm font-medium text-gray-400">November 9, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>UPDATE d WITH {n: d.n + 1}</code> no longer loses concurrent updates</strong> &mdash; the <code>WITH</code> value was computed from the document as the <code>FOR</code> read it and written without checking it was still that version, with or without a transaction, at every isolation level. Ten clients appending to 8 hot documents lost 24,785 of 405,507 committed appends in 10&nbsp;s. The write now carries the revision the query read: a row whose document moved on is evaluated again under the key's lock and skipped if it no longer passes its <code>FILTER</code>s; a pipeline that cannot be re-run for one row fails with 409, and so does the statement inside a transaction. 0 appends lost after the fix, throughput within 2%.</li>
+        <li><strong class="text-white">Client transactions contain their writes</strong> &mdash; in the Rust, JS, Python, Go, PHP, Ruby and Elixir clients, an <code>insert</code>, <code>update</code> or <code>delete</code> after <code>begin_transaction</code> applied at once and survived a rollback. They are now sent inside the transaction, on the connection that began it. The Soli framework's model queries in a transaction go to the transaction too.</li>
+        <li><strong class="text-white"><code>POST &hellip;/transaction/{id}/query</code> reads <code>bindVars</code></strong> as well as <code>bind_vars</code>; it used to drop <code>bindVars</code> silently, so a filtered <code>UPDATE</code> matched nothing and reported success.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.9.0 -->
   <section id="v2-9-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
