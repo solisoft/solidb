@@ -75,9 +75,9 @@ class BlogController < Controller
         "display_date": "November 9, 2026",
         "summary": "One machine, a million documents, the same queries, five databases measured one at a time "
         + "on 4 cores each. SoliDB led 21 of 23 series, and lost two to PostgreSQL. Then durable "
-        + "transactions and kill -9 against PostgreSQL, which won on speed except among hot accounts, "
-        + "and caught a bug that 2.9.1 fixes. The harness, every setting and the raw results are in "
-        + "the repository.",
+        + "transactions and kill -9 against PostgreSQL, about twice as fast per transaction except "
+        + "among hot accounts, and a bug the test caught, fixed in 2.9.1. The harness, every setting "
+        + "and the raw results are in the repository.",
         "tags": ["Performance", "Benchmarks"],
         "read_minutes": 16
       },
