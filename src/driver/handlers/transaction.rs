@@ -882,6 +882,35 @@ mod tests {
         assert!(reader.transactions.is_empty());
     }
 
+    /// `RETURN OLD` and `RETURN NEW` of a staged update: OLD is the document
+    /// the query read, NEW the staged one.
+    #[tokio::test]
+    async fn a_staged_update_returns_old_and_new() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        h.get_collection("d", "c")
+            .unwrap()
+            .insert(json!({"_key": "a", "n": 10}))
+            .unwrap();
+        let tx = begin(&mut h);
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query(
+                "FOR x IN c FILTER x._key == @k UPDATE x WITH {n: x.n + 1} IN c \
+                 RETURN [OLD.n, NEW.n]",
+                json!({"k": "a"}),
+            ),
+        )
+        .await;
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([[10, 11]])),
+            "{r:?}"
+        );
+        handle_commit_transaction(&mut h, tx);
+        assert_eq!(balance(&h, "a"), json!(11));
+    }
+
     #[test]
     fn point_statements_are_recognised() {
         let point = |q: &str| is_point_statement(&crate::sdbql::parse(q).unwrap());
