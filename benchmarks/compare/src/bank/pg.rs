@@ -164,12 +164,12 @@ impl Pg {
         Ok(out)
     }
 
-    /// Per worker: (rows, sum of seq, sum of seq²).
+    /// Per worker: (rows, sum of seq, sum of seq² mod 1,000,003).
     pub async fn ledger_by_worker(&self) -> Res<HashMap<u32, (u64, u64, u64)>> {
         let c = self.client().await?;
         let rows = c
             .query(
-                "SELECT w, count(*), sum(seq)::bigint, sum(seq * seq)::bigint FROM transfers GROUP BY w",
+                "SELECT w, count(*), sum(seq)::bigint, sum((seq * seq) % 1000003)::bigint FROM transfers GROUP BY w",
                 &[],
             )
             .await?;

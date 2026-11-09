@@ -202,7 +202,7 @@ impl Soli {
         let rows = c
             .cursor(
                 "FOR t IN transfers COLLECT w = t.w AGGREGATE n = COUNT(), s = SUM(t.seq), \
-                 s2 = SUM(t.seq * t.seq) RETURN [w, n, s, s2]",
+                 s2 = SUM((t.seq * t.seq) % 1000003) RETURN [w, n, s, s2]",
                 json!({}),
             )
             .await?;

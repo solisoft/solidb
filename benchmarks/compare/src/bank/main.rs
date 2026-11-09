@@ -52,6 +52,8 @@ use std::time::{Duration, Instant};
 pub type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 const MAX_ATTEMPTS: u32 = 200;
+/// The ledger's per-worker checksum sums seq² modulo this prime.
+const SQUARES_MOD: u64 = 1_000_003;
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 /// A worker that hits this many refusals that are not conflicts stops.
 const MAX_FAILURES: u64 = 1_000;
@@ -408,7 +410,9 @@ async fn check(
         let e = expected.entry(t.w).or_default();
         e.0 += 1;
         e.1 += t.seq;
-        e.2 += t.seq * t.seq;
+        // seq² mod a prime: a sum of plain squares passes 2^53 (where
+        // SoliDB's SUM, a double, stops being exact) past ~400,000 rows.
+        e.2 += (t.seq * t.seq) % SQUARES_MOD;
         *moved.entry(t.from).or_default() -= t.amount;
         *moved.entry(t.to).or_default() += t.amount;
     }
