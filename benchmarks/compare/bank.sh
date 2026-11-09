@@ -15,6 +15,8 @@
 #   solidb-2.9.0    the published 2.9.0 image, solistore, SOLIDB_DURABILITY=full;
 #                   modes query (SDBQL UPDATE in a transaction), doc
 #   solidb-2.9.1    the same on 2.9.1
+#   solidb-2.9.2    2.9.2; modes query, driver (the transfer over the native
+#                   driver, which runs writing queries in transactions since 2.9.2)
 #   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver
 #                   (the transfer over the native driver, which needs it)
 # Crash: the container is killed with SIGKILL while 32 clients transfer, then
@@ -41,8 +43,9 @@ CYCLES=${CYCLES:-20}
 POSTGRES_IMAGE=docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # 18.6
 SOLIDB_290=${SOLIDB_290:-ghcr.io/solisoft/solidb@sha256:05a5da7d3961d2358db55453723c18ead98ab809fec4bd4df9d109e07c4f69e5} # v2.9.0
 SOLIDB_291=${SOLIDB_291:-ghcr.io/solisoft/solidb@sha256:29f31b15a448fd7c680fb52c4a9e29dd16ea3c3de2eaf9181a17f1df63d94214} # v2.9.1
+SOLIDB_292=${SOLIDB_292:-ghcr.io/solisoft/solidb:v2.9.2}
 
-ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1
+ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2
   crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual)
 
 mkdir -p "$OUT"
@@ -93,9 +96,10 @@ configure() {
       [[ $cfg == postgres-naive ]] && MODES=(naive) && SERIES=10:32
       [[ $cfg == crash-* ]] && MODES=(update)
       ;;
-    solidb-2.9.0 | solidb-2.9.1 | solidb-main | crash-solidb | crash-solidb-eventual)
+    solidb-2.9.0 | solidb-2.9.1 | solidb-2.9.2 | solidb-main | crash-solidb | crash-solidb-eventual)
       ENGINE=solidb PORT=6800 IMAGE=$SOLIDB_291
       [[ $cfg == solidb-2.9.0 ]] && IMAGE=$SOLIDB_290
+      [[ $cfg == solidb-2.9.2 ]] && IMAGE=$SOLIDB_292
       if [[ $cfg == solidb-main ]]; then
         IMAGE=${SOLIDB_MAIN:?set SOLIDB_MAIN to the image of the build to measure}
       fi
@@ -108,7 +112,7 @@ configure() {
       fi
       RUN+=("$IMAGE")
       MODES=(query doc)
-      [[ $cfg == solidb-main ]] && MODES=(query driver)
+      [[ $cfg == solidb-main || $cfg == solidb-2.9.2 ]] && MODES=(query driver)
       [[ $cfg == crash-* ]] && MODES=(query)
       ;;
     *)

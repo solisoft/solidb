@@ -129,8 +129,9 @@ Each series gets 5 s of warm-up and 20 s measured, three times. The tables show 
 | `postgres-naive` | 6 | The same read-then-write at READ COMMITTED. It is not safe, and is here as the control: it shows the checks catch lost updates. 10 accounts only. |
 | `solidb-*-query` | 5 HTTP: begin, three queries, commit | `FOR a IN accounts FILTER a._key == @k FILTER a.balance >= @x UPDATE a WITH {balance: a.balance - @x} IN accounts`, the credit the same way, `INSERT` the ledger row. |
 | `solidb-*-doc` | 7 HTTP | `GET` both accounts (shared locks), `PUT` both (exclusive locks), `POST` the ledger row. |
+| `solidb-2.9.2-driver` | 5 over the native driver: begin, two queries, an insert, commit | The `query` statements (ending in `RETURN 1`, whose rows say whether the debit matched) through `solidb-client`'s MessagePack driver. Needs 2.9.2, the first version that runs a query that writes inside a driver transaction. |
 
-**Why SoliDB goes through HTTP.** The native driver's transactions take document writes by key and read-only queries, so a conditional debit cannot be written there. The Soli framework's model transactions use the same HTTP API.
+**HTTP and the driver.** Up to 2.9.1 the native driver's transactions took document writes by key and read-only queries only, so a conditional debit could only go through HTTP, the API the Soli framework's model transactions also use. 2.9.2 stages a query that writes in a driver transaction, with the same lost-update guard, and the `driver` mode measures that.
 
 **Durability.**
 - **PostgreSQL:** `synchronous_commit=on`, its default.
@@ -153,7 +154,7 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 
 ### Results, 2026-11-09
 
-`results/2026-11-09/bank/`. PostgreSQL 18.6; SoliDB 2.9.0 and 2.9.1, the published images.
+`results/2026-11-09/bank/` (PostgreSQL 18.6; SoliDB 2.9.0 and 2.9.1) and `results/2026-11-09/bank-2.9.2/` (SoliDB 2.9.2), all on the published images. `bank-driver/` is the same driver mode on a build of `main` before the 2.9.2 release, within 2% of it.
 
 | Configuration | Accounts | Clients | Transfers/s | p50 | p99 | Conflicts per commit | DB CPU per commit | Checks | Audits off |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---:|
@@ -164,6 +165,12 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 | postgres-serializable | 10,000 | 32 | 46,138 (44,970–46,388) | 648 µs | 1,614 µs | 0.01 | 138 µs | ok | 0 of 6,475 |
 | postgres-serializable | 10 | 32 | 7,663 (7,526–7,669) | 115 µs | 109.0 ms | 1.03 | 134 µs | ok | 0 of 6,816 |
 | postgres-naive (control) | 10 | 32 | 7,477 (7,448–16,749) | 1,233 µs | 47.4 ms | 0.00 | 744 µs | **3 of 3 runs**; money +13,513, +26,399, +31,921 | 6,816 of 6,817 |
+| solidb-2.9.2-driver | 10,000 | 1 | 7,563 (7,540–7,579) | 128 µs | 178 µs | 0.00 | 109 µs | ok | 0 of 5,629 |
+| solidb-2.9.2-driver | 10,000 | 32 | 38,518 (37,767–38,597) | 798 µs | 1,424 µs | 0.01 | 161 µs | ok | 0 of 4,016 |
+| solidb-2.9.2-driver | 10 | 32 | 9,369 (9,366–9,376) | 206 µs | 73.2 ms | 1.37 | 183 µs | ok | 0 of 6,189 |
+| solidb-2.9.2-query | 10,000 | 1 | 4,061 (3,805–4,126) | 238 µs | 346 µs | 0.00 | 203 µs | ok | 0 of 5,927 |
+| solidb-2.9.2-query | 10,000 | 32 | 19,561 (19,534–19,662) | 1,573 µs | 3,097 µs | 0.01 | 348 µs | ok | 0 of 4,016 |
+| solidb-2.9.2-query | 10 | 32 | 5,189 (5,189–5,212) | 547 µs | 102.6 ms | 2.17 | 626 µs | ok | 0 of 6,111 |
 | solidb-2.9.1-query | 10,000 | 1 | 3,989 (3,750–4,091) | 241 µs | 352 µs | 0.00 | 227 µs | ok | 0 of 5,741 |
 | solidb-2.9.1-query | 10,000 | 32 | 19,189 (19,164–19,236) | 1,606 µs | 3,143 µs | 0.01 | 357 µs | ok | 0 of 3,982 |
 | solidb-2.9.1-query | 10 | 32 | 5,121 (5,117–5,124) | 554 µs | 103.9 ms | 2.19 | 647 µs | ok | 0 of 6,165 |
@@ -178,12 +185,12 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 | solidb-2.9.0-doc | 10 | 32 | 2,888 (2,868–2,920) | 450 µs | 193.3 ms | 2.91 | 699 µs | ok | 0 of 6,626 |
 
 **Correctness:**
-- **SoliDB 2.9.0 lost and invented money** in all six runs of its SDBQL path, even among 10,000 accounts. This is card #796: an `UPDATE` computed from the document a query read overwrote a write that landed in between. It is fixed in 2.9.1, which passed every check in all 18 of its runs.
+- **SoliDB 2.9.0 lost and invented money** in all six runs of its SDBQL path, even among 10,000 accounts. This is card #796: an `UPDATE` computed from the document a query read overwrote a write that landed in between. It is fixed in 2.9.1, which passed every check in all 18 of its runs, and so did 2.9.2, over HTTP and over the driver.
 - **The document-API path was correct on both versions**, and so were both PostgreSQL idioms.
 - **The control** lost or invented money in every run, so the checks do catch a lost update.
 - **Consistent reads:** the auditor never saw a wrong total on either database, except after money had actually been lost. Once a total is wrong it stays wrong.
 
-**Speed: PostgreSQL is ahead.**
+**Speed.** Over HTTP (2.9.1), PostgreSQL is ahead on every series:
 
 | Series | PostgreSQL ahead by |
 |---|---|
@@ -193,7 +200,17 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 
 - **Where the cost is.** SoliDB spends 4 to 5 times more database CPU per transfer. A `perf` profile (of 2.9.0, at 32 clients) puts it in the five HTTP requests: the HTTP stack takes about 20% of the CPU, the kernel about 21% (TCP on loopback, and the fsyncs), and the authorization middleware about 8%. The locks and the transaction bookkeeping take under 1%.
 - **Under contention.** SoliDB's transaction locks refuse at once rather than wait. At 10 accounts that makes 2.2 rolled-back attempts per committed transfer, and a p99 of 104 ms against PostgreSQL's 44 ms.
-- **The follow-up** is card #797.
+
+Over the driver (2.9.2), the same statements commit about twice as often:
+
+| Series | SoliDB 2.9.2, driver | PostgreSQL | |
+|---|---:|---:|---|
+| One client | 7,563 (p50 128 µs) | 10,555 (p50 92 µs) | PostgreSQL 1.4× ahead |
+| 32 clients | 38,518 | 67,383 | PostgreSQL 1.75× ahead |
+| 10 hot accounts | **9,369** | 8,339 | SoliDB 1.12× ahead |
+
+- **What is left.** A line-tables profile of the driver path puts half of the server's CPU at 32 clients in the commit. About 20–25% of it is solistore's group commit, whose waiters spin and yield while the leader fsyncs (card #798). The responses' `send` calls take 18%, and the queries 12%. At one client the commit is 70 µs of the 128.
+- **The follow-up** is card #797: the group commit, running the driver's commit and key-bound staged queries off the async workers, skipping the commit-time re-read, and a one-request transaction.
 
 **Crash.** For each configuration, 32 clients transfer among 10,000 accounts. The container is killed with `SIGKILL` after a random 1 to 4 s (seed 1), then started again on the same data and checked. That is 20 times, about 42 s of transfers.
 
@@ -218,7 +235,7 @@ WARM=1 SECS=3 RUNS=1 CYCLES=2 DOCKER="sudo podman" ./bank.sh all   # a quick pas
 python3 bank_report.py ~/bench/results/<date>/bank
 ```
 
-`bank.sh solidb-2.9.0` measures the 2.9.0 image. That version's transactional query reads only `bind_vars` (`bindVars` was ignored until 2.9.1), so the harness sends `bind_vars`, which both versions read.
+`bank.sh solidb-2.9.2` measures the 2.9.2 image over HTTP and over the driver; `SOLIDB_MAIN=<image> bank.sh solidb-main` does the same for an unreleased build. For profiling, `BANK_STEPS=1` prints the mean time of each step of a driver transfer, and `--audit-ms 0` turns the auditor off. `bank.sh solidb-2.9.0` measures the 2.9.0 image. That version's transactional query reads only `bind_vars` (`bindVars` was ignored until 2.9.1), so the harness sends `bind_vars`, which both versions read.
 
 ## SoliDB 2.7.2, and why its image was rebuilt
 
