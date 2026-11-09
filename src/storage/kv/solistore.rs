@@ -88,11 +88,11 @@ pub(super) fn multi_get<'c, 'h: 'c, K: AsRef<[u8]>>(
     if one_cf {
         let only: Vec<&K> = keys.iter().map(|(_, k)| k).collect();
         let only: Vec<&[u8]> = only.iter().map(|k| k.as_ref()).collect();
-        return match db.multi_get(first, &only) {
-            Ok(values) => values
-                .into_iter()
-                .map(|v| Ok(v.map(|v| v.to_vec())))
-                .collect(),
+        // The values are lent, and copied once, into the vectors returned.
+        let mut out: Vec<Result<Option<Vec<u8>>, KvError>> = Vec::with_capacity(only.len());
+        out.resize_with(only.len(), || Ok(None));
+        return match db.multi_get_with(first, &only, |i, v| out[i] = Ok(v.map(<[u8]>::to_vec))) {
+            Ok(()) => out,
             Err(e) => {
                 let e = KvError::from(e);
                 keys.iter().map(|_| Err(e.clone())).collect()
