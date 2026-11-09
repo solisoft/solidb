@@ -126,9 +126,11 @@ Each series gets 5 s of warm-up and 20 s measured, three times. The tables show 
 |---|---|---|
 | `postgres-update` | 5: `BEGIN`, two `UPDATE`s, `INSERT`, `COMMIT` | READ COMMITTED. `UPDATE … SET balance = balance - $2 WHERE id = $1 AND balance >= $2`, then the credit. Both rows are updated in account order, so two transfers never deadlock. |
 | `postgres-serializable` | 6 | SERIALIZABLE. Read both balances, decide in the client, write both in account order. |
+| `postgres-function` | 1: `SELECT transfer(…)` | `postgres-update`'s statements in a PL/pgSQL function, one statement and its own transaction. Rows still updated in account order; a debit that finds too little money after the credit raises, which rolls the credit back. The counterpart of `run_transaction`. |
 | `postgres-naive` | 6 | The same read-then-write at READ COMMITTED. It is not safe, and is here as the control: it shows the checks catch lost updates. 10 accounts only. |
 | `solidb-*-query` | 5 HTTP: begin, three queries, commit | `FOR a IN accounts FILTER a._key == @k FILTER a.balance >= @x UPDATE a WITH {balance: a.balance - @x} IN accounts`, the credit the same way, `INSERT` the ledger row. |
 | `solidb-*-doc` | 7 HTTP | `GET` both accounts (shared locks), `PUT` both (exclusive locks), `POST` the ledger row. |
+| `solidb-main-run` | 1 over the native driver: `run_transaction` | The same three statements sent in one request: the server begins the transaction, runs them, commits. The debit and the credit are marked `require_rows`, so a debit that matches nothing rolls the transaction back. After 2.9.2, on a build of `main`. |
 | `solidb-2.9.2-driver` | 5 over the native driver: begin, two queries, an insert, commit | The `query` statements (ending in `RETURN 1`, whose rows say whether the debit matched) through `solidb-client`'s MessagePack driver. Needs 2.9.2, the first version that runs a query that writes inside a driver transaction. |
 
 **HTTP and the driver.** Up to 2.9.1 the native driver's transactions took document writes by key and read-only queries only, so a conditional debit could only go through HTTP, the API the Soli framework's model transactions also use. 2.9.2 stages a query that writes in a driver transaction, with the same lost-update guard, and the `driver` mode measures that.
@@ -154,7 +156,7 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 
 ### Results, 2026-11-09
 
-`results/2026-11-09/bank/` (PostgreSQL 18.6; SoliDB 2.9.0 and 2.9.1) and `results/2026-11-09/bank-2.9.2/` (SoliDB 2.9.2), all on the published images. `bank-driver/` is the same driver mode on a build of `main` before the 2.9.2 release, within 2% of it.
+`results/2026-11-09/bank/` (PostgreSQL 18.6; SoliDB 2.9.0 and 2.9.1) and `results/2026-11-09/bank-2.9.2/` (SoliDB 2.9.2), all on the published images. `bank-driver/` is the same driver mode on a build of `main` before the 2.9.2 release, within 2% of it. `bank-run/` is a build of `main` after 2.9.2, with `run_transaction` and the driver changes listed below, not yet released.
 
 | Configuration | Accounts | Clients | Transfers/s | p50 | p99 | Conflicts per commit | DB CPU per commit | Checks | Audits off |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---:|
@@ -164,7 +166,16 @@ A transfer whose commit got no answer (the server was killed) is looked up after
 | postgres-serializable | 10,000 | 1 | 8,361 (8,317–8,419) | 118 µs | 142 µs | 0.00 | 56 µs | ok | 0 of 6,819 |
 | postgres-serializable | 10,000 | 32 | 46,138 (44,970–46,388) | 648 µs | 1,614 µs | 0.01 | 138 µs | ok | 0 of 6,475 |
 | postgres-serializable | 10 | 32 | 7,663 (7,526–7,669) | 115 µs | 109.0 ms | 1.03 | 134 µs | ok | 0 of 6,816 |
+| postgres-function | 10,000 | 1 | 21,674 (21,671–22,656) | 44 µs | 65 µs | 0.00 | 24 µs | ok | 0 of 6,817 |
+| postgres-function | 10,000 | 32 | 113,920 (112,588–114,407) | 262 µs | 556 µs | 0.00 | 54 µs | ok | 0 of 6,525 |
+| postgres-function | 10 | 32 | 10,406 (9,770–11,465) | 831 µs | 34.4 ms | 0.00 | 476 µs | ok | 0 of 6,814 |
 | postgres-naive (control) | 10 | 32 | 7,477 (7,448–16,749) | 1,233 µs | 47.4 ms | 0.00 | 744 µs | **3 of 3 runs**; money +13,513, +26,399, +31,921 | 6,816 of 6,817 |
+| solidb-main-run | 10,000 | 1 | 9,919 (9,901–9,947) | 110 µs | 145 µs | 0.00 | 103 µs | ok | 0 of 5,357 |
+| solidb-main-run | 10,000 | 32 | 61,828 (61,746–61,984) | 483 µs | 1,100 µs | 0.02 | 113 µs | ok | 0 of 3,671 |
+| solidb-main-run | 10 | 32 | 15,648 (15,645–15,706) | 134 µs | 43.9 ms | 1.21 | 138 µs | ok | 0 of 5,706 |
+| solidb-main-driver | 10,000 | 1 | 7,322 (6,547–7,603) | 124 µs | 185 µs | 0.00 | 110 µs | ok | 0 of 5,677 |
+| solidb-main-driver | 10,000 | 32 | 44,825 (44,777–44,839) | 680 µs | 1,396 µs | 0.01 | 138 µs | ok | 0 of 3,708 |
+| solidb-main-driver | 10 | 32 | 9,719 (9,685–9,722) | 177 µs | 73.3 ms | 1.31 | 167 µs | ok | 0 of 6,006 |
 | solidb-2.9.2-driver | 10,000 | 1 | 7,563 (7,540–7,579) | 128 µs | 178 µs | 0.00 | 109 µs | ok | 0 of 5,629 |
 | solidb-2.9.2-driver | 10,000 | 32 | 38,518 (37,767–38,597) | 798 µs | 1,424 µs | 0.01 | 161 µs | ok | 0 of 4,016 |
 | solidb-2.9.2-driver | 10 | 32 | 9,369 (9,366–9,376) | 206 µs | 73.2 ms | 1.37 | 183 µs | ok | 0 of 6,189 |
@@ -212,6 +223,20 @@ Over the driver (2.9.2), the same statements commit about twice as often:
 - **What is left.** A line-tables profile of the driver path puts half of the server's CPU at 32 clients in the commit. About 20–25% of it is solistore's group commit, whose waiters spin and yield while the leader fsyncs (card #798). The responses' `send` calls take 18%, and the queries 12%. At one client the commit is 70 µs of the 128.
 - **The follow-up** is card #797: the group commit, running the driver's commit and key-bound staged queries off the async workers, skipping the commit-time re-read, and a one-request transaction.
 
+In one request each, the transfer is one round trip instead of five: `run_transaction` for SoliDB (a build of `main` after 2.9.2), a PL/pgSQL function for PostgreSQL (`postgres-function`). Compared with PostgreSQL's five round trips SoliDB would look level, but that is the wrong comparison:
+
+| Series | SoliDB, one request | PostgreSQL, one request | |
+|---|---:|---:|---|
+| One client | 9,919 (p50 110 µs) | 21,674 (p50 44 µs) | PostgreSQL 2.2× ahead |
+| 32 clients | 61,828 (p99 1.1 ms) | 113,920 (p99 556 µs) | PostgreSQL 1.8× ahead |
+| 10 hot accounts | **15,648** | 10,406 | SoliDB 1.5× ahead |
+| DB CPU per transfer | 103–138 µs | 24–476 µs | |
+
+With the round trips out of the way, what is left is the cost of a transaction itself: SoliDB spends 2 to 4 times PostgreSQL's CPU on one, most of it in the commit (70 µs of a single client's 110). Under contention SoliDB keeps the lead in throughput, its locks refusing at once and the transfer retried where PostgreSQL's wait in line, but PostgreSQL's tail is the shorter one (p99 34 ms against 44).
+
+- **The same build without it** (`solidb-main-driver`, five round trips) is 16% faster than 2.9.2 at 32 clients (44,825 against 38,518). Its commit no longer holds the async worker during the fsync, and a staged query that reaches documents only by key runs inline instead of going through the blocking pool.
+- **What a profile left out of reach:** the commit is still most of a transfer at one client. solistore's group commit spends CPU spinning while another commit fsyncs (card #798). Letting those waiters sleep on one shared condition variable cut 18% of the CPU per transfer but slowed one client and stalled one run. That needs per-group wake-ups instead, so it is not in this build.
+
 **Crash.** For each configuration, 32 clients transfer among 10,000 accounts. The container is killed with `SIGKILL` after a random 1 to 4 s (seed 1), then started again on the same data and checked. That is 20 times, about 42 s of transfers.
 
 | Configuration | Kills | Transfers acknowledged | In flight at the kill (landed) | Acknowledged, then lost | Ready again (median) | Violations |
@@ -235,7 +260,7 @@ WARM=1 SECS=3 RUNS=1 CYCLES=2 DOCKER="sudo podman" ./bank.sh all   # a quick pas
 python3 bank_report.py ~/bench/results/<date>/bank
 ```
 
-`bank.sh solidb-2.9.2` measures the 2.9.2 image over HTTP and over the driver; `SOLIDB_MAIN=<image> bank.sh solidb-main` does the same for an unreleased build. For profiling, `BANK_STEPS=1` prints the mean time of each step of a driver transfer, and `--audit-ms 0` turns the auditor off. `bank.sh solidb-2.9.0` measures the 2.9.0 image. That version's transactional query reads only `bind_vars` (`bindVars` was ignored until 2.9.1), so the harness sends `bind_vars`, which both versions read.
+`bank.sh solidb-2.9.2` measures the 2.9.2 image over HTTP and over the driver; `ONLY_MODES="driver run"` limits a configuration to those modes; `SOLIDB_MAIN=<image> bank.sh solidb-main` does the same for an unreleased build. For profiling, `BANK_STEPS=1` prints the mean time of each step of a driver transfer, and `--audit-ms 0` turns the auditor off. `bank.sh solidb-2.9.0` measures the 2.9.0 image. That version's transactional query reads only `bind_vars` (`bindVars` was ignored until 2.9.1), so the harness sends `bind_vars`, which both versions read.
 
 ## SoliDB 2.7.2, and why its image was rebuilt
 

@@ -37,7 +37,8 @@
 //! `serializable` (read then write), `naive` (read then write at READ
 //! COMMITTED, the control); solidb `query` (SDBQL UPDATE in an HTTP
 //! transaction), `doc` (document reads and writes in an HTTP transaction),
-//! `driver` (`query`'s statements over the native driver).
+//! `driver` (`query`'s statements over the native driver), `run` (the same
+//! in one request, `run_transaction`).
 
 mod pg;
 mod soli;
@@ -107,7 +108,9 @@ impl Db {
     async fn connect(&self, mode: &str) -> Res<Conn> {
         Ok(match self {
             Db::Pg(d) => Conn::Pg(d.connect().await?),
-            Db::Soli(d) if mode == "driver" => Conn::SoliDriver(d.connect_driver().await?),
+            Db::Soli(d) if mode == "driver" || mode == "run" => {
+                Conn::SoliDriver(d.connect_driver().await?)
+            }
             Db::Soli(d) => Conn::Soli(d.connect().await?),
         })
     }
@@ -168,6 +171,7 @@ impl Conn {
         match self {
             Conn::Pg(c) => c.transfer(mode, t).await,
             Conn::Soli(c) => c.transfer(mode, t).await,
+            Conn::SoliDriver(c) if mode == "run" => c.transfer_in_one(t).await,
             Conn::SoliDriver(c) => c.transfer(t).await,
         }
     }
@@ -892,8 +896,8 @@ async fn main() {
         e => panic!("unknown engine {e}"),
     });
     let ok_modes: &[&str] = match a.engine.as_str() {
-        "postgres" => &["update", "serializable", "naive"],
-        _ => &["query", "doc", "driver"],
+        "postgres" => &["update", "serializable", "naive", "function"],
+        _ => &["query", "doc", "driver", "run"],
     };
     assert!(
         ok_modes.contains(&a.mode.as_str()),

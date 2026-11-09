@@ -10,6 +10,8 @@
 # 10,000 accounts at 1 and 32 clients, 10 accounts at 32 clients.
 #   postgres        synchronous_commit=on; modes update (READ COMMITTED,
 #                   conditional UPDATEs), serializable (read then write)
+#                   and function (update's statements in a PL/pgSQL function,
+#                   one round trip per transfer: run_transaction's counterpart)
 #   postgres-naive  the control: read then write at READ COMMITTED, which
 #                   loses updates; 10 accounts, 32 clients, one run
 #   solidb-2.9.0    the published 2.9.0 image, solistore, SOLIDB_DURABILITY=full;
@@ -17,7 +19,8 @@
 #   solidb-2.9.1    the same on 2.9.1
 #   solidb-2.9.2    2.9.2; modes query, driver (the transfer over the native
 #                   driver, which runs writing queries in transactions since 2.9.2)
-#   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver
+#   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver,
+#                   run (the transfer in one request, run_transaction)
 #                   (the transfer over the native driver, which needs it)
 # Crash: the container is killed with SIGKILL while 32 clients transfer, then
 # started again on the same data, CYCLES times; checked after every restart.
@@ -92,7 +95,7 @@ configure() {
       RUN=("${base[@]}" --shm-size 1g -e POSTGRES_PASSWORD=$PASSWORD -v "$data:/var/lib/postgresql:Z"
         "$IMAGE" -c shared_buffers=4GB -c effective_cache_size=12GB -c max_connections=200)
       [[ $cfg == crash-postgres-async ]] && RUN+=(-c synchronous_commit=off)
-      MODES=(update serializable)
+      MODES=(update serializable function)
       [[ $cfg == postgres-naive ]] && MODES=(naive) && SERIES=10:32
       [[ $cfg == crash-* ]] && MODES=(update)
       ;;
@@ -112,7 +115,8 @@ configure() {
       fi
       RUN+=("$IMAGE")
       MODES=(query doc)
-      [[ $cfg == solidb-main || $cfg == solidb-2.9.2 ]] && MODES=(query driver)
+      [[ $cfg == solidb-2.9.2 ]] && MODES=(query driver)
+      [[ $cfg == solidb-main ]] && MODES=(query driver run)
       [[ $cfg == crash-* ]] && MODES=(query)
       ;;
     *)
@@ -128,6 +132,9 @@ run_one() {
   $SUDO rm -rf "$data"
   mkdir -p "$data"
   configure "$cfg" "$data"
+  # ONLY_MODES="driver" runs only those modes of the configuration.
+  # shellcheck disable=SC2206
+  [[ -n ${ONLY_MODES:-} ]] && MODES=($ONLY_MODES)
   $DOCKER rm -f "$NAME" >/dev/null 2>&1 || true
   echo "== $cfg: ${RUN[*]}"
   "${RUN[@]}" >/dev/null

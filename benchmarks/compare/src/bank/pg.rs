@@ -13,6 +13,10 @@
 //!   are retried.
 //! - `naive`: the same read-then-write at READ COMMITTED. Not safe; a
 //!   control that shows the checks catch lost updates.
+//! - `function`: `update`'s statements in a PL/pgSQL function, called in
+//!   one round trip (`SELECT transfer(…)`, its own transaction). A debit
+//!   that finds too little money raises, which rolls back a credit made
+//!   first (the rows are still updated in account order).
 
 use super::{Attempt, Res, Totals, Transfer};
 use std::collections::HashMap;
@@ -23,6 +27,25 @@ pub struct Pg {
     url: String,
 }
 
+/// The `function` mode's transfer. `insufficient funds` is raised, not
+/// returned, when the credit was made first: raising rolls it back.
+const TRANSFER_FUNCTION: &str = "
+CREATE OR REPLACE FUNCTION transfer(src int, dst int, amt bigint, tid text, wk int, sq bigint)
+RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+  IF src < dst THEN
+    UPDATE accounts SET balance = balance - amt WHERE id = src AND balance >= amt;
+    IF NOT FOUND THEN RETURN false; END IF;
+    UPDATE accounts SET balance = balance + amt WHERE id = dst;
+  ELSE
+    UPDATE accounts SET balance = balance + amt WHERE id = dst;
+    UPDATE accounts SET balance = balance - amt WHERE id = src AND balance >= amt;
+    IF NOT FOUND THEN RAISE EXCEPTION 'insufficient funds'; END IF;
+  END IF;
+  INSERT INTO transfers (id, w, seq, src, dst, amount) VALUES (tid, wk, sq, src, dst, amt);
+  RETURN true;
+END $$;";
+
 pub struct Conn {
     c: Client,
     debit: Statement,
@@ -31,6 +54,7 @@ pub struct Conn {
     set: Statement,
     ledger: Statement,
     audit: Statement,
+    call: Statement,
 }
 
 impl Pg {
@@ -80,6 +104,9 @@ impl Pg {
             audit: c
                 .prepare("SELECT coalesce(sum(balance), 0)::bigint, count(*), coalesce(min(balance), 0) FROM accounts")
                 .await?,
+            call: c
+                .prepare("SELECT transfer($1, $2, $3, $4, $5, $6)")
+                .await?,
             c,
         })
     }
@@ -99,6 +126,7 @@ impl Pg {
         )
         .await?;
         c.batch_execute("VACUUM ANALYZE accounts").await?;
+        c.batch_execute(TRANSFER_FUNCTION).await?;
         Ok(())
     }
 
@@ -202,6 +230,9 @@ macro_rules! step {
 
 impl Conn {
     pub async fn transfer(&mut self, mode: &str, t: &Transfer) -> Attempt {
+        if mode == "function" {
+            return self.transfer_in_one(t).await;
+        }
         let isolation = if mode == "serializable" {
             IsolationLevel::Serializable
         } else {
@@ -270,6 +301,38 @@ impl Conn {
         match tx.commit().await {
             Ok(()) => Attempt::Committed,
             Err(e) => commit_failed(e),
+        }
+    }
+
+    /// The `function` mode: one statement, its own transaction.
+    async fn transfer_in_one(&mut self, t: &Transfer) -> Attempt {
+        let (from, to) = (t.from as i32, t.to as i32);
+        match self
+            .c
+            .query_one(
+                &self.call,
+                &[
+                    &from,
+                    &to,
+                    &t.amount,
+                    &t.id(),
+                    &(t.w as i32),
+                    &(t.seq as i64),
+                ],
+            )
+            .await
+        {
+            Ok(row) if row.get::<_, bool>(0) => Attempt::Committed,
+            Ok(_) => Attempt::Insufficient,
+            Err(e)
+                if e.as_db_error()
+                    .is_some_and(|d| d.message() == "insufficient funds") =>
+            {
+                Attempt::Insufficient
+            }
+            // The statement carried the commit: no answer means unknown.
+            Err(e) if e.as_db_error().is_none() => Attempt::Unknown(e.to_string()),
+            Err(e) => refused(e),
         }
     }
 

@@ -19,10 +19,15 @@
 //!   credit as queries ending in `RETURN 1`, the ledger row as an insert,
 //!   commit. Needs a server that stages writing queries in a driver
 //!   transaction (after 2.9.1); 2.9.1 and earlier refuse them.
+//! - `run`: the same three statements in one request
+//!   (`run_transaction`: begin, steps, commit on the server; the debit and
+//!   the credit `require_rows`). Needs a server after 2.9.2.
 
 use super::{Attempt, Res, Totals, Transfer};
 use serde_json::{json, Value};
-use solidb_client::{DriverError, SoliDBClient, SoliDBClientBuilder};
+use solidb_client::{
+    DriverError, SoliDBClient, SoliDBClientBuilder, TransactionOutcome, TransactionStep,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -479,6 +484,36 @@ pub fn take_steps() -> Option<Vec<(&'static str, u64, f64)>> {
 }
 
 impl DriverConn {
+    /// The `run` mode: the whole transfer in one request.
+    pub async fn transfer_in_one(&mut self, t: &Transfer) -> Attempt {
+        let vars = |k: u32| {
+            Some(HashMap::from([
+                ("k".to_string(), json!(key(k))),
+                ("x".to_string(), json!(t.amount)),
+            ]))
+        };
+        let steps = vec![
+            TransactionStep::query(DB, Q_DEBIT_RETURN, vars(t.from)).require_rows(),
+            TransactionStep::query(DB, Q_CREDIT_RETURN, vars(t.to)).require_rows(),
+            TransactionStep::insert(
+                DB,
+                "transfers",
+                Some(&t.id()),
+                json!({"w": t.w, "seq": t.seq, "src": t.from, "dst": t.to, "amount": t.amount}),
+            ),
+        ];
+        match self.c.run_transaction(DB, steps).await {
+            Ok(TransactionOutcome::Committed(_)) => Attempt::Committed,
+            Ok(TransactionOutcome::Stopped { step: 0 }) => Attempt::Insufficient,
+            Ok(TransactionOutcome::Stopped { step }) => {
+                Attempt::Failed(format!("step {step} matched nothing"))
+            }
+            // The request carried the commit: no answer means unknown.
+            Err(DriverError::ConnectionError(e)) => Attempt::Unknown(format!("run: {e}")),
+            Err(e) => driver_refused(e, "run"),
+        }
+    }
+
     pub async fn transfer(&mut self, t: &Transfer) -> Attempt {
         let t0 = std::time::Instant::now();
         if let Err(e) = self.c.begin_transaction(DB, None).await {
