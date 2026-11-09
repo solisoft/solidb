@@ -1,0 +1,16 @@
+{
+  "anomalies": {},
+  "clients": 10,
+  "examples": {},
+  "failed_because": {},
+  "history": "results/iso/solidb-guard-cursor-none.history.json",
+  "isolation": "serializable",
+  "keys": 8,
+  "mode": "cursor",
+  "secs": 10,
+  "transactions": {
+    "fail": 0,
+    "info": 0,
+    "ok": 793398
+  }
+}

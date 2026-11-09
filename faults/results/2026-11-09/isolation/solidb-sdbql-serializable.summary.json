@@ -1,0 +1,41 @@
+{
+  "anomalies": {
+    "incompatible-order": 47,
+    "internal": 8218,
+    "lost-append": 8112
+  },
+  "clients": 10,
+  "examples": {
+    "incompatible-order": [
+      "k540: [4, 7, 8, 10, 11, 15] is not a prefix of [11 values …, [22, 26, 30, 31]]",
+      "k4710: [1] is not a prefix of [9 values …, [12, 13, 21, 23]]",
+      "k5231: [3, 4, 9, 15] is not a prefix of [8 values …, [17, 20, 24, 25]]"
+    ],
+    "internal": [
+      "k4: process 1 appended [17], then read [8 values …, [10, 11, 13, 16]]",
+      "k4: process 4 appended [31], then read [11 values …, [16, 17, 23, 30]]",
+      "k10: process 5 appended [2], then read []"
+    ],
+    "lost-append": [
+      "k0: 4 committed, not in the final list",
+      "k1: 12 committed, not in the final list",
+      "k3: 27 committed, not in the final list"
+    ]
+  },
+  "failed_because": {
+    "lock conflict: held by a writer": {
+      "count": 110781,
+      "example": "append k2: {\"code\":409,\"error\":\"Write conflict: Key faults_iso/la/k2 is locked by transaction tx:1794231693228071796\",\"type\":\"TransactionConflict\"}"
+    }
+  },
+  "history": "results/iso/solidb-sdbql-serializable.history.json",
+  "isolation": "serializable",
+  "keys": 8,
+  "mode": "sdbql",
+  "secs": 10,
+  "transactions": {
+    "fail": 110781,
+    "info": 0,
+    "ok": 150205
+  }
+}

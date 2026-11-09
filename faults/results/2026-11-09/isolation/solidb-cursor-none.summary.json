@@ -1,0 +1,30 @@
+{
+  "anomalies": {
+    "incompatible-order": 1509,
+    "lost-append": 24785
+  },
+  "clients": 10,
+  "examples": {
+    "incompatible-order": [
+      "k7975: [26 values …, [25, 26, 27, 29]] is not a prefix of [29 values …, [28, 30, 31, 32]]",
+      "k2138: [11 values …, [9, 10, 11, 12]] is not a prefix of [29 values …, [29, 30, 31, 32]]",
+      "k3331: [23 values …, [21, 23, 24, 26]] is not a prefix of [28 values …, [28, 29, 30, 32]]"
+    ],
+    "lost-append": [
+      "k0: 4 committed, not in the final list",
+      "k2: 3 committed, not in the final list",
+      "k3: 5 committed, not in the final list"
+    ]
+  },
+  "failed_because": {},
+  "history": "results/iso/solidb-cursor-none.history.json",
+  "isolation": "serializable",
+  "keys": 8,
+  "mode": "cursor",
+  "secs": 10,
+  "transactions": {
+    "fail": 0,
+    "info": 0,
+    "ok": 809806
+  }
+}

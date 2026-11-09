@@ -1,0 +1,33 @@
+{
+  "anomalies": {
+    "internal": 7621
+  },
+  "clients": 10,
+  "examples": {
+    "internal": [
+      "k3: process 3 appended [1], then read []",
+      "k6: process 9 appended [6], then read [1, 4]",
+      "k4: process 1 appended [19], then read [1, 4, 6, 11, 14]"
+    ]
+  },
+  "failed_because": {
+    "lock conflict: held by a writer": {
+      "count": 106981,
+      "example": "append k4: {\"code\":409,\"error\":\"Write conflict: Key faults_iso/la/k4 is locked by transaction tx:1794231759530489078\",\"type\":\"TransactionConflict\"}"
+    },
+    "stale write refused": {
+      "count": 8844,
+      "example": "append k5: {\"code\":409,\"error\":\"Write conflict: document 'k5' changed since this query read it (revision '35ddfb09-3fed-4318-bd80-eabd77d72b14', now '3b8418c9-c704-4043-bd7f-309c964f3e0f'); roll back "
+    }
+  },
+  "history": "results/iso/solidb-guard-sdbql-serializable.history.json",
+  "isolation": "serializable",
+  "keys": 8,
+  "mode": "sdbql",
+  "secs": 10,
+  "transactions": {
+    "fail": 115825,
+    "info": 0,
+    "ok": 143814
+  }
+}

@@ -3,6 +3,7 @@
 //! ```text
 //! faults crash --bin ./solidb --engine solistore --durability full --cycles 20 --out crash.jsonl
 //! faults probe-client-tx --bin ./solidb
+//! faults isolation --bin ./solidb --mode doc --isolation serializable --history h.json
 //! ```
 //!
 //! The server is a real binary started and killed by the harness, on a data
@@ -11,6 +12,7 @@
 //! calls actually do.
 
 mod crash;
+mod isolation;
 mod probe;
 mod server;
 
@@ -46,7 +48,9 @@ fn usage() -> ! {
         "usage:\n  faults crash --bin PATH [--engine rocksdb|solistore] [--durability eventual|full] \
          [--cycles N] [--tx-writers N] [--single-writers N] [--single-rate N] [--min-ms N] [--max-ms N] \
          [--tx-isolation read_committed|read_uncommitted|repeatable_read|serializable] [--seed N] \
-         [--port N] [--data DIR] [--out FILE]\n  faults probe-client-tx --bin PATH [--port N] [--data DIR]"
+         [--port N] [--data DIR] [--out FILE]\n  faults probe-client-tx --bin PATH [--port N] [--data DIR]\n  \
+         faults isolation --bin PATH [--mode doc|sdbql|cursor] [--isolation LEVEL] [--clients N] [--keys N] \
+         [--max-writes N] [--secs N] [--seed N] [--history FILE] [--port N] [--data DIR]"
     );
     std::process::exit(2)
 }
@@ -116,6 +120,20 @@ async fn main() -> Res<()> {
             let violations = crash::run(&mut server, opts, &mut out).await?;
             eprintln!("[faults] done: {violations} violation(s)");
             std::process::exit(if violations == 0 { 0 } else { 1 });
+        }
+        "isolation" => {
+            let opts = isolation::Opts {
+                mode: get("mode", "doc"),
+                isolation: get("isolation", "serializable"),
+                clients: num("clients", 10) as u32,
+                keys: num("keys", 8),
+                max_writes: num("max-writes", 32),
+                secs: num("secs", 30),
+                seed: num("seed", 1),
+            };
+            let history = get("history", "history.json");
+            let anomalies = isolation::run(&mut server, opts, &history).await?;
+            std::process::exit(if anomalies == 0 { 0 } else { 1 });
         }
         "probe-client-tx" => {
             let findings = probe::run(&mut server).await?;

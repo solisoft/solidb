@@ -75,6 +75,43 @@ A process kill lost nothing acknowledged on either engine, in either
 durability mode, and left no transaction half applied. The requests in flight
 landed or not, never partly.
 
+## `isolation`
+
+Concurrent transactions of reads and appends on a few hot lists, recorded
+as a history in Elle's list-append format (`--history`), then checked for
+what needs no cycle search:
+
+| Anomaly | Meaning |
+|---|---|
+| `lost-append` | an append whose transaction committed is not in the final list |
+| `aborted-read` | a value whose transaction failed is read, or kept |
+| `incompatible-order` | two reads of a list where neither is a prefix of the other |
+| `duplicate-elements`, `garbage-read` | a value twice in one read, or never appended |
+| `internal` | a read after the transaction's own append does not end with it |
+
+`--mode` picks the path: `doc` (HTTP transaction, documents read with `GET`
+and written with `PUT` by key), `sdbql` (HTTP transaction, `FOR d … UPDATE d
+WITH {vals: PUSH(d.vals, @v)}` through `…/query`) or `cursor` (the same
+statement through `/cursor`, no transaction). `--keys` lists are in use at a
+time; each is retired after `--max-writes` appends (32), as Jepsen does, so
+the history stays small enough for Elle (`elle-cli --model list-append`),
+which finds the cycles (G0, G1c, G2, write skew). Elle was not run yet.
+
+`results/2026-11-09/isolation/`: 10 clients, 8 active keys, 10 s, seed 11,
+the published v2.9.0 binary (`solidb-*`) and a build of `main` with the fix
+for card #796 (`solidb-guard-*`).
+
+| Path | v2.9.0: committed appends lost | Fixed | Fixed: refused instead |
+|---|---|---|---|
+| `cursor` (no transaction) | 24,785 of 405,507 | 0 | — |
+| `sdbql`, `read_committed` | 8,207 of 126,137 | 0 | 8,984 transactions (stale write) |
+| `sdbql`, `serializable` | 8,112 of 125,047 | 0 | 8,844 transactions (stale write) |
+| `doc`, `serializable` | 0 | 0 | — (about 70% of transactions refused on lock conflicts, both versions) |
+
+The `internal` anomalies of the `sdbql` path (about 7,700 per run) are the
+documented behaviour: a query in a transaction reads committed data, not the
+transaction's own writes.
+
 ## `probe-client-tx`
 
 Checks what the Rust client's transaction calls do against a real server: a
@@ -86,7 +123,8 @@ write between `begin_transaction` and `rollback`, and `begin_transaction` /
 
 - **Power loss:** what was written but not fsynced, dropped below the
   filesystem (LazyFS or dm-log-writes).
-- **Isolation:** concurrent transactions checked by a history checker
-  (Elle), per isolation level.
+- **Isolation cycles:** the `isolation` histories through Elle, for the
+  anomalies that need a cycle search (write skew across documents read but
+  not written).
 
 Both are in #792.
