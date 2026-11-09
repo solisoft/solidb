@@ -1,0 +1,191 @@
+{
+  "label": "postgres-naive",
+  "engine": "postgres",
+  "mode": "naive",
+  "initial_balance": 1000,
+  "max_amount": 100,
+  "max_attempts": 200,
+  "seed": 1,
+  "meta": {
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g --shm-size 1g -e POSTGRES_PASSWORD=bench -v /home/rocky/bench/data/postgres-naive:/var/lib/postgresql:Z docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 -c shared_buffers=4GB -c effective_cache_size=12GB -c max_connections=200",
+    "image": "docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42",
+    "image_digest": "sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42",
+    "server_version": "postgres (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+    "db_cpus": "0-3,16-19",
+    "client_cpus": "8-15,24-31",
+    "db_memory": "16g",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64"
+  },
+  "series": [
+    {
+      "accounts": 10,
+      "clients": 32,
+      "median_run": 0,
+      "runs": [
+        {
+          "accounts": 10,
+          "clients": 32,
+          "run": 0,
+          "commits": 149533,
+          "per_sec": 7476.65,
+          "attempts": 151488,
+          "conflicts": 0,
+          "conflicts_per_commit": 0.0,
+          "insufficient": 1955,
+          "gave_up": 0,
+          "failed": 0,
+          "p50_us": 1233,
+          "p90_us": 11133,
+          "p99_us": 47380,
+          "p999_us": 86336,
+          "max_us": 215538,
+          "db_cpu_s": 111.30190300000001,
+          "db_cpu_us_per_commit": 744.3300341730588,
+          "load_before": 4.65,
+          "audits": {
+            "n": 2273,
+            "wrong_total": 2273,
+            "wrong_count": 0,
+            "negative_min": 0,
+            "first_wrong": {
+              "sum": 9966,
+              "count": 10,
+              "min": 863
+            },
+            "errors": 0
+          },
+          "check": {
+            "acknowledged": 208129,
+            "in_flight": 0,
+            "in_flight_landed": 0,
+            "ledger_rows": 208129,
+            "acknowledged_missing": 0,
+            "ledger_extra": 0,
+            "ledger_workers_mismatched": 0,
+            "accounts_read": 10,
+            "money_drift": 13513,
+            "negative_balances": 0,
+            "accounts_off_acknowledged": 10,
+            "accounts_off_ledger": 10,
+            "violations": [
+              "money created (+13513): the balances add up to 23513",
+              "10 accounts differ from what the acknowledged transfers moved",
+              "10 accounts differ from their ledger rows"
+            ]
+          },
+          "errors": [],
+          "stopped_workers": []
+        },
+        {
+          "accounts": 10,
+          "clients": 32,
+          "run": 1,
+          "commits": 148968,
+          "per_sec": 7448.4,
+          "attempts": 150741,
+          "conflicts": 0,
+          "conflicts_per_commit": 0.0,
+          "insufficient": 1773,
+          "gave_up": 0,
+          "failed": 0,
+          "p50_us": 1274,
+          "p90_us": 11078,
+          "p99_us": 47595,
+          "p999_us": 88627,
+          "max_us": 202100,
+          "db_cpu_s": 114.107475,
+          "db_cpu_us_per_commit": 765.9864870307717,
+          "load_before": 6.38,
+          "audits": {
+            "n": 2272,
+            "wrong_total": 2272,
+            "wrong_count": 0,
+            "negative_min": 0,
+            "first_wrong": {
+              "sum": 10496,
+              "count": 10,
+              "min": 906
+            },
+            "errors": 0
+          },
+          "check": {
+            "acknowledged": 210032,
+            "in_flight": 0,
+            "in_flight_landed": 0,
+            "ledger_rows": 210032,
+            "acknowledged_missing": 0,
+            "ledger_extra": 0,
+            "ledger_workers_mismatched": 0,
+            "accounts_read": 10,
+            "money_drift": 26399,
+            "negative_balances": 0,
+            "accounts_off_acknowledged": 10,
+            "accounts_off_ledger": 10,
+            "violations": [
+              "money created (+26399): the balances add up to 36399",
+              "10 accounts differ from what the acknowledged transfers moved",
+              "10 accounts differ from their ledger rows"
+            ]
+          },
+          "errors": [],
+          "stopped_workers": []
+        },
+        {
+          "accounts": 10,
+          "clients": 32,
+          "run": 2,
+          "commits": 334972,
+          "per_sec": 16748.6,
+          "attempts": 337846,
+          "conflicts": 0,
+          "conflicts_per_commit": 0.0,
+          "insufficient": 2874,
+          "gave_up": 0,
+          "failed": 0,
+          "p50_us": 471,
+          "p90_us": 5052,
+          "p99_us": 22851,
+          "p999_us": 42140,
+          "max_us": 100701,
+          "db_cpu_s": 72.92908,
+          "db_cpu_us_per_commit": 217.71694350572585,
+          "load_before": 6.58,
+          "audits": {
+            "n": 2272,
+            "wrong_total": 2271,
+            "wrong_count": 0,
+            "negative_min": 0,
+            "first_wrong": {
+              "sum": 10410,
+              "count": 10,
+              "min": 857
+            },
+            "errors": 0
+          },
+          "check": {
+            "acknowledged": 394261,
+            "in_flight": 0,
+            "in_flight_landed": 0,
+            "ledger_rows": 394261,
+            "acknowledged_missing": 0,
+            "ledger_extra": 0,
+            "ledger_workers_mismatched": 0,
+            "accounts_read": 10,
+            "money_drift": 31921,
+            "negative_balances": 0,
+            "accounts_off_acknowledged": 10,
+            "accounts_off_ledger": 10,
+            "violations": [
+              "money created (+31921): the balances add up to 41921",
+              "10 accounts differ from what the acknowledged transfers moved",
+              "10 accounts differ from their ledger rows"
+            ]
+          },
+          "errors": [],
+          "stopped_workers": []
+        }
+      ]
+    }
+  ]
+}

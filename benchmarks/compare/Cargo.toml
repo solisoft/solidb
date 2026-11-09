@@ -9,6 +9,12 @@ description = "Run the same documents and queries against SoliDB, PostgreSQL, Mo
 # root Cargo.lock, and out of the `audit` job that reads it.
 [workspace]
 
+# `src/main.rs` is `solidb-compare`. The bank: transfers in transactions,
+# PostgreSQL against SoliDB, with fsynced commits and kill -9 (bank.sh).
+[[bin]]
+name = "solidb-bank"
+path = "src/bank/main.rs"
+
 [dependencies]
 solidb-client = { path = "../../clients/rust-client" }
 tokio = { version = "1.35", features = ["full"] }

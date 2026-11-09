@@ -1,0 +1,526 @@
+{
+  "label": "crash-postgres-async",
+  "engine": "postgres",
+  "mode": "update",
+  "initial_balance": 1000,
+  "max_amount": 100,
+  "max_attempts": 200,
+  "seed": 1,
+  "meta": {
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g --shm-size 1g -e POSTGRES_PASSWORD=bench -v /home/rocky/bench/data/crash-postgres-async:/var/lib/postgresql:Z docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 -c shared_buffers=4GB -c effective_cache_size=12GB -c max_connections=200 -c synchronous_commit=off",
+    "image": "docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42",
+    "image_digest": "sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42",
+    "server_version": "postgres (PostgreSQL) 18.6 (Debian 18.6-1.pgdg13+2)",
+    "db_cpus": "0-3,16-19",
+    "client_cpus": "8-15,24-31",
+    "db_memory": "16g",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64"
+  },
+  "accounts": 10000,
+  "clients": 32,
+  "cycles": [
+    {
+      "cycle": 0,
+      "ran_ms": 2720,
+      "acknowledged_this_cycle": 246594,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 407,
+      "check": {
+        "acknowledged": 246594,
+        "in_flight": 8,
+        "in_flight_landed": 0,
+        "ledger_rows": 243946,
+        "acknowledged_missing": 2648,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 4123,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "2648 acknowledged transfers have no ledger row",
+          "4123 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 1,
+      "ran_ms": 3541,
+      "acknowledged_this_cycle": 310673,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 509,
+      "check": {
+        "acknowledged": 557267,
+        "in_flight": 0,
+        "in_flight_landed": 0,
+        "ledger_rows": 553326,
+        "acknowledged_missing": 3941,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 5450,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "3941 acknowledged transfers have no ledger row",
+          "5450 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 2,
+      "ran_ms": 1361,
+      "acknowledged_this_cycle": 120620,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 306,
+      "check": {
+        "acknowledged": 677887,
+        "in_flight": 7,
+        "in_flight_landed": 0,
+        "ledger_rows": 672227,
+        "acknowledged_missing": 5660,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 6776,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "5660 acknowledged transfers have no ledger row",
+          "6776 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 3,
+      "ran_ms": 1244,
+      "acknowledged_this_cycle": 108718,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 306,
+      "check": {
+        "acknowledged": 786605,
+        "in_flight": 7,
+        "in_flight_landed": 0,
+        "ledger_rows": 780707,
+        "acknowledged_missing": 5898,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 6936,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "5898 acknowledged transfers have no ledger row",
+          "6936 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 4,
+      "ran_ms": 2562,
+      "acknowledged_this_cycle": 224437,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 407,
+      "check": {
+        "acknowledged": 1011042,
+        "in_flight": 2,
+        "in_flight_landed": 0,
+        "ledger_rows": 1003553,
+        "acknowledged_missing": 7489,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 7738,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "7489 acknowledged transfers have no ledger row",
+          "7738 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 5,
+      "ran_ms": 2043,
+      "acknowledged_this_cycle": 180081,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 408,
+      "check": {
+        "acknowledged": 1191123,
+        "in_flight": 12,
+        "in_flight_landed": 0,
+        "ledger_rows": 1181878,
+        "acknowledged_missing": 9245,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 8419,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "9245 acknowledged transfers have no ledger row",
+          "8419 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 6,
+      "ran_ms": 1292,
+      "acknowledged_this_cycle": 109315,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 306,
+      "check": {
+        "acknowledged": 1300438,
+        "in_flight": 4,
+        "in_flight_landed": 0,
+        "ledger_rows": 1290840,
+        "acknowledged_missing": 9598,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 8519,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "9598 acknowledged transfers have no ledger row",
+          "8519 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 7,
+      "ran_ms": 2799,
+      "acknowledged_this_cycle": 239289,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 509,
+      "check": {
+        "acknowledged": 1539727,
+        "in_flight": 4,
+        "in_flight_landed": 0,
+        "ledger_rows": 1529396,
+        "acknowledged_missing": 10331,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 8721,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "10331 acknowledged transfers have no ledger row",
+          "8721 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 8,
+      "ran_ms": 1183,
+      "acknowledged_this_cycle": 98878,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 305,
+      "check": {
+        "acknowledged": 1638605,
+        "in_flight": 1,
+        "in_flight_landed": 0,
+        "ledger_rows": 1626652,
+        "acknowledged_missing": 11953,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9078,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "11953 acknowledged transfers have no ledger row",
+          "9078 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 9,
+      "ran_ms": 3498,
+      "acknowledged_this_cycle": 298733,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 611,
+      "check": {
+        "acknowledged": 1937338,
+        "in_flight": 6,
+        "in_flight_landed": 0,
+        "ledger_rows": 1924359,
+        "acknowledged_missing": 12979,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9263,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "12979 acknowledged transfers have no ledger row",
+          "9263 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 10,
+      "ran_ms": 1776,
+      "acknowledged_this_cycle": 154920,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 408,
+      "check": {
+        "acknowledged": 2092258,
+        "in_flight": 2,
+        "in_flight_landed": 0,
+        "ledger_rows": 2078379,
+        "acknowledged_missing": 13879,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9404,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "13879 acknowledged transfers have no ledger row",
+          "9404 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 11,
+      "ran_ms": 2508,
+      "acknowledged_this_cycle": 219547,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 509,
+      "check": {
+        "acknowledged": 2311805,
+        "in_flight": 5,
+        "in_flight_landed": 0,
+        "ledger_rows": 2297190,
+        "acknowledged_missing": 14615,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9496,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "14615 acknowledged transfers have no ledger row",
+          "9496 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 12,
+      "ran_ms": 2365,
+      "acknowledged_this_cycle": 205033,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 509,
+      "check": {
+        "acknowledged": 2516838,
+        "in_flight": 7,
+        "in_flight_landed": 0,
+        "ledger_rows": 2501059,
+        "acknowledged_missing": 15779,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9596,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "15779 acknowledged transfers have no ledger row",
+          "9596 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 13,
+      "ran_ms": 1566,
+      "acknowledged_this_cycle": 134769,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 508,
+      "check": {
+        "acknowledged": 2651607,
+        "in_flight": 11,
+        "in_flight_landed": 0,
+        "ledger_rows": 2634323,
+        "acknowledged_missing": 17284,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9691,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "17284 acknowledged transfers have no ledger row",
+          "9691 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 14,
+      "ran_ms": 1311,
+      "acknowledged_this_cycle": 113933,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 407,
+      "check": {
+        "acknowledged": 2765540,
+        "in_flight": 6,
+        "in_flight_landed": 0,
+        "ledger_rows": 2747854,
+        "acknowledged_missing": 17686,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9709,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "17686 acknowledged transfers have no ledger row",
+          "9709 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 15,
+      "ran_ms": 2547,
+      "acknowledged_this_cycle": 224903,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 611,
+      "check": {
+        "acknowledged": 2990443,
+        "in_flight": 3,
+        "in_flight_landed": 0,
+        "ledger_rows": 2972027,
+        "acknowledged_missing": 18416,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9739,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "18416 acknowledged transfers have no ledger row",
+          "9739 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 16,
+      "ran_ms": 1104,
+      "acknowledged_this_cycle": 92191,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 408,
+      "check": {
+        "acknowledged": 3082634,
+        "in_flight": 4,
+        "in_flight_landed": 0,
+        "ledger_rows": 3062097,
+        "acknowledged_missing": 20537,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9827,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "20537 acknowledged transfers have no ledger row",
+          "9827 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 17,
+      "ran_ms": 1592,
+      "acknowledged_this_cycle": 127198,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 509,
+      "check": {
+        "acknowledged": 3209832,
+        "in_flight": 8,
+        "in_flight_landed": 0,
+        "ledger_rows": 3188986,
+        "acknowledged_missing": 20846,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9828,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "20846 acknowledged transfers have no ledger row",
+          "9828 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 18,
+      "ran_ms": 3734,
+      "acknowledged_this_cycle": 324019,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 712,
+      "check": {
+        "acknowledged": 3533851,
+        "in_flight": 6,
+        "in_flight_landed": 0,
+        "ledger_rows": 3510474,
+        "acknowledged_missing": 23377,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9892,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "23377 acknowledged transfers have no ledger row",
+          "9892 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    },
+    {
+      "cycle": 19,
+      "ran_ms": 1429,
+      "acknowledged_this_cycle": 123538,
+      "workers_stopped_by_the_kill": 32,
+      "recovery_ms": 510,
+      "check": {
+        "acknowledged": 3657389,
+        "in_flight": 7,
+        "in_flight_landed": 0,
+        "ledger_rows": 3631872,
+        "acknowledged_missing": 25517,
+        "ledger_extra": 0,
+        "ledger_workers_mismatched": 0,
+        "accounts_read": 10000,
+        "money_drift": 0,
+        "negative_balances": 0,
+        "accounts_off_acknowledged": 9932,
+        "accounts_off_ledger": 0,
+        "violations": [
+          "25517 acknowledged transfers have no ledger row",
+          "9932 accounts differ from what the acknowledged transfers moved"
+        ]
+      }
+    }
+  ],
+  "acknowledged_total": 3657389,
+  "violations_total": 40
+}
