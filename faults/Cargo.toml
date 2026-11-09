@@ -1,0 +1,19 @@
+[package]
+name = "solidb-faults"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Kill SoliDB mid-write and check what survives: transactions, single writes and indexes"
+
+# A workspace of its own, like benchmarks/compare: it drives a server binary
+# from outside and is not part of the server's build or test suite.
+[workspace]
+
+[dependencies]
+solidb-client = { path = "../clients/rust-client" }
+tokio = { version = "1.35", features = ["full"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+
+[profile.release]
+debug = 1
