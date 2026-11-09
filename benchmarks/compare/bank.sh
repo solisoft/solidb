@@ -15,6 +15,8 @@
 #   solidb-2.9.0    the published 2.9.0 image, solistore, SOLIDB_DURABILITY=full;
 #                   modes query (SDBQL UPDATE in a transaction), doc
 #   solidb-2.9.1    the same on 2.9.1
+#   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver
+#                   (the transfer over the native driver, which needs it)
 # Crash: the container is killed with SIGKILL while 32 clients transfer, then
 # started again on the same data, CYCLES times; checked after every restart.
 #   crash-postgres          synchronous_commit=on
@@ -91,9 +93,12 @@ configure() {
       [[ $cfg == postgres-naive ]] && MODES=(naive) && SERIES=10:32
       [[ $cfg == crash-* ]] && MODES=(update)
       ;;
-    solidb-2.9.0 | solidb-2.9.1 | crash-solidb | crash-solidb-eventual)
+    solidb-2.9.0 | solidb-2.9.1 | solidb-main | crash-solidb | crash-solidb-eventual)
       ENGINE=solidb PORT=6800 IMAGE=$SOLIDB_291
       [[ $cfg == solidb-2.9.0 ]] && IMAGE=$SOLIDB_290
+      if [[ $cfg == solidb-main ]]; then
+        IMAGE=${SOLIDB_MAIN:?set SOLIDB_MAIN to the image of the build to measure}
+      fi
       RUN=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$PORT -v "$data:/data:Z,U"
         -e SOLIDB_ENGINE=solistore)
       if [[ $cfg == crash-solidb-eventual ]]; then
@@ -103,6 +108,7 @@ configure() {
       fi
       RUN+=("$IMAGE")
       MODES=(query doc)
+      [[ $cfg == solidb-main ]] && MODES=(query driver)
       [[ $cfg == crash-* ]] && MODES=(query)
       ;;
     *)

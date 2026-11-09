@@ -14,9 +14,15 @@
 //! - `doc`: read both accounts with `GET` (shared locks), decide in the
 //!   client, write the new balances with `PUT` (exclusive locks), insert
 //!   the ledger row with `POST`.
+//! - `driver`: `query`'s statements through the native MessagePack driver
+//!   (`solidb-client`, one connection per worker): begin, the debit and the
+//!   credit as queries ending in `RETURN 1`, the ledger row as an insert,
+//!   commit. Needs a server that stages writing queries in a driver
+//!   transaction (after 2.9.1); 2.9.1 and earlier refuse them.
 
 use super::{Attempt, Res, Totals, Transfer};
 use serde_json::{json, Value};
+use solidb_client::{DriverError, SoliDBClient, SoliDBClientBuilder};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -28,12 +34,22 @@ const Q_CREDIT: &str =
     "FOR a IN accounts FILTER a._key == @k UPDATE a WITH {balance: a.balance + @x} IN accounts";
 const Q_LEDGER: &str =
     "INSERT {_key: @id, w: @w, seq: @seq, src: @src, dst: @dst, amount: @x} INTO transfers";
+const Q_DEBIT_RETURN: &str = "FOR a IN accounts FILTER a._key == @k FILTER a.balance >= @x \
+     UPDATE a WITH {balance: a.balance - @x} IN accounts RETURN 1";
+const Q_CREDIT_RETURN: &str =
+    "FOR a IN accounts FILTER a._key == @k UPDATE a WITH {balance: a.balance + @x} IN accounts RETURN 1";
 const Q_AUDIT: &str = "FOR a IN accounts COLLECT AGGREGATE s = SUM(a.balance), n = COUNT(), \
      lo = MIN(a.balance) RETURN {s, n, lo}";
 
 pub struct Soli {
+    addr: String,
     url: String,
     password: String,
+}
+
+/// A worker's connection over the native driver.
+pub struct DriverConn {
+    c: SoliDBClient,
 }
 
 pub struct Conn {
@@ -69,6 +85,7 @@ async fn send(rb: reqwest::RequestBuilder) -> Result<(u16, Value), String> {
 impl Soli {
     pub fn new(addr: &str, password: &str) -> Self {
         Soli {
+            addr: addr.to_string(),
             url: format!("http://{addr}"),
             password: password.to_string(),
         }
@@ -94,6 +111,15 @@ impl Soli {
             url: self.url.clone(),
             token,
         })
+    }
+
+    pub async fn connect_driver(&self) -> Res<DriverConn> {
+        let c = SoliDBClientBuilder::new(&self.addr)
+            .auth("_system", "admin", &self.password)
+            .pool_size(1)
+            .build()
+            .await?;
+        Ok(DriverConn { c })
     }
 
     pub async fn ready(&self) -> Res<()> {
@@ -391,6 +417,125 @@ impl Conn {
             "ledger",
         )
         .await?;
+        Ok(())
+    }
+}
+
+/// A refusal by the concurrency control (a lock held, a stale write) reads
+/// "… conflict …"; no answer at all is a connection error.
+fn driver_refused(e: DriverError, what: &str) -> Attempt {
+    match &e {
+        DriverError::ConnectionError(_) => Attempt::Lost(format!("{what}: {e}")),
+        _ if e.to_string().to_lowercase().contains("conflict") => {
+            Attempt::Conflict(format!("{what}: {e}"))
+        }
+        _ => Attempt::Failed(format!("{what}: {e}")),
+    }
+}
+
+/// Where a driver transfer's time goes, step by step, when `BANK_STEPS=1`:
+/// (calls, total nanoseconds) for begin, debit, credit, ledger, commit.
+static STEPS: std::sync::Mutex<[(u64, u128); 5]> = std::sync::Mutex::new([(0, 0); 5]);
+pub const STEP_NAMES: [&str; 5] = ["begin", "debit", "credit", "ledger", "commit"];
+
+fn steps_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("BANK_STEPS").is_ok_and(|v| v == "1"))
+}
+
+fn step(i: usize, since: std::time::Instant) -> std::time::Instant {
+    let now = std::time::Instant::now();
+    if steps_on() {
+        let mut s = STEPS.lock().unwrap();
+        s[i].0 += 1;
+        s[i].1 += (now - since).as_nanos();
+    }
+    now
+}
+
+/// The mean of each step since the last call, and reset.
+pub fn take_steps() -> Option<Vec<(&'static str, u64, f64)>> {
+    if !steps_on() {
+        return None;
+    }
+    let mut s = STEPS.lock().unwrap();
+    let out = STEP_NAMES
+        .iter()
+        .zip(s.iter())
+        .map(|(n, (c, ns))| {
+            (
+                *n,
+                *c,
+                if *c > 0 {
+                    *ns as f64 / *c as f64 / 1000.0
+                } else {
+                    0.0
+                },
+            )
+        })
+        .collect();
+    *s = [(0, 0); 5];
+    Some(out)
+}
+
+impl DriverConn {
+    pub async fn transfer(&mut self, t: &Transfer) -> Attempt {
+        let t0 = std::time::Instant::now();
+        if let Err(e) = self.c.begin_transaction(DB, None).await {
+            return driver_refused(e, "begin");
+        }
+        let t1 = step(0, t0);
+        if let Err(outcome) = self.body(t, t1).await {
+            // Also when the connection is gone: it clears the client's
+            // open transaction either way.
+            let _ = self.c.rollback().await;
+            return outcome;
+        }
+        let t4 = std::time::Instant::now();
+        let committed = self.c.commit().await;
+        step(4, t4);
+        match committed {
+            Ok(()) => Attempt::Committed,
+            Err(DriverError::ConnectionError(e)) => Attempt::Unknown(format!("commit: {e}")),
+            Err(e) => driver_refused(e, "commit"),
+        }
+    }
+
+    async fn body(&mut self, t: &Transfer, t1: std::time::Instant) -> Result<(), Attempt> {
+        let vars = |k: u32| {
+            Some(HashMap::from([
+                ("k".to_string(), json!(key(k))),
+                ("x".to_string(), json!(t.amount)),
+            ]))
+        };
+        let debited = self
+            .c
+            .query_with_cache(DB, Q_DEBIT_RETURN, vars(t.from), false)
+            .await
+            .map_err(|e| driver_refused(e, "debit"))?;
+        let t2 = step(1, t1);
+        if debited.is_empty() {
+            return Err(Attempt::Insufficient);
+        }
+        let credited = self
+            .c
+            .query_with_cache(DB, Q_CREDIT_RETURN, vars(t.to), false)
+            .await
+            .map_err(|e| driver_refused(e, "credit"))?;
+        let t3 = step(2, t2);
+        if credited.len() != 1 {
+            return Err(Attempt::Failed("credit matched no account".into()));
+        }
+        self.c
+            .insert(
+                DB,
+                "transfers",
+                Some(&t.id()),
+                json!({"w": t.w, "seq": t.seq, "src": t.from, "dst": t.to, "amount": t.amount}),
+            )
+            .await
+            .map_err(|e| driver_refused(e, "ledger"))?;
+        step(3, t3);
         Ok(())
     }
 }

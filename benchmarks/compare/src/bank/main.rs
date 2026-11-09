@@ -26,7 +26,8 @@
 //! solidb-bank --engine postgres|solidb --mode MODE --addr HOST:PORT --out FILE
 //!     [--password bench] [--label NAME] [--initial 1000] [--max-amount 100]
 //!     [--series 10000:1,10000:32,10:32] [--warm 5] [--secs 20] [--runs 3]
-//!     [--seed 1] [--db-cgroup PATH] [--meta key=value ...]
+//!     [--seed 1] [--audit-ms 10 (0: no auditor)] [--db-cgroup PATH] [--meta key=value ...]
+//!     BANK_STEPS=1 in the environment: the driver mode's mean time per step
 //! crash mode:
 //!     --crash-cycles 20 --kill CMD --start CMD
 //!     [--accounts 10000] [--concurrency 32] [--min-ms 1000] [--max-ms 4000]
@@ -35,7 +36,8 @@
 //! Modes: postgres `update` (READ COMMITTED, conditional UPDATEs),
 //! `serializable` (read then write), `naive` (read then write at READ
 //! COMMITTED, the control); solidb `query` (SDBQL UPDATE in an HTTP
-//! transaction), `doc` (document reads and writes in an HTTP transaction).
+//! transaction), `doc` (document reads and writes in an HTTP transaction),
+//! `driver` (`query`'s statements over the native driver).
 
 mod pg;
 mod soli;
@@ -97,12 +99,15 @@ enum Db {
 enum Conn {
     Pg(pg::Conn),
     Soli(soli::Conn),
+    SoliDriver(soli::DriverConn),
 }
 
 impl Db {
-    async fn connect(&self) -> Res<Conn> {
+    /// A worker's connection for `mode`; the auditor's is any other mode's.
+    async fn connect(&self, mode: &str) -> Res<Conn> {
         Ok(match self {
             Db::Pg(d) => Conn::Pg(d.connect().await?),
+            Db::Soli(d) if mode == "driver" => Conn::SoliDriver(d.connect_driver().await?),
             Db::Soli(d) => Conn::Soli(d.connect().await?),
         })
     }
@@ -163,12 +168,14 @@ impl Conn {
         match self {
             Conn::Pg(c) => c.transfer(mode, t).await,
             Conn::Soli(c) => c.transfer(mode, t).await,
+            Conn::SoliDriver(c) => c.transfer(t).await,
         }
     }
     async fn audit(&mut self) -> Res<Totals> {
         match self {
             Conn::Pg(c) => c.audit().await,
             Conn::Soli(c) => c.audit().await,
+            Conn::SoliDriver(_) => Err("the auditor reads over HTTP".into()),
         }
     }
 }
@@ -243,7 +250,7 @@ async fn worker(job: Arc<Job>, w: u32, first_seq: u64) -> Work {
         next_seq: first_seq,
         ..Work::default()
     };
-    let mut conn = match job.db.connect().await {
+    let mut conn = match job.db.connect(&job.mode).await {
         Ok(c) => c,
         Err(e) => {
             work.stopped = Some(format!("connect: {e}"));
@@ -337,9 +344,18 @@ struct Audits {
 }
 
 /// Sum every balance in one statement, over and over, while transfers run.
-async fn auditor(db: Arc<Db>, stop: Arc<AtomicBool>, accounts: u32, total: i64) -> Audits {
+async fn auditor(
+    db: Arc<Db>,
+    stop: Arc<AtomicBool>,
+    accounts: u32,
+    total: i64,
+    every_ms: u64,
+) -> Audits {
     let mut a = Audits::default();
-    let Ok(mut conn) = db.connect().await else {
+    if every_ms == 0 {
+        return a;
+    }
+    let Ok(mut conn) = db.connect("audit").await else {
         a.errors += 1;
         return a;
     };
@@ -357,7 +373,7 @@ async fn auditor(db: Arc<Db>, stop: Arc<AtomicBool>, accounts: u32, total: i64) 
             }
             Err(_) => a.errors += 1,
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(every_ms)).await;
     }
     a
 }
@@ -525,6 +541,8 @@ struct Args {
     seed: u64,
     db_cgroup: Option<String>,
     meta: Vec<(String, String)>,
+    /// The auditor's pause between two sums; 0 turns it off.
+    audit_ms: u64,
     crash_cycles: usize,
     kill: Option<String>,
     start: Option<String>,
@@ -585,6 +603,7 @@ fn parse_args() -> Args {
                     .collect()
             })
             .unwrap_or_default(),
+        audit_ms: num("audit-ms", 10),
         crash_cycles: num("crash-cycles", 0) as usize,
         kill: one("kill"),
         start: one("start"),
@@ -640,7 +659,9 @@ async fn run_once(db: &Arc<Db>, a: &Args, accounts: u32, clients: usize, run: us
         stop.clone(),
         accounts,
         accounts as i64 * a.initial,
+        a.audit_ms,
     ));
+    let _ = soli::take_steps();
     tokio::time::sleep_until(window.0.into()).await;
     let (cpu0, load0) = (db_cpu(&a.db_cgroup), load_avg());
     tokio::time::sleep_until(window.1.into()).await;
@@ -651,6 +672,13 @@ async fn run_once(db: &Arc<Db>, a: &Args, accounts: u32, clients: usize, run: us
         works.push(h.await?);
     }
     let audits = aud.await?;
+    if let Some(steps) = soli::take_steps() {
+        let line: Vec<String> = steps
+            .iter()
+            .map(|(n, c, us)| format!("{n} {us:.1} µs (×{c})"))
+            .collect();
+        eprintln!("{} steps, mean per call: {}", a.label, line.join(", "));
+    }
 
     let mut committed: Vec<Transfer> = Vec::new();
     let mut unknown: Vec<Transfer> = Vec::new();
@@ -865,7 +893,7 @@ async fn main() {
     });
     let ok_modes: &[&str] = match a.engine.as_str() {
         "postgres" => &["update", "serializable", "naive"],
-        _ => &["query", "doc"],
+        _ => &["query", "doc", "driver"],
     };
     assert!(
         ok_modes.contains(&a.mode.as_str()),
