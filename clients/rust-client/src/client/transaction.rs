@@ -6,10 +6,12 @@ impl SoliDBClient {
     ///
     /// Until [`commit`](Self::commit) or [`rollback`](Self::rollback),
     /// [`insert`](Self::insert), [`update`](Self::update) and
-    /// [`delete`](Self::delete) are staged in it and applied at commit, and
-    /// a read-only query runs against committed data (it does not see the
-    /// transaction's own writes); a query that writes, `bulk_insert` and
-    /// `batch` are refused. A [`get`](Self::get) is not part of the
+    /// [`delete`](Self::delete) are staged in it and applied at commit. A
+    /// query reads committed data (it does not see the transaction's own
+    /// writes), and the writes of a query that writes are staged too (servers
+    /// after 2.9.1; 2.9.1 and earlier refuse it); an `UPDATE` it computes from
+    /// a document that changed since it read it fails the transaction with a
+    /// conflict. `bulk_insert` and `batch` are refused. A [`get`](Self::get) is not part of the
     /// transaction either: it reads committed data. One transaction at a
     /// time per client.
     pub async fn begin_transaction(

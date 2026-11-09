@@ -84,11 +84,12 @@ pub fn handle_rollback_transaction(handler: &mut DriverHandler, tx_id: String) -
 
 /// Run one command inside an open transaction.
 ///
-/// Only single-document writes (`Insert`, `Update`, `Delete`) can be staged in
-/// a transaction: they are recorded on it and applied at commit, so a
-/// rollback discards them. Anything else is refused. It used to run the inner
-/// command outside the transaction, which committed the write immediately and
-/// made `Rollback` a no-op without saying so.
+/// Single-document writes (`Insert`, `Update`, `Delete`) and queries that
+/// write are staged: recorded on the transaction and applied at commit, so a
+/// rollback discards them. A read-only query reads committed data. Anything
+/// else is refused. It used to run the inner command outside the
+/// transaction, which committed the write immediately and made `Rollback` a
+/// no-op without saying so.
 pub async fn handle_transaction_command(
     handler: &mut DriverHandler,
     tx_id: String,
@@ -151,35 +152,110 @@ pub async fn handle_transaction_command(
             &collection,
             |coll, tx, wal, locks| coll.delete_tx(tx, wal, locks, &key).map(|_| None),
         ),
-        // A read-only query runs as it does over HTTP: against committed
-        // data, so it does not see this transaction's staged writes.
-        // A mutating one cannot be staged (the executor applies its writes
-        // directly), so it is refused instead of committing early.
+        // A query runs as it does through HTTP's `…/transaction/{tx}/query`:
+        // it reads committed data, so it does not see this transaction's
+        // staged writes, and the writes of one that mutates are staged on
+        // the transaction instead of applied.
         Command::Query {
             database,
             sdbql,
             bind_vars,
             cache,
-        } => match crate::sdbql::parse(&sdbql) {
-            Ok(q) if q.has_mutations() => Response::error(DriverError::TransactionError(
-                "a query that writes cannot run inside a transaction; use Insert, Update and Delete"
-                    .to_string(),
-            )),
-            Ok(_) => {
-                Box::pin(handler.execute_command(Command::Query {
+        } => {
+            let prepared =
+                match crate::sdbql::get_prepared_statement_cache().parse_if_needed(&sdbql) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return Response::error(DriverError::DatabaseError(format!(
+                            "Parse error: {}",
+                            e
+                        )))
+                    }
+                };
+            if !prepared.query.has_mutations() {
+                return Box::pin(handler.execute_command(Command::Query {
                     database,
                     sdbql,
                     bind_vars,
                     cache,
                 }))
-                .await
+                .await;
             }
-            Err(e) => Response::error(DriverError::DatabaseError(format!("Parse error: {}", e))),
-        },
+            stage_query(
+                handler,
+                id,
+                database,
+                prepared.query.clone(),
+                bind_vars.unwrap_or_default(),
+            )
+            .await
+        }
         _ => Response::error(DriverError::TransactionError(
-            "only Insert, Update, Delete and read-only Query can run inside a transaction"
-                .to_string(),
+            "only Insert, Update, Delete and Query can run inside a transaction".to_string(),
         )),
+    }
+}
+
+/// Stage a query that writes on transaction `id`, as the HTTP transactional
+/// query does: the executor records its writes on the transaction, they land
+/// at commit, and an `UPDATE` computed from a document the query read is
+/// refused with a conflict if that document changed since (card #796). The
+/// rows it returns come back as for any query, so a client tells whether a
+/// filtered write matched from them (`… UPDATE a … RETURN 1`).
+async fn stage_query(
+    handler: &DriverHandler,
+    id: crate::transaction::TransactionId,
+    database: String,
+    query: std::sync::Arc<crate::sdbql::Query>,
+    bind_vars: std::collections::HashMap<String, serde_json::Value>,
+) -> Response {
+    // The dispatch check only required Read for a query.
+    if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+        &handler.session_permissions,
+        crate::server::PermissionAction::Write,
+        Some(&database),
+        handler.session_scoped_databases.as_deref(),
+    ) {
+        return Response::error(DriverError::AuthError(e.to_string()));
+    }
+    if query.has_unstageable_writes() {
+        return Response::error(DriverError::TransactionError(
+            "streams, materialized views and state-changing functions cannot run inside a \
+             transaction; they would apply immediately and survive a rollback"
+                .to_string(),
+        ));
+    }
+    let manager = match handler.storage.transaction_manager() {
+        Ok(m) => m,
+        Err(e) => return Response::error(DriverError::TransactionError(e.to_string())),
+    };
+    let writer = match manager.get(id) {
+        Ok(tx) => crate::sdbql::executor::TxWriter {
+            tx,
+            wal: manager.wal().clone(),
+            locks: manager.lock_manager().clone(),
+        },
+        Err(e) => return Response::error(DriverError::TransactionError(e.to_string())),
+    };
+    let principal = handler.query_principal(&database);
+    let storage = handler.storage.clone();
+    // Synchronous executor work, on the blocking pool as for any query.
+    let task = tokio::task::spawn_blocking(move || {
+        crate::sdbql::QueryExecutor::with_database_and_bind_vars(&storage, database, bind_vars)
+            .with_principal(principal)
+            .with_timeout(std::time::Duration::from_secs(
+                super::query::QUERY_TIMEOUT_SECS,
+            ))
+            .with_transaction(writer)
+            .execute(&query)
+    });
+    match task.await {
+        Ok(Ok(rows)) => Response::ok(serde_json::Value::Array(rows)),
+        Ok(Err(e)) => Response::error(DriverError::TransactionError(e.to_string())),
+        Err(e) => Response::error(DriverError::DatabaseError(format!(
+            "Task join error: {}",
+            e
+        ))),
     }
 }
 
@@ -309,32 +385,180 @@ mod tests {
         assert_eq!(history[1]["value"]["v"], json!(1));
     }
 
-    #[tokio::test]
-    async fn query_in_transaction_reads_but_never_writes() {
-        let (_t, mut h) = handler();
-        // `Query` is dispatched through `execute_command`, which insists on a
-        // session; the staged writes are authorized by the wrapper instead.
+    fn query(sdbql: &str, binds: serde_json::Value) -> Box<Command> {
+        Box::new(Command::Query {
+            database: "d".to_string(),
+            sdbql: sdbql.to_string(),
+            bind_vars: serde_json::from_value(binds).unwrap(),
+            cache: false,
+        })
+    }
+
+    /// `Query` is dispatched through `execute_command`, which insists on a
+    /// session.
+    fn admin_session(h: &mut DriverHandler) {
         h.authenticated_db = Some("d".to_string());
         h.session_permissions
             .insert(crate::server::Permission::global_admin());
-        let query = |sdbql: &str| {
-            Box::new(Command::Query {
-                database: "d".to_string(),
-                sdbql: sdbql.to_string(),
-                bind_vars: None,
-                cache: false,
-            })
-        };
+    }
+
+    fn balance(h: &DriverHandler, key: &str) -> serde_json::Value {
+        h.get_collection("d", "c")
+            .unwrap()
+            .get(key)
+            .unwrap()
+            .to_value()["n"]
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn query_in_transaction_reads_committed_data() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
         let tx = begin(&mut h);
-        let r = handle_transaction_command(&mut h, tx.clone(), query("FOR x IN c RETURN x")).await;
+        let r =
+            handle_transaction_command(&mut h, tx.clone(), query("FOR x IN c RETURN x", json!({})))
+                .await;
         // Either `Ok` or the raw-rows fast path; what matters is it ran.
         assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        handle_commit_transaction(&mut h, tx);
+    }
 
-        let r = handle_transaction_command(&mut h, tx.clone(), query("INSERT {_key: 'q'} INTO c"))
-            .await;
+    /// A query that writes is staged: invisible until the commit, applied by
+    /// it, and its rows say whether a filtered write matched.
+    #[tokio::test]
+    async fn a_query_that_writes_is_staged_until_the_commit() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        h.get_collection("d", "c")
+            .unwrap()
+            .insert(json!({"_key": "a", "n": 10}))
+            .unwrap();
+        let debit = "FOR x IN c FILTER x._key == @k FILTER x.n >= @v \
+                     UPDATE x WITH {n: x.n - @v} IN c RETURN 1";
+        let tx = begin(&mut h);
+        let r =
+            handle_transaction_command(&mut h, tx.clone(), query(debit, json!({"k": "a", "v": 4})))
+                .await;
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([1])),
+            "{:?}",
+            r
+        );
+        // Too much: the FILTER drops the row, nothing is staged.
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query(debit, json!({"k": "a", "v": 99})),
+        )
+        .await;
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([])),
+            "{:?}",
+            r
+        );
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query("INSERT {_key: 'ledger1', v: 4} INTO c", json!({})),
+        )
+        .await;
+        assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        assert_eq!(balance(&h, "a"), json!(10), "staged, not applied");
+        assert!(!exists(&h, "ledger1"));
+
+        assert!(matches!(
+            handle_commit_transaction(&mut h, tx),
+            Response::Ok { .. }
+        ));
+        assert_eq!(balance(&h, "a"), json!(6));
+        assert!(exists(&h, "ledger1"));
+    }
+
+    #[tokio::test]
+    async fn a_rollback_discards_what_a_query_staged() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        let tx = begin(&mut h);
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query("INSERT {_key: 'q'} INTO c", json!({})),
+        )
+        .await;
+        assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        assert!(matches!(
+            handle_rollback_transaction(&mut h, tx),
+            Response::Ok { .. }
+        ));
+        assert!(
+            !exists(&h, "q"),
+            "a rolled-back query must not have written"
+        );
+    }
+
+    /// A query reads committed data, so an `UPDATE` it computes over a
+    /// version it did not read (here the transaction's own staged write) is
+    /// refused with a conflict instead of overwriting it (card #796).
+    #[tokio::test]
+    async fn an_update_over_a_version_the_query_did_not_read_is_refused() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        h.get_collection("d", "c")
+            .unwrap()
+            .insert(json!({"_key": "a", "n": 10}))
+            .unwrap();
+        let tx = begin(&mut h);
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            Box::new(Command::Update {
+                database: "d".to_string(),
+                collection: "c".to_string(),
+                key: "a".to_string(),
+                document: json!({"n": 1}),
+                merge: true,
+            }),
+        )
+        .await;
+        assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query(
+                "FOR x IN c FILTER x._key == 'a' UPDATE x WITH {n: x.n + 1} IN c",
+                json!({}),
+            ),
+        )
+        .await;
+        assert!(
+            matches!(&r, Response::Error { error } if error.to_string().contains("conflict")),
+            "{:?}",
+            r
+        );
+        handle_rollback_transaction(&mut h, tx);
+        assert_eq!(balance(&h, "a"), json!(10));
+    }
+
+    #[tokio::test]
+    async fn a_query_that_writes_needs_write_permission() {
+        let (_t, mut h) = handler();
+        h.authenticated_db = Some("d".to_string());
+        h.session_permissions
+            .insert(crate::server::Permission::database_permission(
+                crate::server::PermissionAction::Read,
+                "d",
+            ));
+        let tx = begin(&mut h);
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query("INSERT {_key: 'q'} INTO c", json!({})),
+        )
+        .await;
         assert!(matches!(r, Response::Error { .. }), "{:?}", r);
         handle_commit_transaction(&mut h, tx);
-        assert!(!exists(&h, "q"), "a refused query must not have written");
+        assert!(!exists(&h, "q"));
     }
 
     #[tokio::test]

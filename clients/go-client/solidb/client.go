@@ -30,8 +30,8 @@ type Client struct {
 }
 
 // Inside a transaction the server stages these when they arrive wrapped in a
-// `transaction_command` (a read-only query runs on committed data; a writing
-// one is refused there).
+// `transaction_command` (a query reads committed data; the writes of one that
+// writes are staged too on servers after 2.9.1; 2.9.1 and earlier refuse it).
 var stagedInTransaction = map[string]bool{"insert": true, "update": true, "delete": true, "query": true}
 
 // These cannot be staged: refused rather than applied outside the transaction.
@@ -382,9 +382,9 @@ func (c *Client) Query(database, sdbql string, bindVars map[string]interface{}) 
 // BeginTransaction opens a transaction and returns its id.
 //
 // Until it is committed or rolled back, Insert, Update and Delete are staged
-// in it and applied at commit, and a read-only Query runs on committed data
-// (it does not see the transaction's own writes); a query that writes and a
-// second BeginTransaction are refused. Get is not part of the transaction: it
+// in it and applied at commit. A Query reads committed data (it does not see
+// the transaction's own writes), and the writes of a query that writes are
+// staged too (servers after 2.9.1). A second BeginTransaction is refused. Get is not part of the transaction: it
 // reads committed data. One transaction at a time per client.
 func (c *Client) BeginTransaction(database string, isolationLevel *string) (interface{}, error) {
 	args := map[string]interface{}{"database": database}

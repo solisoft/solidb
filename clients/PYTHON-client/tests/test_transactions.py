@@ -88,11 +88,11 @@ def test_a_commit_applies_every_write_at_once(clients):
     assert n(observer, "gone") is None
 
 
-def test_what_cannot_be_staged_is_refused(clients):
+def test_a_writing_query_is_staged_and_a_second_begin_refused(clients):
     c, observer = clients
     tx = c.begin_transaction(DB)
-    with pytest.raises(ServerError, match="cannot run inside a transaction"):
-        c.query(DB, "INSERT {_key: 'q', n: 1} INTO docs")
+    c.query(DB, "INSERT {_key: 'q', n: 1} INTO docs")
+    assert n(observer, "q") is None
     with pytest.raises(TransactionError):
         c.begin_transaction(DB)
     c.rollback_transaction(tx)

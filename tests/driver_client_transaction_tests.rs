@@ -13,6 +13,7 @@ use serde_json::json;
 use solidb::driver::handlers::DriverHandler;
 use solidb::storage::StorageEngine;
 use solidb_client::{SoliDBClient, SoliDBClientBuilder};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -173,7 +174,7 @@ fn a_pooled_client_keeps_its_transaction_on_one_connection() {
 }
 
 #[test]
-fn what_cannot_be_staged_is_refused() {
+fn what_cannot_be_staged_is_refused_and_a_rollback_discards_the_rest() {
     let (rt, addr, engine, _tmp) = serve();
     rt.block_on(async {
         let mut c = client(&addr, 2).await;
@@ -187,13 +188,10 @@ fn what_cannot_be_staged_is_refused() {
             .to_string();
         assert!(err.contains("cannot run inside a transaction"), "{err}");
 
-        // A query that writes: refused by the server, nothing written.
-        let err = c
-            .query(DB, "INSERT {_key: 'q', n: 1} INTO docs", None)
+        // A query that writes is staged, so the rollback below discards it.
+        c.query(DB, "INSERT {_key: 'q', n: 1} INTO docs", None)
             .await
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("cannot run inside a transaction"), "{err}");
+            .unwrap();
 
         // A read-only query runs, against committed data.
         let rows = c
@@ -224,5 +222,68 @@ fn what_cannot_be_staged_is_refused() {
         );
         let err = c.commit().await.unwrap_err().to_string();
         assert!(err.contains("No active transaction"), "{err}");
+    });
+}
+
+/// A money transfer through queries, as an application writes it: a debit
+/// filtered on the balance, a credit, a ledger row; nothing is visible to
+/// another connection until the commit, and a debit that finds too little
+/// money matches nothing.
+#[test]
+fn a_transfer_written_as_queries_commits_whole() {
+    let (rt, addr, engine, _tmp) = serve();
+    rt.block_on(async {
+        let mut c = client(&addr, 4).await;
+        let mut observer = client(&addr, 1).await;
+        c.insert(DB, COLL, Some("acct-a"), json!({"n": 100}))
+            .await
+            .unwrap();
+        c.insert(DB, COLL, Some("acct-b"), json!({"n": 0}))
+            .await
+            .unwrap();
+        let debit = "FOR d IN docs FILTER d._key == @k FILTER d.n >= @x \
+                     UPDATE d WITH {n: d.n - @x} IN docs RETURN 1";
+        let credit =
+            "FOR d IN docs FILTER d._key == @k UPDATE d WITH {n: d.n + @x} IN docs RETURN 1";
+        let vars = |k: &str, x: i64| {
+            Some(HashMap::from([
+                ("k".to_string(), json!(k)),
+                ("x".to_string(), json!(x)),
+            ]))
+        };
+
+        c.begin_transaction(DB, None).await.unwrap();
+        assert_eq!(
+            c.query(DB, debit, vars("acct-a", 30)).await.unwrap(),
+            vec![json!(1)]
+        );
+        assert_eq!(
+            c.query(DB, credit, vars("acct-b", 30)).await.unwrap(),
+            vec![json!(1)]
+        );
+        c.query(DB, "INSERT {_key: 'ledger-1', x: 30} INTO docs", None)
+            .await
+            .unwrap();
+        assert_eq!(seen(&mut observer, "acct-a").await, Some(100));
+        assert_eq!(seen(&mut observer, "ledger-1").await, None);
+        c.commit().await.unwrap();
+        assert_eq!(seen(&mut observer, "acct-a").await, Some(70));
+        assert_eq!(seen(&mut observer, "acct-b").await, Some(30));
+
+        // Too little money: the debit matches nothing; roll back.
+        c.begin_transaction(DB, None).await.unwrap();
+        assert!(c
+            .query(DB, debit, vars("acct-a", 500))
+            .await
+            .unwrap()
+            .is_empty());
+        c.rollback().await.unwrap();
+        let coll = engine
+            .get_database(DB)
+            .unwrap()
+            .get_collection(COLL)
+            .unwrap();
+        assert_eq!(coll.get("acct-a").unwrap().to_value()["n"], json!(70));
+        assert!(coll.get("ledger-1").is_ok());
     });
 }

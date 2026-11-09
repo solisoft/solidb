@@ -10,8 +10,9 @@ from .exceptions import ConnectionError, ServerError, ProtocolError, AuthError, 
 
 
 # Inside a transaction the server stages these when they arrive wrapped in a
-# `transaction_command` on the connection that began it (a read-only query
-# runs on committed data; a writing one is refused there).
+# `transaction_command` on the connection that began it (a query reads
+# committed data; the writes of one that writes are staged too, on servers
+# after 2.9.1; 2.9.1 and earlier refuse it).
 _STAGED_IN_TRANSACTION = {"insert", "update", "delete", "query"}
 # These cannot be staged: refused rather than applied outside the transaction.
 _REFUSED_IN_TRANSACTION = {"bulk_insert", "batch", "begin_transaction"}

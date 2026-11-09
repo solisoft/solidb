@@ -186,11 +186,11 @@
                       <tr><td class="px-4 py-2 font-mono text-green-400">begin_transaction</td><td class="px-4 py-2">Start transaction</td><td class="px-4 py-2 font-mono">database, isolation_level</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">commit_transaction</td><td class="px-4 py-2">Commit transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">rollback_transaction</td><td class="px-4 py-2">Rollback transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
-                      <tr><td class="px-4 py-2 font-mono text-green-400">transaction_command</td><td class="px-4 py-2">Run <code>insert</code>, <code>update</code>, <code>delete</code> or a read-only <code>query</code> inside a transaction</td><td class="px-4 py-2 font-mono">tx_id, command</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">transaction_command</td><td class="px-4 py-2">Run <code>insert</code>, <code>update</code>, <code>delete</code> or <code>query</code> inside a transaction</td><td class="px-4 py-2 font-mono">tx_id, command</td></tr>
                   </tbody>
               </table>
           </div>
-          <p class="text-sm text-gray-400 mb-8">Writes sent through <code>transaction_command</code> are staged and applied at <code>commit_transaction</code>; <code>rollback_transaction</code> discards them. A read-only query runs against committed data. A query that writes, or any other command, is refused with <code>transaction_error</code>.</p>
+          <p class="text-sm text-gray-400 mb-8">Writes sent through <code>transaction_command</code> are staged and applied at <code>commit_transaction</code>; <code>rollback_transaction</code> discards them. A query reads committed data (not the transaction's own staged writes), and the writes of a query that writes are staged as well, as through <code>POST …/transaction/{id}/query</code>: an <code>UPDATE</code> computed from a document that changed since the query read it fails with a conflict, and the transaction should be rolled back and retried. Up to 2.9.1 a query that writes was refused. Any other command is refused with <code>transaction_error</code>.</p>
 
           <h3 class="text-lg font-bold text-white mb-4">Search &amp; Columnar Operations</h3>
           <div class="overflow-x-auto mb-8">

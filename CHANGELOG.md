@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Features
+
+* **A query that writes runs in a driver transaction.** Sent inside
+  `TransactionCommand` (every SDK does so between `begin_transaction` and
+  the commit), its writes are staged on the transaction as through
+  `POST …/transaction/{id}/query`, with the same revision guard (an
+  `UPDATE` computed from a document that changed since the query read it
+  fails the transaction with a conflict); the driver used to refuse it.
+  A conditional write such as a debit filtered on the balance can now go
+  over the MessagePack protocol instead of HTTP: on the bank benchmark
+  (`benchmarks/compare/bank.sh`, every commit fsynced, solistore), a
+  transfer of five round trips went from 4,064 to 7,442 per second at one
+  client (p50 236 → 131 µs), 19,218 to 37,864 at 32, and 5,142 to 9,280
+  among 10 hot accounts (PostgreSQL 18: 10,555, 67,383 and 8,339), every
+  check clean. Card #797.
+
 ## [2.9.1](https://github.com/solisoft/solidb/compare/v2.9.0...v2.9.1) (2026-11-09)
 
 Correctness fixes found by the fault harness (`faults/`, card #792): SDBQL

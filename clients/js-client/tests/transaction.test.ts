@@ -69,9 +69,11 @@ async function run() {
     assert.strictEqual(await n(observer, 'gone'), null);
     console.log('commit OK');
 
-    // What cannot be staged is refused.
+    // A query that writes is staged (the rollback discards it); a second
+    // begin is refused.
     tx = await c.beginTransaction(DB);
-    await assert.rejects(c.query(DB, "INSERT {_key: 'q', n: 1} INTO docs"), /cannot run inside a transaction/);
+    await c.query(DB, "INSERT {_key: 'q', n: 1} INTO docs");
+    assert.strictEqual(await n(observer, 'q'), null);
     await assert.rejects(c.beginTransaction(DB), TransactionError);
     await c.rollbackTransaction(tx);
     assert.strictEqual(await n(observer, 'q'), null);

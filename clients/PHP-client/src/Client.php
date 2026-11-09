@@ -20,8 +20,9 @@ class Client
 
     /**
      * Inside a transaction the server stages these when they arrive wrapped in
-     * a `transaction_command` (a read-only query runs on committed data; a
-     * writing one is refused there).
+     * a `transaction_command` (a query reads committed data; the writes of one
+     * that writes are staged too, on servers after 2.9.1; 2.9.1 and earlier
+     * refuse it).
      */
     private const STAGED_IN_TRANSACTION = ['insert', 'update', 'delete', 'query'];
 
@@ -566,9 +567,10 @@ class Client
      * Open a transaction and return its id.
      *
      * Until it is committed or rolled back, insert, update and delete are
-     * staged in it and applied at commit, and a read-only query runs on
-     * committed data (it does not see the transaction's own writes); a query
-     * that writes and a second beginTransaction are refused. get is not part
+     * staged in it and applied at commit. A query reads committed data (it
+     * does not see the transaction's own writes), and the writes of a query
+     * that writes are staged too (servers after 2.9.1). A second
+     * beginTransaction is refused. get is not part
      * of the transaction: it reads committed data. One transaction at a time
      * per client.
      */

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 /// handler's limit. Without this, a long-running query sent over the native
 /// port runs unbounded — the 30s HTTP cap only protected one of the two
 /// protocols.
-const QUERY_TIMEOUT_SECS: u64 = 30;
+pub(super) const QUERY_TIMEOUT_SECS: u64 = 30;
 
 /// Most rows an index equality may name and still be answered on the async
 /// worker (see `handle_query`): each is a point read of a document, so this

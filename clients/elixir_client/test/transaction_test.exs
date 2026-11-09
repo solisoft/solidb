@@ -102,11 +102,11 @@ defmodule SoliDB.TransactionTest do
     assert n(o, "c") == nil
   end
 
-  test "what cannot be staged is refused", %{c: c, observer: o} do
+  test "a writing query is staged, a batch refused", %{c: c, observer: o} do
     {:ok, tx_id} = Client.begin_transaction(c, @db)
     tx = Client.in_transaction(c, tx_id)
-    assert {:error, msg} = Client.query(tx, @db, "INSERT {_key: 'q', n: 1} INTO docs")
-    assert msg =~ "cannot run inside a transaction"
+    assert {:ok, _} = Client.query(tx, @db, "INSERT {_key: 'q', n: 1} INTO docs")
+    assert n(o, "q") == nil
     assert {:error, msg} = Client.send_command(tx, "batch", %{commands: []})
     assert msg =~ "cannot run inside a transaction"
     {:ok, _} = Client.rollback_transaction(c, tx_id)

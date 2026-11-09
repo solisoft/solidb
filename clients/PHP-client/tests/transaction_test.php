@@ -93,16 +93,16 @@ check(n($observer, $db, 'base') === 2, 'update committed');
 check(n($observer, $db, 'gone') === null, 'delete committed');
 echo "commit OK\n";
 
-// What cannot be staged is refused.
+// A query that writes is staged (the rollback discards it); a second begin
+// is refused.
 $tx = $c->beginTransaction($db);
-check(refused(function () use ($c, $db) {
-    $c->query($db, "INSERT {_key: 'q', n: 1} INTO docs");
-}, 'server_error', 'cannot run inside a transaction'), 'a writing query is refused');
+$c->query($db, "INSERT {_key: 'q', n: 1} INTO docs");
+check(n($observer, $db, 'q') === null, 'a staged query is invisible before the end');
 check(refused(function () use ($c, $db) {
     $c->beginTransaction($db);
 }, 'transaction_error'), 'a second begin is refused');
 $c->rollbackTransaction($tx);
-check(n($observer, $db, 'q') === null, 'the refused query wrote nothing');
+check(n($observer, $db, 'q') === null, 'the rollback discarded the staged query');
 check(refused(function () use ($c, $tx) {
     $c->commitTransaction($tx);
 }, 'transaction_error'), 'commit after rollback is refused');

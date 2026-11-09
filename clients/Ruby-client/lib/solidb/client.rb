@@ -244,9 +244,10 @@ module SoliDB
     # Open a transaction on one of the pool's connections and return its id.
     #
     # Until it is committed or rolled back, insert, update and delete are
-    # staged in it and applied at commit, and a read-only query runs on
-    # committed data (it does not see the transaction's own writes); a query
-    # that writes and a second begin_transaction are refused. get is not part
+    # staged in it and applied at commit. A query reads committed data (it
+    # does not see the transaction's own writes), and the writes of a query
+    # that writes are staged too (servers after 2.9.1). A second
+    # begin_transaction is refused. get is not part
     # of the transaction: it reads committed data. One transaction at a time
     # per client.
     def begin_transaction(database, isolation_level = "read_committed")

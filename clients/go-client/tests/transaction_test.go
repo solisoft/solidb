@@ -3,7 +3,6 @@ package tests
 import (
 	"errors"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/solisoft/solidb-go-client/solidb"
@@ -145,14 +144,17 @@ func TestTransactions(t *testing.T) {
 		t.Errorf("committed update: %v", got)
 	}
 
-	// What cannot be staged is refused.
+	// A query that writes is staged (the rollback discards it); a second
+	// begin is refused.
 	tx, err = c.BeginTransaction(txDB, nil)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := c.Query(txDB, "INSERT {_key: 'q', n: 1} INTO docs", nil); err == nil ||
-		!strings.Contains(err.Error(), "cannot run inside a transaction") {
+	if _, err := c.Query(txDB, "INSERT {_key: 'q', n: 1} INTO docs", nil); err != nil {
 		t.Errorf("writing query in tx: %v", err)
+	}
+	if got := n(t, observer, "q"); got != -1 {
+		t.Errorf("staged query visible before the end: %v", got)
 	}
 	var txErr *solidb.TransactionError
 	if _, err := c.BeginTransaction(txDB, nil); !errors.As(err, &txErr) {

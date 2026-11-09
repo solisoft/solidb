@@ -8,8 +8,9 @@ defmodule SoliDB.Client do
   @default_pool_size 4
 
   # Inside a transaction the server stages these when they arrive wrapped in a
-  # `transaction_command` on the connection that began it (a read-only query
-  # runs on committed data; a writing one is refused there).
+  # `transaction_command` on the connection that began it (a query reads
+  # committed data; the writes of one that writes are staged too, on servers
+  # after 2.9.1; 2.9.1 and earlier refuse it).
   @staged_in_transaction ~w(insert update delete query)
   # These cannot be staged: refused rather than applied outside the transaction.
   @refused_in_transaction ~w(bulk_insert batch begin_transaction)
@@ -154,9 +155,9 @@ defmodule SoliDB.Client do
   The client, with its commands made inside transaction `tx_id`.
 
   `insert`, `update` and `delete` made through it are staged in the
-  transaction and applied at commit; a read-only `query` runs on committed data
-  (it does not see the transaction's own writes); a query that writes and
-  `begin_transaction` are refused. `get` is not part of the transaction: it
+  transaction and applied at commit; a `query` reads committed data (it does
+  not see the transaction's own writes) and the writes of one that writes are
+  staged too (servers after 2.9.1); `begin_transaction` is refused. `get` is not part of the transaction: it
   reads committed data. Writes through the plain client are not part of it
   either: they used to be the only way, and applied at once.
 

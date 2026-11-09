@@ -78,10 +78,10 @@ RSpec.describe "SoliDB::Client transactions" do
     expect(n(observer, db, "gone")).to be_nil
   end
 
-  it "refuses what cannot be staged" do
+  it "stages a query that writes and refuses a second begin" do
     tx = client.begin_transaction(db)
-    expect { client.query(db, "INSERT {_key: 'q', n: 1} INTO docs") }
-      .to raise_error(SoliDB::ServerError, /cannot run inside a transaction/)
+    client.query(db, "INSERT {_key: 'q', n: 1} INTO docs")
+    expect(n(observer, db, "q")).to be_nil
     expect { client.begin_transaction(db) }.to raise_error(SoliDB::TransactionError)
     client.rollback_transaction(tx)
     expect(n(observer, db, "q")).to be_nil
