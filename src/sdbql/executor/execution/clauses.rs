@@ -894,6 +894,9 @@ impl<'a> QueryExecutor<'a> {
                         // Evaluate all updates first
                         let eval_start = std::time::Instant::now();
                         let mut updates: Vec<(String, Value)> = Vec::with_capacity(rows.len());
+                        // The revision each update was computed from, when
+                        // it names a document the query read.
+                        let mut guards: Vec<Option<String>> = Vec::with_capacity(rows.len());
 
                         for ctx in &rows {
                             // Evaluate selector expression to get the document key
@@ -927,6 +930,15 @@ impl<'a> QueryExecutor<'a> {
                                 ));
                             }
 
+                            guards.push(
+                                super::update_guard::update_guard(
+                                    &update_clause.selector,
+                                    ctx,
+                                    &key,
+                                    &collection,
+                                )
+                                .map(|(_, rev)| rev),
+                            );
                             updates.push((key, changes_value));
                         }
                         let eval_time = eval_start.elapsed();
@@ -934,9 +946,44 @@ impl<'a> QueryExecutor<'a> {
 
                         // Batch update all documents at once (one storage batch)
                         let update_start = std::time::Instant::now();
-                        let updated_docs = collection.update_batch(&updates)?;
+                        let guarded: Vec<(&str, &Value, Option<&str>)> = updates
+                            .iter()
+                            .zip(&guards)
+                            .map(|((k, v), rev)| (k.as_str(), v, rev.as_deref()))
+                            .collect();
+                        let (updated_docs, moved) = collection.update_batch_guarded(&guarded)?;
                         let update_time = update_start.elapsed();
                         stats.documents_updated += updated_docs.len();
+                        // A row whose document moved on since the query read
+                        // it was left out: evaluate it again on the current
+                        // version, alone (update_guard.rs).
+                        let mut gone = std::collections::HashSet::new();
+                        for position in moved {
+                            match self.update_row_guarded(
+                                clauses,
+                                i,
+                                update_clause,
+                                &collection,
+                                rows[position].clone(),
+                                "UPDATE",
+                                true,
+                            )? {
+                                Some((write, fresh)) => {
+                                    count_write(&mut stats, &write);
+                                    rows[position] = fresh;
+                                }
+                                None => {
+                                    gone.insert(position);
+                                }
+                            }
+                        }
+                        if !gone.is_empty() {
+                            let mut position = 0;
+                            rows.retain(|_| {
+                                position += 1;
+                                !gone.contains(&(position - 1))
+                            });
+                        }
                         tracing::debug!(
                             "UPDATE: Batch update of {} docs took {:?}",
                             updated_docs.len(),
@@ -956,33 +1003,26 @@ impl<'a> QueryExecutor<'a> {
                         } else {
                             "UPDATE"
                         };
-                        // `UPDATE doc IN c`: the document is its own patch;
-                        // evaluate it once.
-                        let changes_is_selector = update_clause.changes == update_clause.selector;
+                        // Each row is written guarded by the revision it read,
+                        // and evaluated again if that document moved on
+                        // (update_guard.rs).
                         let input = std::mem::take(&mut rows);
                         let mut kept = Vec::with_capacity(input.len());
-                        for mut ctx in input {
-                            let selector_value =
-                                self.evaluate_expr_with_context(&update_clause.selector, &ctx)?;
-                            let changes_value = if changes_is_selector {
-                                selector_value.clone()
-                            } else {
-                                self.evaluate_expr_with_context(&update_clause.changes, &ctx)?
-                            };
-
-                            let result = selector_key(&selector_value, statement).and_then(|key| {
-                                self.write_update_row(
-                                    &collection,
-                                    &update_clause.collection,
-                                    &key,
-                                    changes_value,
-                                    update_clause.replace,
-                                    &update_clause.options,
-                                    update_clause.binds_old,
-                                )
-                            });
+                        for ctx in input {
+                            let result = self.update_row_guarded(
+                                clauses,
+                                i,
+                                update_clause,
+                                &collection,
+                                ctx,
+                                statement,
+                                false,
+                            );
                             match result {
-                                Ok(write) => {
+                                // The document is gone, or the row no longer
+                                // passes its filters: nothing to write.
+                                Ok(None) => {}
+                                Ok(Some((write, mut ctx))) => {
                                     count_write(&mut stats, &write);
                                     // NEW has always been bound by UPDATE.
                                     bind_old_new(&mut ctx, update_clause.binds_old, true, write);
@@ -1238,7 +1278,15 @@ impl<'a> QueryExecutor<'a> {
                                 upsert_clause.replace,
                                 &upsert_clause.options,
                                 upsert_clause.binds_old,
+                                super::mutations::RowGuard::None,
                             )
+                            .and_then(|written| {
+                                written.ok_or_else(|| {
+                                    DbError::InternalError(
+                                        "an unguarded update reported a conflict".into(),
+                                    )
+                                })
+                            })
                         } else {
                             let insert_value =
                                 self.evaluate_expr_with_context(&upsert_clause.insert, &ctx)?;

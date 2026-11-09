@@ -120,6 +120,17 @@ fn default_min_length() -> usize {
     3
 }
 
+/// What a write guarded by a revision did: see
+/// [`Collection::update_if_unchanged`].
+#[derive(Debug)]
+pub enum Guarded {
+    /// Written: the stored document as it now is.
+    Written(Document),
+    /// Not written: the document has moved on since the revision the caller
+    /// read. Its current revision.
+    Moved(String),
+}
+
 /// Collection statistics including disk usage
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CollectionStats {

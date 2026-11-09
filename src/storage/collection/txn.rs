@@ -161,10 +161,42 @@ impl Collection {
     pub fn update_tx(
         &self,
         tx: &mut Transaction,
+        wal: &Arc<WalWriter>,
+        lock_manager: &Arc<LockManager>,
+        key: &str,
+        data: Value,
+    ) -> DbResult<Document> {
+        self.update_tx_guarded(tx, wal, lock_manager, key, data, None)
+    }
+
+    /// [`Self::update_tx`] for changes computed from a document read at
+    /// `expected_rev` (a query's `UPDATE d WITH {n: d.n + 1}`). If the
+    /// document the transaction would write over is no longer that revision
+    /// — another transaction committed it since, or this one staged a write
+    /// to it that the query, reading committed data, did not see — staging
+    /// it would overwrite that write with a value computed from the older
+    /// one (card #796). It is refused with `TransactionConflict` instead:
+    /// roll back and retry.
+    pub fn update_tx_if_unchanged(
+        &self,
+        tx: &mut Transaction,
+        wal: &Arc<WalWriter>,
+        lock_manager: &Arc<LockManager>,
+        key: &str,
+        data: Value,
+        expected_rev: &str,
+    ) -> DbResult<Document> {
+        self.update_tx_guarded(tx, wal, lock_manager, key, data, Some(expected_rev))
+    }
+
+    fn update_tx_guarded(
+        &self,
+        tx: &mut Transaction,
         _wal: &Arc<WalWriter>,
         lock_manager: &Arc<LockManager>,
         key: &str,
         data: Value,
+        expected_rev: Option<&str>,
     ) -> DbResult<Document> {
         Self::ensure_tx_active(tx)?;
         if self.collection_type.read().as_str() == "timeseries" {
@@ -177,6 +209,17 @@ impl Collection {
         lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
 
         let mut doc = self.tx_base_document(tx, &db_name, &coll_name, key)?;
+        if let Some(rev) = expected_rev {
+            if doc.revision() != rev {
+                return Err(DbError::TransactionConflict(format!(
+                    "Write conflict: document '{}' changed since this query read it \
+                     (revision '{}', now '{}'); roll back and retry",
+                    key,
+                    rev,
+                    doc.revision()
+                )));
+            }
+        }
         let old_data = doc.to_value();
 
         doc.update(data);

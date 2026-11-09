@@ -69,42 +69,32 @@
           </div>
 
           <p class="text-gray-300 mb-6">
-            SoliDB supports configurable isolation levels to balance consistency and performance. The default is <strong>Read Committed</strong>.
+            A transaction takes an isolation level when it begins; the default is <strong>Read Committed</strong>. Today the level decides one thing: whether the commit is fsynced. What a transaction sees, and what it locks, is the same at every level, described below. Measured with the fault harness in <code>faults/</code> (10 clients, 8 contended keys).
           </p>
 
-          <div class="grid gap-4">
+          <div class="grid gap-4 mb-6">
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
               <div class="flex justify-between items-start mb-2">
                 <h4 class="text-white font-bold">Read Uncommitted</h4>
-                <span class="px-2 py-1 text-xs font-bold text-gray-500 bg-gray-800 rounded uppercase">Fastest</span>
+                <span class="px-2 py-1 text-xs font-bold text-gray-500 bg-gray-800 rounded uppercase">Commit not fsynced</span>
               </div>
-              <p class="text-sm text-gray-400">Transactions can see uncommitted changes from other transactions. "Dirty reads" are possible.</p>
+              <p class="text-sm text-gray-400">The commit returns before its write is fsynced: a power loss can lose it, a crash of the server process cannot. It does not read other transactions' uncommitted writes.</p>
             </div>
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]">
               <div class="flex justify-between items-start mb-2">
-                <h4 class="text-indigo-400 font-bold">Read Committed</h4>
-                <span class="px-2 py-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 rounded uppercase">Default</span>
+                <h4 class="text-indigo-400 font-bold">Read Committed, Repeatable Read, Serializable</h4>
+                <span class="px-2 py-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 rounded uppercase">Commit fsynced</span>
               </div>
-              <p class="text-sm text-gray-300">Transactions only see data that has been committed. Prevents dirty reads but allows non-repeatable reads.</p>
-            </div>
-
-            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <div class="flex justify-between items-start mb-2">
-                <h4 class="text-white font-bold">Repeatable Read</h4>
-                <span class="px-2 py-1 text-xs font-bold text-gray-500 bg-gray-800 rounded uppercase">Consistent</span>
-              </div>
-              <p class="text-sm text-gray-400">Ensures that if you read a row twice, you get the same result. Prevents dirty and non-repeatable reads.</p>
-            </div>
-
-            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
-              <div class="flex justify-between items-start mb-2">
-                <h4 class="text-white font-bold">Serializable</h4>
-                <span class="px-2 py-1 text-xs font-bold text-gray-500 bg-gray-800 rounded uppercase">Strictest</span>
-              </div>
-              <p class="text-sm text-gray-400">Transactions are executed as if they happened serially. Prevents all concurrency anomalies including phantom reads.</p>
+              <p class="text-sm text-gray-300">The commit is fsynced before it is acknowledged. The three behave alike otherwise; Repeatable Read and Serializable do not yet add guarantees of their own.</p>
             </div>
           </div>
+
+          <ul class="space-y-3 text-sm text-gray-300">
+            <li><strong class="text-white">Documents read and written by key</strong> (<code>GET</code>, <code>PUT</code>, <code>POST</code>, <code>DELETE</code> under <code>…/transaction/{id}/document/…</code>): a read takes a shared lock on the key, a write an exclusive one, both held until the commit or the rollback. A lock another transaction holds is refused at once with a <code>409</code>, without waiting: roll back and retry. On contended keys most transactions are refused (about 70% in the measurement), and none of the committed ones lost or reordered a write.</li>
+            <li><strong class="text-white">Queries</strong> (<code>…/transaction/{id}/query</code>) read committed data, take no lock, and do not see the transaction's own writes. Their writes are staged. An <code>UPDATE</code> computed from a document the query read (<code>UPDATE d WITH {n: d.n + 1}</code>) is staged only if that document has not changed since; otherwise the statement fails with a <code>409</code>: roll back and retry. Up to 2.9.0 it was staged anyway and overwrote the newer version: 8,112 of 125,047 committed appends were lost in the measurement.</li>
+            <li><strong class="text-white">Not verified yet:</strong> anomalies that span several documents a transaction reads without writing (write skew, phantoms). Nothing re-checks a document a transaction only read.</li>
+          </ul>
         </div>
       </section>
 

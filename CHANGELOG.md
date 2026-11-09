@@ -4,6 +4,23 @@
 
 ### Bug Fixes
 
+* **`UPDATE d WITH {n: d.n + 1}` no longer loses concurrent updates** (card
+  #796). The `WITH` value was computed from the document as the `FOR` read
+  it, then written under the key's lock without checking the document was
+  still that version, so a write in between was overwritten. Measured with
+  `faults isolation` (10 clients, 8 hot keys, 10 s): 24,785 of 405,507
+  committed appends lost through `/cursor`, and 8,112 of 125,047 inside
+  transactions at `serializable` (the level changed nothing). When the `UPDATE` (or
+  `REPLACE`) names a document the query read, the write now carries its
+  `_rev`; if the document moved on, the row is evaluated again under the
+  key's lock, its `FILTER`s and `LET`s and then `WITH`, and skipped if it no
+  longer passes, so two queries claiming `FILTER d.status == "pending"`
+  cannot both take a job. A pipeline that cannot be re-run for one row (a
+  nested `FOR`, `COLLECT`, a join, an expression that writes) fails with a
+  conflict (409) instead. Inside a transaction the stale write is refused
+  with a conflict. One statement updating a document from several rows now
+  builds on each row's write instead of keeping the last. 0 lost appends
+  after the fix, throughput within 2%; tests/sdbql_update_guard_tests.rs.
 * **Rust client: a transaction's writes now go into it.** `begin_transaction`
   kept the transaction's id and nothing else: `insert`, `update` and `delete`
   went out as plain commands, so they applied at once and survived a

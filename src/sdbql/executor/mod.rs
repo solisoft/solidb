@@ -31,6 +31,7 @@ pub mod types;
 pub mod utils;
 mod window;
 
+pub(crate) use execution::update_guard;
 pub use execution::SmallRaw;
 pub use helpers::{
     compare_key_rows, compare_values, evaluate_binary_op, evaluate_unary_op, get_field_ref,

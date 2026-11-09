@@ -106,6 +106,18 @@ FOR i IN nums
                   </div>
                 </div>
 
+                <div class="bg-blue-900/10 border border-blue-500/30 rounded-lg p-4 flex items-start">
+                  <svg class="w-5 h-5 text-blue-400 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <div>
+                    <h4 class="text-blue-300 font-bold mb-1 text-sm">Concurrent updates</h4>
+                    <p class="text-sm text-blue-200/70">
+                      <code>FOR d IN c FILTER … UPDATE d WITH {n: d.n + 1} IN c</code> computes the change from the document as the <code>FOR</code> read it. When <code>UPDATE</code> names that document (<code>UPDATE d</code> or <code>UPDATE d._key</code>) and another write lands on it first, the row is evaluated again on the current version, under the document's lock: its <code>FILTER</code>s and <code>LET</code>s, then <code>WITH</code>. A row that no longer passes its filters is skipped, so two queries claiming <code>FILTER d.status == "pending"</code> cannot both take the same document. A query whose rows cannot be evaluated again one at a time (another <code>FOR</code>, a <code>COLLECT</code> or a join between the read and the write) fails with a conflict (<code>409</code>) instead; retry it. Inside a transaction the statement fails with a conflict whenever the document changed. Up to 2.9.0 the change was written over the newer version, and concurrent increments were lost.
+                    </p>
+                  </div>
+                </div>
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Update Single Document</h4>

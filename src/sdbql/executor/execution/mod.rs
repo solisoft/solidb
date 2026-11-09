@@ -34,6 +34,7 @@ mod scan_threads;
 mod streaming;
 mod subquery;
 mod typed_scan;
+mod update_guard;
 
 // All functionality is provided via impl blocks on QueryExecutor
 // in the submodules; the one re-export is a constant the index planner's
@@ -43,3 +44,4 @@ pub(super) use entry::has_window_functions;
 pub use raw_scan::SmallRaw;
 pub(super) use scan_collect::has_collect;
 pub(super) use scan_threads::ScanSettings;
+pub(crate) use update_guard::update_guard;

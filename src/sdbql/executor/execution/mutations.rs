@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use super::super::QueryExecutor;
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{MutationOptions, OverwriteMode};
-use crate::storage::Collection;
+use crate::storage::{Collection, Guarded};
 use crate::sync::protocol::Operation;
 
 /// One staged write, borrowed from the row being processed.
@@ -21,6 +21,8 @@ enum TxOp<'a> {
         key: &'a str,
         changes: Value,
         want_old: bool,
+        /// The revision `changes` were computed from (see `update_guard`).
+        expected_rev: Option<&'a str>,
     },
     Remove {
         key: &'a str,
@@ -36,6 +38,19 @@ pub(super) struct ShardedTarget {
     pub config: crate::sharding::coordinator::CollectionShardConfig,
     pub database: String,
     pub collection: String,
+}
+
+/// How an `UPDATE` row's write is guarded (card #796).
+#[derive(Clone, Copy)]
+pub(super) enum RowGuard<'a> {
+    /// Written as computed.
+    None,
+    /// Only over this revision, the one the changes were computed from;
+    /// otherwise nothing is written.
+    IfUnchanged(&'a str),
+    /// The caller holds the key's write lock (`Collection::with_write_lock`)
+    /// and computed the changes from the document under it.
+    Locked,
 }
 
 /// What one row's write produced: the stored document before and after.
@@ -192,13 +207,18 @@ impl<'a> QueryExecutor<'a> {
                 key,
                 changes,
                 want_old,
+                expected_rev,
             } => {
                 let old = if want_old {
                     Some(collection.get(key)?.into_value())
                 } else {
                     None
                 };
-                let doc = collection.update_tx(&mut tx, &tw.wal, &tw.locks, key, changes)?;
+                let doc = match expected_rev {
+                    Some(rev) => collection
+                        .update_tx_if_unchanged(&mut tx, &tw.wal, &tw.locks, key, changes, rev)?,
+                    None => collection.update_tx(&mut tx, &tw.wal, &tw.locks, key, changes)?,
+                };
                 Ok(RowWrite {
                     old,
                     new: Some(doc.into_value()),
@@ -446,6 +466,12 @@ impl<'a> QueryExecutor<'a> {
     /// `insert_or_replace`. That path, like REPLACE, reads then writes, so a
     /// concurrent writer of the same document between the two can be lost.
     #[allow(clippy::too_many_arguments)]
+    /// Write one row of an `UPDATE` / `REPLACE`, guarded as `guard` says.
+    /// `None` when an [`RowGuard::IfUnchanged`] document has moved on:
+    /// nothing is written, and the caller evaluates the row again
+    /// (`update_guard.rs`). In a transaction a moved document fails the
+    /// statement instead.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn write_update_row(
         &self,
         collection: &Collection,
@@ -455,7 +481,13 @@ impl<'a> QueryExecutor<'a> {
         replace: bool,
         options: &MutationOptions,
         want_old: bool,
-    ) -> DbResult<RowWrite> {
+        guard: RowGuard<'_>,
+    ) -> DbResult<Option<RowWrite>> {
+        let expected_rev = match guard {
+            RowGuard::IfUnchanged(rev) => Some(rev),
+            RowGuard::None | RowGuard::Locked => None,
+        };
+        let locked = matches!(guard, RowGuard::Locked);
         let statement = if replace { "REPLACE" } else { "UPDATE" };
         if !changes.is_object() {
             return Err(DbError::InvalidDocument(format!(
@@ -471,25 +503,43 @@ impl<'a> QueryExecutor<'a> {
                     statement
                 )));
             }
-            return self.write_row_tx(
-                tw,
-                collection,
-                TxOp::Update {
-                    key,
-                    changes,
-                    want_old,
-                },
-            );
+            return self
+                .write_row_tx(
+                    tw,
+                    collection,
+                    TxOp::Update {
+                        key,
+                        changes,
+                        want_old,
+                        expected_rev,
+                    },
+                )
+                .map(Some);
         }
 
+        let written = |guarded: Guarded| match guarded {
+            Guarded::Written(doc) => Some(doc),
+            Guarded::Moved(_) => None,
+        };
         let (old, doc) = if replace {
             // REPLACE requires the document to exist.
             let existing = collection.get(key)?;
             let body = replacement_body(changes, key, statement)?;
-            let doc = collection.insert_or_replace(body)?;
+            let doc = match expected_rev {
+                Some(rev) => match written(collection.replace_if_unchanged(key, rev, body)?) {
+                    Some(doc) => doc,
+                    None => return Ok(None),
+                },
+                None if locked => collection.replace_while_locked(key, body)?,
+                None => collection.insert_or_replace(body)?,
+            };
             (Some(existing.into_value()), doc)
         } else if options.needs_custom_merge() {
             let existing = collection.get(key)?;
+            if expected_rev.is_some_and(|rev| existing.revision() != rev) {
+                return Ok(None);
+            }
+            let read_rev = existing.revision().to_string();
             let mut data = existing.data.as_object().cloned().unwrap_or_default();
             if let Value::Object(patch) = &changes {
                 merge_patch(
@@ -501,7 +551,21 @@ impl<'a> QueryExecutor<'a> {
                 );
             }
             data.insert("_key".to_string(), Value::String(key.to_string()));
-            let doc = collection.insert_or_replace(Value::Object(data))?;
+            let doc = match expected_rev {
+                // The merge was made on `existing`: write it only over that.
+                Some(_) => {
+                    match written(collection.replace_if_unchanged(
+                        key,
+                        &read_rev,
+                        Value::Object(data),
+                    )?) {
+                        Some(doc) => doc,
+                        None => return Ok(None),
+                    }
+                }
+                None if locked => collection.replace_while_locked(key, Value::Object(data))?,
+                None => collection.insert_or_replace(Value::Object(data))?,
+            };
             (Some(existing.into_value()), doc)
         } else {
             let old = if want_old {
@@ -509,17 +573,25 @@ impl<'a> QueryExecutor<'a> {
             } else {
                 None
             };
-            (old, collection.update(key, changes)?)
+            let doc = match expected_rev {
+                Some(rev) => match written(collection.update_if_unchanged(key, changes, rev)?) {
+                    Some(doc) => doc,
+                    None => return Ok(None),
+                },
+                None if locked => collection.update_while_locked(key, changes)?,
+                None => collection.update(key, changes)?,
+            };
+            (old, doc)
         };
 
         let new_value = doc.into_value();
         self.log_mutation(collection_name, Operation::Update, key, Some(&new_value));
-        Ok(RowWrite {
+        Ok(Some(RowWrite {
             old: if want_old { old } else { None },
             new: Some(new_value),
             updated: true,
             skipped: false,
-        })
+        }))
     }
 
     /// REMOVE the document `key`, reading its pre-image first when `OLD` is
@@ -665,15 +737,20 @@ impl<'a> QueryExecutor<'a> {
                 })
             }
             OverwriteMode::Update => {
-                let mut write = self.write_update_row(
-                    collection,
-                    collection_name,
-                    key,
-                    document,
-                    false,
-                    options,
-                    false,
-                )?;
+                let mut write = self
+                    .write_update_row(
+                        collection,
+                        collection_name,
+                        key,
+                        document,
+                        false,
+                        options,
+                        false,
+                        RowGuard::None,
+                    )?
+                    .ok_or_else(|| {
+                        DbError::InternalError("an unguarded update reported a conflict".into())
+                    })?;
                 write.old = want_old.then_some(existing);
                 Ok(write)
             }

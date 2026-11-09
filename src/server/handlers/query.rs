@@ -657,7 +657,30 @@ pub async fn execute_query(
 
                         let changes_value =
                             executor.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                        collection.update_tx(&mut tx, &wal, &lock_manager, &key, changes_value)?;
+                        // Computed from a document this query read: stage it
+                        // only over that revision (card #796).
+                        match crate::sdbql::executor::update_guard(
+                            &update_clause.selector,
+                            ctx,
+                            &key,
+                            &collection,
+                        ) {
+                            Some((_, rev)) => collection.update_tx_if_unchanged(
+                                &mut tx,
+                                &wal,
+                                &lock_manager,
+                                &key,
+                                changes_value,
+                                &rev,
+                            )?,
+                            None => collection.update_tx(
+                                &mut tx,
+                                &wal,
+                                &lock_manager,
+                                &key,
+                                changes_value,
+                            )?,
+                        };
                         mutation_count += 1;
                     }
                 }

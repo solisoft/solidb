@@ -443,8 +443,37 @@ impl Collection {
         &self,
         key: &str,
         expected_rev: Option<&str>,
-        mut data: Value,
+        data: Value,
     ) -> DbResult<Document> {
+        match self.replace_guarded(key, expected_rev, data)? {
+            Guarded::Written(doc) => Ok(doc),
+            Guarded::Moved(current) => Err(DbError::ConflictError(format!(
+                "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
+                key,
+                expected_rev.unwrap_or_default(),
+                current
+            ))),
+        }
+    }
+
+    /// [`Self::replace_existing`] with the revision reported rather than
+    /// raised: [`Guarded::Moved`] when the document's `_rev` is no longer
+    /// `expected_rev`.
+    pub fn replace_if_unchanged(
+        &self,
+        key: &str,
+        expected_rev: &str,
+        data: Value,
+    ) -> DbResult<Guarded> {
+        self.replace_guarded(key, Some(expected_rev), data)
+    }
+
+    fn replace_guarded(
+        &self,
+        key: &str,
+        expected_rev: Option<&str>,
+        mut data: Value,
+    ) -> DbResult<Guarded> {
         if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
@@ -462,25 +491,54 @@ impl Collection {
             })?;
         }
         let key = take_key(&mut data)?;
-        let mut doc = Document::with_key(&self.name, key.clone(), data);
+        let doc = Document::with_key(&self.name, key.clone(), data);
+        self.with_key_locked(&key, || self.replace_holding_lock(&key, doc, expected_rev))
+    }
 
-        self.with_key_locked(&key, || {
-            let old_doc = self.get(&key)?;
-            if let Some(rev) = expected_rev {
-                if old_doc.revision() != rev {
-                    return Err(DbError::ConflictError(format!(
-                        "Document '{}' has been modified. Expected revision '{}', but current is '{}'",
-                        key,
-                        rev,
-                        old_doc.revision()
-                    )));
-                }
+    /// [`Self::replace_existing`] (no revision check) for a caller inside
+    /// [`Self::with_write_lock`] on `key`.
+    pub fn replace_while_locked(&self, key: &str, mut data: Value) -> DbResult<Document> {
+        if self.collection_type.read().as_str() == "timeseries" {
+            return Err(DbError::OperationNotSupported(
+                "Update operations are not allowed on timeseries collections".to_string(),
+            ));
+        }
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("_key".to_string(), Value::String(key.to_string()));
+        }
+        if self.collection_type.read().as_str() == "edge" {
+            self.validate_edge_document(&data)?;
+        }
+        if let Some(validator) = self.get_cached_schema_validator()? {
+            validator.validate(&data).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
+        }
+        let key = take_key(&mut data)?;
+        let doc = Document::with_key(&self.name, key.clone(), data);
+        match self.replace_holding_lock(&key, doc, None)? {
+            Guarded::Written(doc) => Ok(doc),
+            Guarded::Moved(_) => unreachable!("an unguarded replace always writes"),
+        }
+    }
+
+    fn replace_holding_lock(
+        &self,
+        key: &str,
+        mut doc: Document,
+        expected_rev: Option<&str>,
+    ) -> DbResult<Guarded> {
+        let old_doc = self.get(key)?;
+        if let Some(rev) = expected_rev {
+            if old_doc.revision() != rev {
+                return Ok(Guarded::Moved(old_doc.revision().to_string()));
             }
-            doc.created_at = old_doc.created_at;
-            let old_value = old_doc.to_value();
-            let new_value = doc.to_value();
-            self.write_update_locked(&key, old_value, doc, new_value)
-        })
+        }
+        doc.created_at = old_doc.created_at;
+        let old_value = old_doc.to_value();
+        let new_value = doc.to_value();
+        self.write_update_locked(key, old_value, doc, new_value)
+            .map(Guarded::Written)
     }
 
     /// Apply an RFC 6902 patch to the stored document and replace it with the
@@ -526,6 +584,34 @@ impl Collection {
 
     /// Update a document with atomic document + index writes
     pub fn update(&self, key: &str, data: Value) -> DbResult<Document> {
+        match self.update_guarded(key, data, None)? {
+            Guarded::Written(doc) => Ok(doc),
+            Guarded::Moved(_) => unreachable!("an unguarded update always writes"),
+        }
+    }
+
+    /// [`Self::update`], only if the stored document's `_rev` is still
+    /// `expected_rev`: compared and written under the key's lock.
+    ///
+    /// For a caller whose `data` was computed from a document it read
+    /// earlier (`UPDATE d WITH {n: d.n + 1}`): a write that landed since is
+    /// reported as [`Guarded::Moved`] instead of being overwritten by a value
+    /// computed from the older version (card #796).
+    pub fn update_if_unchanged(
+        &self,
+        key: &str,
+        data: Value,
+        expected_rev: &str,
+    ) -> DbResult<Guarded> {
+        self.update_guarded(key, data, Some(expected_rev))
+    }
+
+    fn update_guarded(
+        &self,
+        key: &str,
+        data: Value,
+        expected_rev: Option<&str>,
+    ) -> DbResult<Guarded> {
         if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
                 "Update operations are not allowed on timeseries collections".to_string(),
@@ -535,30 +621,66 @@ impl Collection {
         // Audit D4: read, diff and write under the key's stripe, so two
         // concurrent updates cannot both remove the same old index entry
         // and leave one of their new ones orphaned.
-        self.with_key_locked(key, || {
-            // Get old document for index updates
-            let old_doc = self.get(key)?;
-            let old_value = old_doc.to_value();
+        self.with_key_locked(key, || self.update_holding_lock(key, data, expected_rev))
+    }
 
-            // Create updated document
-            let mut doc = old_doc;
-            doc.update(data);
-            let new_value = doc.to_value();
+    /// Run `f` holding `key`'s write lock: no other writer of that key runs
+    /// until it returns. For a read-modify-write that must not be overtaken
+    /// (card #796): read the document, compute the change, and write it with
+    /// [`Self::update_while_locked`] or [`Self::replace_while_locked`]. `f`
+    /// must not write `key` any other way (the lock is not reentrant).
+    pub fn with_write_lock<T>(&self, key: &str, f: impl FnOnce() -> DbResult<T>) -> DbResult<T> {
+        self.with_key_locked(key, f)
+    }
 
-            // Validate edge documents after update
-            if self.collection_type.read().as_str() == "edge" {
-                self.validate_edge_document(&new_value)?;
+    /// [`Self::update`] for a caller inside [`Self::with_write_lock`] on
+    /// `key`.
+    pub fn update_while_locked(&self, key: &str, data: Value) -> DbResult<Document> {
+        match self.update_holding_lock(key, data, None)? {
+            Guarded::Written(doc) => Ok(doc),
+            Guarded::Moved(_) => unreachable!("an unguarded update always writes"),
+        }
+    }
+
+    fn update_holding_lock(
+        &self,
+        key: &str,
+        data: Value,
+        expected_rev: Option<&str>,
+    ) -> DbResult<Guarded> {
+        if self.collection_type.read().as_str() == "timeseries" {
+            return Err(DbError::OperationNotSupported(
+                "Update operations are not allowed on timeseries collections".to_string(),
+            ));
+        }
+        // Get old document for index updates
+        let old_doc = self.get(key)?;
+        if let Some(rev) = expected_rev {
+            if old_doc.revision() != rev {
+                return Ok(Guarded::Moved(old_doc.revision().to_string()));
             }
+        }
+        let old_value = old_doc.to_value();
 
-            // Validate against JSON schema if defined
-            if let Some(validator) = self.get_cached_schema_validator()? {
-                validator.validate(&new_value).map_err(|e| {
-                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
-                })?;
-            }
+        // Create updated document
+        let mut doc = old_doc;
+        doc.update(data);
+        let new_value = doc.to_value();
 
-            self.write_update_locked(key, old_value, doc, new_value)
-        })
+        // Validate edge documents after update
+        if self.collection_type.read().as_str() == "edge" {
+            self.validate_edge_document(&new_value)?;
+        }
+
+        // Validate against JSON schema if defined
+        if let Some(validator) = self.get_cached_schema_validator()? {
+            validator.validate(&new_value).map_err(|e| {
+                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+            })?;
+        }
+
+        self.write_update_locked(key, old_value, doc, new_value)
+            .map(Guarded::Written)
     }
 
     /// Merge `changes`' top-level fields over the stored document's — the
@@ -1028,8 +1150,21 @@ impl Collection {
 
     /// Batch update multiple documents with atomic document + index writes
     pub fn update_batch(&self, updates: &[(String, Value)]) -> DbResult<Vec<Document>> {
+        let guarded: Vec<(&str, &Value, Option<&str>)> =
+            updates.iter().map(|(k, v)| (k.as_str(), v, None)).collect();
+        self.update_batch_guarded(&guarded).map(|(docs, _)| docs)
+    }
+
+    /// [`Self::update_batch`] where an update may carry the `_rev` its
+    /// changes were computed from. One whose document has moved on since is
+    /// left out of the batch (see [`Self::update_if_unchanged`]); their
+    /// positions in `updates` come back with the documents written.
+    pub fn update_batch_guarded(
+        &self,
+        updates: &[(&str, &Value, Option<&str>)],
+    ) -> DbResult<(Vec<Document>, Vec<usize>)> {
         if updates.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         // Check timeseries restriction
@@ -1039,7 +1174,7 @@ impl Collection {
             ));
         }
 
-        let _key_guard = self.lock_keys(updates.iter().map(|(k, _)| k.as_str()));
+        let _key_guard = self.lock_keys(updates.iter().map(|(k, _, _)| *k));
 
         let db = &self.db;
         let cf = self.live_cf()?;
@@ -1051,9 +1186,25 @@ impl Collection {
         // (key, value on disk, updated document)
         let mut pending: Vec<(String, Value, Document)> = Vec::new();
         let mut positions: HashMap<String, usize> = HashMap::new();
+        let mut moved: Vec<usize> = Vec::new();
 
-        for (key, changes) in updates {
+        for (position, &(key, changes, expected_rev)) in updates.iter().enumerate() {
             let existing = positions.get(key).copied();
+            // A guard compares with the revision on disk, before this batch.
+            if let Some(rev) = expected_rev {
+                let on_disk = match existing {
+                    Some(i) => pending[i]
+                        .1
+                        .get("_rev")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    None => self.get(key).ok().map(|d| d.revision().to_string()),
+                };
+                if on_disk.as_deref().is_some_and(|current| current != rev) {
+                    moved.push(position);
+                    continue;
+                }
+            }
             let mut doc = match existing {
                 Some(i) => pending[i].2.clone(),
                 None => match self.get(key) {
@@ -1089,15 +1240,15 @@ impl Collection {
             match (existing, old_value) {
                 (Some(i), _) => pending[i].2 = doc,
                 (None, Some(old_value)) => {
-                    positions.insert(key.clone(), pending.len());
-                    pending.push((key.clone(), old_value, doc));
+                    positions.insert(key.to_string(), pending.len());
+                    pending.push((key.to_string(), old_value, doc));
                 }
                 (None, None) => unreachable!("old_value is set whenever existing is None"),
             }
         }
 
         if pending.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), moved));
         }
 
         // Pass 2: claim unique values under their stripes (audit D4).
@@ -1146,7 +1297,7 @@ impl Collection {
         }
 
         if updated_docs.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), moved));
         }
 
         // Commit batch atomically: all document updates + index updates together
@@ -1182,7 +1333,7 @@ impl Collection {
             });
         }
 
-        Ok(updated_docs)
+        Ok((updated_docs, moved))
     }
 
     /// Insert multiple documents with atomic batched write
