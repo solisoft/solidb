@@ -117,6 +117,17 @@ pub enum Command {
         tx_id: String,
         command: Box<Command>,
     },
+    /// A whole transaction in one request: begin, run `steps` in order in
+    /// it, commit. A step that fails, or a step with `require_rows` whose
+    /// query returns no row, rolls it back. Saves the round trips of
+    /// `begin_transaction`, one `transaction_command` per step, and the
+    /// commit.
+    RunTransaction {
+        database: String,
+        #[serde(default)]
+        isolation_level: IsolationLevel,
+        steps: Vec<TransactionStep>,
+    },
     Batch {
         commands: Vec<Command>,
     },
@@ -584,6 +595,7 @@ impl Command {
             | ListColumnarIndexes { database, .. }
             | DeleteColumnarIndex { database, .. } => Some(database),
             TransactionCommand { command, .. } => command.database(),
+            RunTransaction { database, .. } => Some(database),
             _ => None,
         }
     }
@@ -608,6 +620,18 @@ impl Command {
             | GetCurrentUserPermissions => None,
 
             TransactionCommand { command, .. } => command.required_action(),
+            // The strongest any step needs; each step is checked again on
+            // its own as it runs (a query that writes is upgraded there).
+            RunTransaction { steps, .. } => Some(
+                if steps
+                    .iter()
+                    .any(|s| s.command.required_action() == Some(A::Write))
+                {
+                    A::Write
+                } else {
+                    A::Read
+                },
+            ),
 
             // Reads. Mutating SDBQL via `Query` is upgraded to Write in
             // `handle_query`, same as the HTTP /cursor endpoint.
@@ -703,4 +727,15 @@ impl Command {
             _ => Some(A::Write),
         }
     }
+}
+
+/// One step of [`Command::RunTransaction`]: an `insert`, `update`, `delete`
+/// or `query`, as it would be sent inside `transaction_command`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionStep {
+    pub command: Command,
+    /// Roll the transaction back if this step's query returns no row: a
+    /// debit filtered on the balance that matched nothing.
+    #[serde(default)]
+    pub require_rows: bool,
 }

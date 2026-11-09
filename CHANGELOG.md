@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Features
+
+* **A transaction in one request over the driver: `run_transaction`.** The
+  server begins it, runs the steps in order (`insert`, `update`, `delete`
+  or `query`, each as inside `transaction_command`) and commits. A step
+  marked `require_rows` whose query returns no row rolls it back and the
+  answer says which (`{"committed": false, "stopped_at": i}`); a failing
+  step rolls it back and its error names the step. The Rust client has
+  `run_transaction(db, steps)` with `TransactionStep::query` / `insert` /
+  `update` / `delete` and `TransactionOutcome`. A money transfer is one
+  round trip instead of five: on the bank benchmark, see the numbers in
+  `benchmarks/compare/README.md`. Card #797.
+
+### Performance
+
+* **Driver transactions keep the async workers free.** The commit, which
+  waits for its fsync, runs under `block_in_place`, so the other
+  connections of that worker are not held up behind it; and a staged query
+  that reaches documents only by key (`FOR d IN c FILTER d._key == @k …
+  UPDATE …`, a single `INSERT`) runs inline instead of going through the
+  blocking pool and back. About 10% less CPU per transfer at 32 clients.
+
 ### Security
 
 * **The Rust client bundles SQLite 3.54** (`rusqlite` 0.40 → 0.41,

@@ -7,6 +7,7 @@ mod http_client;
 mod index;
 mod query;
 mod transaction;
+pub use transaction::TransactionOutcome;
 
 pub use builder::SoliDBClientBuilder;
 pub use builder::Transport;
@@ -231,10 +232,12 @@ impl SoliDBClient {
                         .to_string(),
                 ))
             }
-            Command::BeginTransaction { .. } => Err(DriverError::TransactionError(
-                "a transaction is already open on this client: commit or roll it back first"
-                    .to_string(),
-            )),
+            Command::BeginTransaction { .. } | Command::RunTransaction { .. } => {
+                Err(DriverError::TransactionError(
+                    "a transaction is already open on this client: commit or roll it back first"
+                        .to_string(),
+                ))
+            }
             other => Ok((self.next_connection_index(), other)),
         }
     }

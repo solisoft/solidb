@@ -52,8 +52,9 @@ pub mod sync;
 #[cfg(feature = "mobile")]
 pub mod mobile_ffi;
 
+pub use client::TransactionOutcome;
 pub use client::{HttpClient, SoliDBClient, SoliDBClientBuilder, Transport};
-pub use protocol::{Command, DriverError, Response};
+pub use protocol::{Command, DriverError, Response, TransactionStep};
 pub use sync::{LocalStore, PendingChange, SyncCommand, SyncConfig, SyncManager, SyncResult};
 
 // Re-export mobile types when building for mobile

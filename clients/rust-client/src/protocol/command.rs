@@ -115,6 +115,14 @@ pub enum Command {
         tx_id: String,
         command: Box<Command>,
     },
+    /// A whole transaction in one request (servers after 2.9.2): begin, the
+    /// steps in order, commit. See [`crate::SoliDBClient::run_transaction`].
+    RunTransaction {
+        database: String,
+        #[serde(default)]
+        isolation_level: IsolationLevel,
+        steps: Vec<TransactionStep>,
+    },
     Batch {
         commands: Vec<Command>,
     },
@@ -479,4 +487,74 @@ pub enum Command {
 
 fn default_true() -> bool {
     true
+}
+
+/// One step of a transaction sent in one request
+/// ([`crate::SoliDBClient::run_transaction`]): an insert, an update, a delete
+/// or a query, built with [`TransactionStep::query`] and its siblings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionStep {
+    pub command: Command,
+    /// Roll the whole transaction back if this step's query returns no row.
+    #[serde(default)]
+    pub require_rows: bool,
+}
+
+impl TransactionStep {
+    /// An SDBQL query; a query that writes has its writes staged.
+    pub fn query(
+        database: &str,
+        sdbql: &str,
+        bind_vars: Option<std::collections::HashMap<String, Value>>,
+    ) -> Self {
+        Self::of(Command::Query {
+            database: database.to_string(),
+            sdbql: sdbql.to_string(),
+            bind_vars,
+            cache: false,
+        })
+    }
+
+    pub fn insert(database: &str, collection: &str, key: Option<&str>, document: Value) -> Self {
+        Self::of(Command::Insert {
+            database: database.to_string(),
+            collection: collection.to_string(),
+            key: key.map(str::to_string),
+            document,
+        })
+    }
+
+    /// Merge `document` into the stored one, as `update` does.
+    pub fn update(database: &str, collection: &str, key: &str, document: Value) -> Self {
+        Self::of(Command::Update {
+            database: database.to_string(),
+            collection: collection.to_string(),
+            key: key.to_string(),
+            document,
+            merge: true,
+        })
+    }
+
+    pub fn delete(database: &str, collection: &str, key: &str) -> Self {
+        Self::of(Command::Delete {
+            database: database.to_string(),
+            collection: collection.to_string(),
+            key: key.to_string(),
+        })
+    }
+
+    /// Roll the transaction back when this step's query returns no row: a
+    /// write filtered on a condition (`FILTER a.balance >= @x UPDATE … RETURN
+    /// 1`) that matched nothing.
+    pub fn require_rows(mut self) -> Self {
+        self.require_rows = true;
+        self
+    }
+
+    fn of(command: Command) -> Self {
+        Self {
+            command,
+            require_rows: false,
+        }
+    }
 }

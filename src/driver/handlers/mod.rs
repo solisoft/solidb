@@ -540,6 +540,12 @@ impl DriverHandler {
                 transaction::handle_transaction_command(self, tx_id, command).await
             }
 
+            Command::RunTransaction {
+                database,
+                isolation_level,
+                steps,
+            } => transaction::handle_run_transaction(self, database, isolation_level, steps).await,
+
             // ==================== Bulk Operations ====================
             Command::Batch { commands } => {
                 let mut responses = Vec::with_capacity(commands.len());

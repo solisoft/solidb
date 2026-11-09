@@ -287,3 +287,73 @@ fn a_transfer_written_as_queries_commits_whole() {
         assert!(coll.get("ledger-1").is_ok());
     });
 }
+
+/// The same transfer in one request: committed whole, or stopped at the
+/// debit that matched nothing with nothing applied; refused while a
+/// transaction is open on the client.
+#[test]
+fn a_transfer_runs_in_one_request() {
+    use solidb_client::{TransactionOutcome, TransactionStep};
+    let (rt, addr, engine, _tmp) = serve();
+    rt.block_on(async {
+        let mut c = client(&addr, 4).await;
+        c.insert(DB, COLL, Some("acct-a"), json!({"n": 100}))
+            .await
+            .unwrap();
+        c.insert(DB, COLL, Some("acct-b"), json!({"n": 0}))
+            .await
+            .unwrap();
+        let debit = "FOR d IN docs FILTER d._key == @k FILTER d.n >= @x \
+                     UPDATE d WITH {n: d.n - @x} IN docs RETURN 1";
+        let credit =
+            "FOR d IN docs FILTER d._key == @k UPDATE d WITH {n: d.n + @x} IN docs RETURN 1";
+        let vars = |k: &str, x: i64| {
+            Some(HashMap::from([
+                ("k".to_string(), json!(k)),
+                ("x".to_string(), json!(x)),
+            ]))
+        };
+        let transfer = |from: &str, to: &str, x: i64, ledger: &str| {
+            vec![
+                TransactionStep::query(DB, debit, vars(from, x)).require_rows(),
+                TransactionStep::query(DB, credit, vars(to, x)).require_rows(),
+                TransactionStep::insert(DB, COLL, Some(ledger), json!({"x": x})),
+            ]
+        };
+
+        let done = c
+            .run_transaction(DB, transfer("acct-a", "acct-b", 30, "ledger-1"))
+            .await
+            .unwrap();
+        let TransactionOutcome::Committed(results) = done else {
+            panic!("{done:?}")
+        };
+        assert_eq!(results[0], json!([1]));
+        assert_eq!(results.len(), 3);
+
+        let stopped = c
+            .run_transaction(DB, transfer("acct-b", "acct-a", 500, "ledger-2"))
+            .await
+            .unwrap();
+        assert_eq!(stopped, TransactionOutcome::Stopped { step: 0 });
+
+        c.begin_transaction(DB, None).await.unwrap();
+        let err = c
+            .run_transaction(DB, transfer("acct-a", "acct-b", 1, "ledger-3"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already open"), "{err}");
+        c.rollback().await.unwrap();
+
+        let coll = engine
+            .get_database(DB)
+            .unwrap()
+            .get_collection(COLL)
+            .unwrap();
+        assert_eq!(coll.get("acct-a").unwrap().to_value()["n"], json!(70));
+        assert_eq!(coll.get("acct-b").unwrap().to_value()["n"], json!(30));
+        assert!(coll.get("ledger-1").is_ok());
+        assert!(coll.get("ledger-2").is_err() && coll.get("ledger-3").is_err());
+    });
+}

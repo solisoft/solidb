@@ -32,7 +32,8 @@ pub fn handle_commit_transaction(handler: &mut DriverHandler, tx_id: String) -> 
             // Read the touched collections before commit consumes the
             // transaction; the cache is dropped only once the writes landed.
             let touched = touched_collections(handler, tx);
-            match handler.storage.commit_transaction(tx) {
+            let storage = &handler.storage;
+            match off_the_worker(|| storage.commit_transaction(tx)) {
                 Ok(_) => {
                     for c in touched {
                         crate::storage::query_cache::get_query_cache().invalidate_collection(&c);
@@ -45,6 +46,122 @@ pub fn handle_commit_transaction(handler: &mut DriverHandler, tx_id: String) -> 
         None => Response::error(DriverError::TransactionError(
             "Transaction not found".to_string(),
         )),
+    }
+}
+
+/// Begin, run each step in the transaction, commit: a whole transaction in
+/// one round trip (`Command::RunTransaction`).
+///
+/// Answers `{"committed": true, "results": [...]}`, one result per step as
+/// `transaction_command` would have answered it, or `{"committed": false,
+/// "stopped_at": i}` when step `i` has `require_rows` and its query returned
+/// no row: the transaction is rolled back, nothing it staged lands. A step
+/// that fails rolls it back too, and its error names the step.
+pub async fn handle_run_transaction(
+    handler: &mut DriverHandler,
+    database: String,
+    isolation_level: IsolationLevel,
+    steps: Vec<crate::driver::protocol::TransactionStep>,
+) -> Response {
+    for (i, step) in steps.iter().enumerate() {
+        if !matches!(
+            step.command,
+            Command::Insert { .. }
+                | Command::Update { .. }
+                | Command::Delete { .. }
+                | Command::Query { .. }
+        ) {
+            return Response::error(DriverError::TransactionError(format!(
+                "step {i}: only insert, update, delete and query can run in a transaction"
+            )));
+        }
+        if step.command.database() != Some(database.as_str()) {
+            return Response::error(DriverError::TransactionError(format!(
+                "step {i}: every step must name the transaction's database, {database}"
+            )));
+        }
+    }
+    let tx_id = match handle_begin_transaction(handler, database.clone(), isolation_level) {
+        Response::Ok {
+            tx_id: Some(id), ..
+        } => id,
+        other => return other,
+    };
+    let mut results = Vec::with_capacity(steps.len());
+    for (i, step) in steps.into_iter().enumerate() {
+        // Each step needs what it would need on its own. A query that
+        // writes is upgraded to Write when it is staged.
+        if let Some(action) = step.command.required_action() {
+            if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+                &handler.session_permissions,
+                action,
+                Some(&database),
+                handler.session_scoped_databases.as_deref(),
+            ) {
+                let _ = handle_rollback_transaction(handler, tx_id);
+                return Response::error(DriverError::AuthError(format!("step {i}: {e}")));
+            }
+        }
+        let response =
+            handle_transaction_command(handler, tx_id.clone(), Box::new(step.command)).await;
+        let value = match step_value(response) {
+            Ok(value) => value,
+            Err(e) => {
+                let _ = handle_rollback_transaction(handler, tx_id);
+                return Response::error(at_step(i, e));
+            }
+        };
+        if step.require_rows && value.as_array().is_none_or(|rows| rows.is_empty()) {
+            let _ = handle_rollback_transaction(handler, tx_id);
+            return Response::ok(serde_json::json!({"committed": false, "stopped_at": i}));
+        }
+        results.push(value);
+    }
+    match handle_commit_transaction(handler, tx_id) {
+        Response::Ok { .. } => {
+            Response::ok(serde_json::json!({"committed": true, "results": results}))
+        }
+        other => other,
+    }
+}
+
+/// A step's answer as a value: rows a read-only query sent already encoded
+/// (shared with the cache, or copied from storage) are decoded.
+fn step_value(response: Response) -> Result<serde_json::Value, DriverError> {
+    match response {
+        Response::Ok { data, .. } => Ok(data.unwrap_or(serde_json::Value::Null)),
+        Response::Rows { data } => Ok(serde_json::Value::Array(data.0.as_ref().clone())),
+        Response::RawRows { data } => rmp_serde::from_slice(&data.0)
+            .map_err(|e| DriverError::ProtocolError(format!("rows: {e}"))),
+        Response::Error { error } => Err(error),
+        Response::Pong { .. } | Response::Batch { .. } => Err(DriverError::ProtocolError(
+            "unexpected answer to a transaction step".to_string(),
+        )),
+    }
+}
+
+/// `e`, saying which step it came from.
+fn at_step(i: usize, e: DriverError) -> DriverError {
+    match e {
+        DriverError::ConnectionError(m) => DriverError::ConnectionError(format!("step {i}: {m}")),
+        DriverError::ProtocolError(m) => DriverError::ProtocolError(format!("step {i}: {m}")),
+        DriverError::DatabaseError(m) => DriverError::DatabaseError(format!("step {i}: {m}")),
+        DriverError::AuthError(m) => DriverError::AuthError(format!("step {i}: {m}")),
+        DriverError::TransactionError(m) => DriverError::TransactionError(format!("step {i}: {m}")),
+        DriverError::InvalidCommand(m) => DriverError::InvalidCommand(format!("step {i}: {m}")),
+        other => other,
+    }
+}
+
+/// Run work that waits (a commit waits for its fsync) without holding up
+/// the other connections this async worker serves: `block_in_place` hands
+/// the worker's queue to another thread while it runs, and costs nothing
+/// when that queue is empty (one client). The server runs on the
+/// multi-threaded runtime; anywhere else (unit tests) the work runs as is.
+fn off_the_worker<T>(work: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current().map(|h| h.runtime_flavor()) {
+        Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
+        _ => work(),
     }
 }
 
@@ -239,8 +356,8 @@ async fn stage_query(
     };
     let principal = handler.query_principal(&database);
     let storage = handler.storage.clone();
-    // Synchronous executor work, on the blocking pool as for any query.
-    let task = tokio::task::spawn_blocking(move || {
+    let inline = is_point_statement(&query);
+    let run = move || {
         crate::sdbql::QueryExecutor::with_database_and_bind_vars(&storage, database, bind_vars)
             .with_principal(principal)
             .with_timeout(std::time::Duration::from_secs(
@@ -248,14 +365,106 @@ async fn stage_query(
             ))
             .with_transaction(writer)
             .execute(&query)
-    });
-    match task.await {
-        Ok(Ok(rows)) => Response::ok(serde_json::Value::Array(rows)),
-        Ok(Err(e)) => Response::error(DriverError::TransactionError(e.to_string())),
-        Err(e) => Response::error(DriverError::DatabaseError(format!(
-            "Task join error: {}",
-            e
-        ))),
+    };
+    let outcome = if inline {
+        run()
+    } else {
+        // Anything that may loop or scan: on the blocking pool, as for any
+        // query.
+        match tokio::task::spawn_blocking(run).await {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                return Response::error(DriverError::DatabaseError(format!(
+                    "Task join error: {}",
+                    e
+                )))
+            }
+        }
+    };
+    match outcome {
+        Ok(rows) => Response::ok(serde_json::Value::Array(rows)),
+        Err(e) => Response::error(DriverError::TransactionError(e.to_string())),
+    }
+}
+
+/// Whether a staged statement reaches documents only by key: `FOR d IN c
+/// FILTER d._key == <constant or bind variable> [FILTER …] [LET …]` then one
+/// `UPDATE` / `REPLACE` / `REMOVE`, or a single `INSERT`, with no heavy
+/// expression anywhere. Staging one is a few microseconds of work, less
+/// than the round trip to the blocking pool (two thread wake-ups), so it
+/// runs inline, as point reads do in `handle_query`.
+fn is_point_statement(query: &crate::sdbql::Query) -> bool {
+    use crate::sdbql::ast::BodyClause;
+    use crate::server::handlers::query::expression_is_heavy as heavy;
+    if !query.set_operations.is_empty()
+        || !query.join_clauses.is_empty()
+        || query.with_clause.is_some()
+        || query.window_clause.is_some()
+        || query.let_clauses.iter().any(|l| heavy(&l.expression))
+        || query
+            .return_clause
+            .as_ref()
+            .is_some_and(|r| heavy(&r.expression))
+    {
+        return false;
+    }
+    match query.body_clauses.as_slice() {
+        [BodyClause::Insert(insert)] => !heavy(&insert.document),
+        [BodyClause::For(f), rest @ ..] => {
+            if f.source_expression.is_some()
+                || f.system_time.is_some()
+                || f.valid_time.is_some()
+                || f.source_variable
+                    .as_ref()
+                    .is_some_and(|s| s != &f.collection)
+            {
+                return false;
+            }
+            let Some((write, between)) = rest.split_last() else {
+                return false;
+            };
+            let write_light = match write {
+                BodyClause::Update(u) => !heavy(&u.selector) && !heavy(&u.changes),
+                BodyClause::Remove(r) => !heavy(&r.selector),
+                _ => false,
+            };
+            let mut keyed = false;
+            let between_light = between.iter().all(|clause| match clause {
+                BodyClause::Filter(filter) => {
+                    keyed |= key_equality(&filter.expression, &f.variable);
+                    !heavy(&filter.expression)
+                }
+                BodyClause::Let(l) => !heavy(&l.expression),
+                _ => false,
+            });
+            write_light && between_light && keyed
+        }
+        _ => false,
+    }
+}
+
+/// `var._key == <constant or bind variable>`, either way round, possibly
+/// one side of an `AND`.
+fn key_equality(e: &crate::sdbql::ast::Expression, var: &str) -> bool {
+    use crate::sdbql::ast::{BinaryOperator, Expression};
+    let is_key = |e: &Expression| {
+        matches!(e, Expression::FieldAccess(base, field)
+            if field == "_key" && matches!(base.as_ref(), Expression::Variable(v) if v == var))
+    };
+    let constant =
+        |e: &Expression| matches!(e, Expression::BindVariable(_) | Expression::Literal(_));
+    match e {
+        Expression::BinaryOp {
+            left,
+            op: BinaryOperator::Equal,
+            right,
+        } => (is_key(left) && constant(right)) || (is_key(right) && constant(left)),
+        Expression::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => key_equality(left, var) || key_equality(right, var),
+        _ => false,
     }
 }
 
@@ -538,6 +747,158 @@ mod tests {
         );
         handle_rollback_transaction(&mut h, tx);
         assert_eq!(balance(&h, "a"), json!(10));
+    }
+
+    fn step(command: Command, require_rows: bool) -> crate::driver::protocol::TransactionStep {
+        crate::driver::protocol::TransactionStep {
+            command,
+            require_rows,
+        }
+    }
+
+    fn transfer(from: &str, to: &str, x: i64) -> Vec<crate::driver::protocol::TransactionStep> {
+        let debit = "FOR a IN c FILTER a._key == @k FILTER a.n >= @x \
+                     UPDATE a WITH {n: a.n - @x} IN c RETURN 1";
+        let credit = "FOR a IN c FILTER a._key == @k UPDATE a WITH {n: a.n + @x} IN c RETURN 1";
+        vec![
+            step(*query(debit, json!({"k": from, "x": x})), true),
+            step(*query(credit, json!({"k": to, "x": x})), true),
+            step(*insert(&format!("ledger-{from}-{to}-{x}")), false),
+        ]
+    }
+
+    async fn run(
+        h: &mut DriverHandler,
+        steps: Vec<crate::driver::protocol::TransactionStep>,
+    ) -> Response {
+        handle_run_transaction(h, "d".to_string(), IsolationLevel::ReadCommitted, steps).await
+    }
+
+    fn accounts(h: &DriverHandler) {
+        let c = h.get_collection("d", "c").unwrap();
+        c.insert(json!({"_key": "a", "n": 100})).unwrap();
+        c.insert(json!({"_key": "b", "n": 0})).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_run_transaction_commits_every_step() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        accounts(&h);
+        let r = run(&mut h, transfer("a", "b", 30)).await;
+        let Response::Ok { data: Some(d), .. } = &r else {
+            panic!("{r:?}")
+        };
+        assert_eq!(d["committed"], json!(true), "{d}");
+        assert_eq!(d["results"][0], json!([1]));
+        assert_eq!(d["results"][1], json!([1]));
+        assert_eq!(balance(&h, "a"), json!(70));
+        assert_eq!(balance(&h, "b"), json!(30));
+        assert!(exists(&h, "ledger-a-b-30"));
+        assert!(h.transactions.is_empty(), "no transaction left open");
+    }
+
+    #[tokio::test]
+    async fn a_required_step_that_matches_nothing_rolls_back() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        accounts(&h);
+        // b holds 0: the debit matches nothing, the credit and the ledger
+        // row are not applied.
+        let r = run(&mut h, transfer("b", "a", 5)).await;
+        let Response::Ok { data: Some(d), .. } = &r else {
+            panic!("{r:?}")
+        };
+        assert_eq!(d, &json!({"committed": false, "stopped_at": 0}));
+        assert_eq!(balance(&h, "a"), json!(100));
+        assert!(!exists(&h, "ledger-b-a-5"));
+        assert!(h.transactions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failing_step_rolls_back_and_names_itself() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        accounts(&h);
+        // Updating a document that does not exist fails as it is staged,
+        // at step 3.
+        let mut steps = transfer("a", "b", 10);
+        steps.push(step(
+            Command::Update {
+                database: "d".to_string(),
+                collection: "c".to_string(),
+                key: "missing".to_string(),
+                document: json!({"n": 1}),
+                merge: true,
+            },
+            false,
+        ));
+        let r = run(&mut h, steps).await;
+        assert!(
+            matches!(&r, Response::Error { error } if error.to_string().contains("step 3")),
+            "{r:?}"
+        );
+        // Inserting a key that exists is refused by the commit.
+        let mut steps = transfer("a", "b", 10);
+        steps.push(step(*insert("a"), false));
+        let r = run(&mut h, steps).await;
+        assert!(matches!(r, Response::Error { .. }), "{r:?}");
+        // Neither left anything behind.
+        assert_eq!(balance(&h, "a"), json!(100));
+        assert_eq!(balance(&h, "b"), json!(0));
+        assert!(!exists(&h, "ledger-a-b-10"));
+        assert!(h.transactions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_run_transaction_stays_in_its_database_and_needs_write() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        accounts(&h);
+        let elsewhere = vec![step(
+            Command::Insert {
+                database: "other".to_string(),
+                collection: "c".to_string(),
+                key: Some("x".to_string()),
+                document: json!({}),
+            },
+            false,
+        )];
+        let r = run(&mut h, elsewhere).await;
+        assert!(matches!(r, Response::Error { .. }), "{r:?}");
+
+        let (_t2, mut reader) = handler();
+        reader.authenticated_db = Some("d".to_string());
+        reader
+            .session_permissions
+            .insert(crate::server::Permission::database_permission(
+                crate::server::PermissionAction::Read,
+                "d",
+            ));
+        accounts(&reader);
+        let r = run(&mut reader, transfer("a", "b", 1)).await;
+        assert!(matches!(r, Response::Error { .. }), "{r:?}");
+        assert_eq!(balance(&reader, "a"), json!(100));
+        assert!(reader.transactions.is_empty());
+    }
+
+    #[test]
+    fn point_statements_are_recognised() {
+        let point = |q: &str| is_point_statement(&crate::sdbql::parse(q).unwrap());
+        assert!(point(
+            "FOR a IN c FILTER a._key == @k FILTER a.n >= @x UPDATE a WITH {n: a.n - @x} IN c RETURN 1"
+        ));
+        assert!(point("FOR a IN c FILTER 'x' == a._key REMOVE a IN c"));
+        assert!(point("INSERT {_key: @id, n: 1} INTO c"));
+        // A scan, a range, or a loop: the blocking pool.
+        assert!(!point(
+            "FOR a IN c FILTER a.n > 3 UPDATE a WITH {n: 0} IN c"
+        ));
+        assert!(!point("FOR a IN c UPDATE a WITH {n: 0} IN c"));
+        assert!(!point("FOR i IN 1..10 INSERT {i} INTO c"));
+        assert!(!point(
+            "FOR a IN c FILTER a._key == a.other UPDATE a WITH {n: 0} IN c"
+        ));
     }
 
     #[tokio::test]
