@@ -395,6 +395,12 @@ fn log_slow_query(
 ///
 /// A handler whose route is not behind the auth layer has no claims; that is
 /// a non-admin client, never the server.
+///
+/// `can_admin` here is the *global* admin role, which is all the callers that
+/// never address the admin-write tier need (blobs, collection lifecycle,
+/// replication apply). A write that can name `_jobs` — the document API,
+/// transactions, import — uses [`write_actor_for_collection`] instead, which
+/// also honours a database-scoped admin.
 pub fn write_actor_from_claims(
     claims: Option<&crate::server::auth::Claims>,
 ) -> crate::storage::WriteActor {
@@ -402,6 +408,46 @@ pub fn write_actor_from_claims(
         Some(c) => crate::storage::WriteActor::client(principal_from_claims(c).can_admin),
         None => crate::storage::WriteActor::client(false),
     }
+}
+
+/// The write identity for a client write to `coll_name` in `db_name`.
+///
+/// `WriteActor`'s `can_admin` flag governs only the admin-write tier — today
+/// just `_jobs` (`storage::protected`). Every other collection name is
+/// unaffected by it, so the Admin permission is resolved *only* for that tier:
+/// an ordinary document write pays nothing and keeps its single authorization
+/// pass. The credential tier (`_env`, `_admins`, …) stays denied to every
+/// client regardless of this flag, so a scoped admin gains nothing there.
+///
+/// A principal counts as admin when it holds the Admin action on *this*
+/// database — the global `admin` role, or a role limited to this database.
+/// That is what the driver already does (`query_principal(db).can_admin`, via
+/// `check_permission_raw` with the database); the HTTP path recognised only
+/// the global role before, so a database-scoped admin could run its own
+/// database's jobs over the driver but was refused `_jobs` over HTTP. The
+/// permission set is the one the authz middleware already resolved and cached
+/// for this request, so the extra check is a cache hit.
+pub async fn write_actor_for_collection(
+    state: &AppState,
+    claims: Option<&crate::server::auth::Claims>,
+    db_name: &str,
+    coll_name: &str,
+) -> crate::storage::WriteActor {
+    if !crate::storage::is_admin_write_collection(coll_name) {
+        return crate::storage::WriteActor::client(false);
+    }
+    let can_admin = match claims {
+        Some(c) => crate::server::authorization::AuthorizationService::check_permission(
+            c,
+            state,
+            crate::server::authorization::PermissionAction::Admin,
+            Some(db_name),
+        )
+        .await
+        .is_ok(),
+        None => false,
+    };
+    crate::storage::WriteActor::client(can_admin)
 }
 
 /// Whether this request is a coordinator's scatter-gather sub-query, which
