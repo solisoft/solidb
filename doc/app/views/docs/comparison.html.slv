@@ -878,122 +878,78 @@
             </h2>
           </div>
           <div class="p-8 space-y-8">
-            <div class="bg-amber-900/20 border border-amber-500/20 rounded-lg p-4 mb-6">
-              <p class="text-amber-200 text-sm flex items-start">
-                <i class="fas fa-info-circle mt-1 mr-3 flex-shrink-0"></i>
-                <span>
-                  <strong>Note on Throughput:</strong> SoliDB values reflect <strong>embedded usage</strong> (direct library calls). When accessed over HTTP using JSON, serialization overhead reduces throughput.
-                  <br><br>
-                  <em>Performance Tip:</em> Use <strong>MessagePack</strong> (<code class="text-cyan-400">Accept: application/msgpack</code>) to significantly reduce this overhead and achieve higher throughput closer to embedded speeds.
-                </span>
-              </p>
-            </div>
-
             <p class="text-gray-300 leading-relaxed">
-               Benchmark figures represent maximum theoretical throughput of the storage engine on a standard developer workstation (4 vCPU, 16GB RAM).
+              Measured on November 9, 2026: each database alone in a container limited to 4 cores and 16&nbsp;GB, on an AMD Ryzen 9 9950X, the same million documents, 32 clients sending requests over loopback. No engine fsyncs every commit in these two charts. SoliDB is the published 2.9.0 image on its solistore engine.
             </p>
-
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <!-- Read Performance -->
               <div class="bg-gray-800/20 rounded-xl p-6 border border-white/5">
                 <h3 class="text-lg font-bold text-white mb-6 flex items-center">
                   <span class="w-2 h-2 rounded-full bg-cyan-400 mr-2"></span>
-                  Read Throughput (ops/sec)
+                  Reads of one document by key (per second)
                 </h3>
                 <div class="space-y-4">
-                  <!-- SoliDB -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-white font-medium">SoliDB (Embedded)</span>
-                      <span class="text-cyan-400 font-bold">140,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-cyan-500 h-2.5 rounded-full" style="width: 100%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-white font-medium">SoliDB</span><span class="text-cyan-400 font-bold">733,576</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-cyan-500 h-2.5 rounded-full" style="width: 100%"></div></div>
                   </div>
-                  <!-- Redis -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">Redis</span>
-                      <span class="text-gray-400">110,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-red-500/50 h-2.5 rounded-full" style="width: 78%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">PostgreSQL (jsonb)</span><span class="text-gray-400">378,048</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 52%"></div></div>
                   </div>
-                  <!-- MongoDB -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">MongoDB</span>
-                      <span class="text-gray-400">65,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-green-500/50 h-2.5 rounded-full" style="width: 52%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">PostgreSQL (typed columns)</span><span class="text-gray-400">354,434</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 48%"></div></div>
                   </div>
-                  <!-- PostgreSQL -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">PostgreSQL (JSONB)</span>
-                      <span class="text-gray-400">55,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-blue-500/50 h-2.5 rounded-full" style="width: 44%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">MongoDB</span><span class="text-gray-400">301,150</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 41%"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">ArangoDB</span><span class="text-gray-400">236,629</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 32%"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">SurrealDB</span><span class="text-gray-400">73,585</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 10%"></div></div>
                   </div>
                 </div>
               </div>
-
-              <!-- Write Performance -->
               <div class="bg-gray-800/20 rounded-xl p-6 border border-white/5">
                 <h3 class="text-lg font-bold text-white mb-6 flex items-center">
                   <span class="w-2 h-2 rounded-full bg-purple-400 mr-2"></span>
-                  Write Throughput (ops/sec)
+                  Inserts of one document (per second)
                 </h3>
                 <div class="space-y-4">
-                  <!-- Redis -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">Redis</span>
-                      <span class="text-gray-400">95,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-red-500/50 h-2.5 rounded-full" style="width: 100%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-white font-medium">SoliDB</span><span class="text-cyan-400 font-bold">158,777</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-cyan-500 h-2.5 rounded-full" style="width: 100%"></div></div>
                   </div>
-                  <!-- SoliDB -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-white font-medium">SoliDB (Embedded)</span>
-                      <span class="text-purple-400 font-bold">70,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-purple-500 h-2.5 rounded-full" style="width: 74%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">PostgreSQL (typed columns)</span><span class="text-gray-400">141,703</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 89%"></div></div>
                   </div>
-                  <!-- MongoDB -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">MongoDB</span>
-                      <span class="text-gray-400">42,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-green-500/50 h-2.5 rounded-full" style="width: 44%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">PostgreSQL (jsonb)</span><span class="text-gray-400">135,277</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 85%"></div></div>
                   </div>
-                   <!-- PostgreSQL -->
                   <div>
-                    <div class="flex justify-between text-sm mb-1">
-                      <span class="text-gray-400">PostgreSQL</span>
-                      <span class="text-gray-400">35,000</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-2.5">
-                      <div class="bg-blue-500/50 h-2.5 rounded-full" style="width: 37%"></div>
-                    </div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">MongoDB</span><span class="text-gray-400">94,169</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 59%"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">ArangoDB</span><span class="text-gray-400">64,753</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 41%"></div></div>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-sm mb-1"><span class="text-gray-400">SurrealDB</span><span class="text-gray-400">11,292</span></div>
+                    <div class="w-full bg-gray-700 rounded-full h-2.5"><div class="bg-white/20 h-2.5 rounded-full" style="width: 7%"></div></div>
                   </div>
                 </div>
               </div>
             </div>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              With an fsync before every acknowledgement PostgreSQL inserts faster than SoliDB (89,587 a second against 81,298), and PostgreSQL with typed columns answers the one-client join sooner (71&nbsp;µs against 80). The method, every other scenario and the harness are in <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb" class="text-cyan-400 hover:underline">SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB</a>.
+            </p>
           </div>
         </div>
       </section>

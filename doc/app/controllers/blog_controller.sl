@@ -69,6 +69,17 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-against-postgresql-mongodb-arangodb-surrealdb",
+        "title": "SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB",
+        "date": "2026-11-09",
+        "display_date": "November 9, 2026",
+        "summary": "One machine, a million documents, the same queries, five databases measured one at a time "
+        + "on 4 cores each. SoliDB led 21 of 23 series, and lost two to PostgreSQL. The harness, every "
+        + "setting and the raw results are in the repository.",
+        "tags": ["Performance", "Benchmarks"],
+        "read_minutes": 12
+      },
+      {
         "slug": "solidb-2-7-the-queries-that-scanned-anyway",
         "title": "SoliDB 2.6 to 2.7.1: the queries that scanned with an index right there",
         "date": "2026-11-05",

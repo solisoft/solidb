@@ -10,6 +10,7 @@
     <a class="brand" href="/" aria-label="SoliDB home">SoliDB <%- partial("shared/version_pill", {}) %></a>
 
     <nav class="nav-links" aria-label="Primary">
+      <a href="#perf">Performance</a>
       <a href="#cluster">Clustering</a>
       <a href="#limits">Limits</a>
       <a href="/docs">Docs</a>
@@ -176,6 +177,110 @@ Full sync complete, final sequence: 5
         <button type="button" class="slide-btn slide-play" data-toggle aria-label="Pause the slideshow" aria-pressed="false"><svg class="ico-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.5" height="14" rx="1"></rect><rect x="13.5" y="5" width="3.5" height="14" rx="1"></rect></svg><svg class="ico-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"></path></svg></button>
       </div>
     </section>
+  </div>
+</section>
+
+<!-- ========================== PERFORMANCE ========================== -->
+<section class="sec" id="perf">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Measured against PostgreSQL, MongoDB, ArangoDB and SurrealDB.</h2>
+      <p>
+        The same million orders and the same queries, each database alone on 4 cores and 16&nbsp;GB of
+        one machine. SoliDB 2.9.0, on its solistore engine, led 21 of the 23 series. PostgreSQL won the
+        other two: a join with one client, and inserts fsynced before they are acknowledged.
+        <a class="text-link" href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb">How it was
+        measured, every figure and the harness</a>.
+      </p>
+    </div>
+
+    <%# perf:start. Generated from the results by benchmarks/compare/post_figures.py (home:perf). %>
+<div class="shapes">
+<div class="shape"><div class="shape-head"><b>One order by its key</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="One order by its key, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">733,576</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.515" aria-hidden="true"></span><span class="perf-val">378,048</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.411" aria-hidden="true"></span><span class="perf-val">301,150</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.323" aria-hidden="true"></span><span class="perf-val">236,629</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.100" aria-hidden="true"></span><span class="perf-val">73,585</span></span></li>
+</ol>
+</div>
+<div class="shape"><div class="shape-head"><b>A customer&rsquo;s orders</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="A customer&rsquo;s orders, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">220,404</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.805" aria-hidden="true"></span><span class="perf-val">177,403</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.418" aria-hidden="true"></span><span class="perf-val">92,129</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.168" aria-hidden="true"></span><span class="perf-val">36,984</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.090" aria-hidden="true"></span><span class="perf-val">19,941</span></span></li>
+</ol>
+</div>
+<div class="shape"><div class="shape-head"><b>Join: 20 orders, customers</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="Join: 20 orders, customers, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">68,784</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.643" aria-hidden="true"></span><span class="perf-val">44,221</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.233" aria-hidden="true"></span><span class="perf-val">16,010</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.263" aria-hidden="true"></span><span class="perf-val">18,123</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.139" aria-hidden="true"></span><span class="perf-val">9,589</span></span></li>
+</ol>
+</div>
+<div class="shape"><div class="shape-head"><b>Full-scan COLLECT</b><span>ms per query, lower is better</span></div>
+<ol class="perf-rows" aria-label="Full-scan COLLECT, ms per query, lower is better">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.039" aria-hidden="true"></span><span class="perf-val">37.3 ms</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.073" aria-hidden="true"></span><span class="perf-val">69.9 ms</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.160" aria-hidden="true"></span><span class="perf-val">153.8 ms</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">959.3 ms</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.227" aria-hidden="true"></span><span class="perf-val">218.0 ms</span></span></li>
+</ol>
+</div>
+<div class="shape"><div class="shape-head"><b>Insert one order</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="Insert one order, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">158,777</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.892" aria-hidden="true"></span><span class="perf-val">141,703</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.593" aria-hidden="true"></span><span class="perf-val">94,169</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.408" aria-hidden="true"></span><span class="perf-val">64,753</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.071" aria-hidden="true"></span><span class="perf-val">11,292</span></span></li>
+</ol>
+<p class="perf-cap">Insert runs vary more than reads: the fastest of a database&rsquo;s three runs is ahead of its slowest by 26% for SoliDB, 15% for PostgreSQL, 15% for MongoDB and 14% for ArangoDB. The bars are the medians.</p>
+</div>
+<div class="shape"><div class="shape-head"><b>Insert one order, fsynced</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="Insert one order, fsynced, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.907" aria-hidden="true"></span><span class="perf-val">81,298</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">89,587</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.676" aria-hidden="true"></span><span class="perf-val">60,579</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.205" aria-hidden="true"></span><span class="perf-val">18,371</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.115" aria-hidden="true"></span><span class="perf-val">10,272</span></span></li>
+</ol>
+<p class="perf-cap">Insert runs vary more than reads: the fastest of a database&rsquo;s three runs is ahead of its slowest by 33% for PostgreSQL, 43% for MongoDB and 223% for ArangoDB. The bars are the medians.</p>
+</div>
+<div class="shape"><div class="shape-head"><b>Update one field</b><span>requests/s, 32 clients</span></div>
+<ol class="perf-rows" aria-label="Update one field, requests/s, 32 clients">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">183,742</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.598" aria-hidden="true"></span><span class="perf-val">109,955</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.628" aria-hidden="true"></span><span class="perf-val">115,389</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.242" aria-hidden="true"></span><span class="perf-val">44,489</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.060" aria-hidden="true"></span><span class="perf-val">11,012</span></span></li>
+</ol>
+</div>
+<div class="shape"><div class="shape-head"><b>Load 1M orders</b><span>documents/s, 8 connections</span></div>
+<ol class="perf-rows" aria-label="Load 1M orders, documents/s, 8 connections">
+<li class="perf-row is-solidb"><span>SoliDB</span><span class="perf-track"><span class="perf-bar" style="--w: 1.000" aria-hidden="true"></span><span class="perf-val">471,251</span></span></li>
+<li class="perf-row"><span>PostgreSQL</span><span class="perf-track"><span class="perf-bar" style="--w: 0.642" aria-hidden="true"></span><span class="perf-val">302,399</span></span></li>
+<li class="perf-row"><span>MongoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.483" aria-hidden="true"></span><span class="perf-val">227,521</span></span></li>
+<li class="perf-row"><span>ArangoDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.499" aria-hidden="true"></span><span class="perf-val">235,190</span></span></li>
+<li class="perf-row"><span>SurrealDB</span><span class="perf-track"><span class="perf-bar" style="--w: 0.116" aria-hidden="true"></span><span class="perf-val">54,486</span></span></li>
+</ol>
+</div>
+</div>
+    <%# perf:end %>
+
+    <p class="perf-note">
+      Medians of three 20-second runs on an AMD Ryzen 9 9950X, November 9, 2026. Each chart starts at 0 and
+      has its own scale. PostgreSQL is the faster of its jsonb and typed-column setups in each one, except the fsynced inserts,
+      measured on jsonb only. The full
+      scan is quickest on SoliDB because it splits it across the 8 threads of its container; counted in CPU
+      time per query, MongoDB and PostgreSQL spend less. SoliDB runs on solistore, which is not yet its
+      default engine.
+    </p>
   </div>
 </section>
 
