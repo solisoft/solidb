@@ -302,7 +302,10 @@ pub async fn delete_document_tx(
 #[derive(Debug, Deserialize)]
 pub struct ExecuteSdbqlTransactionalRequest {
     pub query: String,
-    #[serde(default)]
+    /// `bindVars`, as `/cursor` takes it, or `bind_vars`. Only `bind_vars`
+    /// was read: `bindVars` was dropped without a word, and a missing bind
+    /// variable evaluates to null, so a filtered UPDATE updated nothing.
+    #[serde(default, alias = "bindVars")]
     pub bind_vars: std::collections::HashMap<String, Value>,
 }
 

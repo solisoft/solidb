@@ -435,6 +435,50 @@ async fn collect_then_insert_is_staged_and_committed() {
     assert_eq!(count(&app, &token, "totals").await, 2);
 }
 
+/// Bind variables reach the query under `bindVars`, the spelling `/cursor`
+/// takes, as well as `bind_vars`. `bindVars` used to be dropped, and an
+/// unbound variable evaluates to null: the UPDATE below matched nothing.
+#[tokio::test]
+async fn bind_variables_are_read_under_either_spelling() {
+    let (app, _tmp, token) = create_test_app();
+    let tx = tx_test_setup(&app, &token).await;
+    let uri = format!("/_api/database/txq/transaction/{}/query", tx);
+    let query =
+        "FOR o IN orders FILTER o.cust == @c UPDATE o WITH {seen: @seen} IN orders RETURN NEW.amt";
+
+    for (field, cust, rows) in [("bindVars", "a", 2), ("bind_vars", "b", 1)] {
+        let mut body = json!({"query": query});
+        body[field] = json!({"c": cust, "seen": cust});
+        let (status, out) = call(&app, &token, "POST", &uri, body).await;
+        assert_eq!(status, StatusCode::OK, "{}", out);
+        assert_eq!(
+            out["result"].as_array().map(Vec::len),
+            Some(rows),
+            "{field}: {out}"
+        );
+        assert_eq!(out["mutationCount"], rows, "{field}: {out}");
+    }
+
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &format!("/_api/database/txq/transaction/{}/commit", tx),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, seen) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/txq/cursor",
+        json!({"query": "FOR o IN orders SORT o.amt RETURN [o.cust, o.seen]"}),
+    )
+    .await;
+    assert_eq!(seen["result"], json!([["b", "b"], ["a", "a"], ["a", "a"]]));
+}
+
 #[tokio::test]
 async fn rolled_back_query_writes_nothing_and_options_are_refused() {
     let (app, _tmp, token) = create_test_app();

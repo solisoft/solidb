@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **Rust client: a transaction's writes now go into it.** `begin_transaction`
+  kept the transaction's id and nothing else: `insert`, `update` and `delete`
+  went out as plain commands, so they applied at once and survived a
+  `rollback` (which answered Ok), and on a pool of connections (`connect()`
+  opens four) the `commit` landed on a connection that did not know the
+  transaction ("Transaction not found"). While a transaction is open they are
+  now sent as `TransactionCommand` on the connection that began it, a
+  read-only query runs there too, and `bulk_insert`, `batch` and a second
+  `begin_transaction` are refused. Found by the fault harness (`faults/`,
+  card #792); `tests/driver_client_transaction_tests.rs`.
+* **`POST …/transaction/{id}/query` reads `bindVars`**, the spelling `/cursor`
+  takes, as well as `bind_vars`. It read only `bind_vars` and dropped the
+  other without a word, and an unbound variable evaluates to null: a filtered
+  `UPDATE` sent with `bindVars` matched nothing and reported success.
+
 ## [2.9.0](https://github.com/solisoft/solidb/compare/v2.8.0...v2.9.0) (2026-11-09)
 
 Measured with `benchmarks/compare` on rocky-build2 (Ryzen 9 9950X; the

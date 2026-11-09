@@ -142,7 +142,15 @@ impl PooledConnection {
 pub struct SoliDBClient {
     pool: Vec<PooledConnection>,
     next_index: usize,
-    current_tx: Option<String>,
+    current_tx: Option<OpenTransaction>,
+}
+
+/// The transaction `begin_transaction` opened, and the pooled connection it
+/// lives on: the server keeps a driver transaction per connection, so every
+/// command of the transaction, its commit and its rollback must go there.
+pub(crate) struct OpenTransaction {
+    pub(crate) id: String,
+    pub(crate) connection: usize,
 }
 
 impl SoliDBClient {
@@ -185,8 +193,50 @@ impl SoliDBClient {
     }
 
     pub(crate) async fn send_command(&mut self, command: Command) -> Result<Response, DriverError> {
-        let idx = self.next_connection_index();
+        let (idx, command) = self.route(command)?;
         self.send_command_on(idx, command).await
+    }
+
+    /// Where `command` goes, and in what form.
+    ///
+    /// Outside a transaction: the next pooled connection, as it is. Inside
+    /// one, the server stages `Insert`, `Update` and `Delete` and runs a
+    /// read-only `Query` only when they arrive as a `TransactionCommand` on
+    /// the connection that began the transaction, so they are wrapped and
+    /// sent there; a write sent any other way would apply at once and survive
+    /// a rollback. `BulkInsert` and `Batch` cannot be staged and are refused
+    /// here rather than applied outside the transaction. Everything else
+    /// (reads by key, listings, schema changes) is not part of the
+    /// transaction and goes out as it is.
+    fn route(&mut self, command: Command) -> Result<(usize, Command), DriverError> {
+        let Some(tx) = &self.current_tx else {
+            return Ok((self.next_connection_index(), command));
+        };
+        let (tx_id, connection) = (tx.id.clone(), tx.connection);
+        match command {
+            Command::Insert { .. }
+            | Command::Update { .. }
+            | Command::Delete { .. }
+            | Command::Query { .. } => Ok((
+                connection,
+                Command::TransactionCommand {
+                    tx_id,
+                    command: Box::new(command),
+                },
+            )),
+            Command::BulkInsert { .. } | Command::Batch { .. } => {
+                Err(DriverError::TransactionError(
+                    "bulk_insert and batch cannot run inside a transaction: use insert, \
+                     update and delete, or commit first"
+                        .to_string(),
+                ))
+            }
+            Command::BeginTransaction { .. } => Err(DriverError::TransactionError(
+                "a transaction is already open on this client: commit or roll it back first"
+                    .to_string(),
+            )),
+            other => Ok((self.next_connection_index(), other)),
+        }
     }
 
     /// Send on one specific pooled connection.
@@ -211,7 +261,7 @@ impl SoliDBClient {
         command: Command,
         decode: impl FnOnce(&[u8]) -> Result<T, DriverError>,
     ) -> Result<T, DriverError> {
-        let idx = self.next_connection_index();
+        let (idx, command) = self.route(command)?;
         self.pool[idx].round_trip(&command, decode).await
     }
 

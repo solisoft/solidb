@@ -429,6 +429,9 @@ println!("Transaction committed successfully");
 // Or rollback on error
 // client.rollback().await?;</code></pre>
         </div>
+        <p class="text-gray-400 text-sm leading-relaxed mb-6">
+          While a transaction is open, <code class="text-blue-400">insert</code>, <code class="text-blue-400">update</code> and <code class="text-blue-400">delete</code> are staged in it and applied at <code class="text-blue-400">commit</code>; nothing is visible to other clients before, and <code class="text-blue-400">rollback</code> leaves nothing behind. A read-only <code class="text-blue-400">query</code> runs on committed data and does not see the transaction's own writes, nor does <code class="text-blue-400">get</code>. <code class="text-blue-400">bulk_insert</code>, <code class="text-blue-400">batch</code> and a query that writes are refused until the transaction ends. The transaction stays on the pooled connection that began it. Up to 2.9.0 the client sent these calls outside the transaction: they applied at once and survived a rollback.
+        </p>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead class="bg-white/5">
