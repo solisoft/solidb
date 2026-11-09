@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- 2.9.2 -->
+  <section id="v2-9-2" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">v2.9.2</h2>
+      <span class="text-sm font-medium text-gray-400">November 9, 2026</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A query that writes runs in a driver transaction</strong> &mdash; sent inside <code>transaction_command</code>, which every SDK does between <code>begin_transaction</code> and the commit, its writes are staged as through <code>POST &hellip;/transaction/{id}/query</code>, with the same guard: an <code>UPDATE</code> computed from a document that changed since the query read it fails with a conflict. The driver used to refuse it, so a conditional write could only go over HTTP. A durable money transfer of five round trips commits about twice as often over the driver: 7,442 per second at one client and 37,864 at 32, against 4,064 and 19,218 over HTTP.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.9.1 -->
   <section id="v2-9-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

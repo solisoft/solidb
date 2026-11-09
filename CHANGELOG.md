@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.9.2](https://github.com/solisoft/solidb/compare/v2.9.1...v2.9.2) (2026-11-09)
+
+Transactions over the native driver can run queries that write, which
+roughly doubles durable transaction throughput against the HTTP API.
+
 ### Features
 
 * **A query that writes runs in a driver transaction.** Sent inside
