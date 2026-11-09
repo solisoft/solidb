@@ -95,7 +95,13 @@ DOCS=10000 CUSTOMERS=1000 WARM=1 SECS=2 RUNS=1 ./run.sh all   # a quick pass
 python3 report.py ~/bench/results/<date>
 ```
 
-With podman, set `DOCKER="sudo podman"`. `results/2026-11-08/` is the first run, on SoliDB 2.7.3, before the clients decoded rows into structs.
+With podman, set `DOCKER="sudo podman"`.
+
+**Published results.** The blog post reports `results/2026-11-09/`:
+- **The other databases:** one run of every configuration.
+- **SoliDB:** the published 2.9.0 image (the digest `run.sh` pins), measured right after the release with the same harness binary.
+- **`solidb-7d39337/`:** SoliDB in the same run as the others, on a build of `main` at `7d39337` before the release. It is within 5% of 2.9.0 on every series but the load of the 100,000 customers, which takes under a tenth of a second.
+- **`results/2026-11-08/`:** the first run, on SoliDB 2.7.3, before the clients decoded rows into structs.
 
 ## SoliDB 2.7.2, and why its image was rebuilt
 

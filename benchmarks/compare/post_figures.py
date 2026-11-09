@@ -158,6 +158,19 @@ def load_table(runs):
     return table(head, rows, best)
 
 
+def cpu_bars(runs, scenario, conc):
+    """Database CPU time per request, in core-milliseconds: the median latency
+    times the cores the container kept busy. A one-client series runs one
+    request at a time, so this is what each request cost the server."""
+    out = []
+    for r in runs:
+        x = cell(r, scenario, conc)
+        if x and x["db_cores"] is not None:
+            out.append((LABELS.get(r["label"], r["label"]), x["p50"] / 1000 * x["db_cores"],
+                        r["label"].startswith("solidb")))
+    return out
+
+
 def load_bars(runs, phase):
     out = []
     for r in runs:
@@ -211,6 +224,80 @@ def queries_card(runs, scenario):
             f'{esc(scenario)}, as sent</div><pre>{body}</pre></div>')
 
 
+HOME_ENGINES = [("SoliDB", ["solidb-solistore"]), ("PostgreSQL", ["postgres", "postgres-typed"]),
+                ("MongoDB", ["mongo"]), ("ArangoDB", ["arango"]), ("SurrealDB", ["surreal"])]
+HOME_DURABLE = [("SoliDB", ["solidb-solistore-durable"]), ("PostgreSQL", ["postgres-durable"]),
+                ("MongoDB", ["mongo-durable"]), ("ArangoDB", ["arango-durable"]), ("SurrealDB", ["surreal-durable"])]
+
+
+def home_perf(runs):
+    """The home page's charts: series at 32 clients (or 8 loaders), the
+    full-scan aggregation at one client, and inserts fsynced before they are
+    acknowledged; one bar per database. PostgreSQL is the faster of its two
+    setups in each. Under an insert chart, which runs spread by more than
+    10% and by how much."""
+    by = {r["label"]: r for r in runs}
+
+    def value(label, what):
+        """(value, spread of the runs) of one configuration, or None."""
+        r = by.get(label)
+        if not r:
+            return None
+        if what == "load":
+            v = next((p["result"]["docs_per_sec"] for p in r.get("load", []) if p["phase"] == "orders_8"), None)
+            return None if v is None else (v, 1.0)
+        x = cell(r, what, 1 if what == "aggregate" else 32)
+        if not x:
+            return None
+        return (x["p50"], x["spread"]) if what == "aggregate" else (x["ops"], x["spread"])
+
+    charts = [("get", "One order by its key", "requests/s, 32 clients", HOME_ENGINES),
+              ("by_customer", "A customer&rsquo;s orders", "requests/s, 32 clients", HOME_ENGINES),
+              ("join", "Join: 20 orders, customers", "requests/s, 32 clients", HOME_ENGINES),
+              ("aggregate", "Full-scan COLLECT", "ms per query, lower is better", HOME_ENGINES),
+              ("insert", "Insert one order", "requests/s, 32 clients", HOME_ENGINES),
+              ("insert", "Insert one order, fsynced", "requests/s, 32 clients", HOME_DURABLE),
+              ("update", "Update one field", "requests/s, 32 clients", HOME_ENGINES),
+              ("load", "Load 1M orders", "documents/s, 8 connections", HOME_ENGINES)]
+    out = ['<div class="shapes">']
+    for what, title, unit, engines in charts:
+        rows = []
+        for name, labels in engines:
+            vals = [v for v in (value(l, what) for l in labels) if v is not None]
+            if vals:
+                pick = min if what == "aggregate" else max
+                rows.append((name, *pick(vals, key=lambda t: t[0])))
+        if not rows:
+            continue
+        peak = max(v for _, v, _ in rows)
+        out.append(f'<div class="shape"><div class="shape-head"><b>{title}</b><span>{unit}</span></div>')
+        out.append(f'<ol class="perf-rows" aria-label="{title}, {unit}">')
+        for name, v, _ in rows:
+            cls = "perf-row is-solidb" if name == "SoliDB" else "perf-row"
+            out.append(f'<li class="{cls}"><span>{name}</span><span class="perf-track">'
+                       f'<span class="perf-bar" style="--w: {v / peak:.3f}" aria-hidden="true"></span>'
+                       f'<span class="perf-val">{us(v) if what == "aggregate" else ops(v)}</span></span></li>')
+        out.append("</ol>")
+        wide = [(name, s) for name, _, s in rows if s > 1.10]
+        if what == "insert" and wide:
+            parts = [f"{round((s - 1) * 100)}% for {name}" for name, s in wide]
+            listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+            out.append(f'<p class="perf-cap">Insert runs vary more than reads: the fastest of a database&rsquo;s '
+                       f'three runs is ahead of its slowest by {listed}. The bars are the medians.</p>')
+        out.append("</div>")
+    out.append("</div>")
+    return "\n".join(out)
+
+
+def checked(runs):
+    """One sentence on what the harness found wrong while timing: every timed
+    read and aggregation is compared with the generator's answer."""
+    n = sum(s["ops"] for r in runs for s in r["series"])
+    bad = sum(s["wrong"] + s["errors"] for r in runs for s in r["series"])
+    what = "none" if bad == 0 else f"{bad:,}"
+    return f"Across the {n:,} timed requests measured here, {what} got a wrong answer or an error."
+
+
 def emit(name, fragment):
     print(f"<!-- {name} -->")
     print(fragment)
@@ -230,6 +317,9 @@ def main(folder):
     emit("table:load-durable", load_table(du))
     emit("table:footprint", footprint_table(ev))
     emit("queries:join", queries_card(ev, "join"))
+    emit("queries:aggregate", queries_card(ev, "aggregate"))
+    emit("text:checked", checked(ev + du))
+    emit("home:perf", home_perf(ev + du))
     note = "1M orders, warm cache."
     emit("chart:load-8", chart("load-8", "Loading 1M orders from 8 connections (documents per second)",
                                load_bars(ev, "orders_8"), ops, False, "Batches of 1,000."))
@@ -241,6 +331,12 @@ def main(folder):
                                     bars(ev, sc, 1, "p50"), us, True, note))
         emit(f"chart:{sc}-32", chart(f"{sc}-32", f"{what}, 32 clients (requests per second)",
                                      bars(ev, sc, 32, "ops"), ops, False, note))
+    emit("chart:aggregate-1",
+         chart("aggregate-1", "Count and sum by status over 1M orders, one client (median per query)",
+               bars(ev, "aggregate", 1, "p50"), us, True, "Full scan, no index."))
+    emit("chart:aggregate-cpu",
+         chart("aggregate-cpu", "The same query: database CPU time per query (core-milliseconds)",
+               cpu_bars(ev, "aggregate", 1), lambda v: f"{v:,.0f}", True, "Latency times cores used."))
     emit("chart:insert-durable-32",
          chart("insert-durable-32", "Inserts fsynced before they are acknowledged, 32 clients (per second)",
                bars(du, "insert", 32, "ops"), ops, False, "One document per request."))

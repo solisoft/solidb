@@ -45,7 +45,7 @@ HARNESS_ARGS=(--docs "${DOCS:-1000000}" --customers "${CUSTOMERS:-100000}" --con
 # Pinned by digest; the tag is for the reader. The 2.7.2 figures were taken
 # with SOLIDB_IMAGE=localhost/solidb-bench:2.7.2, built by ./solidb-image.sh:
 # the published v2.5.0-v2.7.2 images do not start (fixed in 2.7.3).
-SOLIDB_IMAGE=${SOLIDB_IMAGE:-ghcr.io/solisoft/solidb@sha256:631379b9fb53fee3b60783e82b9d45a260671a73142a5431953b96b08f0f046e} # v2.7.3
+SOLIDB_IMAGE=${SOLIDB_IMAGE:-ghcr.io/solisoft/solidb@sha256:05a5da7d3961d2358db55453723c18ead98ab809fec4bd4df9d109e07c4f69e5} # v2.9.0
 POSTGRES_IMAGE=docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42  # 18.6
 MONGO_IMAGE=docker.io/library/mongo@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058     # 9.0.4
 ARANGO_IMAGE=docker.io/arangodb/arangodb@sha256:258323b83ed5cd5bacc6e2d7574777db5a8a61ec75f663e4d690824c3301c7c2 # 3.12.4-3
