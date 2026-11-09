@@ -74,10 +74,12 @@ class BlogController < Controller
         "date": "2026-11-09",
         "display_date": "November 9, 2026",
         "summary": "One machine, a million documents, the same queries, five databases measured one at a time "
-        + "on 4 cores each. SoliDB led 21 of 23 series, and lost two to PostgreSQL. The harness, every "
-        + "setting and the raw results are in the repository.",
+        + "on 4 cores each. SoliDB led 21 of 23 series, and lost two to PostgreSQL. Then durable "
+        + "transactions and kill -9 against PostgreSQL, which won on speed except among hot accounts, "
+        + "and caught a bug that 2.9.1 fixes. The harness, every setting and the raw results are in "
+        + "the repository.",
         "tags": ["Performance", "Benchmarks"],
-        "read_minutes": 12
+        "read_minutes": 16
       },
       {
         "slug": "solidb-2-7-the-queries-that-scanned-anyway",
