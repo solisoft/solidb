@@ -5,10 +5,11 @@
 //!
 //! Durability is the datastore's `sync` mode, set on the server by run.sh.
 
-use super::{as_f64, as_u64, err, rekey, Engine, Groups, Res, Settings, Table};
+use super::{as_f64, as_u64, err, rekey, Engine, Groups, JoinRow, Order, Res, Settings, Table};
 use serde_json::{json, Value};
 use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
+use surrealdb::types::SurrealValue;
 use surrealdb::Surreal;
 
 const SCHEMA: &[&str] = &[
@@ -49,8 +50,13 @@ async fn connect(s: &Settings) -> Res<Surreal<Client>> {
 }
 
 async fn rows(c: &Surreal<Client>, q: &str, vars: Value) -> Res<Vec<Value>> {
+    rows_as(c, q, vars).await
+}
+
+/// The first statement's rows, taken as `T`.
+async fn rows_as<T: SurrealValue>(c: &Surreal<Client>, q: &str, vars: Value) -> Res<Vec<T>> {
     let mut r = c.query(q).bind(vars).await?.check()?;
-    Ok(r.take::<Vec<Value>>(0)?)
+    Ok(r.take::<Vec<T>>(0)?)
 }
 
 async fn exec(c: &Surreal<Client>, q: &str, vars: Value) -> Res<()> {
@@ -104,18 +110,18 @@ impl Engine for SurrealEngine {
     }
 
     async fn by_customer(c: &mut Surreal<Client>, customer: &str) -> Res<usize> {
-        Ok(rows(c, Q_BY_CUSTOMER, json!({ "c": customer }))
-            .await?
-            .len())
+        let r: Vec<Order> = rows_as(c, Q_BY_CUSTOMER, json!({ "c": customer })).await?;
+        Ok(r.len())
     }
 
     async fn recent(c: &mut Surreal<Client>, lo: &str, hi: &str) -> Res<usize> {
-        Ok(rows(c, Q_RECENT, json!({"lo": lo, "hi": hi})).await?.len())
+        let r: Vec<Order> = rows_as(c, Q_RECENT, json!({"lo": lo, "hi": hi})).await?;
+        Ok(r.len())
     }
 
     async fn join(c: &mut Surreal<Client>, lo: &str, hi: &str) -> Res<usize> {
-        let r = rows(c, Q_JOIN, json!({"lo": lo, "hi": hi})).await?;
-        Ok(r.iter().filter(|r| r["name"].is_string()).count())
+        let r: Vec<JoinRow> = rows_as(c, Q_JOIN, json!({"lo": lo, "hi": hi})).await?;
+        Ok(r.iter().filter(|r| r.name.is_some()).count())
     }
 
     async fn aggregate(c: &mut Surreal<Client>) -> Res<Groups> {

@@ -5,7 +5,7 @@
 //! A standalone server acknowledges `w:1` writes before they reach the
 //! journal; `--durable` asks for `j:true` on every write.
 
-use super::{err, rekey, Engine, Groups, Res, Settings, Table};
+use super::{err, rekey, Engine, Groups, JoinRow, Order, Res, Settings, Table};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{CollectionOptions, WriteConcern};
@@ -19,6 +19,8 @@ pub struct Mongo {
 
 pub struct Conn {
     orders: Collection<Document>,
+    /// The same collection, read into the shared `Order`.
+    typed: Collection<Order>,
     customers: Collection<Document>,
 }
 
@@ -102,6 +104,7 @@ impl Engine for Mongo {
         };
         Ok(Conn {
             orders: db.collection_with_options("orders", opts.clone()),
+            typed: db.collection_with_options("orders", opts.clone()),
             customers: db.collection_with_options("customers", opts),
         })
     }
@@ -142,8 +145,8 @@ impl Engine for Mongo {
     }
 
     async fn by_customer(c: &mut Conn, customer: &str) -> Res<usize> {
-        let docs: Vec<Document> = c
-            .orders
+        let docs: Vec<Order> = c
+            .typed
             .find(doc! {"customer_id": customer})
             .await?
             .try_collect()
@@ -152,8 +155,8 @@ impl Engine for Mongo {
     }
 
     async fn recent(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
-        let docs: Vec<Document> = c
-            .orders
+        let docs: Vec<Order> = c
+            .typed
             .find(doc! {"created_at": {"$gte": lo, "$lt": hi}})
             .sort(doc! {"created_at": -1})
             .limit(20)
@@ -164,13 +167,14 @@ impl Engine for Mongo {
     }
 
     async fn join(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
-        let docs: Vec<Document> = c
+        let rows: Vec<JoinRow> = c
             .orders
             .aggregate(pipeline_join(lo, hi))
+            .with_type::<JoinRow>()
             .await?
             .try_collect()
             .await?;
-        Ok(docs.iter().filter(|d| d.get_str("name").is_ok()).count())
+        Ok(rows.iter().filter(|r| r.name.is_some()).count())
     }
 
     async fn aggregate(c: &mut Conn) -> Res<Groups> {

@@ -1,6 +1,6 @@
 # SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB
 
-The harness behind the blog post "[TITLE]" (`/blog/…`). It sends the same documents and the same queries to each database, checks every answer against the generator, and writes what it measured as JSON.
+The harness behind the blog post [SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB](https://solidb.solisoft.net/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb). It sends the same documents and the same queries to each database, checks every answer against the generator, and writes what it measured as JSON.
 
 ## What runs
 
@@ -58,6 +58,22 @@ The harness behind the blog post "[TITLE]" (`/blog/…`). It sends the same docu
 | `insert` | one new order |
 | `update` | one order's status |
 
+**What the client does with the rows.** In `by_customer`, `recent` and `join`, every adapter deserializes the rows into the same Rust structs (`Order`, `JoinRow` in `src/engines/mod.rs`), through the serde support its client documents:
+
+| Engine | How |
+|---|---|
+| SoliDB | `query_as::<Order>` |
+| PostgreSQL jsonb | `Json<Order>` |
+| PostgreSQL typed | the columns, with `Json<T>` for the nested ones |
+| MongoDB | a `Collection<Order>`, and `aggregate(…).with_type::<JoinRow>()` |
+| ArangoDB | the cursor body as `{result: Vec<Order>}` |
+| SurrealDB | `take::<Vec<Order>>` |
+
+- **Why the same structs:** each engine pays for the same decoding, which a generic JSON tree would not give. The cost of building a `serde_json::Value` grows with every field an engine adds to a row: system fields, record ids.
+- **Not decoded:** the identifier, which every engine names and types differently, is returned but skipped.
+- **`get` is the exception:** it reads the whole document as `serde_json::Value` everywhere, because SoliDB's client has no typed `get`.
+- **Before 2026-11-09:** the queries were decoded into `serde_json::Value` everywhere, except PostgreSQL typed, which read the columns.
+
 **Timing and order:**
 - **Concurrency:** each series runs at concurrency 1 and 32; `aggregate` runs at 1 only.
 - **Duration:** 5 s of warm-up, then 3 measured runs of 20 s. The report takes the median.
@@ -79,11 +95,11 @@ DOCS=10000 CUSTOMERS=1000 WARM=1 SECS=2 RUNS=1 ./run.sh all   # a quick pass
 python3 report.py ~/bench/results/<date>
 ```
 
-With podman, set `DOCKER="sudo podman"`. The results of the published run are in `results/`.
+With podman, set `DOCKER="sudo podman"`. `results/2026-11-08/` is the first run, on SoliDB 2.7.3, before the clients decoded rows into structs.
 
 ## SoliDB 2.7.2, and why its image was rebuilt
 
-The run also measured SoliDB 2.7.2, before the fixes this benchmark led to in 2.7.3 (the two-sided range read as one interval, the full-scan COLLECT that streams). Those figures are in `results/<date>/solidb-2.7.2/`.
+The first run also measured SoliDB 2.7.2, before the fixes this benchmark led to in 2.7.3 (the two-sided range read as one interval, the full-scan COLLECT that streams). Those figures are in `results/2026-11-08/solidb-2.7.2/`.
 
 The published `ghcr.io/solisoft/solidb:v2.5.0` through `v2.7.2` images do not start.
 - **The cause:** the release binary is built on `ubuntu-latest` (glibc 2.39), and the Dockerfile's base, `debian:bookworm-slim`, has glibc 2.36.

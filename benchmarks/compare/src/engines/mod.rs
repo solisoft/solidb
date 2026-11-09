@@ -2,8 +2,10 @@
 //! database's own idiom, through its own client, and returns what the
 //! correctness guard needs to check the answer.
 
+use serde::Deserialize;
 use serde_json::Value;
 use std::future::Future;
+use surrealdb::types::SurrealValue;
 
 pub mod arango;
 pub mod mongo;
@@ -37,6 +39,57 @@ pub enum Table {
 
 /// (status, count, sum of amounts) per group.
 pub type Groups = Vec<(String, u64, f64)>;
+
+/// An order as every adapter reads it back in `by_customer` and `recent`:
+/// every field of the generated document but its identifier (whose name
+/// and type differ per engine), decoded into these Rust types through the
+/// serde support each client documents — `query_as` for SoliDB, `Json<T>`
+/// columns for PostgreSQL, a typed `Collection<T>` for MongoDB, a typed
+/// cursor body for ArangoDB, `take::<Vec<T>>` for SurrealDB. Every engine
+/// thus pays for the same decoding, which a generic JSON tree would not
+/// give: its cost depends on how many fields an engine adds to a row.
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
+pub struct Order {
+    pub customer_id: String,
+    pub status: String,
+    pub amount: f64,
+    pub currency: String,
+    pub created_at: String,
+    pub country: String,
+    pub channel: String,
+    pub tags: Vec<String>,
+    pub items: Vec<Item>,
+    pub address: Address,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
+pub struct Item {
+    pub sku: String,
+    pub qty: i64,
+    pub price: f64,
+}
+
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
+pub struct Address {
+    pub street: String,
+    pub city: String,
+    pub zip: String,
+}
+
+/// A row of `join`: the order's amount and its customer's name and tier
+/// (the order's identifier, named differently by each engine, is returned
+/// but not decoded).
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
+pub struct JoinRow {
+    pub amount: f64,
+    pub name: Option<String>,
+    pub tier: Option<String>,
+}
 
 pub trait Engine: Sized + Send + Sync + 'static {
     type Conn: Send + 'static;

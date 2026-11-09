@@ -10,8 +10,9 @@
 //! Durability is the server's `synchronous_commit`, set on its command line
 //! by run.sh, not by this client.
 
-use super::{as_f64, err, Engine, Groups, Res, Settings, Table};
+use super::{as_f64, err, Address, Engine, Groups, Item, JoinRow, Order, Res, Settings, Table};
 use serde_json::Value;
+use tokio_postgres::types::Json;
 use tokio_postgres::{Client, NoTls, Statement};
 
 pub struct Postgres {
@@ -122,18 +123,25 @@ fn s(v: &Value, f: &str) -> String {
     v[f].as_str().unwrap_or_default().to_string()
 }
 
-/// Read every column of a typed row, so that the client pays the decoding
-/// it pays for a jsonb document (the other drivers decode whole documents).
-fn decode_typed(r: &tokio_postgres::Row) -> String {
-    let customer: String = r.get("customer_id");
-    let _: (String, String, f64, String) = (
-        r.get("key"),
-        r.get("status"),
-        r.get("amount"),
-        r.get("created_at"),
-    );
-    let _: (Value, Value, Value) = (r.get("tags"), r.get("items"), r.get("address"));
-    customer
+/// A typed row as the shared `Order`: the scalar columns as they are, the
+/// nested ones through `Json<T>`.
+fn decode_typed(r: &tokio_postgres::Row) -> Order {
+    let Json(tags): Json<Vec<String>> = r.get("tags");
+    let Json(items): Json<Vec<Item>> = r.get("items");
+    let Json(address): Json<Address> = r.get("address");
+    Order {
+        customer_id: r.get("customer_id"),
+        status: r.get("status"),
+        amount: r.get("amount"),
+        currency: r.get("currency"),
+        created_at: r.get("created_at"),
+        country: r.get("country"),
+        channel: r.get("channel"),
+        tags,
+        items,
+        address,
+        note: r.get("note"),
+    }
 }
 
 impl Engine for Postgres {
@@ -275,7 +283,7 @@ impl Engine for Postgres {
                 let doc: Value = r.get(0);
                 s(&doc, "customer_id")
             } else {
-                decode_typed(&r)
+                decode_typed(&r).customer_id
             }
         }))
     }
@@ -290,24 +298,25 @@ impl Engine for Postgres {
 
     async fn by_customer(c: &mut Conn, customer: &str) -> Res<usize> {
         let rows = c.c.query(&c.by_customer, &[&customer]).await?;
-        Ok(rows.iter().map(decode_row).count())
+        Ok(rows.iter().map(decode_row).collect::<Vec<Order>>().len())
     }
 
     async fn recent(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
         let rows = c.c.query(&c.recent, &[&lo, &hi]).await?;
-        Ok(rows.iter().map(decode_row).count())
+        Ok(rows.iter().map(decode_row).collect::<Vec<Order>>().len())
     }
 
     async fn join(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
         let rows = c.c.query(&c.join, &[&lo, &hi]).await?;
-        Ok(rows
+        let rows: Vec<JoinRow> = rows
             .iter()
-            .filter(|r| {
-                let _: (String, f64, Option<String>) =
-                    (r.get("key"), r.get("amount"), r.get("tier"));
-                r.get::<_, Option<String>>("name").is_some()
+            .map(|r| JoinRow {
+                amount: r.get("amount"),
+                name: r.get("name"),
+                tier: r.get("tier"),
             })
-            .count())
+            .collect();
+        Ok(rows.iter().filter(|r| r.name.is_some()).count())
     }
 
     async fn aggregate(c: &mut Conn) -> Res<Groups> {
@@ -343,11 +352,12 @@ impl Engine for Postgres {
     }
 }
 
-/// Decode a returned order the way the client would use it.
-fn decode_row(r: &tokio_postgres::Row) -> String {
+/// A returned order as the shared `Order`: a jsonb document through
+/// `Json<Order>`, a typed row from its columns.
+fn decode_row(r: &tokio_postgres::Row) -> Order {
     if r.columns().len() == 1 {
-        let doc: Value = r.get(0);
-        s(&doc, "customer_id")
+        let Json(order): Json<Order> = r.get(0);
+        order
     } else {
         decode_typed(r)
     }

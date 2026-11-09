@@ -2,7 +2,7 @@
 //! the Soli framework uses. Queries are SDBQL with bind variables, sent with
 //! the query cache off so that every request is executed.
 
-use super::{as_f64, as_u64, err, rekey, Engine, Groups, Res, Settings, Table};
+use super::{as_f64, as_u64, err, rekey, Engine, Groups, JoinRow, Order, Res, Settings, Table};
 use serde_json::{json, Value};
 use solidb_client::{SoliDBClient, SoliDBClientBuilder};
 use std::collections::HashMap;
@@ -49,6 +49,16 @@ async fn connect(s: &Settings) -> Res<SoliDBClient> {
 async fn query(c: &mut SoliDBClient, q: &str, vars: Vec<(&str, Value)>) -> Res<Vec<Value>> {
     let vars: HashMap<String, Value> = vars.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
     Ok(c.query_with_cache(DB, q, Some(vars), false).await?)
+}
+
+/// Rows deserialized straight from the driver's MessagePack into `T`.
+async fn query_as<T: serde::de::DeserializeOwned>(
+    c: &mut SoliDBClient,
+    q: &str,
+    vars: Vec<(&str, Value)>,
+) -> Res<Vec<T>> {
+    let vars: HashMap<String, Value> = vars.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    Ok(c.query_as(DB, q, Some(vars), false).await?)
 }
 
 impl Engine for Soli {
@@ -126,22 +136,20 @@ impl Engine for Soli {
     }
 
     async fn by_customer(c: &mut SoliDBClient, customer: &str) -> Res<usize> {
-        Ok(query(c, Q_BY_CUSTOMER, vec![("c", json!(customer))])
-            .await?
-            .len())
+        let rows: Vec<Order> = query_as(c, Q_BY_CUSTOMER, vec![("c", json!(customer))]).await?;
+        Ok(rows.len())
     }
 
     async fn recent(c: &mut SoliDBClient, lo: &str, hi: &str) -> Res<usize> {
-        Ok(
-            query(c, Q_RECENT, vec![("lo", json!(lo)), ("hi", json!(hi))])
-                .await?
-                .len(),
-        )
+        let rows: Vec<Order> =
+            query_as(c, Q_RECENT, vec![("lo", json!(lo)), ("hi", json!(hi))]).await?;
+        Ok(rows.len())
     }
 
     async fn join(c: &mut SoliDBClient, lo: &str, hi: &str) -> Res<usize> {
-        let rows = query(c, Q_JOIN, vec![("lo", json!(lo)), ("hi", json!(hi))]).await?;
-        Ok(rows.iter().filter(|r| r["name"].is_string()).count())
+        let rows: Vec<JoinRow> =
+            query_as(c, Q_JOIN, vec![("lo", json!(lo)), ("hi", json!(hi))]).await?;
+        Ok(rows.iter().filter(|r| r.name.is_some()).count())
     }
 
     async fn aggregate(c: &mut SoliDBClient) -> Res<Groups> {

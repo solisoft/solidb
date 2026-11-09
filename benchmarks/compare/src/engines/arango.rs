@@ -6,9 +6,19 @@
 //! Writes return before they are synced unless the collection has
 //! `waitForSync`, which `--durable` sets.
 
-use super::{as_f64, as_u64, err, rekey, Engine, Groups, Res, Settings, Table};
+use super::{as_f64, as_u64, err, rekey, Engine, Groups, JoinRow, Order, Res, Settings, Table};
 use reqwest::{Client, Method, RequestBuilder};
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::{json, Value};
+
+/// The body of `POST /_api/cursor`, rows typed.
+#[derive(Deserialize)]
+struct Cursor<T> {
+    result: Vec<T>,
+    #[serde(rename = "hasMore", default)]
+    has_more: bool,
+}
 
 const Q_BY_CUSTOMER: &str = "FOR o IN orders FILTER o.customer_id == @c RETURN o";
 const Q_RECENT: &str = "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi \
@@ -41,8 +51,10 @@ impl Conn {
             .bearer_auth(&self.jwt)
     }
 
-    async fn cursor(&self, query: &str, vars: Value) -> Res<Vec<Value>> {
-        let r: Value = self
+    /// The rows of a one-batch cursor, the response body deserialized
+    /// straight into `T`.
+    async fn cursor<T: DeserializeOwned>(&self, query: &str, vars: Value) -> Res<Vec<T>> {
+        let r: Cursor<T> = self
             .req(Method::POST, "/_api/cursor")
             .json(&json!({"query": query, "bindVars": vars, "batchSize": 1000}))
             .send()
@@ -50,13 +62,10 @@ impl Conn {
             .error_for_status()?
             .json()
             .await?;
-        if r["hasMore"].as_bool() == Some(true) {
+        if r.has_more {
             return err("cursor has more than one batch");
         }
-        match r["result"].as_array() {
-            Some(rows) => Ok(rows.clone()),
-            None => err(format!("no result: {r}")),
-        }
+        Ok(r.result)
     }
 }
 
@@ -187,20 +196,22 @@ impl Engine for Arango {
     }
 
     async fn by_customer(c: &mut Conn, customer: &str) -> Res<usize> {
-        Ok(c.cursor(Q_BY_CUSTOMER, json!({"c": customer})).await?.len())
+        let rows: Vec<Order> = c.cursor(Q_BY_CUSTOMER, json!({"c": customer})).await?;
+        Ok(rows.len())
     }
 
     async fn recent(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
-        Ok(c.cursor(Q_RECENT, json!({"lo": lo, "hi": hi})).await?.len())
+        let rows: Vec<Order> = c.cursor(Q_RECENT, json!({"lo": lo, "hi": hi})).await?;
+        Ok(rows.len())
     }
 
     async fn join(c: &mut Conn, lo: &str, hi: &str) -> Res<usize> {
-        let rows = c.cursor(Q_JOIN, json!({"lo": lo, "hi": hi})).await?;
-        Ok(rows.iter().filter(|r| r["name"].is_string()).count())
+        let rows: Vec<JoinRow> = c.cursor(Q_JOIN, json!({"lo": lo, "hi": hi})).await?;
+        Ok(rows.iter().filter(|r| r.name.is_some()).count())
     }
 
     async fn aggregate(c: &mut Conn) -> Res<Groups> {
-        let rows = c.cursor(Q_AGGREGATE, json!({})).await?;
+        let rows: Vec<Value> = c.cursor(Q_AGGREGATE, json!({})).await?;
         Ok(rows
             .iter()
             .map(|r| {
