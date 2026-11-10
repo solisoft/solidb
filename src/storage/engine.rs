@@ -1106,7 +1106,7 @@ impl StorageEngine {
         for tx in with_ops {
             // A conflict here most likely means the transaction was already
             // applied before the restart; skip it rather than refuse to start.
-            if let Err(e) = self.apply_operations_atomically(&tx.operations, true) {
+            if let Err(e) = self.apply_operations_atomically(tx.operations.clone(), true) {
                 tracing::warn!("Skipping transaction {} during WAL recovery: {}", tx.id, e);
                 complete = false;
             }
@@ -1123,7 +1123,7 @@ impl StorageEngine {
     /// (vector indexes, counts, change events) run only after the write.
     fn apply_operations_atomically(
         &self,
-        operations: &[crate::transaction::Operation],
+        operations: Vec<crate::transaction::Operation>,
         sync: bool,
     ) -> DbResult<()> {
         self.apply_operations_checking_reads(operations, sync, &[])
@@ -1138,21 +1138,30 @@ impl StorageEngine {
     /// read by range is closed to other transactions' commits meanwhile.
     fn apply_operations_checking_reads(
         &self,
-        operations: &[crate::transaction::Operation],
+        operations: Vec<crate::transaction::Operation>,
         sync: bool,
         reads: &[(String, Arc<super::keyspace::ReadTracker>)],
     ) -> DbResult<()> {
         // Group by collection, keeping each collection's operations in order.
+        // The operations are moved, not copied: they hold the documents.
         let mut order: Vec<String> = Vec::new();
         let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
             HashMap::new();
         for op in operations {
-            let coll_name = format!("{}:{}", op.database(), op.collection());
-            let entry = ops_by_collection.entry(coll_name.clone()).or_default();
-            if entry.is_empty() {
-                order.push(coll_name);
+            let known = order
+                .iter()
+                .find(|name| name.split_once(':') == Some((op.database(), op.collection())));
+            match known {
+                Some(name) => ops_by_collection
+                    .get_mut(name)
+                    .expect("every name in `order` has a group")
+                    .push(op),
+                None => {
+                    let name = format!("{}:{}", op.database(), op.collection());
+                    order.push(name.clone());
+                    ops_by_collection.insert(name, vec![op]);
+                }
             }
-            entry.push(op.clone());
         }
 
         // Collections are locked in name order: a commit is the only writer
@@ -1209,7 +1218,7 @@ impl StorageEngine {
                 collection.validate_reads(tracker, &read_keys)?;
             }
             if !ops.is_empty() {
-                let plan = collection.stage_transaction_operations(&ops, &mut batch)?;
+                let plan = collection.stage_transaction_operations(ops, &mut batch)?;
                 staged.push((collection, plan));
             }
         }
@@ -1250,7 +1259,7 @@ impl StorageEngine {
         // Staging re-reads every touched document while this transaction
         // still holds its exclusive locks, so the conflict checks see the
         // state the write will land on.
-        if let Err(e) = self.apply_operations_checking_reads(&operations, sync, &reads) {
+        if let Err(e) = self.apply_operations_checking_reads(operations, sync, &reads) {
             manager.abort(tx_id);
             return Err(e);
         }

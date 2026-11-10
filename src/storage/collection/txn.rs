@@ -278,13 +278,13 @@ impl Collection {
     /// A staged document's value and its stored bytes, written from the
     /// staged value itself when it carries the system attributes the
     /// staging gives it, else through a `Document` as before.
-    fn txn_stored(&self, key: &str, staged: &Value) -> DbResult<(Value, Vec<u8>)> {
+    fn txn_stored(&self, key: &str, staged: Value) -> DbResult<(Value, Vec<u8>)> {
         if let Some(bytes) =
-            crate::storage::serializer::serialize_api_value(&self.name, key, staged)?
+            crate::storage::serializer::serialize_api_value(&self.name, key, &staged)?
         {
-            return Ok((staged.clone(), bytes));
+            return Ok((staged, bytes));
         }
-        let doc = Self::txn_document(&self.name, key, staged);
+        let doc = Self::txn_document(&self.name, key, &staged);
         let bytes = serialize_doc(&doc)?;
         Ok((doc.to_value(), bytes))
     }
@@ -320,7 +320,7 @@ impl Collection {
     pub fn apply_transaction_operations(&self, operations: Vec<Operation>) -> DbResult<()> {
         let _guards = self.lock_for_transaction(&operations);
         let mut batch = KvBatch::default();
-        let staged = self.stage_transaction_operations(&operations, &mut batch)?;
+        let staged = self.stage_transaction_operations(operations, &mut batch)?;
         self.db.write(batch).map_err(|e| {
             DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
         })?;
@@ -384,7 +384,7 @@ impl Collection {
     /// value rather than the stale one.
     pub(crate) fn stage_transaction_operations(
         &self,
-        operations: &[Operation],
+        operations: Vec<Operation>,
         batch: &mut KvBatch,
     ) -> DbResult<StagedTransaction> {
         let cf = self.ks.handle(&self.db).ok_or_else(|| {
@@ -397,8 +397,11 @@ impl Collection {
 
         // State of each key as of the operations staged so far, so a second
         // operation on the same key is checked against the first one's result
-        // rather than against disk.
-        let mut pending: HashMap<String, Option<Value>> = HashMap::new();
+        // rather than against disk: the event that holds its value (`None`
+        // once deleted). The operations are consumed, and each document moves
+        // from its operation into its event without a copy; a transfer's
+        // commit used to clone every document it wrote about ten times.
+        let mut pending: HashMap<String, Option<usize>> = HashMap::new();
         // Unique values claimed by the operations staged so far. Each write is
         // checked against disk, which does not yet hold this transaction's
         // earlier writes, so two inserts of one value both passed.
@@ -408,45 +411,46 @@ impl Collection {
         for op in operations {
             match op {
                 Operation::Insert { key, data, .. } => {
-                    if self.txn_current(&pending, key)?.is_some() {
+                    let exists = match pending.get(&key) {
+                        Some(state) => state.is_some(),
+                        None => self.stored_rev(&key)?.is_some(),
+                    };
+                    if exists {
                         return Err(DbError::TransactionConflict(format!(
                             "Document '{}' already exists in {}",
                             key, self.name
                         )));
                     }
 
-                    let (value, doc_bytes) = self.txn_stored(key, data)?;
-                    self.check_unique_constraints(key, &value)?;
-                    unique_claims.claim(self, key, &value)?;
-                    batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
+                    let (value, doc_bytes) = self.txn_stored(&key, data)?;
+                    self.check_unique_constraints(&key, &value)?;
+                    unique_claims.claim(self, &key, &value)?;
+                    batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
                     if versioned {
-                        self.append_version_to_batch(batch, &cf, key, Some(&value));
+                        self.append_version_to_batch(batch, &cf, &key, Some(&value));
                     }
 
                     let (regular_entries, geo_entries) =
-                        self.compute_index_entries_for_insert(key, &value)?;
+                        self.compute_index_entries_for_insert(&key, &value)?;
                     for (entry_key, entry_value) in regular_entries.into_iter().chain(geo_entries) {
                         batch.put_ks(&cf, entry_key, entry_value);
                     }
                     for (entry_key, entry_value) in
-                        self.compute_fulltext_entries_for_insert(key, &value)
+                        self.compute_fulltext_entries_for_insert(&key, &value)
                     {
                         batch.put_ks(&cf, entry_key, entry_value);
                     }
-                    for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(key, &value) {
+                    for (entry_key, _) in self.compute_ttl_expiry_entries_for_insert(&key, &value) {
                         batch.put_ks(&cf, entry_key, Vec::new());
                     }
 
+                    pending.insert(key.clone(), Some(staged.events.len()));
                     staged.events.push(ChangeEvent {
                         type_: ChangeType::Insert,
-                        key: key.clone(),
-                        data: Some(value.clone()),
+                        key,
+                        data: Some(value),
                         old_data: None,
                     });
-                    staged
-                        .effects
-                        .push(StagedEffect::Inserted(key.clone(), value.clone()));
-                    pending.insert(key.clone(), Some(value));
                 }
                 Operation::Update {
                     key,
@@ -454,18 +458,18 @@ impl Collection {
                     new_data,
                     ..
                 } => {
-                    let current = self.txn_expect_unchanged(&pending, key, old_data)?;
+                    let current = self.txn_expect_unchanged(&staged, &pending, &key, old_data)?;
 
-                    let (value, doc_bytes) = self.txn_stored(key, new_data)?;
-                    self.check_unique_constraints(key, &value)?;
-                    unique_claims.claim(self, key, &value)?;
-                    batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
+                    let (value, doc_bytes) = self.txn_stored(&key, new_data)?;
+                    self.check_unique_constraints(&key, &value)?;
+                    unique_claims.claim(self, &key, &value)?;
+                    batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
                     if versioned {
-                        self.append_version_to_batch(batch, &cf, key, Some(&value));
+                        self.append_version_to_batch(batch, &cf, &key, Some(&value));
                     }
 
                     let (entries_to_add, keys_to_remove, geo_entries_to_add, geo_keys_to_remove) =
-                        self.compute_index_entries_for_update(key, &current, &value)?;
+                        self.compute_index_entries_for_update(&key, &current, &value)?;
                     for k in keys_to_remove.into_iter().chain(geo_keys_to_remove) {
                         batch.delete_ks(&cf, k);
                     }
@@ -475,17 +479,17 @@ impl Collection {
                         batch.put_ks(&cf, entry_key, entry_value);
                     }
 
-                    for k in self.compute_fulltext_entries_for_delete(key, &current) {
+                    for k in self.compute_fulltext_entries_for_delete(&key, &current) {
                         batch.delete_ks(&cf, k);
                     }
                     for (entry_key, entry_value) in
-                        self.compute_fulltext_entries_for_insert(key, &value)
+                        self.compute_fulltext_entries_for_insert(&key, &value)
                     {
                         batch.put_ks(&cf, entry_key, entry_value);
                     }
 
                     let (ttl_entries_to_add, ttl_keys_to_remove) =
-                        self.compute_ttl_expiry_entries_for_update(key, &current, &value);
+                        self.compute_ttl_expiry_entries_for_update(&key, &current, &value);
                     for k in ttl_keys_to_remove {
                         batch.delete_ks(&cf, k);
                     }
@@ -493,46 +497,42 @@ impl Collection {
                         batch.put_ks(&cf, entry_key, Vec::new());
                     }
 
+                    pending.insert(key.clone(), Some(staged.events.len()));
                     staged.events.push(ChangeEvent {
                         type_: ChangeType::Update,
-                        key: key.clone(),
-                        data: Some(value.clone()),
+                        key,
+                        data: Some(value),
                         old_data: Some(current),
                     });
-                    staged
-                        .effects
-                        .push(StagedEffect::Updated(key.clone(), value.clone()));
-                    pending.insert(key.clone(), Some(value));
                 }
                 Operation::Delete { key, old_data, .. } => {
-                    let current = self.txn_expect_unchanged(&pending, key, old_data)?;
-                    unique_claims.release(key);
+                    let current = self.txn_expect_unchanged(&staged, &pending, &key, old_data)?;
+                    unique_claims.release(&key);
 
-                    batch.delete_ks(&cf, Self::doc_key(key));
+                    batch.delete_ks(&cf, Self::doc_key(&key));
                     if versioned {
-                        self.append_version_to_batch(batch, &cf, key, None);
+                        self.append_version_to_batch(batch, &cf, &key, None);
                     }
 
                     let (regular_keys, geo_keys) =
-                        self.compute_index_entries_for_delete(key, &current)?;
+                        self.compute_index_entries_for_delete(&key, &current)?;
                     for k in regular_keys.into_iter().chain(geo_keys) {
                         batch.delete_ks(&cf, k);
                     }
-                    for k in self.compute_fulltext_entries_for_delete(key, &current) {
+                    for k in self.compute_fulltext_entries_for_delete(&key, &current) {
                         batch.delete_ks(&cf, k);
                     }
-                    for k in self.compute_ttl_expiry_entries_for_delete(key, &current) {
+                    for k in self.compute_ttl_expiry_entries_for_delete(&key, &current) {
                         batch.delete_ks(&cf, k);
                     }
 
+                    pending.insert(key.clone(), None);
                     staged.events.push(ChangeEvent {
                         type_: ChangeType::Delete,
-                        key: key.clone(),
+                        key,
                         data: None,
                         old_data: Some(current),
                     });
-                    staged.effects.push(StagedEffect::Deleted(key.clone()));
-                    pending.insert(key.clone(), None);
                 }
                 _ => {} // Other ops like PutBlobChunk handled separately
             }
@@ -544,42 +544,38 @@ impl Collection {
     /// In-memory side effects of a staged transaction, to run only once its
     /// batch has been written: vector indexes, counts, change events.
     pub(crate) fn finish_transaction_operations(&self, staged: StagedTransaction) {
-        for effect in &staged.effects {
-            match effect {
-                StagedEffect::Inserted(key, value) => {
-                    self.update_vector_indexes_on_upsert(key, value);
+        // Only where the collection has a vector index, by its cached
+        // definitions (one defined but not loaded yet still has to be
+        // updated). Walking the usually empty map of loaded indexes twice
+        // per document was about 1% of a money transfer.
+        let vectors = self.index_meta().is_none_or(|meta| !meta.vector.is_empty());
+        for event in &staged.events {
+            match event.type_ {
+                ChangeType::Insert => {
+                    if let (true, Some(value)) = (vectors, &event.data) {
+                        self.update_vector_indexes_on_upsert(&event.key, value);
+                    }
                     self.increment_count();
                 }
-                StagedEffect::Updated(key, value) => {
-                    self.update_vector_indexes_on_delete(key);
-                    self.update_vector_indexes_on_upsert(key, value);
+                ChangeType::Update => {
+                    if let (true, Some(value)) = (vectors, &event.data) {
+                        self.update_vector_indexes_on_delete(&event.key);
+                        self.update_vector_indexes_on_upsert(&event.key, value);
+                    }
                 }
-                StagedEffect::Deleted(key) => {
-                    self.update_vector_indexes_on_delete(key);
+                ChangeType::Delete => {
+                    if vectors {
+                        self.update_vector_indexes_on_delete(&event.key);
+                    }
                     self.decrement_count();
                 }
+                ChangeType::Truncate => {}
             }
         }
 
-        for event in staged.events {
-            let _ = self.emit_change(event);
-        }
-    }
-
-    /// The document as the transaction would see it: the result of an earlier
-    /// staged operation on the same key, else what is on disk.
-    fn txn_current(
-        &self,
-        pending: &HashMap<String, Option<Value>>,
-        key: &str,
-    ) -> DbResult<Option<Value>> {
-        if let Some(state) = pending.get(key) {
-            return Ok(state.clone());
-        }
-        match self.get(key) {
-            Ok(doc) => Ok(Some(doc.into_value())),
-            Err(DbError::DocumentNotFound(_)) => Ok(None),
-            Err(e) => Err(e),
+        // Cached results dropped once for the whole commit.
+        if !staged.events.is_empty() {
+            self.publish_changes(|| staged.events);
         }
     }
 
@@ -588,14 +584,15 @@ impl Collection {
     ///
     /// Against storage only the revision is read, from the stored header:
     /// a revision is never written twice, so when it is still the one the
-    /// operation was based on, the stored document is `based_on` itself. A
-    /// full read and decode of every document a commit writes was ~4% of a
-    /// money transfer's CPU.
+    /// operation was based on, the stored document is `based_on` itself,
+    /// which is handed back. A full read and decode of every document a
+    /// commit writes was ~4% of a money transfer's CPU.
     fn txn_expect_unchanged(
         &self,
-        pending: &HashMap<String, Option<Value>>,
+        staged: &StagedTransaction,
+        pending: &HashMap<String, Option<usize>>,
         key: &str,
-        based_on: &Value,
+        based_on: Value,
     ) -> DbResult<Value> {
         let deleted = || {
             DbError::TransactionConflict(format!(
@@ -610,17 +607,19 @@ impl Collection {
             ))
         };
         if let Some(state) = pending.get(key) {
-            let current = state.clone().ok_or_else(deleted)?;
+            let current = state
+                .and_then(|event| staged.events[event].data.as_ref())
+                .ok_or_else(deleted)?;
             if current.get("_rev") != based_on.get("_rev") {
                 return Err(modified());
             }
-            return Ok(current);
+            return Ok(based_on);
         }
         let stored = self.stored_rev(key)?.ok_or_else(deleted)?;
         if based_on.get("_rev").and_then(Value::as_str) != Some(stored.as_str()) {
             return Err(modified());
         }
-        Ok(based_on.clone())
+        Ok(based_on)
     }
 
     /// The revision `key` is stored at, from the stored header without
@@ -755,15 +754,67 @@ impl Collection {
     }
 }
 
-/// Writes staged into a commit batch, awaiting their post-write effects.
+/// Writes staged into a commit batch, awaiting their post-write effects:
+/// one event per write, which also says what to do to the in-memory state.
 #[derive(Default)]
 pub(crate) struct StagedTransaction {
     events: Vec<ChangeEvent>,
-    effects: Vec<StagedEffect>,
 }
 
-enum StagedEffect {
-    Inserted(String, Value),
-    Updated(String, Value),
-    Deleted(String),
+#[cfg(test)]
+mod tests {
+    use crate::storage::index::VectorIndexConfig;
+    use crate::storage::StorageEngine;
+    use crate::transaction::Operation;
+    use serde_json::json;
+
+    fn insert(key: &str, data: serde_json::Value) -> Operation {
+        Operation::Insert {
+            database: String::new(),
+            collection: "vec".to_string(),
+            key: key.to_string(),
+            data,
+        }
+    }
+
+    /// A commit updates the collection's vector index, also when the index
+    /// is defined but not loaded in memory (after a restart, before its
+    /// first search): the document must not wait for a rebuild to be found.
+    #[test]
+    fn a_commit_updates_a_vector_index_that_is_not_loaded() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let engine = StorageEngine::new(dir.path().to_str().unwrap()).unwrap();
+        engine.create_collection("vec".to_string(), None).unwrap();
+        let coll = engine.get_collection("vec").unwrap();
+        let config: VectorIndexConfig = serde_json::from_value(json!({
+            "name": "emb", "field": "embedding", "dimension": 2
+        }))
+        .unwrap();
+        coll.create_vector_index(config).unwrap();
+
+        let found = |query: [f32; 2]| -> Vec<String> {
+            coll.vector_search("emb", &query, 1, None)
+                .unwrap()
+                .into_iter()
+                .map(|hit| hit.doc_key)
+                .collect()
+        };
+
+        coll.apply_transaction_operations(vec![insert(
+            "near",
+            json!({"_key": "near", "embedding": [1.0, 0.0]}),
+        )])
+        .unwrap();
+        assert_eq!(found([1.0, 0.0]), vec!["near"]);
+
+        // As after a restart: the index is defined, nothing is in memory.
+        coll.persist_vector_indexes().unwrap();
+        coll.vector_indexes.clear();
+        coll.apply_transaction_operations(vec![insert(
+            "far",
+            json!({"_key": "far", "embedding": [0.0, 1.0]}),
+        )])
+        .unwrap();
+        assert_eq!(found([0.0, 1.0]), vec!["far"]);
+    }
 }

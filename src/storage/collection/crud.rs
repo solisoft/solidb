@@ -118,6 +118,27 @@ impl Collection {
         deserialize_doc_projected(&bytes, fields)
     }
 
+    /// [`Self::get_value_projected`] for several keys, read as one batch:
+    /// each document's `fields`, or `None` where it is absent or cannot be
+    /// read, in the order of `keys`.
+    pub fn get_values_projected(
+        &self,
+        keys: &[&str],
+        fields: &[String],
+    ) -> DbResult<Vec<Option<Value>>> {
+        let cf = self.live_cf()?;
+        let doc_keys: Vec<Vec<u8>> = keys.iter().map(|key| Self::doc_key(key)).collect();
+        Ok(self
+            .db
+            .multi_get_pinned_ks(&cf, &doc_keys)
+            .into_iter()
+            .map(|found| {
+                let bytes = found.ok()??;
+                deserialize_doc_projected(&bytes, fields).ok()
+            })
+            .collect())
+    }
+
     /// Get multiple documents by keys
     pub fn get_many(&self, keys: &[String]) -> Vec<Document> {
         keys.iter().filter_map(|k| self.get(k).ok()).collect()

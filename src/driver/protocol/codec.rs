@@ -203,6 +203,9 @@ mod direct {
 
     pub(super) fn decode(data: &[u8]) -> Option<Command> {
         let tag = leading_tag(data)?;
+        if tag == b"run_transaction" {
+            return frame::parse_run_transaction(data);
+        }
         if let Some(command) = frame::parse(data, tag) {
             return Some(command);
         }
@@ -469,6 +472,147 @@ mod direct {
             })
         }
 
+        /// A field name, borrowed from the frame.
+        fn name<'a>(rd: &mut &'a [u8]) -> Option<&'a str> {
+            let len = match byte(rd)? {
+                m @ 0xa0..=0xbf => (m & 0x1f) as usize,
+                0xd9 => byte(rd)? as usize,
+                0xda => u16::from_be_bytes(be(rd)?) as usize,
+                0xdb => u32::from_be_bytes(be(rd)?) as usize,
+                _ => return None,
+            };
+            std::str::from_utf8(take(rd, len)?).ok()
+        }
+
+        fn boolean(rd: &mut &[u8]) -> Option<bool> {
+            match byte(rd)? {
+                0xc2 => Some(false),
+                0xc3 => Some(true),
+                _ => None,
+            }
+        }
+
+        /// `run_transaction`, with its steps: the frame serde reads through
+        /// two buffered passes (the command is tagged by a field, and so is
+        /// each step's), about 5% of a one-request money transfer. Taken
+        /// under the rules of [`parse`]: the declared fields, each once, with
+        /// the types serde accepts; steps that are an `insert`, `update`,
+        /// `delete` or `query` opening with their tag. Anything else is
+        /// `None`, and serde decodes the frame.
+        pub(crate) fn parse_run_transaction(data: &[u8]) -> Option<Command> {
+            use crate::driver::protocol::IsolationLevel;
+            let mut rd = data;
+            let fields = map_len(&mut rd)?;
+            let (mut cmd, mut database, mut level, mut steps) = (None, None, None, None);
+            for _ in 0..fields {
+                match name(&mut rd)? {
+                    "cmd" => once(&mut cmd, name(&mut rd))?,
+                    "database" => once(&mut database, string(&mut rd))?,
+                    "isolation_level" => {
+                        let parsed = match name(&mut rd)? {
+                            "read_committed" => Some(IsolationLevel::ReadCommitted),
+                            "repeatable_read" => Some(IsolationLevel::RepeatableRead),
+                            "serializable" => Some(IsolationLevel::Serializable),
+                            _ => None,
+                        };
+                        once(&mut level, parsed)?
+                    }
+                    "steps" => once(&mut steps, transaction_steps(&mut rd))?,
+                    _ => return None,
+                }
+            }
+            cmd?;
+            Some(Command::RunTransaction {
+                database: database?,
+                isolation_level: level.unwrap_or_default(),
+                steps: steps?,
+            })
+        }
+
+        fn transaction_steps(
+            rd: &mut &[u8],
+        ) -> Option<Vec<crate::driver::protocol::TransactionStep>> {
+            let len = match byte(rd)? {
+                m @ 0x90..=0x9f => (m & 0x0f) as usize,
+                0xdc => u16::from_be_bytes(be(rd)?) as usize,
+                0xdd => u32::from_be_bytes(be(rd)?) as usize,
+                _ => return None,
+            };
+            if len > rd.len() {
+                return None;
+            }
+            let mut steps = Vec::with_capacity(len);
+            for _ in 0..len {
+                let fields = map_len(rd)?;
+                let (mut command, mut require_rows) = (None, None);
+                for _ in 0..fields {
+                    match name(rd)? {
+                        "command" => {
+                            let bytes = raw_value(rd)?;
+                            once(&mut command, step_command(bytes))?
+                        }
+                        "require_rows" => once(&mut require_rows, boolean(rd))?,
+                        _ => return None,
+                    }
+                }
+                steps.push(crate::driver::protocol::TransactionStep {
+                    command: command?,
+                    require_rows: require_rows.unwrap_or(false),
+                });
+            }
+            Some(steps)
+        }
+
+        /// The command of one step, from its own bytes.
+        fn step_command(data: &[u8]) -> Option<Command> {
+            match super::leading_tag(data)? {
+                b"query" => parse_query(data),
+                tag @ (b"insert" | b"update" | b"delete") => parse(data, tag),
+                _ => None,
+            }
+        }
+
+        fn parse_query(data: &[u8]) -> Option<Command> {
+            let mut rd = data;
+            let fields = map_len(&mut rd)?;
+            let (mut cmd, mut database, mut sdbql) = (None, None, None);
+            let (mut bind_vars, mut cache) = (None, None);
+            for _ in 0..fields {
+                match name(&mut rd)? {
+                    "cmd" => once(&mut cmd, name(&mut rd))?,
+                    "database" => once(&mut database, string(&mut rd))?,
+                    "sdbql" => once(&mut sdbql, string(&mut rd))?,
+                    "bind_vars" => {
+                        let vars = if rd.first() == Some(&0xc0) {
+                            rd = &rd[1..];
+                            Some(None)
+                        } else {
+                            let len = map_len(&mut rd)?;
+                            if len > rd.len() {
+                                return None;
+                            }
+                            let mut vars = std::collections::HashMap::with_capacity(len);
+                            for _ in 0..len {
+                                let key = string(&mut rd)?;
+                                vars.insert(key, value(&mut rd, 0)?);
+                            }
+                            Some(Some(vars))
+                        };
+                        once(&mut bind_vars, vars)?
+                    }
+                    "cache" => once(&mut cache, boolean(&mut rd))?,
+                    _ => return None,
+                }
+            }
+            cmd?;
+            Some(Command::Query {
+                database: database?,
+                sdbql: sdbql?,
+                bind_vars: bind_vars.flatten(),
+                cache: cache.unwrap_or(true),
+            })
+        }
+
         /// The bytes of the value at the front of `rd`, not decoded.
         fn raw_value<'a>(rd: &mut &'a [u8]) -> Option<&'a [u8]> {
             let end = crate::storage::raw_rows::skip_value(rd, 0)?;
@@ -620,6 +764,168 @@ mod decode_command_tests {
             );
             assert_eq!(debug(&decode_command(&bytes)), debug(&Ok(cmd)));
         }
+    }
+
+    /// `run_transaction` read off the frame is what the derived decoder
+    /// builds, steps and bind variables included; a frame the direct reader
+    /// does not take gets serde's answer.
+    #[test]
+    fn run_transaction_decodes_as_the_derived_decoder_does() {
+        use crate::driver::protocol::{IsolationLevel, TransactionStep};
+        // Bind variables are a hash map: compared as JSON, not as printed.
+        fn same(r: &Result<Command, DriverError>) -> String {
+            match r {
+                Ok(command) => serde_json::to_value(command).unwrap().to_string(),
+                Err(e) => format!("{e:?}"),
+            }
+        }
+        let step = |command, require_rows| TransactionStep {
+            command,
+            require_rows,
+        };
+        let query = |bind_vars: Option<serde_json::Value>, cache| Command::Query {
+            database: "db".into(),
+            sdbql: "FOR a IN c FILTER a._key == @k UPDATE a WITH {n: a.n - @x} IN c RETURN 1"
+                .into(),
+            bind_vars: bind_vars.map(|v| serde_json::from_value(v).unwrap()),
+            cache,
+        };
+        let taken = vec![
+            Command::RunTransaction {
+                database: "db".into(),
+                isolation_level: IsolationLevel::ReadCommitted,
+                steps: vec![
+                    step(query(Some(json!({"k": "a1", "x": 5})), true), true),
+                    step(
+                        query(Some(json!({"k": "a2", "x": -5.5, "l": [1, null]})), false),
+                        false,
+                    ),
+                    step(
+                        Command::Insert {
+                            database: "db".into(),
+                            collection: "ledger".into(),
+                            key: None,
+                            document: json!({"from": "a1", "to": "a2", "amount": 5}),
+                        },
+                        false,
+                    ),
+                    step(
+                        Command::Update {
+                            database: "db".into(),
+                            collection: "c".into(),
+                            key: "k".into(),
+                            document: json!({"n": u64::MAX}),
+                            merge: true,
+                        },
+                        false,
+                    ),
+                    step(
+                        Command::Delete {
+                            database: "db".into(),
+                            collection: "c".into(),
+                            key: "k".into(),
+                        },
+                        false,
+                    ),
+                ],
+            },
+            Command::RunTransaction {
+                database: "db".into(),
+                isolation_level: IsolationLevel::Serializable,
+                steps: vec![step(query(None, true), false)],
+            },
+            Command::RunTransaction {
+                database: "db".into(),
+                isolation_level: IsolationLevel::RepeatableRead,
+                steps: vec![],
+            },
+        ];
+        for cmd in taken {
+            let bytes = payload(&cmd);
+            assert!(
+                direct::decode(&bytes).is_some(),
+                "{cmd:?} takes the direct path"
+            );
+            assert_eq!(
+                same(&decode_command(&bytes)),
+                same(&decode_message::<Command>(&bytes))
+            );
+            assert_eq!(same(&decode_command(&bytes)), same(&Ok(cmd)));
+        }
+
+        // A step the direct reader does not take: the whole frame is serde's.
+        let other = Command::RunTransaction {
+            database: "db".into(),
+            isolation_level: IsolationLevel::ReadCommitted,
+            steps: vec![step(Command::Ping, false)],
+        };
+        let bytes = payload(&other);
+        assert!(direct::decode(&bytes).is_none());
+        assert_eq!(same(&decode_command(&bytes)), same(&Ok(other)));
+
+        // Hand-written frames: fields in another order and left out, a
+        // repeated field, an unknown level, a truncated frame.
+        use rmp::encode as e;
+        let frame = |fields: &[(&str, &dyn Fn(&mut Vec<u8>))]| {
+            let mut f = Vec::new();
+            e::write_map_len(&mut f, fields.len() as u32).unwrap();
+            for (name, write) in fields {
+                e::write_str(&mut f, name).unwrap();
+                write(&mut f);
+            }
+            f
+        };
+        let s = |v: &'static str| move |f: &mut Vec<u8>| e::write_str(f, v).unwrap();
+        let one_step = |f: &mut Vec<u8>| {
+            e::write_array_len(f, 1).unwrap();
+            e::write_map_len(f, 1).unwrap();
+            e::write_str(f, "command").unwrap();
+            e::write_map_len(f, 3).unwrap();
+            for (k, v) in [("cmd", "query"), ("sdbql", "RETURN 1"), ("database", "d")] {
+                e::write_str(f, k).unwrap();
+                e::write_str(f, v).unwrap();
+            }
+        };
+        let frames = [
+            frame(&[
+                ("cmd", &s("run_transaction")),
+                ("steps", &one_step),
+                ("database", &s("d")),
+            ]),
+            frame(&[
+                ("cmd", &s("run_transaction")),
+                ("database", &s("d")),
+                ("database", &s("e")),
+                ("steps", &one_step),
+            ]),
+            frame(&[
+                ("cmd", &s("run_transaction")),
+                ("database", &s("d")),
+                ("isolation_level", &s("snapshot")),
+                ("steps", &one_step),
+            ]),
+            frame(&[
+                ("cmd", &s("run_transaction")),
+                ("database", &s("d")),
+                ("extra", &s("x")),
+                ("steps", &one_step),
+            ]),
+            frame(&[("cmd", &s("run_transaction")), ("database", &s("d"))]),
+        ];
+        for bytes in &frames {
+            assert_eq!(
+                same(&decode_command(bytes)),
+                same(&decode_message::<Command>(bytes)),
+                "{bytes:02x?}"
+            );
+            let cut = &bytes[..bytes.len() - 3];
+            assert_eq!(
+                same(&decode_command(cut)),
+                same(&decode_message::<Command>(cut)),
+                "cut {bytes:02x?}"
+            );
+        }
+        assert!(direct::decode(&frames[0]).is_some(), "fields in any order");
     }
 
     /// A frame `{cmd: "insert", database, collection, document: <doc>}` with

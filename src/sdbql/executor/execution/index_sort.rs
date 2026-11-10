@@ -387,67 +387,118 @@ impl QueryExecutor<'_> {
         let projections = document_projections(&lets, query.return_clause.as_ref());
         // Collections DOCUMENT read, resolved once for all the rows.
         let mut handles: Vec<(String, Collection)> = Vec::new();
-        let mut results = Vec::with_capacity(rows.len().saturating_sub(target.offset));
-        for mut ctx in rows.into_iter().skip(target.offset) {
-            for (let_clause, projection) in lets.iter().zip(&projections) {
-                match projection {
-                    Some((name, arg, fields)) => {
-                        let value =
-                            self.document_projected(name, arg, fields, &ctx, &mut handles)?;
+        let mut rows: Vec<Context> = rows.into_iter().skip(target.offset).collect();
+        // One LET at a time over all the rows, so that a projected DOCUMENT
+        // reads the rows' documents as one batch instead of one get a row.
+        for (let_clause, projection) in lets.iter().zip(&projections) {
+            match projection {
+                Some((name, arg, fields)) => {
+                    let values =
+                        self.documents_projected(name, arg, fields, &rows, &mut handles)?;
+                    for (ctx, value) in rows.iter_mut().zip(values) {
                         ctx.insert(let_clause.variable.clone(), value);
                     }
-                    None => self.bind_let(let_clause, &mut ctx)?,
+                }
+                None => {
+                    for ctx in rows.iter_mut() {
+                        self.bind_let(let_clause, ctx)?;
+                    }
                 }
             }
-            if let Some(ref ret) = query.return_clause {
-                results.push(self.evaluate_expr_with_context(&ret.expression, &ctx)?);
+        }
+        let mut results = Vec::with_capacity(rows.len());
+        if let Some(ref ret) = query.return_clause {
+            for ctx in &rows {
+                results.push(self.evaluate_expr_with_context(&ret.expression, ctx)?);
             }
         }
         Ok(results)
     }
 
-    /// `DOCUMENT(arg)` as the evaluator computes it, the document found
-    /// holding only `fields`. The argument is evaluated once; anything but
-    /// an id `collection/key` in this database (an array of ids, a
+    /// `DOCUMENT(arg)` for each row as the evaluator computes it, the
+    /// documents found holding only `fields`. The argument is evaluated
+    /// once per row. The ids `collection/key` of this database are read as
+    /// one batch per collection. Anything else (an array of ids, a
     /// `db:collection` name, a malformed id) goes to DOCUMENT itself with
     /// that value, and a collection a row policy applies to is read whole,
     /// for the policy, as DOCUMENT reads it.
-    fn document_projected(
+    fn documents_projected(
         &self,
         name: &str,
         arg: &Expression,
         fields: &[String],
-        ctx: &Context,
+        rows: &[Context],
         handles: &mut Vec<(String, Collection)>,
-    ) -> DbResult<serde_json::Value> {
-        let id = self.evaluate_expr_with_context(arg, ctx)?;
-        let target = match &id {
-            serde_json::Value::String(id) => id
-                .split_once('/')
-                .filter(|(collection, _)| !collection.contains(':')),
-            _ => None,
-        };
-        let Some((collection, key)) = target else {
-            return self.call_function(name, vec![id.clone()], ctx);
-        };
-        let at = match handles.iter().position(|(n, _)| n == collection) {
-            Some(at) => at,
-            None => {
-                // Errors (a protected or missing collection) as DOCUMENT's.
-                handles.push((collection.to_string(), self.get_collection(collection)?));
-                handles.len() - 1
+    ) -> DbResult<Vec<serde_json::Value>> {
+        let mut values = vec![serde_json::Value::Null; rows.len()];
+        // Per collection handle: the rows to read from it, and their ids.
+        let mut batches: Vec<Vec<(usize, serde_json::Value)>> = Vec::new();
+        for (row, ctx) in rows.iter().enumerate() {
+            let id = self.evaluate_expr_with_context(arg, ctx)?;
+            let target = match &id {
+                serde_json::Value::String(id) => id
+                    .split_once('/')
+                    .filter(|(collection, _)| !collection.contains(':')),
+                _ => None,
+            };
+            let Some((collection, key)) = target else {
+                values[row] = self.call_function(name, vec![id.clone()], ctx)?;
+                continue;
+            };
+            let at = match handles.iter().position(|(n, _)| n == collection) {
+                Some(at) => at,
+                None => {
+                    // Errors (a protected or missing collection) as DOCUMENT's.
+                    handles.push((collection.to_string(), self.get_collection(collection)?));
+                    handles.len() - 1
+                }
+            };
+            let coll = &handles[at].1;
+            if self.row_policy_gate_for(coll, collection).is_some() {
+                values[row] = self
+                    .get_visible(coll, collection, key, ctx)
+                    .unwrap_or(serde_json::Value::Null);
+                continue;
             }
-        };
-        let coll = &handles[at].1;
-        if self.row_policy_gate_for(coll, collection).is_some() {
-            return Ok(self
-                .get_visible(coll, collection, key, ctx)
-                .unwrap_or(serde_json::Value::Null));
+            // A document the transaction wrote reads as staged.
+            if self.staged_in_transaction(coll, key).is_some() {
+                values[row] = self
+                    .get_visible(coll, collection, key, ctx)
+                    .unwrap_or(serde_json::Value::Null);
+                continue;
+            }
+            if batches.len() <= at {
+                batches.resize_with(at + 1, Vec::new);
+            }
+            batches[at].push((row, id));
         }
-        // Absent and unreadable alike are null, as `get_visible` makes them.
-        Ok(coll
-            .get_value_projected(key, fields)
-            .unwrap_or(serde_json::Value::Null))
+        for (at, batch) in batches.iter().enumerate() {
+            if batch.is_empty() {
+                continue;
+            }
+            let keys: Vec<&str> = batch
+                .iter()
+                .filter_map(|(_, id)| id.as_str()?.split_once('/').map(|(_, key)| key))
+                .collect();
+            // Absent and unreadable alike are null, as `get_visible` makes
+            // them; a batch that fails as a whole is read key by key.
+            let coll = &handles[at].1;
+            match coll.get_values_projected(&keys, fields) {
+                Ok(found) => {
+                    for ((row, _), value) in batch.iter().zip(found) {
+                        values[*row] = value.unwrap_or(serde_json::Value::Null);
+                    }
+                }
+                Err(_) => {
+                    for ((row, _), key) in batch.iter().zip(&keys) {
+                        values[*row] = coll
+                            .get_value_projected(key, fields)
+                            .unwrap_or(serde_json::Value::Null);
+                    }
+                }
+            }
+        }
+        Ok(values)
     }
 
     /// [`Self::walk_sorted`] for a query that reads only `fields` of each

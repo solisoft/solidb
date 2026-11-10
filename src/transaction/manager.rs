@@ -81,49 +81,46 @@ impl TransactionManager {
     pub fn validate(&self, tx_id: TransactionId) -> DbResult<()> {
         let tx_arc = self.get(tx_id)?;
 
-        // First, collect all errors without holding tx lock
+        // First, collect all errors without holding the write lock. Per
+        // key: how many inserts, and whether an update follows a delete.
+        // (Keyed by borrowed names: this used to format a key and clone
+        // every operation, documents included, on each commit.)
         let errors = {
             let tx = tx_arc.read().unwrap();
             let mut validation_errors = Vec::new();
 
-            // Check for conflicting operations within the transaction
-            let mut seen_keys: std::collections::HashMap<String, Vec<Operation>> =
-                std::collections::HashMap::new();
-
+            #[derive(Default)]
+            struct Seen {
+                inserts: usize,
+                deleted: bool,
+                updated_after_delete: bool,
+            }
+            let mut seen_keys: HashMap<(&str, &str, &str), Seen> = HashMap::new();
             for op in &tx.operations {
-                let key = format!("{}:{}:{}", op.database(), op.collection(), op.key());
-                seen_keys.entry(key.clone()).or_default().push(op.clone());
+                let seen = seen_keys
+                    .entry((op.database(), op.collection(), op.key()))
+                    .or_default();
+                match op {
+                    Operation::Insert { .. } => seen.inserts += 1,
+                    Operation::Delete { .. } => seen.deleted = true,
+                    Operation::Update { .. } if seen.deleted => seen.updated_after_delete = true,
+                    _ => {}
+                }
             }
 
-            // Check for duplicate inserts within transaction
-            for (key, ops) in seen_keys.iter() {
-                let inserts: Vec<_> = ops
-                    .iter()
-                    .filter(|op| matches!(op, Operation::Insert { .. }))
-                    .collect();
-
-                if inserts.len() > 1 {
-                    let error = format!("Duplicate insert for key {} within transaction", key);
-                    validation_errors.push(error);
+            for ((database, collection, key), seen) in &seen_keys {
+                let key = format!("{}:{}:{}", database, collection, key);
+                if seen.inserts > 1 {
+                    validation_errors.push(format!(
+                        "Duplicate insert for key {} within transaction",
+                        key
+                    ));
                 }
-
-                // Check for operations on deleted documents
-                let deletes: Vec<_> = ops
-                    .iter()
-                    .filter(|op| matches!(op, Operation::Delete { .. }))
-                    .collect();
-                if !deletes.is_empty() {
-                    let updates_after_delete: Vec<_> = ops
-                        .iter()
-                        .skip_while(|op| !matches!(op, Operation::Delete { .. }))
-                        .filter(|op| matches!(op, Operation::Update { .. }))
-                        .collect();
-
-                    if !updates_after_delete.is_empty() {
-                        let error =
-                            format!("Cannot update deleted document {} within transaction", key);
-                        validation_errors.push(error);
-                    }
+                if seen.updated_after_delete {
+                    validation_errors.push(format!(
+                        "Cannot update deleted document {} within transaction",
+                        key
+                    ));
                 }
             }
 
@@ -192,8 +189,14 @@ impl TransactionManager {
             return Err(e);
         }
 
-        let tx = tx_arc.read().unwrap();
-        Ok((tx.operations.clone(), requires_sync, tx.reads.clone()))
+        // Taken, not copied: the transaction is frozen, nothing reads its
+        // operations again, and they hold every document it wrote.
+        let mut tx = tx_arc.write().unwrap();
+        Ok((
+            std::mem::take(&mut tx.operations),
+            requires_sync,
+            tx.reads.clone(),
+        ))
     }
 
     /// Second half of a commit, once its writes are durable: mark it
