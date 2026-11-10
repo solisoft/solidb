@@ -948,7 +948,7 @@
               </div>
             </div>
             <p class="text-gray-400 text-sm leading-relaxed">
-              With an fsync before every acknowledgement PostgreSQL inserts faster than SoliDB (89,587 a second against 81,298), and PostgreSQL with typed columns answers the one-client join sooner (71&nbsp;µs against 80). The method, every other scenario and the harness are in <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb" class="text-cyan-400 hover:underline">SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB</a>.
+              With an fsync before every acknowledgement PostgreSQL inserted faster than SoliDB 2.9.0 (89,587 a second against 81,298; on 2.9.3, measured again beside PostgreSQL, the two are level at 86,890 against 88,307, and how SoliDB&rsquo;s transactions compare is in <a href="/blog/durability-and-transactions" class="text-cyan-400 hover:underline">Durability and transactions</a>), and PostgreSQL with typed columns answers the one-client join sooner (71&nbsp;µs against 80). The method, every other scenario and the harness are in <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb" class="text-cyan-400 hover:underline">SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB</a>.
             </p>
           </div>
         </div>

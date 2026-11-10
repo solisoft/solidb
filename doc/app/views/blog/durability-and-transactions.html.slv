@@ -1,0 +1,168 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Correctness · Transactions</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">A reader asked whether SoliDB is ACID. This is the long answer, and every claim in it comes with the test behind it. A SoliDB transaction commits as one write, fsynced before it is acknowledged at every isolation level but one. Killed with <code>SIGKILL</code> 100 times while 32 clients moved money, SoliDB lost no acknowledged transfer and left none half applied. Concurrent transfers conserve money, since 2.9.1: 2.9.0 lost writes on a statement nearly every application writes, and the test that found it is now in the repository. Since 2.9.3 a transfer is one request, and PostgreSQL still commits 1.8 times as many at one client; among ten hot accounts SoliDB commits 1.6 times as many. Its isolation is weaker than its level names suggest, and two things are not tested yet: a power loss, and the anomalies only a cycle search finds.</p>
+  <p class="post-note">Measured on November 9 and 10, 2026, on one machine (AMD Ryzen 9 9950X, NVMe RAID1, Rocky Linux 10), each database in a container limited to 4 cores and 16&nbsp;GB, with the harnesses in <a href="https://github.com/solisoft/solidb/tree/main/benchmarks/compare"><code>benchmarks/compare</code></a> (<code>bank.sh</code>, <code>run.sh</code>) and <a href="https://github.com/solisoft/solidb/tree/main/faults"><code>faults</code></a>, on the published images of SoliDB 2.9.0 to 2.9.3 and PostgreSQL 18.6. SoliDB ran on solistore. Throughput figures are the median of three 20-second runs. The raw results are committed beside the harnesses. The first half of this story is in <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb#transactions">the comparison post</a>; this one goes further, and corrects one thing it said.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#promise">What a commit promises</a></li>
+    <li><a href="#disk">When the disk is involved</a></li>
+    <li><a href="#kill">Killed in the middle</a></li>
+    <li><a href="#isolation">What a transaction sees</a></li>
+    <li><a href="#bug">The bug the bank found</a></li>
+    <li><a href="#speed">One request per transaction</a></li>
+    <li><a href="#writes">Fsynced writes outside a transaction</a></li>
+    <li><a href="#behind">Where SoliDB is behind</a></li>
+    <li><a href="#run">Run it yourself</a></li>
+  </ol>
+</nav>
+
+<section id="promise"><h2>What a commit promises</h2>
+<p>A SoliDB transaction stages its writes in memory and touches storage only at the commit. The commit checks every staged write against what is stored now: an update or a delete built on a revision that has since changed, an insert over a key that now exists, a value a unique index already holds. If any check fails, nothing is written and the transaction is rolled back with a conflict. If they all pass, every collection the transaction wrote goes to disk in a single write batch, under write locks taken collection by collection in name order, so that two commits cannot deadlock on them.</p>
+<p>That gives the four letters, with one qualification each:</p>
+<ul>
+<li><strong>Atomic.</strong> One batch, applied whole or not at all, across collections. A crash in the middle of a commit leaves the batch or nothing: the crash tests below count half-applied transfers, and found none.</li>
+<li><strong>Consistent.</strong> Unique indexes are checked at commit, including two writes of one value inside the same transaction, and a write that would break one fails the commit. SoliDB has no foreign keys; the rest of consistency is the application&rsquo;s, as in any database.</li>
+<li><strong>Isolated</strong>, but less than the names of the levels say. A transaction never reads another&rsquo;s uncommitted writes, and since 2.9.1 it cannot overwrite a write it did not see. It is not serializable: <a href="#isolation">below</a> is a write skew that commits.</li>
+<li><strong>Durable.</strong> The commit is fsynced before it is acknowledged, at every isolation level except <code>read_uncommitted</code>. That is the only thing the isolation level changes today.</li>
+</ul>
+</section>
+
+<section id="disk"><h2>When the disk is involved</h2>
+<p>&ldquo;Durable&rdquo; hides two different promises. A write the server has handed to the operating system survives a crash of the server process: the kernel still has it and writes it out. Only a write that has been fsynced survives a power loss, or a kernel crash. Here is which writes SoliDB acknowledges after which:</p>
+<div class="post-table"><table><thead><tr><th>Write</th><th>Acknowledged after</th><th>A process kill loses</th><th>A power loss can lose</th></tr></thead><tbody>
+<tr><td><pre>Transaction commit, any level but read_uncommitted</pre></td><td><pre><strong>its fsync</strong></pre></td><td><pre>nothing</pre></td><td><pre>nothing</pre></td></tr>
+<tr><td><pre>Write outside a transaction, solistore, SOLIDB_DURABILITY=full</pre></td><td><pre><strong>its fsync</strong></pre></td><td><pre>nothing</pre></td><td><pre>nothing</pre></td></tr>
+<tr><td><pre>Write outside a transaction, solistore, eventual (the default)</pre></td><td><pre>the write to the OS</pre></td><td><pre>nothing</pre></td><td><pre>the last 100 ms</pre></td></tr>
+<tr><td><pre>read_uncommitted commit, solistore, eventual</pre></td><td><pre>the write to the OS</pre></td><td><pre>nothing</pre></td><td><pre>the last 100 ms</pre></td></tr>
+<tr><td><pre>Write outside a transaction, RocksDB engine</pre></td><td><pre>the write to the OS</pre></td><td><pre>nothing</pre></td><td><pre>what the kernel has not written back</pre></td></tr>
+</tbody></table></div>
+<p>On solistore the 100&nbsp;ms is <code>SOLIDB_DURABILITY_INTERVAL_MS</code>, the period of a background fsync, and what a power loss takes is always a suffix: never one write without every later one. With <code>SOLIDB_DURABILITY=full</code>, concurrent commits share one fsync instead of queuing for one each, so durability costs less than one fsync per write once there are several writers (<a href="#writes">measured below</a>). The last column is what the design allows. It is not measured: nothing in our tests cuts the power.</p>
+<p><strong>A correction.</strong> The comparison post ran its crash test with SoliDB in both durability modes and explained that the <code>eventual</code> one lost nothing because it hands every commit to the operating system and only delays the fsync. That was wrong. <code>SOLIDB_DURABILITY</code> decides for writes outside a transaction; a transaction begun at <code>read_committed</code>, as that test&rsquo;s were, waits for its own fsync in either mode. The two lines measured the same thing, which is why their throughput was the same. The crash test below adds the configuration that line was meant to be.</p>
+</section>
+
+<section id="kill"><h2>Killed in the middle</h2>
+<p>The <a href="https://github.com/solisoft/solidb/blob/main/benchmarks/compare/bank.sh">bank</a> moves money. Each transfer is one transaction: take 1 to 100 from an account if it holds that much, give it to another, write a ledger row. 32 clients transfer among 10,000 accounts; after a random 1 to 4 seconds the container gets <code>SIGKILL</code>, is started again on the same data and checked: the balances must add up to what they started with, none may be negative, every acknowledged transfer must be there with its ledger row, and nothing may be there that was not sent. A transfer in flight at the kill may land or not, but whole. Twenty kills per configuration:</p>
+<div class="post-table"><table><thead><tr><th>Configuration</th><th>transfers acknowledged</th><th>in flight at a kill (landed)</th><th>acknowledged, then lost</th><th>half applied</th><th>ready again</th></tr></thead><tbody>
+<tr><td><pre>PostgreSQL 18.6, synchronous_commit=on</pre></td><td><pre>2,861,750</pre></td><td><pre>258 (129)</pre></td><td><pre>0</pre></td><td><pre>0</pre></td><td><pre>408 ms</pre></td></tr>
+<tr><td><pre>PostgreSQL 18.6, synchronous_commit=off</pre></td><td><pre>3,657,389</pre></td><td><pre>110 (0)</pre></td><td><pre><strong>25,517</strong></pre></td><td><pre>0</pre></td><td><pre>458 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.1, SOLIDB_DURABILITY=full</pre></td><td><pre>786,337</pre></td><td><pre>277 (137)</pre></td><td><pre>0</pre></td><td><pre>0</pre></td><td><pre>271 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.1, eventual (commit still fsynced)</pre></td><td><pre>787,233</pre></td><td><pre>298 (104)</pre></td><td><pre>0</pre></td><td><pre>0</pre></td><td><pre>272 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, SOLIDB_DURABILITY=full</pre></td><td><pre>827,338</pre></td><td><pre>217 (93)</pre></td><td><pre>0</pre></td><td><pre>0</pre></td><td><pre>272 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, eventual (commit still fsynced)</pre></td><td><pre>824,962</pre></td><td><pre>272 (120)</pre></td><td><pre>0</pre></td><td><pre>0</pre></td><td><pre>272 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, eventual, read_uncommitted (not fsynced)</pre></td><td><pre>943,758</pre></td><td><pre>163 (30)</pre></td><td><pre><strong>0</strong></pre></td><td><pre>0</pre></td><td><pre>323 ms</pre></td></tr>
+</tbody></table></div>
+<p>No configuration that fsyncs before acknowledging lost anything, and none left a transfer half applied. The interesting pair is the two that do not fsync. PostgreSQL with <code>synchronous_commit=off</code> lost the last commits before every kill, 25,517 in all, as its documentation says it may: it acknowledges a commit while the WAL record is still in its own memory, and a killed process takes that memory with it. SoliDB&rsquo;s <code>read_uncommitted</code> commit on <code>eventual</code> lost nothing in its twenty kills, because it acknowledges only after the write has reached the kernel. Both would lose the same kind of thing to a power cut. SoliDB&rsquo;s throughput here is HTTP&rsquo;s, five requests per transfer; the next sections are about that.</p>
+<p>The <a href="https://github.com/solisoft/solidb/tree/main/faults"><code>faults</code></a> harness kills the server the same way while it runs transactions and plain inserts side by side, on both engines, and checks more than money: that a transaction&rsquo;s three documents are all there or none, that what survives of each writer is exactly its first <em>n</em> requests with no hole, that the persistent and unique indexes agree with the documents, and that a count agrees with both. On 2.9.0, twenty kills per configuration, RocksDB and solistore, commits fsynced or not: 0 violations, over 2.0 million transactions and 1.5 million inserts acknowledged.</p>
+</section>
+
+<section id="isolation"><h2>What a transaction sees</h2>
+<p>A SoliDB transaction takes an isolation level when it begins, <code>read_committed</code> by default. Today the level decides one thing, the fsync <a href="#disk">above</a>; <code>repeatable_read</code> and <code>serializable</code> add no guarantee of their own. What a transaction sees depends on how it reads:</p>
+<ul>
+<li><strong>A document read by key</strong> (<code>GET …/transaction/{id}/document/…</code>) takes a shared lock, and a write takes an exclusive one, both held until the commit or the rollback. A lock another transaction holds is refused at once with a 409, without waiting.</li>
+<li><strong>A query</strong> (<code>…/transaction/{id}/query</code>, or the driver) reads committed data, takes no lock, and does not see the transaction&rsquo;s own staged writes. An <code>UPDATE</code> computed from a document the query read is staged only if that document has not changed since, and the commit checks again.</li>
+</ul>
+<p>That is enough for the bank: the debit names the account it changes, so two transfers from one account cannot both spend the same balance. It is not enough when a transaction decides from documents it reads but does not write. The textbook case is two doctors on call, and a rule that one must stay. Each transaction takes one doctor off call if both are on. Here are two of them, interleaved, on a 2.9.3 server, at <code>serializable</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> write skew, through queries</div><pre><span class="tok-com"># alice and bob are on call. T1 and T2 begin at serializable. Each sends, for itself:</span>
+FOR d IN doctors FILTER d._key == @me
+  LET n = LENGTH(FOR x IN doctors FILTER x.on_call == true RETURN 1)
+  FILTER n &gt;= 2
+  UPDATE d WITH {on_call: false} IN doctors RETURN n
+
+T1 query (@me = "alice")   {"mutationCount":1,"result":[2]}
+T2 query (@me = "bob")     {"mutationCount":1,"result":[2]}
+T1 commit                  {"status":"committed"}
+T2 commit                  {"status":"committed"}
+FOR d IN doctors RETURN [d._key, d.on_call]
+                           [["alice",false],["bob",false]]</pre></div>
+<p>Both commit, and nobody is on call. Each transaction wrote only its own doctor, so neither commit found a conflict; the doctor each one only read is not checked again. PostgreSQL at <code>SERIALIZABLE</code> refuses one of the two with a serialization failure; SoliDB refuses neither, at any level. Through documents read by key, the shared locks catch it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> the same, documents by key</div><pre>T1 GET alice, GET bob     on_call: true, on_call: true   <span class="tok-com"># shared locks</span>
+T2 GET alice, GET bob     on_call: true, on_call: true   <span class="tok-com"># shared locks</span>
+T1 PUT alice {"on_call": false}
+  {"code":409,"error":"Read conflict: Key skew/doctors/alice is locked by 1 reader(s)",
+   "type":"TransactionConflict"}
+T1 rollback               {"status":"aborted"}
+T2 PUT bob {"on_call": false}                            <span class="tok-com"># T1's locks are gone</span>
+T2 commit                 {"status":"committed"}
+FOR d IN doctors RETURN [d._key, d.on_call]
+                          [["alice",true],["bob",false]]</pre></div>
+<p>The first write is refused because the other transaction holds a shared lock on that doctor. The first transaction rolls back, the second commits, and a retry of the first would see one doctor on call and leave her there. The cost is in the refusals: on 8 contended keys, the <code>faults</code> harness saw about 70% of such transactions refused.</p>
+<p>So, in SQL&rsquo;s terms: through documents by key, SoliDB behaves like two-phase locking that gives up instead of waiting, which in theory is serializable for the documents it locks. Through queries, it is read committed with protection against lost updates, and write skew goes through. A query that must decide from a document it does not write should write it too, or read it by key. The <a href="/docs/transactions">transactions page</a> says the same. Jepsen&rsquo;s <a href="https://github.com/jepsen-io/elle">Elle</a>, which searches recorded histories for exactly these cycles, has not been run yet; the <code>faults</code> harness already records its histories in Elle&rsquo;s format.</p>
+</section>
+
+<section id="bug"><h2>The bug the bank found</h2>
+<p>The bank&rsquo;s debit is one SDBQL statement, filtered on the balance:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> the debit</div><pre>FOR a IN accounts FILTER a._key == @k FILTER a.balance &gt;= @x
+  UPDATE a WITH {balance: a.balance - @x} IN accounts</pre></div>
+<p>On SoliDB 2.9.0 it lost or invented money in 6 of 9 runs, even among 10,000 accounts with little contention. The <code>WITH</code> value was computed from the document as the <code>FOR</code> had read it, then written under the key&rsquo;s lock without checking that the document was still that version, so a write that landed in between was overwritten. Inside a transaction or not, at every isolation level. The <code>faults</code> harness, appending to 8 hot lists from 10 clients for 10 seconds, measured it: 24,785 of 405,507 committed appends lost through <code>/cursor</code>, and 8,112 of 125,047 inside transactions at <code>serializable</code>.</p>
+<p>2.9.1, released the same day, carries the revision the query read with every such write. Outside a transaction, a row whose document has moved on is evaluated again under the key&rsquo;s lock, its <code>FILTER</code>s and <code>LET</code>s and then its <code>WITH</code>, and skipped if it no longer passes, so two queries claiming the same pending job cannot both take it. Inside a transaction the stale write is refused with a conflict, and the client retries. Since then: 0 appends lost, every bank run clean on 2.9.1, 2.9.2 and 2.9.3, at the same throughput.</p>
+<p>The same harness then probed the client libraries, and found transactions that were not. The Rust client&rsquo;s <code>begin_transaction</code> kept the transaction&rsquo;s id and sent the following writes as plain commands: they applied at once and survived a rollback that answered Ok. None of the JavaScript, Python, Go, PHP, Ruby or Elixir clients could send a write inside a transaction at all, and two of them returned every server error as a success. All of it is fixed in 2.9.1, and every SDK now has a transaction test against a running server. A database is only as transactional as the client that talks to it, and nothing had checked that.</p>
+</section>
+
+<section id="speed"><h2>One request per transaction</h2>
+<p>Correct is the floor. The next question was the price. Every commit below is fsynced before it is acknowledged, on both databases, and a transfer the concurrency control refuses (a lock held, a serialization failure, a stale write) is retried with the same backoff. Each database does the transfer the way its documentation would:</p>
+<ul>
+<li><strong>Five requests</strong>: begin, debit, credit, ledger row, commit. PostgreSQL at <code>READ COMMITTED</code> with conditional updates, or at <code>SERIALIZABLE</code> reading the balances first; SoliDB over HTTP, or over its binary driver, which accepts a query that writes inside a transaction since 2.9.2.</li>
+<li><strong>One request</strong>: PostgreSQL calls a PL/pgSQL function holding the three statements. SoliDB, since 2.9.3, sends <code>run_transaction</code>: the begin, the steps and the commit together, the debit and the credit marked <code>require_rows</code>, so that one matching nothing rolls the whole transfer back.</li>
+</ul>
+<figure class="post-figure"><svg viewBox="0 0 680 288" role="img" aria-labelledby="dur-bank-32-t"><title id="dur-bank-32-t">Durable transfers, 10,000 accounts, 32 clients (per second)</title><text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Durable transfers, 10,000 accounts, 32 clients (per second)</text><line x1="220" y1="44" x2="220" y2="248" stroke="#29322f"/><text x="20" y="64" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, function</text><rect x="220" y="48" width="340" height="22" rx="3" fill="#6b746c"/><text x="568" y="64" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">113,920</text><text x="20" y="98" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, run_transaction</text><rect x="220" y="82" width="206" height="22" rx="3" fill="#f5a623"/><text x="434" y="98" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">68,903</text><text x="20" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, READ COMMITTED</text><rect x="220" y="116" width="201" height="22" rx="3" fill="#6b746c"/><text x="429" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">67,383</text><text x="20" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, SERIALIZABLE</text><rect x="220" y="150" width="138" height="22" rx="3" fill="#6b746c"/><text x="366" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">46,138</text><text x="20" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, driver</text><rect x="220" y="184" width="147" height="22" rx="3" fill="#f5a623"/><text x="375" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">49,283</text><text x="20" y="234" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, HTTP</text><rect x="220" y="218" width="60" height="22" rx="3" fill="#f5a623"/><text x="288" y="234" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">20,135</text><text x="20" y="276" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">One scale from 0; higher is better. The top two send one request per transfer, the rest five or six.</text></svg></figure>
+<figure class="post-figure"><svg viewBox="0 0 680 288" role="img" aria-labelledby="dur-bank-hot-t"><title id="dur-bank-hot-t">Durable transfers, 10 hot accounts, 32 clients (per second)</title><text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Durable transfers, 10 hot accounts, 32 clients (per second)</text><line x1="220" y1="44" x2="220" y2="248" stroke="#29322f"/><text x="20" y="64" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, function</text><rect x="220" y="48" width="218" height="22" rx="3" fill="#6b746c"/><text x="446" y="64" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">10,406</text><text x="20" y="98" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, run_transaction</text><rect x="220" y="82" width="340" height="22" rx="3" fill="#f5a623"/><text x="568" y="98" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">16,204</text><text x="20" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, READ COMMITTED</text><rect x="220" y="116" width="175" height="22" rx="3" fill="#6b746c"/><text x="403" y="132" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">8,339</text><text x="20" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">PostgreSQL, SERIALIZABLE</text><rect x="220" y="150" width="161" height="22" rx="3" fill="#6b746c"/><text x="389" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">7,663</text><text x="20" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, driver</text><rect x="220" y="184" width="213" height="22" rx="3" fill="#f5a623"/><text x="441" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">10,160</text><text x="20" y="234" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB, HTTP</text><rect x="220" y="218" width="111" height="22" rx="3" fill="#f5a623"/><text x="339" y="234" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">5,303</text><text x="20" y="276" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">One scale from 0; higher is better. Refused attempts are retried and not counted.</text></svg></figure>
+<div class="post-table"><table><thead><tr><th>Every commit fsynced</th><th>1 client</th><th>p50</th><th>32 clients</th><th>p99</th><th>10 hot accounts, 32 clients</th><th>p99</th><th>DB CPU per transfer, 1 / 32 clients</th></tr></thead><tbody>
+<tr><td><pre>PostgreSQL, function (1 request)</pre></td><td><pre><strong>21,674</strong></pre></td><td><pre><strong>44 µs</strong></pre></td><td><pre><strong>113,920</strong></pre></td><td><pre><strong>556 µs</strong></pre></td><td><pre>10,406</pre></td><td><pre><strong>34 ms</strong></pre></td><td><pre><strong>24 / 54 µs</strong></pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, run_transaction (1 request)</pre></td><td><pre>11,945</pre></td><td><pre>68 µs</pre></td><td><pre>68,903</pre></td><td><pre>953 µs</pre></td><td><pre><strong>16,204</strong></pre></td><td><pre>42 ms</pre></td><td><pre>80 / 98 µs</pre></td></tr>
+<tr><td><pre>PostgreSQL, READ COMMITTED (5)</pre></td><td><pre>10,555</pre></td><td><pre>92 µs</pre></td><td><pre>67,383</pre></td><td><pre>1.4 ms</pre></td><td><pre>8,339</pre></td><td><pre>44 ms</pre></td><td><pre>41 / 87 µs</pre></td></tr>
+<tr><td><pre>PostgreSQL, SERIALIZABLE (6)</pre></td><td><pre>8,361</pre></td><td><pre>118 µs</pre></td><td><pre>46,138</pre></td><td><pre>1.6 ms</pre></td><td><pre>7,663</pre></td><td><pre>109 ms</pre></td><td><pre>56 / 138 µs</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, driver (5)</pre></td><td><pre>7,036</pre></td><td><pre>152 µs</pre></td><td><pre>49,283</pre></td><td><pre>1.3 ms</pre></td><td><pre>10,160</pre></td><td><pre>70 ms</pre></td><td><pre>125 / 121 µs</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, HTTP (5)</pre></td><td><pre>4,133</pre></td><td><pre>235 µs</pre></td><td><pre>20,135</pre></td><td><pre>3.0 ms</pre></td><td><pre>5,303</pre></td><td><pre>101 ms</pre></td><td><pre>197 / 327 µs</pre></td></tr>
+</tbody></table></div>
+<p>One request each, PostgreSQL commits 1.8 times as many transfers as SoliDB at one client and 1.65 times as many at 32, with lower latency at the median and at the 99th percentile. Among 10 hot accounts SoliDB commits 1.56 times as many, though PostgreSQL&rsquo;s tail there is the shorter one (34&nbsp;ms against 42). What separates them is the cost of a transaction itself, once the round trips are gone: at one client SoliDB spends 80&nbsp;µs of database CPU on a transfer, PostgreSQL 24. Five requests each, SoliDB&rsquo;s driver is still behind PostgreSQL&rsquo;s <code>READ COMMITTED</code> without contention, and ahead of it among hot accounts.</p>
+<p>The order of the runs matters, so here it is. PostgreSQL&rsquo;s function and SoliDB&rsquo;s <code>run_transaction</code> each ran alone on a fresh server, as did PostgreSQL&rsquo;s <code>READ COMMITTED</code> and SoliDB&rsquo;s HTTP mode; <code>SERIALIZABLE</code> and SoliDB&rsquo;s driver mode each followed one of those on the same server. On a server that had just run the HTTP and driver modes, <code>run_transaction</code> committed 10,374 transfers a second at one client (p50 109&nbsp;µs) instead of 11,945; at 32 clients and among hot accounts it made no difference. We have not established why.</p>
+<p><strong>What 2.9.3 changed.</strong> Over the driver, 2.9.2 committed 38,518 transfers a second at 32 clients; 2.9.3 commits 49,283. Three changes did it. A staged update stays a value from staging to commit, where it used to be turned into a document and back three times, timestamps parsed and formatted along the way. solistore 0.3.2 wakes each committing writer on its own, hands the lead of the next fsync to the next writer in line, and lets the members of a group being fsynced sleep instead of spinning: at 32 fsynced writers, half the CPU per write. And the commit, which waits for its fsync, no longer holds up the other connections of its worker thread. One series went the other way: over the driver at one client, 2.9.3 commits 7,036 a second, against 7,563 for 2.9.2 (p50 152&nbsp;µs against 128). We have not found why yet.</p>
+</section>
+
+<section id="writes"><h2>Fsynced writes outside a transaction</h2>
+<p>One document per request, an insert or an update of one field by key, each fsynced before it is acknowledged: PostgreSQL with its default <code>synchronous_commit=on</code>, SoliDB 2.9.3 with <code>SOLIDB_DURABILITY=full</code>. Both measured the same morning, after loading the same million documents, with <a href="https://github.com/solisoft/solidb/blob/main/benchmarks/compare/run.sh"><code>run.sh</code></a>:</p>
+<div class="post-table"><table><thead><tr><th>Fsynced</th><th>c=1 ops/s</th><th>c=1 p50</th><th>c=1 p99</th><th>c=32 ops/s (3 runs)</th><th>c=32 p50</th><th>c=32 p99</th></tr></thead><tbody>
+<tr><td><pre>SoliDB 2.9.3, insert</pre></td><td><pre><strong>23,320</strong></pre></td><td><pre><strong>39 µs</strong></pre></td><td><pre><strong>52 µs</strong></pre></td><td><pre>86,890 (86,040–88,772)</pre></td><td><pre><strong>279 µs</strong></pre></td><td><pre><strong>546 µs</strong></pre></td></tr>
+<tr><td><pre>PostgreSQL 18.6, insert</pre></td><td><pre>19,114</pre></td><td><pre>49 µs</pre></td><td><pre>74 µs</pre></td><td><pre><strong>88,307</strong> (76,449–102,017)</pre></td><td><pre>281 µs</pre></td><td><pre>2.0 ms</pre></td></tr>
+<tr><td><pre>SoliDB 2.9.3, update</pre></td><td><pre><strong>22,901</strong></pre></td><td><pre><strong>40 µs</strong></pre></td><td><pre><strong>53 µs</strong></pre></td><td><pre><strong>88,243</strong> (87,809–88,541)</pre></td><td><pre><strong>321 µs</strong></pre></td><td><pre><strong>597 µs</strong></pre></td></tr>
+<tr><td><pre>PostgreSQL 18.6, update</pre></td><td><pre>14,823</pre></td><td><pre>59 µs</pre></td><td><pre>112 µs</pre></td><td><pre>49,506 (48,504–49,898)</pre></td><td><pre>404 µs</pre></td><td><pre>5.6 ms</pre></td></tr>
+</tbody></table></div>
+<p>At one client SoliDB fsyncs an insert in 39&nbsp;µs and PostgreSQL in 49. At 32 clients the inserts are level: PostgreSQL&rsquo;s median run is 1.6% ahead, but its three runs spread from 76,449 to 102,017 a second as the table grows, while SoliDB&rsquo;s stay within 3%, with a 99th percentile a quarter of PostgreSQL&rsquo;s. Updates at 32 clients: 88,243 a second against 49,506.</p>
+<p>The comparison post had SoliDB 2.9.0 at 81,298 inserts a second there, the one series it clearly lost. Part of that gap was the run, not the version. Run alternately the same morning, one 20-second run each, 2.9.0 inserted 86,964 and 87,448 a second and 2.9.3 92,058 and 89,906; updates, 80,981 and 83,141 against 88,703 and 87,665. solistore 0.3.2 is worth about 5% of throughput here, and, measured on its own, half the CPU per fsynced write.</p>
+</section>
+
+<section id="behind"><h2>Where SoliDB is behind</h2>
+<ul>
+<li><strong>The cost of a transaction.</strong> With one request per transfer each, PostgreSQL commits 1.8 times as many at one client and 1.65 times as many at 32. At one client SoliDB spends 80&nbsp;µs of database CPU on a transfer, PostgreSQL 24; at 32, 98 against 54.</li>
+<li><strong>Locks that do not wait.</strong> A lock held by another transaction is refused at once. Among 10 hot accounts that is 1.2 refused attempts for every transfer that commits, each one a round trip the client pays for, and a 99th percentile of 42&nbsp;ms. PostgreSQL&rsquo;s locks wait, and its function commits without a single retry. Waiting locks, with deadlock detection, are on our list.</li>
+<li><strong>Isolation.</strong> No level is serializable, and the levels above <code>read_committed</code> are only names. Write skew through queries commits (<a href="#isolation">above</a>). Elle has not searched our histories yet.</li>
+<li><strong>Power loss is not tested.</strong> Every crash on this page is a process kill. Dropping what was written but not fsynced, below the filesystem (with LazyFS or dm-log-writes), is the next test in the <code>faults</code> harness.</li>
+<li><strong>One node.</strong> A transaction does not span shards or nodes. Earlier versions had endpoints for distributed transactions that never applied a write; they were removed.</li>
+</ul>
+</section>
+
+<section id="run"><h2>Run it yourself</h2>
+<p>Linux with Docker or rootful podman (<code>DOCKER="sudo podman"</code>). The CPU sets assume 16 cores; set <code>DB_CPUS</code> and <code>CLIENT_CPUS</code> for your machine.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>git clone https://github.com/solisoft/solidb && cd solidb/benchmarks/compare
+cargo build --release --bin solidb-bank
+./bank.sh postgres solidb-2.9.3                     <span class="tok-com"># throughput and the money checks</span>
+ONLY_MODES=function ./bank.sh postgres              <span class="tok-com"># PostgreSQL's one-request transfer</span>
+SOLIDB_CRASH=ghcr.io/solisoft/solidb:v2.9.3 \
+  ./bank.sh crash-postgres crash-postgres-async crash-solidb crash-solidb-unsynced
+python3 bank_report.py ~/bench/results/&lt;date&gt;/bank
+./run.sh solidb-solistore-durable postgres-durable  <span class="tok-com"># fsynced inserts and updates</span>
+
+cd ../../faults && cargo build --release            <span class="tok-com"># kill -9 on both engines, isolation histories</span>
+target/release/solidb-faults crash --bin /path/to/solidb --engine solistore --durability full --cycles 20</pre></div>
+<p>If a setting is unfair to PostgreSQL, or a check would miss something, open an issue or a pull request against the harness: we will rerun it and update this page.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

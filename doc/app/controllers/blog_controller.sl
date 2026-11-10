@@ -69,6 +69,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "durability-and-transactions",
+        "title": "Durability and transactions: what a SoliDB commit promises, and how we checked",
+        "date": "2026-11-10",
+        "display_date": "November 10, 2026",
+        "summary": "Is SoliDB ACID? A commit is one write batch, fsynced before it is acknowledged; 100 kill -9 "
+        + "lost no acknowledged transfer. Since 2.9.1 concurrent transfers conserve money. Its isolation "
+        + "is weaker than its level names, with a write skew that commits, and PostgreSQL is still faster "
+        + "per transaction except among hot accounts. Every claim comes with the test behind it.",
+        "tags": ["Correctness", "Transactions", "Benchmarks"],
+        "read_minutes": 13
+      },
+      {
         "slug": "solidb-against-postgresql-mongodb-arangodb-surrealdb",
         "title": "SoliDB against PostgreSQL, MongoDB, ArangoDB and SurrealDB",
         "date": "2026-11-09",
