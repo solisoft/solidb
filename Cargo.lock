@@ -4474,7 +4474,7 @@ dependencies = [
 
 [[package]]
 name = "solidb"
-version = "2.9.2"
+version = "2.9.3"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4607,9 +4607,9 @@ dependencies = [
 
 [[package]]
 name = "solistore"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df98eafdf722209e8b41f9d6e10ca50e4217d844ec13182337bf4bdad3062cc3"
+checksum = "819f98c36f57bda589e004bff3c94c08a9bc6682bde516fd52c625d03e7b2b39"
 dependencies = [
  "arc-swap",
  "bytes",

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.9.3](https://github.com/solisoft/solidb/compare/v2.9.2...v2.9.3) (2026-11-10)
+
+Transactions in one request over the driver, cheaper transactions and
+fsynced writes, and a SQLite fix in the Rust client.
+
 ### Features
 
 * **A transaction in one request over the driver: `run_transaction`.** The
@@ -27,6 +32,14 @@
   On the bank benchmark, CPU per one-request transfer 81–83 → 76–77 µs at
   one client and 110 → 104 µs at 32; 12,300 transfers/s at one client
   (p50 64 µs), 66,400 at 32.
+* **solistore 0.3.2: fsynced writers wait without spinning.** A writer
+  waiting for its group's fsync is woken alone by the leader that decided
+  for it, the lead is handed to the next writer in line, and the members
+  of a group being fsynced sleep instead of yielding the CPU in a loop. At
+  32 fsynced writers (`SOLIDB_DURABILITY=full`) it halves the CPU per
+  write (inserts 63–65 → 33–35 µs, updates 67 → 33–34 µs) and adds 5–6%
+  of throughput with a lower p99 (inserts 89,858–93,320 → 94,609–99,929/s
+  on 100,000 orders); one writer is unchanged. Card #798.
 * **Driver transactions keep the async workers free.** The commit, which
   waits for its fsync, runs under `block_in_place`, so the other
   connections of that worker are not held up behind it; and a staged query
