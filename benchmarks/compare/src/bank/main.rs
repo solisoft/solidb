@@ -23,7 +23,7 @@
 //! up afterwards and counted as landed or not; either is allowed.
 //!
 //! ```text
-//! solidb-bank --engine postgres|solidb --mode MODE --addr HOST:PORT --out FILE
+//! solidb-bank --engine postgres|solidb|arango --mode MODE --addr HOST:PORT --out FILE
 //!     [--password bench] [--label NAME] [--initial 1000] [--max-amount 100]
 //!     [--series 10000:1,10000:32,10:32] [--warm 5] [--secs 20] [--runs 3]
 //!     [--seed 1] [--audit-ms 10 (0: no auditor)] [--db-cgroup PATH] [--meta key=value ...]
@@ -40,6 +40,7 @@
 //! `driver` (`query`'s statements over the native driver), `run` (the same
 //! in one request, `run_transaction`).
 
+mod arango;
 mod pg;
 mod soli;
 
@@ -95,11 +96,13 @@ pub struct Totals {
 }
 
 enum Db {
+    Arango(arango::Arango),
     Pg(pg::Pg),
     Soli(soli::Soli),
 }
 
 enum Conn {
+    Arango(arango::Conn),
     Pg(pg::Conn),
     Soli(soli::Conn),
     SoliDriver(soli::DriverConn),
@@ -109,6 +112,7 @@ impl Db {
     /// A worker's connection for `mode`; the auditor's is any other mode's.
     async fn connect(&self, mode: &str) -> Res<Conn> {
         Ok(match self {
+            Db::Arango(d) => Conn::Arango(d.connect().await?),
             Db::Pg(d) => Conn::Pg(d.connect().await?),
             Db::Soli(d) if mode == "driver" || mode == "run" => {
                 Conn::SoliDriver(d.connect_driver().await?)
@@ -118,36 +122,42 @@ impl Db {
     }
     async fn ready(&self) -> Res<()> {
         match self {
+            Db::Arango(d) => d.ready().await,
             Db::Pg(d) => d.ready().await,
             Db::Soli(d) => d.ready().await,
         }
     }
     async fn reset(&self, accounts: u32, initial: i64) -> Res<()> {
         match self {
+            Db::Arango(d) => d.reset(accounts, initial).await,
             Db::Pg(d) => d.reset(accounts, initial).await,
             Db::Soli(d) => d.reset(accounts, initial).await,
         }
     }
     async fn balances(&self) -> Res<Vec<(u32, i64)>> {
         match self {
+            Db::Arango(d) => d.balances().await,
             Db::Pg(d) => d.balances().await,
             Db::Soli(d) => d.balances().await,
         }
     }
     async fn ledger_by_account(&self) -> Res<HashMap<u32, (i64, i64)>> {
         match self {
+            Db::Arango(d) => d.ledger_by_account().await,
             Db::Pg(d) => d.ledger_by_account().await,
             Db::Soli(d) => d.ledger_by_account().await,
         }
     }
     async fn ledger_by_worker(&self) -> Res<HashMap<u32, (u64, u64, u64)>> {
         match self {
+            Db::Arango(d) => d.ledger_by_worker().await,
             Db::Pg(d) => d.ledger_by_worker().await,
             Db::Soli(d) => d.ledger_by_worker().await,
         }
     }
     async fn present(&self, id: &str) -> Res<bool> {
         match self {
+            Db::Arango(d) => d.present(id).await,
             Db::Pg(d) => d.present(id).await,
             Db::Soli(d) => d.present(id).await,
         }
@@ -171,6 +181,7 @@ impl Db {
 impl Conn {
     async fn transfer(&mut self, mode: &str, t: &Transfer) -> Attempt {
         match self {
+            Conn::Arango(c) => c.transfer(mode, t).await,
             Conn::Pg(c) => c.transfer(mode, t).await,
             Conn::Soli(c) => c.transfer(mode, t).await,
             Conn::SoliDriver(c) if mode == "run" => c.transfer_in_one(t).await,
@@ -179,6 +190,7 @@ impl Conn {
     }
     async fn audit(&mut self) -> Res<Totals> {
         match self {
+            Conn::Arango(c) => c.audit().await,
             Conn::Pg(c) => c.audit().await,
             Conn::Soli(c) => c.audit().await,
             Conn::SoliDriver(_) => Err("the auditor reads over HTTP".into()),
@@ -898,11 +910,13 @@ async fn crash(db: Arc<Db>, a: &Args) -> Res<usize> {
 async fn main() {
     let a = parse_args();
     let db = Arc::new(match a.engine.as_str() {
+        "arango" => Db::Arango(arango::Arango::new(&a.addr, &a.password)),
         "postgres" => Db::Pg(pg::Pg::new(&a.addr, &a.password)),
         "solidb" => Db::Soli(soli::Soli::new(&a.addr, &a.password, &a.isolation)),
         e => panic!("unknown engine {e}"),
     });
     let ok_modes: &[&str] = match a.engine.as_str() {
+        "arango" => &["stream", "js"],
         "postgres" => &["update", "serializable", "naive", "function"],
         _ => &["query", "doc", "driver", "run"],
     };

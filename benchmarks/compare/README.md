@@ -289,6 +289,29 @@ A commit acknowledged before its fsync lost nothing to a process kill: it is ack
 
 **Write skew** (`write_skew.sh`, output in `results/2026-11-10/write-skew.txt`): two transactions at `serializable`, each taking one of two on-call doctors off call through a query if both are on call, both commit. Through documents read by key, the second write gets a `409` and one doctor stays on call.
 
+### Results, 2026-11-10: ArangoDB 3.12.4
+
+`results/2026-11-10/bank-arango/`. The same transfer, checks and machine, on ArangoDB 3.12.4-3 (Community) through its HTTP API. Both collections are created with `waitForSync` and every transaction asks for it too (the two do not add up: the rates are the same without the collections' flag). Two transactions that write one document do not wait: the second is refused with error 1200 and retried.
+
+| Configuration | Requests per transfer | How it moves money |
+|---|---|---|
+| `arango-stream` | 5 HTTP: begin, two queries, an insert, commit | A stream transaction. The debit and the credit are AQL under `x-arango-trx-id`, the debit `FILTER a.balance >= @x … RETURN 1`. |
+| `arango-js` | 1 HTTP | The same three statements in a JavaScript transaction (`POST /_api/transaction` with an `action`). |
+
+Transfers per second, median of three runs (range), every check clean on every run:
+
+| Series | `arango-stream` | `arango-js` | DB CPU per transfer |
+|---|---|---|---|
+| 10,000 accounts, 1 client | 2,011 (1,999–2,184), p50 452 µs | 2,283 (2,282–2,310), p50 427 µs | 628 / 605 µs |
+| 10,000 accounts, 32 clients | 9,296 (9,238–9,426), p99 6.9 ms | 8,347 (8,225–8,407), p99 8.5 ms | 612 / 700 µs |
+| 10 accounts, 32 clients | 2,173 (2,143–2,225), 3.9 refusals per commit | 3,053 (3,047–3,157), 3.0 refusals per commit | 2,159 / 2,025 µs |
+
+Against it, measured the same day on a build of `main` (f4e2f35e, `results/2026-11-10/transaction-cpu-1/`), not in the same pass: SoliDB's `run_transaction` does 13,983, 77,411 and 16,905 transfers a second on the three series (65 to 111 µs of DB CPU each), and its five HTTP requests about 4,000, 20,000 and 5,300.
+
+**Crash** (`crash-arango`, stream transactions, 32 clients, SIGKILL of the container): four runs, 70 kills, 1,618,985 transfers acknowledged.
+- In 69 of them every acknowledged transfer was there after the restart, none half applied, and the server answered again within about 0.4 s.
+- Once (the first run, its tenth kill, about four seconds after the server had finished recovering from the ninth) ArangoDB did not start again: `FATAL … unable to initialize RocksDB engine: Corruption: SST file is ahead of WALs in CF default` (`crash-arango.server.log`). Three more runs of 20 kills each, one of them with the same seed, did not reproduce it. One occurrence, reported as seen: the kill and the restart are the commands used for PostgreSQL and SoliDB.
+
 ### Running it
 
 ```sh

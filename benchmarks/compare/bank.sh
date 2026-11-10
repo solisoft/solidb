@@ -20,6 +20,9 @@
 #   solidb-2.9.2    2.9.2; modes query, driver (the transfer over the native
 #                   driver, which runs writing queries in transactions since 2.9.2)
 #   solidb-2.9.3    2.9.3; modes query, driver, run (run_transaction, since 2.9.3)
+#   arango          ArangoDB 3.12.4, both collections waitForSync; modes stream
+#                   (a stream transaction, five requests) and js (a JavaScript
+#                   transaction, one request)
 #   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver,
 #                   run (the transfer in one request, run_transaction)
 #                   (the transfer over the native driver, which needs it)
@@ -32,6 +35,7 @@
 #                           The transactions begin at read_committed, whose
 #                           commit is fsynced in either mode, so this measures
 #                           the same thing as crash-solidb.
+#   crash-arango            waitForSync, stream transactions
 #   crash-solidb-unsynced   SOLIDB_DURABILITY=eventual and transactions begun at
 #                           read_uncommitted: the one commit SoliDB acknowledges
 #                           before its fsync
@@ -53,13 +57,15 @@ COMMON=(--warm "${WARM:-5}" --secs "${SECS:-20}" --runs "${RUNS:-3}" --seed "${S
 CYCLES=${CYCLES:-20}
 
 POSTGRES_IMAGE=docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # 18.6
+ARANGO_IMAGE=docker.io/arangodb/arangodb@sha256:258323b83ed5cd5bacc6e2d7574777db5a8a61ec75f663e4d690824c3301c7c2    # 3.12.4-3
 SOLIDB_290=${SOLIDB_290:-ghcr.io/solisoft/solidb@sha256:05a5da7d3961d2358db55453723c18ead98ab809fec4bd4df9d109e07c4f69e5} # v2.9.0
 SOLIDB_291=${SOLIDB_291:-ghcr.io/solisoft/solidb@sha256:29f31b15a448fd7c680fb52c4a9e29dd16ea3c3de2eaf9181a17f1df63d94214} # v2.9.1
 SOLIDB_292=${SOLIDB_292:-ghcr.io/solisoft/solidb@sha256:2bc1036dd698ffb1232d235a50ef875417fb98e9dec1f06c4cadacc9f95c6b12} # v2.9.2
 SOLIDB_293=${SOLIDB_293:-ghcr.io/solisoft/solidb:v2.9.3}
 
-ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2 solidb-2.9.3
-  crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual crash-solidb-unsynced)
+ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2 solidb-2.9.3 arango
+  crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual crash-solidb-unsynced
+  crash-arango)
 
 mkdir -p "$OUT"
 NAME=bench-db
@@ -134,6 +140,16 @@ configure() {
       [[ $cfg == crash-solidb-unsynced ]] && HARNESS=(--isolation read_uncommitted)
       # BANK_ISOLATION=serializable: the level the HTTP modes begin at.
       [[ $cfg != crash-* && -n ${BANK_ISOLATION:-} ]] && HARNESS=(--isolation "$BANK_ISOLATION")
+      ;;
+    arango | crash-arango)
+      ENGINE=arango PORT=8529 IMAGE=$ARANGO_IMAGE
+      # ArangoDB sizes its caches from the host's memory and cores unless
+      # told the container's; these are its documented overrides. Its
+      # collections are created with waitForSync by the harness.
+      RUN=("${base[@]}" -e ARANGO_ROOT_PASSWORD=$PASSWORD -e ARANGODB_OVERRIDE_DETECTED_TOTAL_MEMORY=16G
+        -e ARANGODB_OVERRIDE_DETECTED_NUMBER_OF_CORES=8 -v "$data:/var/lib/arangodb3:Z" "$IMAGE")
+      MODES=(stream js)
+      [[ $cfg == crash-* ]] && MODES=(stream)
       ;;
     *)
       echo "unknown configuration $cfg" >&2
