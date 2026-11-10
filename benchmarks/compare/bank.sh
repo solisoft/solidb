@@ -132,6 +132,8 @@ configure() {
       [[ $cfg == solidb-main || $cfg == solidb-2.9.3 ]] && MODES=(query driver run)
       [[ $cfg == crash-* ]] && MODES=(query)
       [[ $cfg == crash-solidb-unsynced ]] && HARNESS=(--isolation read_uncommitted)
+      # BANK_ISOLATION=serializable: the level the HTTP modes begin at.
+      [[ $cfg != crash-* && -n ${BANK_ISOLATION:-} ]] && HARNESS=(--isolation "$BANK_ISOLATION")
       ;;
     *)
       echo "unknown configuration $cfg" >&2
@@ -180,7 +182,7 @@ run_one() {
     else
       taskset -c "$CLIENT_CPUS" "$BIN" --engine "$ENGINE" --mode "$mode" --label "$label" \
         --addr "127.0.0.1:$PORT" --password $PASSWORD --series "$SERIES" "${COMMON[@]}" \
-        --db-cgroup "$cg" "${meta[@]}" --out "$OUT/$label.json" 2>&1 | tee "$OUT/$label.log"
+        --db-cgroup "$cg" "${HARNESS[@]}" "${meta[@]}" --out "$OUT/$label.json" 2>&1 | tee "$OUT/$label.log"
     fi
     local s=${PIPESTATUS[0]}
     set -e
