@@ -21,7 +21,7 @@ impl SoliDBClient {
     /// [`delete`](Self::delete) are staged in it and applied at commit. A
     /// query reads committed data (it does not see the transaction's own
     /// writes), and the writes of a query that writes are staged too (servers
-    /// after 2.9.1; 2.9.1 and earlier refuse it); an `UPDATE` it computes from
+    /// since 2.9.2; 2.9.1 and earlier refuse it); an `UPDATE` it computes from
     /// a document that changed since it read it fails the transaction with a
     /// conflict. `bulk_insert` and `batch` are refused. A [`get`](Self::get) is not part of the
     /// transaction either: it reads committed data. One transaction at a
@@ -83,7 +83,7 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::TransactionError("No active transaction".to_string()))
     }
 
-    /// A whole transaction in one round trip (servers after 2.9.2): the
+    /// A whole transaction in one round trip (servers since 2.9.3): the
     /// server begins it, runs `steps` in order, and commits. A step that
     /// fails rolls it back and its error names the step (a conflict reads
     /// "… conflict …": run the transaction again); a step with

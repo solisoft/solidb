@@ -115,7 +115,7 @@ pub enum Command {
         tx_id: String,
         command: Box<Command>,
     },
-    /// A whole transaction in one request (servers after 2.9.2): begin, the
+    /// A whole transaction in one request (servers since 2.9.3): begin, the
     /// steps in order, commit. See [`crate::SoliDBClient::run_transaction`].
     RunTransaction {
         database: String,

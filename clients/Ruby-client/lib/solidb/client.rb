@@ -246,7 +246,7 @@ module SoliDB
     # Until it is committed or rolled back, insert, update and delete are
     # staged in it and applied at commit. A query reads committed data (it
     # does not see the transaction's own writes), and the writes of a query
-    # that writes are staged too (servers after 2.9.1). A second
+    # that writes are staged too (servers since 2.9.2). A second
     # begin_transaction is refused. get is not part
     # of the transaction: it reads committed data. One transaction at a time
     # per client.

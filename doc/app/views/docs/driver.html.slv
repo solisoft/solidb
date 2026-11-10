@@ -187,7 +187,7 @@
                       <tr><td class="px-4 py-2 font-mono text-green-400">commit_transaction</td><td class="px-4 py-2">Commit transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">rollback_transaction</td><td class="px-4 py-2">Rollback transaction</td><td class="px-4 py-2 font-mono">tx_id</td></tr>
                       <tr><td class="px-4 py-2 font-mono text-green-400">transaction_command</td><td class="px-4 py-2">Run <code>insert</code>, <code>update</code>, <code>delete</code> or <code>query</code> inside a transaction</td><td class="px-4 py-2 font-mono">tx_id, command</td></tr>
-                      <tr><td class="px-4 py-2 font-mono text-green-400">run_transaction</td><td class="px-4 py-2">Begin, run <code>steps</code> in order, commit: a whole transaction in one request (after 2.9.2)</td><td class="px-4 py-2 font-mono">database, isolation_level, steps: [{command, require_rows}]</td></tr>
+                      <tr><td class="px-4 py-2 font-mono text-green-400">run_transaction</td><td class="px-4 py-2">Begin, run <code>steps</code> in order, commit: a whole transaction in one request (since 2.9.3)</td><td class="px-4 py-2 font-mono">database, isolation_level, steps: [{command, require_rows}]</td></tr>
                   </tbody>
               </table>
           </div>

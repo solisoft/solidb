@@ -18,10 +18,10 @@
 //!   (`solidb-client`, one connection per worker): begin, the debit and the
 //!   credit as queries ending in `RETURN 1`, the ledger row as an insert,
 //!   commit. Needs a server that stages writing queries in a driver
-//!   transaction (after 2.9.1); 2.9.1 and earlier refuse them.
+//!   transaction (since 2.9.2); 2.9.1 and earlier refuse them.
 //! - `run`: the same three statements in one request
 //!   (`run_transaction`: begin, steps, commit on the server; the debit and
-//!   the credit `require_rows`). Needs a server after 2.9.2.
+//!   the credit `require_rows`). Needs a server since 2.9.3.
 
 use super::{Attempt, Res, Totals, Transfer};
 use serde_json::{json, Value};

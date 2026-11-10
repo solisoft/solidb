@@ -10,7 +10,7 @@ const SOCKET_BUFFER_SIZE = 1024 * 1024;
 // Inside a transaction the server stages these when they arrive wrapped in a
 // `transaction_command` on the connection that began it (a query reads
 // committed data; the writes of one that writes are staged too, on servers
-// after 2.9.1; 2.9.1 and earlier refuse it).
+// since 2.9.2; 2.9.1 and earlier refuse it).
 const STAGED_IN_TRANSACTION = new Set(['insert', 'update', 'delete', 'query']);
 // These cannot be staged: refused rather than applied outside the transaction.
 const REFUSED_IN_TRANSACTION = new Set(['bulk_insert', 'batch', 'begin_transaction']);
