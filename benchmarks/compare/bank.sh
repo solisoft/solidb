@@ -19,6 +19,7 @@
 #   solidb-2.9.1    the same on 2.9.1
 #   solidb-2.9.2    2.9.2; modes query, driver (the transfer over the native
 #                   driver, which runs writing queries in transactions since 2.9.2)
+#   solidb-2.9.3    2.9.3; modes query, driver, run (run_transaction, since 2.9.3)
 #   solidb-main     an unreleased build: SOLIDB_MAIN=<image>; modes query, driver,
 #                   run (the transfer in one request, run_transaction)
 #                   (the transfer over the native driver, which needs it)
@@ -27,7 +28,15 @@
 #   crash-postgres          synchronous_commit=on
 #   crash-postgres-async    synchronous_commit=off (no fsync before the ack)
 #   crash-solidb            2.9.1, SOLIDB_DURABILITY=full
-#   crash-solidb-eventual   2.9.1, SOLIDB_DURABILITY=eventual (fsync every 100 ms)
+#   crash-solidb-eventual   2.9.1, SOLIDB_DURABILITY=eventual (fsync every 100 ms).
+#                           The transactions begin at read_committed, whose
+#                           commit is fsynced in either mode, so this measures
+#                           the same thing as crash-solidb.
+#   crash-solidb-unsynced   SOLIDB_DURABILITY=eventual and transactions begun at
+#                           read_uncommitted: the one commit SoliDB acknowledges
+#                           before its fsync
+# SOLIDB_CRASH=<image> runs the crash-solidb* configurations on another image
+# than 2.9.1.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -46,10 +55,11 @@ CYCLES=${CYCLES:-20}
 POSTGRES_IMAGE=docker.io/library/postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 # 18.6
 SOLIDB_290=${SOLIDB_290:-ghcr.io/solisoft/solidb@sha256:05a5da7d3961d2358db55453723c18ead98ab809fec4bd4df9d109e07c4f69e5} # v2.9.0
 SOLIDB_291=${SOLIDB_291:-ghcr.io/solisoft/solidb@sha256:29f31b15a448fd7c680fb52c4a9e29dd16ea3c3de2eaf9181a17f1df63d94214} # v2.9.1
-SOLIDB_292=${SOLIDB_292:-ghcr.io/solisoft/solidb:v2.9.2}
+SOLIDB_292=${SOLIDB_292:-ghcr.io/solisoft/solidb@sha256:2bc1036dd698ffb1232d235a50ef875417fb98e9dec1f06c4cadacc9f95c6b12} # v2.9.2
+SOLIDB_293=${SOLIDB_293:-ghcr.io/solisoft/solidb:v2.9.3}
 
-ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2
-  crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual)
+ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2 solidb-2.9.3
+  crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual crash-solidb-unsynced)
 
 mkdir -p "$OUT"
 NAME=bench-db
@@ -89,6 +99,7 @@ configure() {
   local base=($DOCKER run -d --name "$NAME" --network host --cpuset-cpus "$DB_CPUS"
     --memory "$DB_MEM" --memory-swap "$DB_MEM")
   SERIES=10000:1,10000:32,10:32
+  HARNESS=()
   case $cfg in
     postgres | postgres-naive | crash-postgres | crash-postgres-async)
       ENGINE=postgres PORT=5432 IMAGE=$POSTGRES_IMAGE
@@ -99,16 +110,18 @@ configure() {
       [[ $cfg == postgres-naive ]] && MODES=(naive) && SERIES=10:32
       [[ $cfg == crash-* ]] && MODES=(update)
       ;;
-    solidb-2.9.0 | solidb-2.9.1 | solidb-2.9.2 | solidb-main | crash-solidb | crash-solidb-eventual)
+    solidb-2.9.0 | solidb-2.9.1 | solidb-2.9.2 | solidb-2.9.3 | solidb-main | crash-solidb | crash-solidb-eventual | crash-solidb-unsynced)
       ENGINE=solidb PORT=6800 IMAGE=$SOLIDB_291
+      [[ $cfg == crash-* ]] && IMAGE=${SOLIDB_CRASH:-$SOLIDB_291}
       [[ $cfg == solidb-2.9.0 ]] && IMAGE=$SOLIDB_290
       [[ $cfg == solidb-2.9.2 ]] && IMAGE=$SOLIDB_292
+      [[ $cfg == solidb-2.9.3 ]] && IMAGE=$SOLIDB_293
       if [[ $cfg == solidb-main ]]; then
         IMAGE=${SOLIDB_MAIN:?set SOLIDB_MAIN to the image of the build to measure}
       fi
       RUN=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$PORT -v "$data:/data:Z,U"
         -e SOLIDB_ENGINE=solistore)
-      if [[ $cfg == crash-solidb-eventual ]]; then
+      if [[ $cfg == crash-solidb-eventual || $cfg == crash-solidb-unsynced ]]; then
         RUN+=(-e SOLIDB_DURABILITY=eventual)
       else
         RUN+=(-e SOLIDB_DURABILITY=full)
@@ -116,8 +129,9 @@ configure() {
       RUN+=("$IMAGE")
       MODES=(query doc)
       [[ $cfg == solidb-2.9.2 ]] && MODES=(query driver)
-      [[ $cfg == solidb-main ]] && MODES=(query driver run)
+      [[ $cfg == solidb-main || $cfg == solidb-2.9.3 ]] && MODES=(query driver run)
       [[ $cfg == crash-* ]] && MODES=(query)
+      [[ $cfg == crash-solidb-unsynced ]] && HARNESS=(--isolation read_uncommitted)
       ;;
     *)
       echo "unknown configuration $cfg" >&2
@@ -151,7 +165,7 @@ run_one() {
   local meta=(--meta "container=${RUN[*]}" --meta "image=$IMAGE" --meta "image_digest=$digest"
     --meta "server_version=$version" --meta "db_cpus=$DB_CPUS" --meta "client_cpus=$CLIENT_CPUS"
     --meta "db_memory=$DB_MEM" --meta "host_cpu=$(lscpu | sed -n 's/^Model name: *//p')"
-    --meta "host_kernel=$(uname -r)")
+    --meta "host_kernel=$(uname -r)" --meta "harness_args=${HARNESS[*]:-}")
   for mode in "${MODES[@]}"; do
     local label=$cfg-$mode
     [[ $cfg == crash-* || $cfg == *-$mode ]] && label=$cfg
@@ -162,7 +176,7 @@ run_one() {
         --addr "127.0.0.1:$PORT" --password $PASSWORD --seed "${SEED:-1}" \
         --crash-cycles "$CYCLES" --accounts 10000 --concurrency 32 \
         --kill "$DOCKER kill -s KILL $NAME >/dev/null" --start "$DOCKER start $NAME >/dev/null" \
-        "${meta[@]}" --out "$OUT/$label.json" 2>&1 | tee "$OUT/$label.log"
+        "${HARNESS[@]}" "${meta[@]}" --out "$OUT/$label.json" 2>&1 | tee "$OUT/$label.log"
     else
       taskset -c "$CLIENT_CPUS" "$BIN" --engine "$ENGINE" --mode "$mode" --label "$label" \
         --addr "127.0.0.1:$PORT" --password $PASSWORD --series "$SERIES" "${COMMON[@]}" \

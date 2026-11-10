@@ -1,0 +1,194 @@
+{
+  "engine": "solidb",
+  "label": "solidb-solistore-durable",
+  "server_version": "see meta.server_version",
+  "settings": {
+    "durable": true,
+    "typed": false
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1,
+    32
+  ],
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 1,
+  "queries": [
+    {
+      "scenario": "get",
+      "query": "driver Get {database, collection: \"orders\", key}"
+    },
+    {
+      "scenario": "update",
+      "query": "driver Update {collection: \"orders\", key, document: {status}, merge: true}"
+    },
+    {
+      "scenario": "insert",
+      "query": "driver Insert {collection: \"orders\", key, document}"
+    },
+    {
+      "scenario": "load",
+      "query": "driver BulkInsert {collection, documents: [1,000 documents]}"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "FOR o IN orders FILTER o.customer_id == @c RETURN o"
+    },
+    {
+      "scenario": "recent",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 RETURN o"
+    },
+    {
+      "scenario": "join",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "FOR o IN orders COLLECT status = o.status AGGREGATE n = COUNT(), total = SUM(o.amount) RETURN {status, n, total}"
+    },
+    {
+      "scenario": "indexes",
+      "query": "persistent indexes on orders: customer_id, created_at, status"
+    }
+  ],
+  "meta": {
+    "server_version": "solidb 2.9.3",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "db_cpus": "0-3,16-19",
+    "db_memory": "16g",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "image_digest": "sha256:c5de9e7bbd6bb0b6881442e6d88722b3f3d6fe0b983fdf5bdc8b455683fe95c6",
+    "image": "ghcr.io/solisoft/solidb@sha256:c5de9e7bbd6bb0b6881442e6d88722b3f3d6fe0b983fdf5bdc8b455683fe95c6",
+    "client_cpus": "8-15,24-31",
+    "host_memory": "125 GB",
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -e SOLIDB_ADMIN_PASSWORD=bench -e SOLIDB_PORT=6800 -v /home/rocky/bench/data/solidb-solistore-durable:/data:Z,U -e SOLIDB_ENGINE=solistore -e SOLIDB_DURABILITY=full ghcr.io/solisoft/solidb@sha256:c5de9e7bbd6bb0b6881442e6d88722b3f3d6fe0b983fdf5bdc8b455683fe95c6"
+  },
+  "load": [
+    {
+      "phase": "customers",
+      "result": {
+        "docs": 100000,
+        "loaders": 8,
+        "secs": 0.052514605,
+        "docs_per_sec": 1904232.0
+      }
+    },
+    {
+      "phase": "orders_1",
+      "result": {
+        "docs": 100000,
+        "loaders": 1,
+        "secs": 0.577904813,
+        "docs_per_sec": 173039.0
+      }
+    },
+    {
+      "phase": "orders_8",
+      "result": {
+        "docs": 900000,
+        "loaders": 8,
+        "secs": 2.358758683,
+        "docs_per_sec": 381557.0
+      }
+    }
+  ],
+  "series": [
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 474167,
+      "secs": 20.000821753,
+      "ops_per_sec": 23707.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.23599030371299767,
+      "db_cpu_cores": 0.42145878324902447,
+      "load_avg_before": 3.04,
+      "p50_us": 39,
+      "p90_us": 46,
+      "p99_us": 52,
+      "p999_us": 60,
+      "max_us": 62908
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 1841367,
+      "secs": 20.002260692,
+      "ops_per_sec": 92058.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.4778329537432067,
+      "db_cpu_cores": 3.353920890893667,
+      "load_avg_before": 3.07,
+      "p50_us": 274,
+      "p90_us": 396,
+      "p99_us": 536,
+      "p999_us": 24380,
+      "max_us": 223062
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 451905,
+      "secs": 20.008019402,
+      "ops_per_sec": 22586.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.15193907697311215,
+      "db_cpu_cores": 0.6356015427858285,
+      "load_avg_before": 3.36,
+      "p50_us": 40,
+      "p90_us": 47,
+      "p99_us": 54,
+      "p999_us": 71,
+      "max_us": 64005
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 1774180,
+      "secs": 20.001270716,
+      "ops_per_sec": 88703.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.7194542888961912,
+      "db_cpu_cores": 3.7149224694289678,
+      "load_avg_before": 2.57,
+      "p50_us": 316,
+      "p90_us": 456,
+      "p99_us": 608,
+      "p999_us": 13142,
+      "max_us": 145710
+    }
+  ],
+  "aborted": [],
+  "after_load": {
+    "disk": "434467111",
+    "memory": {
+      "anon_bytes": 141934592,
+      "file_bytes": 434528256,
+      "current_bytes": 580374528,
+      "peak_bytes": 915537920
+    }
+  },
+  "after_all": {
+    "disk": "1900984322",
+    "memory": {
+      "anon_bytes": 6630739968,
+      "file_bytes": 1901162496,
+      "current_bytes": 8549978112,
+      "peak_bytes": 8549978112
+    }
+  }
+}

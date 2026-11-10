@@ -50,6 +50,9 @@ pub struct Soli {
     addr: String,
     url: String,
     password: String,
+    /// The level the HTTP modes begin their transactions at. Every level
+    /// but `read_uncommitted` fsyncs the commit before acknowledging it.
+    isolation: String,
 }
 
 /// A worker's connection over the native driver.
@@ -61,6 +64,7 @@ pub struct Conn {
     http: reqwest::Client,
     url: String,
     token: String,
+    isolation: String,
 }
 
 fn client() -> reqwest::Client {
@@ -88,11 +92,12 @@ async fn send(rb: reqwest::RequestBuilder) -> Result<(u16, Value), String> {
 }
 
 impl Soli {
-    pub fn new(addr: &str, password: &str) -> Self {
+    pub fn new(addr: &str, password: &str, isolation: &str) -> Self {
         Soli {
             addr: addr.to_string(),
             url: format!("http://{addr}"),
             password: password.to_string(),
+            isolation: isolation.to_string(),
         }
     }
 
@@ -115,6 +120,7 @@ impl Soli {
             http,
             url: self.url.clone(),
             token,
+            isolation: self.isolation.clone(),
         })
     }
 
@@ -291,7 +297,7 @@ impl Conn {
             self.http
                 .post(format!("{base}/begin"))
                 .bearer_auth(&self.token)
-                .json(&json!({"isolationLevel": "read_committed"})),
+                .json(&json!({"isolationLevel": self.isolation})),
         )
         .await;
         let tx = match begin {

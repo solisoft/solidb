@@ -1,0 +1,32 @@
+solidb 2.9.3
+== queries
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955408035100/query
+{"message":"1 operation(s) staged in transaction. Commit to apply changes.","mutationCount":1,"result":[2]}
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955418424164/query
+{"message":"1 operation(s) staged in transaction. Commit to apply changes.","mutationCount":1,"result":[2]}
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955408035100/commit
+{"id":"tx:1794304955408035100","status":"committed"}
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955418424164/commit
+{"id":"tx:1794304955418424164","status":"committed"}
+$ POST http://127.0.0.1:6811/_api/database/skew/cursor
+{"result":[["alice",false],["bob",false]],"count":2,"has_more":false,"cached":false,"executionTimeMs":0.023424,"inserted":0,"updated":0,"deleted":0}
+== documents by key
+$ GET http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955463007430/document/doctors/alice
+{"_created_at":"2026-11-10T10:02:35.460485168+00:00","_id":"skew:doctors/alice","_key":"alice","_rev":"4aed2f98-b931-4b80-b8c6-88aef1a25b12","_updated_at":"2026-11-10T10:02:35.460485168+00:00","on_call":true}
+$ GET http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955463007430/document/doctors/bob
+{"_created_at":"2026-11-10T10:02:35.460504494+00:00","_id":"skew:doctors/bob","_key":"bob","_rev":"05263798-d2ea-4e00-90ab-2c98aec7bb23","_updated_at":"2026-11-10T10:02:35.460504494+00:00","on_call":true}
+$ GET http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955472391484/document/doctors/alice
+{"_created_at":"2026-11-10T10:02:35.460485168+00:00","_id":"skew:doctors/alice","_key":"alice","_rev":"4aed2f98-b931-4b80-b8c6-88aef1a25b12","_updated_at":"2026-11-10T10:02:35.460485168+00:00","on_call":true}
+$ GET http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955472391484/document/doctors/bob
+{"_created_at":"2026-11-10T10:02:35.460504494+00:00","_id":"skew:doctors/bob","_key":"bob","_rev":"05263798-d2ea-4e00-90ab-2c98aec7bb23","_updated_at":"2026-11-10T10:02:35.460504494+00:00","on_call":true}
+$ PUT http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955463007430/document/doctors/alice
+{"code":409,"error":"Read conflict: Key skew/doctors/alice is locked by 1 reader(s)","type":"TransactionConflict"}
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955463007430/rollback
+{"id":"tx:1794304955463007430","status":"aborted"}
+$ PUT http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955472391484/document/doctors/bob
+{"_created_at":"2026-11-10T10:02:35.460504494+00:00","_id":"skew:doctors/bob","_key":"bob","_rev":"8624c30c-148d-41c8-9acf-e26eeb15d23d","_updated_at":"2026-11-10T10:02:35.494683368+00:00","on_call":false}
+$ POST http://127.0.0.1:6811/_api/database/skew/transaction/tx:1794304955472391484/commit
+{"id":"tx:1794304955472391484","status":"committed"}
+$ POST http://127.0.0.1:6811/_api/database/skew/cursor
+{"result":[["alice",true],["bob",false]],"count":2,"has_more":false,"cached":false,"executionTimeMs":0.016050000000000002,"inserted":0,"updated":0,"deleted":0}
+done

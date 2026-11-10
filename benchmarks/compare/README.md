@@ -244,12 +244,50 @@ With the round trips out of the way, what is left is the cost of a transaction i
 | `crash-postgres` (`synchronous_commit=on`) | 20 | 2,861,750 | 258 (129) | 0 | 408 ms | 0 |
 | `crash-postgres-async` (`synchronous_commit=off`) | 20 | 3,657,389 | 110 (0) | 25,517 | 458 ms | 40 |
 | `crash-solidb` (2.9.1, `SOLIDB_DURABILITY=full`) | 20 | 786,337 | 277 (137) | 0 | 271 ms | 0 |
-| `crash-solidb-eventual` (2.9.1, `eventual`) | 20 | 787,233 | 298 (104) | 0 | 272 ms | 0 |
+| `crash-solidb-eventual` (2.9.1, `eventual`, commit still fsynced) | 20 | 787,233 | 298 (104) | 0 | 272 ms | 0 |
 
 What the crash runs show:
 - **No acknowledged transfer lost.** Durable PostgreSQL and SoliDB in both modes kept every acknowledged transfer. None was half applied, and money was conserved. A transfer in flight at the kill landed or did not, and both happened.
 - **`synchronous_commit=off` loses commits, as documented.** PostgreSQL lost the last few hundred milliseconds of acknowledged transfers at each kill, but never part of one: its balances always matched its surviving ledger.
-- **SoliDB's `eventual` mode lost nothing to a process kill.** It writes every commit to the operating system and leaves only the fsync to a background thread. Its window of loss is a power failure, which this test does not simulate. That test, LazyFS below the filesystem, is still to do in card #792.
+- **`crash-solidb-eventual` measured the same thing as `crash-solidb`** (corrected 2026-11-10). We first read it as a test of commits acknowledged before their fsync. It is not: these transactions begin at `read_committed`, whose commit SoliDB fsyncs in either durability mode; `SOLIDB_DURABILITY` decides only for writes outside a transaction and for `read_uncommitted` commits. `crash-solidb-unsynced` (below, 2026-11-10) is the test that line was meant to be. A power failure, LazyFS below the filesystem, is still to do in card #792.
+
+### Results, 2026-11-10: SoliDB 2.9.3
+
+On the published 2.9.3 image (`ghcr.io/solisoft/solidb@sha256:c5de9e7b…`). `results/2026-11-10/bank/` is `bank.sh solidb-2.9.3`: the three modes one after another on one server. `bank-run/` is `run_transaction` alone on a fresh server, the way `postgres-function` was measured.
+
+| Configuration | Accounts | Clients | Transfers/s | p50 | p99 | Conflicts per commit | DB CPU per commit | Checks |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| solidb-2.9.3-run, fresh server | 10,000 | 1 | 11,945 (10,945–11,955) | 68 µs | 129 µs | 0.00 | 80 µs | ok |
+| solidb-2.9.3-run, fresh server | 10,000 | 32 | 68,903 (68,844–69,106) | 434 µs | 953 µs | 0.02 | 98 µs | ok |
+| solidb-2.9.3-run, fresh server | 10 | 32 | 16,204 (16,138–16,207) | 129 µs | 41.9 ms | 1.18 | 124 µs | ok |
+| solidb-2.9.3-run, after query and driver | 10,000 | 1 | 10,374 (10,347–10,393) | 109 µs | 139 µs | 0.00 | 100 µs | ok |
+| solidb-2.9.3-run, after query and driver | 10,000 | 32 | 68,467 (68,325–68,765) | 436 µs | 978 µs | 0.02 | 98 µs | ok |
+| solidb-2.9.3-run, after query and driver | 10 | 32 | 16,164 (16,115–16,200) | 130 µs | 42.0 ms | 1.19 | 125 µs | ok |
+| solidb-2.9.3-driver | 10,000 | 1 | 7,036 (7,032–7,041) | 152 µs | 194 µs | 0.00 | 125 µs | ok |
+| solidb-2.9.3-driver | 10,000 | 32 | 49,283 (49,179–49,340) | 616 µs | 1,283 µs | 0.01 | 121 µs | ok |
+| solidb-2.9.3-driver | 10 | 32 | 10,160 (10,088–10,162) | 173 µs | 70.1 ms | 1.29 | 157 µs | ok |
+| solidb-2.9.3-query | 10,000 | 1 | 4,133 (3,872–4,233) | 235 µs | 334 µs | 0.00 | 197 µs | ok |
+| solidb-2.9.3-query | 10,000 | 32 | 20,135 (20,127–20,152) | 1,551 µs | 3,034 µs | 0.01 | 327 µs | ok |
+| solidb-2.9.3-query | 10 | 32 | 5,303 (5,277–5,314) | 540 µs | 100.8 ms | 2.14 | 623 µs | ok |
+
+- **One request each**, fresh servers on both sides: PostgreSQL's function commits 1.8× as many transfers at one client (21,674 against 11,945) and 1.65× at 32 (113,920 against 68,903); SoliDB commits 1.56× as many among 10 hot accounts (16,204 against 10,406). DB CPU per transfer: 80 / 98 / 124 µs against 24 / 54 / 476 µs.
+- **The order matters at one client.** Run after the HTTP and driver modes on the same server, `run_transaction` commits 10,374/s (p50 109 µs) instead of 11,945 (p50 68 µs); the other series do not move. Cause not established.
+- **Over the driver, 2.9.3 against 2.9.2:** 49,283 against 38,518 at 32 clients, 10,160 against 9,369 among hot accounts, but 7,036 against 7,563 at one client (p50 152 against 128 µs, CPU 125 against 109 µs). That regression is not explained yet.
+- `ab-fresh/`: `run_transaction` on the published image and on the `798-2` build it was released from, alternating, fresh servers, 2 × 12 s: the published image is as fast or faster (12,702 against 11,818 at one client in steady state, 70,473 against 66,217 at 32).
+
+**Crash on 2.9.3** (`results/2026-11-10/crash/`, `SOLIDB_CRASH` set to the 2.9.3 image). `crash-solidb-unsynced` begins its transactions at `read_uncommitted` on `SOLIDB_DURABILITY=eventual`: the only commit SoliDB acknowledges before its fsync (`bank.sh` passes `--isolation read_uncommitted`).
+
+| Configuration | Kills | Transfers acknowledged | In flight at the kill (landed) | Acknowledged, then lost | Ready again (median) | Violations |
+|---|---:|---:|---:|---:|---:|---:|
+| `crash-solidb` (`full`) | 20 | 827,338 | 217 (93) | 0 | 272 ms | 0 |
+| `crash-solidb-eventual` (commit still fsynced) | 20 | 824,962 | 272 (120) | 0 | 272 ms | 0 |
+| `crash-solidb-unsynced` (`read_uncommitted`, `eventual`) | 20 | 943,758 | 163 (30) | 0 | 323 ms | 0 |
+
+A commit acknowledged before its fsync lost nothing to a process kill: it is acknowledged once written to the kernel, where PostgreSQL's `synchronous_commit=off` acknowledges while the WAL record is still in its own memory (25,517 lost above). A power failure is still untested.
+
+**Fsynced single writes** (`run.sh solidb-solistore-durable postgres-durable`, `results/2026-11-10/`, the same morning): inserts at 32 clients 86,890 (86,040–88,772) against PostgreSQL's 88,307 (76,449–102,017), p99 546 µs against 1,985; updates 88,243 against 49,506. `load-check/`: 2.9.0 and 2.9.3 alternately, one run each, to check a slower fsynced load seen once (317,598 docs/s with 8 loaders): 2.9.0 368,504 and 385,070, 2.9.3 381,557 and 385,815, so no regression; inserts at 32 clients 86,964 and 87,448 against 92,058 and 89,906.
+
+**Write skew** (`write_skew.sh`, output in `results/2026-11-10/write-skew.txt`): two transactions at `serializable`, each taking one of two on-call doctors off call through a query if both are on call, both commit. Through documents read by key, the second write gets a `409` and one doctor stays on call.
 
 ### Running it
 

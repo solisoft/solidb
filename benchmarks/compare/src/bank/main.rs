@@ -558,6 +558,8 @@ struct Args {
     concurrency: usize,
     min_ms: u64,
     max_ms: u64,
+    /// SoliDB, HTTP modes: the isolation level transactions begin at.
+    isolation: String,
 }
 
 fn parse_args() -> Args {
@@ -619,6 +621,7 @@ fn parse_args() -> Args {
         concurrency: num("concurrency", 32) as usize,
         min_ms: num("min-ms", 1_000),
         max_ms: num("max-ms", 4_000),
+        isolation: one("isolation").unwrap_or_else(|| "read_committed".into()),
         engine,
         mode,
     }
@@ -896,7 +899,7 @@ async fn main() {
     let a = parse_args();
     let db = Arc::new(match a.engine.as_str() {
         "postgres" => Db::Pg(pg::Pg::new(&a.addr, &a.password)),
-        "solidb" => Db::Soli(soli::Soli::new(&a.addr, &a.password)),
+        "solidb" => Db::Soli(soli::Soli::new(&a.addr, &a.password, &a.isolation)),
         e => panic!("unknown engine {e}"),
     });
     let ok_modes: &[&str] = match a.engine.as_str() {
