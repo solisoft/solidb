@@ -95,7 +95,7 @@ WITH {vals: PUSH(d.vals, @v)}` through `…/query`) or `cursor` (the same
 statement through `/cursor`, no transaction). `--keys` lists are in use at a
 time; each is retired after `--max-writes` appends (32), as Jepsen does, so
 the history stays small enough for Elle (`elle-cli --model list-append`),
-which finds the cycles (G0, G1c, G2, write skew). Elle was not run yet.
+which finds the cycles (G0, G1c, G2, write skew).
 
 `results/2026-11-09/isolation/`: 10 clients, 8 active keys, 10 s, seed 11,
 the published v2.9.0 binary (`solidb-*`) and a build of `main` with the fix
@@ -112,6 +112,43 @@ The `internal` anomalies of the `sdbql` path (about 7,700 per run) are the
 documented behaviour: a query in a transaction reads committed data, not the
 transaction's own writes.
 
+### Elle
+
+The same histories through Elle's list-append checker (elle-cli 0.1.11,
+`-c serializable`, run on 2026-11-10 in an `eclipse-temurin:21-jdk`
+container; the JRE image lacks the `jdk.random` module and graphviz is absent,
+hence `-b 0`):
+
+```bash
+java -Xmx40g -jar elle-cli-0.1.11-standalone.jar -m list-append -f json -v json \
+  -c serializable -b 0 -d out/NAME NAME.history.json
+```
+
+Counts per anomaly, and the weakest models Elle rules out (`not`), are in
+`results/2026-11-09/isolation/elle-summary.json`. On v2.9.0's `sdbql` runs
+the cycle search timed out on about 100 components, so its counts are lower
+bounds; the fixed runs had no timeout.
+
+| Path | v2.9.0 | Fixed (#796) |
+|---|---|---|
+| `cursor` (no transaction) | not read committed: 1,509 `incompatible-order` (the lost appends) | **valid** |
+| `doc`, `serializable` | **valid** | **valid** |
+| `sdbql`, `read_committed` | not even read uncommitted: G0 504, G1c 1, lost-update 100, G-single 813, G2 262 | not cursor stability nor read atomic: lost-update 85, G-single 4,512, G2 3,541 |
+| `sdbql`, `serializable` | not even read uncommitted: G0 560, G1c 1, lost-update 79, G-single 826, G2 235 | the same as `read_committed`: lost-update 88, G-single 4,512, G2 3,393 |
+
+What it means:
+- **Documents by key in a transaction** (`doc`: two-phase locks, no wait) are
+  serializable in these histories, on both versions.
+- **The #796 guard removed the dirty writes** (G0, G1c): the fixed `sdbql`
+  path is read committed. It is no more than that, at any level:
+  - a query in a transaction reads committed data without a lock, so the same
+    key read twice in one transaction can return two values (G-single);
+  - the guard checks the revision the `UPDATE` itself read, not one an
+    earlier statement of the transaction read, so read-then-update is a lost
+    update in Elle's sense (no append is lost: `PUSH` reads the latest list);
+  - keys that are only read are never validated at commit (G2, write skew).
+- `internal` stays the documented read-your-own-writes gap.
+
 ## `probe-client-tx`
 
 Checks what the Rust client's transaction calls do against a real server: a
@@ -123,8 +160,5 @@ write between `begin_transaction` and `rollback`, and `begin_transaction` /
 
 - **Power loss:** what was written but not fsynced, dropped below the
   filesystem (LazyFS or dm-log-writes).
-- **Isolation cycles:** the `isolation` histories through Elle, for the
-  anomalies that need a cycle search (write skew across documents read but
-  not written).
 
-Both are in #792.
+In #792.

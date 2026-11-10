@@ -1,0 +1,198 @@
+{
+ "solidb-cursor-none": {
+  "valid?": false,
+  "anomaly-counts": {
+   "incompatible-order": 1509
+  },
+  "not": [
+   "read-committed"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "cursor-stability",
+   "forward-consistent-view",
+   "monotonic-atomic-view",
+   "monotonic-snapshot-read",
+   "monotonic-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "read-atomic",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-read-committed",
+   "strong-serializable",
+   "strong-session-read-committed",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ },
+ "solidb-guard-cursor-none": {
+  "valid?": true,
+  "anomaly-counts": {},
+  "not": null,
+  "also-not": null
+ },
+ "solidb-doc-serializable": {
+  "valid?": true,
+  "anomaly-counts": {},
+  "not": null,
+  "also-not": null
+ },
+ "solidb-guard-doc-serializable": {
+  "valid?": true,
+  "anomaly-counts": {},
+  "not": null,
+  "also-not": null
+ },
+ "solidb-sdbql-read_committed": {
+  "valid?": false,
+  "anomaly-counts": {
+   "incompatible-order": 57,
+   "cycle-search-timeout": 91,
+   "G2-item": 262,
+   "lost-update": 100,
+   "G1c": 1,
+   "internal": 9932,
+   "G0": 504,
+   "G-nonadjacent-item": 85,
+   "G-single-item": 813
+  },
+  "not": [
+   "read-uncommitted"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "cursor-stability",
+   "forward-consistent-view",
+   "monotonic-atomic-view",
+   "monotonic-snapshot-read",
+   "monotonic-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "read-atomic",
+   "read-committed",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-read-committed",
+   "strong-read-uncommitted",
+   "strong-serializable",
+   "strong-session-read-committed",
+   "strong-session-read-uncommitted",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ },
+ "solidb-sdbql-serializable": {
+  "valid?": false,
+  "anomaly-counts": {
+   "incompatible-order": 47,
+   "cycle-search-timeout": 111,
+   "G2-item": 235,
+   "lost-update": 79,
+   "G1c": 1,
+   "internal": 9964,
+   "G0": 560,
+   "G-nonadjacent-item": 103,
+   "G-single-item": 826
+  },
+  "not": [
+   "read-uncommitted"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "cursor-stability",
+   "forward-consistent-view",
+   "monotonic-atomic-view",
+   "monotonic-snapshot-read",
+   "monotonic-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "read-atomic",
+   "read-committed",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-read-committed",
+   "strong-read-uncommitted",
+   "strong-serializable",
+   "strong-session-read-committed",
+   "strong-session-read-uncommitted",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ },
+ "solidb-guard-sdbql-read_committed": {
+  "valid?": false,
+  "anomaly-counts": {
+   "G-nonadjacent-item": 46,
+   "G-single-item": 4512,
+   "G2-item": 3541,
+   "internal": 9512,
+   "lost-update": 85
+  },
+  "not": [
+   "cursor-stability",
+   "read-atomic"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "forward-consistent-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-serializable",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ },
+ "solidb-guard-sdbql-serializable": {
+  "valid?": false,
+  "anomaly-counts": {
+   "G-nonadjacent-item": 44,
+   "G-single-item": 4512,
+   "G2-item": 3393,
+   "internal": 9327,
+   "lost-update": 88
+  },
+  "not": [
+   "cursor-stability",
+   "read-atomic"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "forward-consistent-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-serializable",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ }
+}
