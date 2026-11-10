@@ -414,6 +414,67 @@ pub(crate) fn serialize_doc_raw(
     Ok(bytes)
 }
 
+/// The stored form of a document from its API value (the shape
+/// `Document::to_value` gives: its fields and the five system attributes),
+/// written without building a `Document`: the fields are encoded once and
+/// the timestamps change only their offset suffix. The bytes are those of
+/// `serialize_doc` on the `Document` the value describes, in `collection`
+/// under `key` (`serialize_api_value_matches_the_document_path`).
+///
+/// `None` when the value is not an object carrying `_rev`, `_created_at`
+/// and `_updated_at` as strings: the caller builds the `Document` instead.
+/// A transaction stages its writes as such values; rebuilding a `Document`
+/// from each (timestamps parsed, fields cloned) to encode it was a large
+/// part of a commit's CPU.
+pub(crate) fn serialize_api_value(
+    collection: &str,
+    key: &str,
+    value: &serde_json::Value,
+) -> DbResult<Option<Vec<u8>>> {
+    let Some(map) = value.as_object() else {
+        return Ok(None);
+    };
+    let text = |field: &str| map.get(field).and_then(serde_json::Value::as_str);
+    let (Some(rev), Some(created_at), Some(updated_at)) = (
+        text(REV_FIELD),
+        text(CREATED_AT_FIELD),
+        text(UPDATED_AT_FIELD),
+    ) else {
+        return Ok(None);
+    };
+    let (Some(created_at), Some(updated_at)) = (
+        api_timestamp_to_stored(created_at),
+        api_timestamp_to_stored(updated_at),
+    ) else {
+        return Ok(None);
+    };
+    let id = format!("{}/{}", collection, key);
+    let fields = || {
+        map.iter()
+            .filter(|(name, _)| !crate::storage::document::is_system_field(name))
+    };
+    let mut data = Vec::with_capacity(256);
+    let _ = rmp::encode::write_map_len(&mut data, fields().count() as u32);
+    for (name, field) in fields() {
+        let _ = rmp::encode::write_str(&mut data, name);
+        write_msgpack(&mut data, field);
+    }
+    serialize_doc_raw(key, &id, rev, &created_at, &updated_at, &data).map(Some)
+}
+
+/// A timestamp's API form (`DateTime::to_rfc3339`) as it is stored
+/// ([`stored_timestamp`]): chrono writes both with the same digits, and
+/// they differ only in how they name UTC, `+00:00` against `Z`. Anything
+/// else is parsed and written again; `None` if it is not RFC 3339.
+fn api_timestamp_to_stored(api: &str) -> Option<String> {
+    if let Some(stem) = api.strip_suffix("+00:00") {
+        return Some(format!("{stem}Z"));
+    }
+    chrono::DateTime::parse_from_rfc3339(api)
+        .ok()
+        .map(|t| stored_timestamp(&t.with_timezone(&chrono::Utc)))
+}
+
 /// [`StoredHeader`] with its timestamps as the strings they serialize to.
 #[derive(Serialize)]
 struct StoredHeaderText<'a> {
@@ -573,6 +634,58 @@ mod tests {
     use super::*;
     use crate::storage::document::Document;
     use serde_json::json;
+
+    /// What `stage_transaction_operations` wrote before (`txn_document`,
+    /// then `serialize_doc`), against `serialize_api_value` on the same
+    /// staged value: every kind of field, timestamps with and without a
+    /// fraction, and after an update.
+    #[test]
+    fn serialize_api_value_matches_the_document_path() {
+        let shapes = [
+            json!({"n": 1}),
+            json!({}),
+            json!({"neg": -7, "big": 18446744073709551615u64, "f": 1.5, "s": "é", "null": null,
+                   "t": true, "arr": [1, "a", {"x": [null]}], "obj": {"k": {"z": 0, "a": -1}}}),
+            json!({"_from": "v/1", "_to": "v/2", "w": 0.25}),
+        ];
+        for data in shapes {
+            let mut doc = Document::with_key("coll", "k1".to_string(), data.clone());
+            let stamps = [
+                "2026-11-09T19:40:13.635839364Z",
+                "2026-11-09T19:40:13Z",
+                "2026-11-09T19:40:13.100Z",
+            ];
+            for stamp in stamps {
+                let t = chrono::DateTime::parse_from_rfc3339(stamp)
+                    .unwrap()
+                    .with_timezone(&chrono::Utc);
+                doc.created_at = t;
+                doc.updated_at = t;
+                for updated in [false, true] {
+                    let mut d = doc.clone();
+                    if updated {
+                        d.update(json!({"added": [1, 2], "n": 9}));
+                    }
+                    let value = d.to_value();
+                    // The document path, as the commit took it.
+                    let mut rebuilt = Document::with_key("coll", "k1".to_string(), value.clone());
+                    rebuilt.rev = d.rev.clone();
+                    rebuilt.created_at = d.created_at;
+                    rebuilt.updated_at = d.updated_at;
+                    let expected = serialize_doc(&rebuilt).unwrap();
+                    let got = serialize_api_value("coll", "k1", &value).unwrap().unwrap();
+                    assert_eq!(got, expected, "{value}");
+                }
+            }
+        }
+        // Not a staged document: the caller takes the document path.
+        assert!(serialize_api_value("coll", "k", &json!([1]))
+            .unwrap()
+            .is_none());
+        assert!(serialize_api_value("coll", "k", &json!({"n": 1}))
+            .unwrap()
+            .is_none());
+    }
 
     /// What `serialize_doc` wrote before it was written in one buffer.
     fn struct_encoding(doc: &Document) -> Vec<u8> {

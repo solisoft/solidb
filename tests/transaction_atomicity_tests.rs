@@ -120,7 +120,7 @@ fn commit_spans_collections_and_sees_its_own_writes() {
             .unwrap();
         b.insert_tx(&mut tx, &wal, &locks, json!({"_key": "n", "v": true}))
             .unwrap();
-        second.rev
+        second["_rev"].as_str().unwrap().to_string()
     };
 
     engine.commit_transaction(tx_id).unwrap();

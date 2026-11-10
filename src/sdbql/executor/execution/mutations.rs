@@ -214,14 +214,14 @@ impl<'a> QueryExecutor<'a> {
                 } else {
                     None
                 };
-                let doc = match expected_rev {
+                let new = match expected_rev {
                     Some(rev) => collection
                         .update_tx_if_unchanged(&mut tx, &tw.wal, &tw.locks, key, changes, rev)?,
                     None => collection.update_tx(&mut tx, &tw.wal, &tw.locks, key, changes)?,
                 };
                 Ok(RowWrite {
                     old,
-                    new: Some(doc.into_value()),
+                    new: Some(new),
                     updated: true,
                     skipped: false,
                 })

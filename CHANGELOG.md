@@ -17,6 +17,16 @@
 
 ### Performance
 
+* **A transaction's writes stay values from staging to commit.** A staged
+  update is read straight from the stored bytes into the value it is staged
+  as, merged with the changes there, and written at commit from that value
+  (`serialize_api_value`, byte for byte what the `Document` path wrote),
+  where it used to go through a `Document` and back three times: timestamps
+  parsed and formatted, every field cloned. The commit also checks a
+  document's revision from the stored header instead of reading it whole.
+  On the bank benchmark, CPU per one-request transfer 81–83 → 76–77 µs at
+  one client and 110 → 104 µs at 32; 12,300 transfers/s at one client
+  (p50 64 µs), 66,400 at 32.
 * **Driver transactions keep the async workers free.** The commit, which
   waits for its fsync, runs under `block_in_place`, so the other
   connections of that worker are not held up behind it; and a staged query

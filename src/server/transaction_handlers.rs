@@ -257,7 +257,7 @@ pub async fn update_document_tx(
     let lock_manager = tx_manager.lock_manager().clone();
     let doc = collection.update_tx(&mut tx, &wal, &lock_manager, &key, data)?;
 
-    Ok(Json(doc.to_value()))
+    Ok(Json(doc))
 }
 
 pub async fn delete_document_tx(

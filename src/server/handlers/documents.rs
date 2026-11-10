@@ -829,7 +829,7 @@ pub async fn update_document(
         let lock_manager = tx_manager.lock_manager().clone();
 
         let doc = collection.update_tx(&mut tx, &wal, &lock_manager, &key, data)?;
-        return Ok(update_reply(doc.to_value(), false));
+        return Ok(update_reply(doc, false));
     }
 
     // Check for sharding

@@ -165,7 +165,7 @@ impl Collection {
         lock_manager: &Arc<LockManager>,
         key: &str,
         data: Value,
-    ) -> DbResult<Document> {
+    ) -> DbResult<Value> {
         self.update_tx_guarded(tx, wal, lock_manager, key, data, None)
     }
 
@@ -185,7 +185,7 @@ impl Collection {
         key: &str,
         data: Value,
         expected_rev: &str,
-    ) -> DbResult<Document> {
+    ) -> DbResult<Value> {
         self.update_tx_guarded(tx, wal, lock_manager, key, data, Some(expected_rev))
     }
 
@@ -197,7 +197,7 @@ impl Collection {
         key: &str,
         data: Value,
         expected_rev: Option<&str>,
-    ) -> DbResult<Document> {
+    ) -> DbResult<Value> {
         Self::ensure_tx_active(tx)?;
         if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
@@ -208,24 +208,32 @@ impl Collection {
         let (db_name, coll_name) = self.parse_db_coll();
         lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
 
-        let mut doc = self.tx_base_document(tx, &db_name, &coll_name, key)?;
+        // The staged state is a value throughout (`Document::to_value`'s
+        // shape), read straight from the stored bytes: building a `Document`
+        // and converting it back and forth (timestamps parsed and formatted,
+        // every field cloned) cost more than the work itself.
+        let old_data = match Self::tx_local_state(tx, &db_name, &coll_name, key) {
+            Some(Some(value)) => value,
+            Some(None) => return Err(DbError::DocumentNotFound(key.to_string())),
+            None => self.get_value(key)?,
+        };
         if let Some(rev) = expected_rev {
-            if doc.revision() != rev {
+            let now = old_data
+                .get("_rev")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if now != rev {
                 return Err(DbError::TransactionConflict(format!(
                     "Write conflict: document '{}' changed since this query read it \
                      (revision '{}', now '{}'); roll back and retry",
-                    key,
-                    rev,
-                    doc.revision()
+                    key, rev, now
                 )));
             }
         }
-        let old_data = doc.to_value();
-
-        doc.update(data);
+        let new_data = Self::updated_value(&self.name, key, &old_data, data);
 
         if self.collection_type.read().as_str() == "edge" {
-            self.validate_edge_document(&doc.to_value())?;
+            self.validate_edge_document(&new_data)?;
         }
 
         tx.add_operation(Operation::Update {
@@ -233,10 +241,52 @@ impl Collection {
             collection: coll_name,
             key: key.to_string(),
             old_data,
-            new_data: doc.to_value(),
+            new_data: new_data.clone(),
         });
 
-        Ok(doc)
+        Ok(new_data)
+    }
+
+    /// `Document::update` applied to a staged value: the change's fields
+    /// over the old ones (the system attributes excepted), a new revision
+    /// and update time. A change that is not an object replaces the
+    /// fields, as `Document::update` does, through a `Document`.
+    fn updated_value(collection: &str, key: &str, old: &Value, changes: Value) -> Value {
+        match (old, changes) {
+            (Value::Object(old_fields), Value::Object(changes)) => {
+                let mut fields = old_fields.clone();
+                for (name, field) in changes {
+                    if !crate::storage::document::is_system_field(&name) {
+                        fields.insert(name, field);
+                    }
+                }
+                fields.insert("_rev".to_string(), Value::String(Document::generate_rev()));
+                fields.insert(
+                    "_updated_at".to_string(),
+                    Value::String(chrono::Utc::now().to_rfc3339()),
+                );
+                Value::Object(fields)
+            }
+            (_, changes) => {
+                let mut doc = Self::txn_document(collection, key, old);
+                doc.update(changes);
+                doc.into_value()
+            }
+        }
+    }
+
+    /// A staged document's value and its stored bytes, written from the
+    /// staged value itself when it carries the system attributes the
+    /// staging gives it, else through a `Document` as before.
+    fn txn_stored(&self, key: &str, staged: &Value) -> DbResult<(Value, Vec<u8>)> {
+        if let Some(bytes) =
+            crate::storage::serializer::serialize_api_value(&self.name, key, staged)?
+        {
+            return Ok((staged.clone(), bytes));
+        }
+        let doc = Self::txn_document(&self.name, key, staged);
+        let bytes = serialize_doc(&doc)?;
+        Ok((doc.to_value(), bytes))
     }
 
     pub fn delete_tx(
@@ -349,11 +399,9 @@ impl Collection {
                         )));
                     }
 
-                    let doc = Self::txn_document(&self.name, key, data);
-                    let value = doc.to_value();
+                    let (value, doc_bytes) = self.txn_stored(key, data)?;
                     self.check_unique_constraints(key, &value)?;
                     unique_claims.claim(self, key, &value)?;
-                    let doc_bytes = serialize_doc(&doc)?;
                     batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
                         self.append_version_to_batch(batch, &cf, key, Some(&value));
@@ -392,11 +440,9 @@ impl Collection {
                 } => {
                     let current = self.txn_expect_unchanged(&pending, key, old_data)?;
 
-                    let doc = Self::txn_document(&self.name, key, new_data);
-                    let value = doc.to_value();
+                    let (value, doc_bytes) = self.txn_stored(key, new_data)?;
                     self.check_unique_constraints(key, &value)?;
                     unique_claims.claim(self, key, &value)?;
-                    let doc_bytes = serialize_doc(&doc)?;
                     batch.put_ks(&cf, Self::doc_key(key), &doc_bytes);
                     if versioned {
                         self.append_version_to_batch(batch, &cf, key, Some(&value));

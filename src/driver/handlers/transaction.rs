@@ -253,10 +253,7 @@ pub async fn handle_transaction_command(
             id,
             &database,
             &collection,
-            |coll, tx, wal, locks| {
-                coll.update_tx(tx, wal, locks, &key, document)
-                    .map(|doc| Some(doc.to_value()))
-            },
+            |coll, tx, wal, locks| coll.update_tx(tx, wal, locks, &key, document).map(Some),
         ),
         Command::Delete {
             database,

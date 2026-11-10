@@ -54,7 +54,7 @@ pub struct Document {
 
 impl Document {
     /// Generate a new revision ID
-    fn generate_rev() -> String {
+    pub(crate) fn generate_rev() -> String {
         Uuid::new_v4().to_string()
     }
 

@@ -1372,7 +1372,7 @@ fn setup_db_transaction_method(
                                     .update_tx(&mut tx, &wal, &lock_mgr, &key, json_doc)
                                     .map_err(mlua::Error::external)?;
 
-                                json_to_lua(lua, &updated.to_value())
+                                json_to_lua(lua, &updated)
                             },
                         )?;
                         coll_handle.set("update", update_fn)?;
