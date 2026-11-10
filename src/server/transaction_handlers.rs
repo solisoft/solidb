@@ -367,13 +367,11 @@ pub async fn execute_transactional_sdbql(
                 .to_string(),
         ));
     }
-    if mutates {
-        executor = executor.with_transaction(crate::sdbql::executor::TxWriter {
-            tx: tx_arc,
-            wal: tx_manager.wal().clone(),
-            locks: tx_manager.lock_manager().clone(),
-        });
-    }
+    // A query that only reads is attached too: it reads the transaction's
+    // own writes by key, and at `repeatable_read` and `serializable` what it
+    // reads is recorded for the commit to check.
+    executor =
+        executor.with_transaction(crate::sdbql::executor::TxWriter::new(tx_arc, &tx_manager));
 
     let outcome = executor.execute_with_stats(&query)?;
 

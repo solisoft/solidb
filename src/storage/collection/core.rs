@@ -684,6 +684,25 @@ impl Collection {
         crate::storage::query_cache::invalidate_collection("", &self.name);
         // Same moments, same reason: what the index holds may have changed.
         super::index_meta::bump_write_generation(&self.db, &self.name);
+        // And what a transaction that read a range of it has to compare.
+        self.ks.state().bump_write_generation();
+    }
+
+    /// This collection, its reads recorded on `tracker` (a transaction at
+    /// `repeatable_read` or `serializable`; see `keyspace::ReadTracker`).
+    pub(crate) fn tracked(&self, tracker: Arc<crate::storage::keyspace::ReadTracker>) -> Self {
+        let mut tracked = self.clone();
+        tracked.ks = self.ks.tracked(tracker);
+        tracked
+    }
+
+    /// The transaction reading through this handle got an answer that did
+    /// not come from the stored keys (a cached count, an in-memory index):
+    /// hold it to the range rule.
+    pub(crate) fn note_range_read(&self) {
+        if let Some(tracker) = self.ks.tracker() {
+            tracker.mark_ranged();
+        }
     }
 
     /// [`Self::invalidate_cached_queries`] when the returned guard drops, so

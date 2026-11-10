@@ -1,0 +1,44 @@
+{
+ "main-sdbql-serializable": {
+  "valid?": true,
+  "anomaly-counts": {},
+  "not": null,
+  "also-not": null
+ },
+ "main-sdbql-repeatable_read": {
+  "valid?": true,
+  "anomaly-counts": {},
+  "not": null,
+  "also-not": null
+ },
+ "main-sdbql-read_committed": {
+  "valid?": false,
+  "anomaly-counts": {
+   "G-nonadjacent-item": 156,
+   "G-single-item": 10429,
+   "G2-item": 5856,
+   "internal": 4760,
+   "lost-update": 181
+  },
+  "not": [
+   "cursor-stability",
+   "read-atomic"
+  ],
+  "also-not": [
+   "causal-cerone",
+   "consistent-view",
+   "forward-consistent-view",
+   "parallel-snapshot-isolation",
+   "prefix",
+   "repeatable-read",
+   "serializable",
+   "snapshot-isolation",
+   "strong-serializable",
+   "strong-session-serializable",
+   "strong-session-snapshot-isolation",
+   "strong-snapshot-isolation",
+   "update-atomic",
+   "update-serializable"
+  ]
+ }
+}

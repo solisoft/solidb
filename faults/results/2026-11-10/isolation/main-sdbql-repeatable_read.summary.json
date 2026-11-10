@@ -1,0 +1,29 @@
+{
+  "anomalies": {},
+  "clients": 10,
+  "examples": {},
+  "failed_because": {
+    "lock conflict: held by a writer": {
+      "count": 150292,
+      "example": "append k3: {\"code\":409,\"error\":\"Write conflict: Key faults_iso/la/k3 is locked by transaction tx:1794316160110229827\",\"type\":\"TransactionConflict\"}"
+    },
+    "read changed since: refused": {
+      "count": 61465,
+      "example": "commit: {\"code\":409,\"error\":\"Read conflict: document 'k5' in 'la' changed since this transaction read it; roll back and retry\",\"type\":\"TransactionConflict\"}"
+    },
+    "stale write refused": {
+      "count": 1489,
+      "example": "append k7: {\"code\":409,\"error\":\"Write conflict: document 'k7' changed since this query read it (revision 'bfc8f026-0fdc-463f-9efa-a75caaf9212e', now 'f984dd01-82c6-4e0a-a5ff-0af012c62afd'); roll back "
+    }
+  },
+  "history": "main-sdbql-repeatable_read.history.json",
+  "isolation": "repeatable_read",
+  "keys": 8,
+  "mode": "sdbql",
+  "secs": 30,
+  "transactions": {
+    "fail": 213246,
+    "info": 0,
+    "ok": 184666
+  }
+}

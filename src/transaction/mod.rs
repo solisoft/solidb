@@ -89,6 +89,15 @@ pub enum IsolationLevel {
 }
 
 impl IsolationLevel {
+    /// Whether a transaction at this level records what its queries read
+    /// and has it checked at commit ([`ReadSet`]).
+    pub fn tracks_reads(&self) -> bool {
+        matches!(
+            self,
+            IsolationLevel::RepeatableRead | IsolationLevel::Serializable
+        )
+    }
+
     /// Returns true if this isolation level requires WAL for durability
     pub fn requires_wal(&self) -> bool {
         match self {
@@ -188,6 +197,61 @@ impl Operation {
     }
 }
 
+/// What a transaction's queries read, per collection (`db:coll`), for the
+/// levels that [`IsolationLevel::tracks_reads`]. Shared by the clones of a
+/// transaction, never serialized.
+#[derive(Debug, Clone, Default)]
+pub struct ReadSet(
+    std::sync::Arc<
+        parking_lot::Mutex<
+            std::collections::BTreeMap<
+                String,
+                std::sync::Arc<crate::storage::keyspace::ReadTracker>,
+            >,
+        >,
+    >,
+);
+
+impl ReadSet {
+    /// A handle of `collection` whose reads are recorded here. The first
+    /// call for a collection is the moment its range rule starts from.
+    pub fn track(&self, collection: &crate::storage::Collection) -> crate::storage::Collection {
+        let tracker = std::sync::Arc::clone(
+            self.0
+                .lock()
+                .entry(collection.name.clone())
+                .or_insert_with(|| collection.ks.new_tracker()),
+        );
+        collection.tracked(tracker)
+    }
+
+    /// Every collection read, in name order.
+    pub fn trackers(
+        &self,
+    ) -> Vec<(
+        String,
+        std::sync::Arc<crate::storage::keyspace::ReadTracker>,
+    )> {
+        self.0
+            .lock()
+            .iter()
+            .map(|(name, tracker)| (name.clone(), std::sync::Arc::clone(tracker)))
+            .collect()
+    }
+
+    /// A document read twice at two revisions, if any.
+    pub fn conflict(&self) -> Option<String> {
+        self.0
+            .lock()
+            .values()
+            .find_map(|tracker| tracker.conflict())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().is_empty()
+    }
+}
+
 /// Represents an active transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
@@ -207,6 +271,9 @@ pub struct Transaction {
     pub created_at: DateTime<Utc>,
     /// Validation errors encountered (cleared on successful validation)
     pub validation_errors: Vec<String>,
+    /// What its queries read, when the level tracks it.
+    #[serde(skip)]
+    pub reads: ReadSet,
 }
 
 impl Transaction {
@@ -224,6 +291,7 @@ impl Transaction {
             write_timestamp: None,
             created_at: Utc::now(),
             validation_errors: Vec::new(),
+            reads: ReadSet::default(),
         }
     }
 

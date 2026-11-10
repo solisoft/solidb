@@ -106,6 +106,27 @@ pub struct TxWriter {
     pub tx: std::sync::Arc<std::sync::RwLock<crate::transaction::Transaction>>,
     pub wal: std::sync::Arc<crate::transaction::wal::WalWriter>,
     pub locks: std::sync::Arc<crate::transaction::lock_manager::LockManager>,
+    /// Where the query's reads are recorded, at `repeatable_read` and
+    /// `serializable`.
+    pub reads: Option<crate::transaction::ReadSet>,
+}
+
+impl TxWriter {
+    pub fn new(
+        tx: std::sync::Arc<std::sync::RwLock<crate::transaction::Transaction>>,
+        manager: &crate::transaction::manager::TransactionManager,
+    ) -> Self {
+        let reads = {
+            let tx = tx.read().unwrap_or_else(|e| e.into_inner());
+            tx.isolation_level.tracks_reads().then(|| tx.reads.clone())
+        };
+        TxWriter {
+            tx,
+            wal: manager.wal().clone(),
+            locks: manager.lock_manager().clone(),
+            reads,
+        }
+    }
 }
 
 /// A recorded scan projection: the `FOR` clause's collection name, and the
@@ -305,8 +326,10 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Set shard coordinator for scatter-gather queries on sharded collections
-    /// Stage this query's writes on `tx` rather than applying them. Reads still
-    /// see committed data only.
+    /// Stage this query's writes on `tx` rather than applying them. Reads
+    /// see committed data, except a document read by key that the
+    /// transaction has written, which reads as staged. At the levels that
+    /// track reads, what the query reads is recorded for the commit to check.
     pub fn with_transaction(mut self, tx: TxWriter) -> Self {
         self.tx_writer = Some(std::sync::Arc::new(tx));
         self

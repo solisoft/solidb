@@ -171,6 +171,8 @@ pub async fn run(server: &mut Server, opts: Opts, history_path: &str) -> Res<usi
         let e = t.error.clone().unwrap_or_default();
         let kind = if e.contains("changed since this query read it") {
             "stale write refused".to_string()
+        } else if e.contains("since this transaction") {
+            "read changed since: refused".to_string()
         } else if e.contains("Write conflict") {
             "lock conflict: held by a writer".to_string()
         } else if e.contains("Read conflict") {

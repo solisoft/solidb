@@ -267,6 +267,8 @@ impl Collection {
         k: usize,
         ef_search: Option<usize>,
     ) -> DbResult<Vec<VectorSearchResult>> {
+        // Answered from the in-memory index, not from stored keys.
+        self.note_range_read();
         let index = self.get_vector_index(name)?;
 
         // Use provided ef_search or default from config (if available via accessor, or just pass None/default)

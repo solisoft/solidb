@@ -31,7 +31,8 @@ use crate::storage::kv::{
 use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 /// The column family every shared-layout collection lives in. No `:` in the
@@ -128,12 +129,185 @@ impl KsPrefix {
 #[derive(Debug, Default)]
 pub struct KsState {
     dead: AtomicBool,
+    /// Moved after every committed change to the keyspace's documents or
+    /// indexes (`Collection::invalidate_cached_queries`). A transaction that
+    /// read a range of the collection compares it at commit.
+    write_gen: AtomicU64,
+    /// Held shared by a transaction commit writing this keyspace, from its
+    /// checks until its generation has moved; exclusively by a commit that
+    /// has to find the generation unchanged. See [`ReadTracker`].
+    commit_gate: parking_lot::RwLock<()>,
 }
 
 impl KsState {
     pub fn is_dead(&self) -> bool {
         self.dead.load(Ordering::Acquire)
     }
+
+    pub fn write_generation(&self) -> u64 {
+        self.write_gen.load(Ordering::Acquire)
+    }
+
+    pub fn bump_write_generation(&self) {
+        self.write_gen.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub fn commit_gate(&self) -> &parking_lot::RwLock<()> {
+        &self.commit_gate
+    }
+}
+
+/// What a transaction at `repeatable_read` or `serializable` read from one
+/// collection, recorded where every read of a collection passes: the
+/// keyspace calls below. The commit checks it (`StorageEngine::
+/// commit_transaction`) and refuses when another writer got in between.
+///
+/// - A document read by its key (`get`, `multi_get` of a `doc:` key) is
+///   remembered with the revision it had, or as absent.
+/// - Any other read — an iterator, an index entry, a scan — marks the
+///   collection as read by range: the commit then requires that nothing at
+///   all was committed to it since the transaction first opened it. That is
+///   coarse, and it is what covers a document that appears (a phantom).
+/// - Reads of index definitions and other metadata are not data reads.
+#[derive(Debug)]
+pub struct ReadTracker {
+    state: Arc<KsState>,
+    /// The keyspace's write generation when the transaction first opened it,
+    /// taken before anything was read.
+    generation: u64,
+    ranged: AtomicBool,
+    /// Document key -> the revision read (`None`: there was no document).
+    points: parking_lot::Mutex<HashMap<Vec<u8>, Option<Box<str>>>>,
+    /// Set when a key was read a second time at another revision.
+    conflict: parking_lot::Mutex<Option<String>>,
+}
+
+/// Past this many documents read by key in one collection, the transaction
+/// is held to the coarser range rule instead of growing without bound.
+const MAX_TRACKED_POINTS: usize = 100_000;
+
+const DOC_KEY_PREFIX: &[u8] = b"doc:";
+/// Legacy TTL expiry entries live under the document prefix.
+const LEGACY_TTL_KEY_PREFIX: &[u8] = b"doc:ttl_exp:";
+/// Definitions, not data: reading them says nothing about the documents.
+const METADATA_KEY_PREFIXES: &[&[u8]] = &[
+    b"idx_meta:",
+    b"geo_meta:",
+    b"ft_meta:",
+    b"ttl_meta:",
+    b"vec_meta:",
+];
+
+impl ReadTracker {
+    fn new(state: Arc<KsState>) -> Self {
+        ReadTracker {
+            generation: state.write_generation(),
+            state,
+            ranged: AtomicBool::new(false),
+            points: parking_lot::Mutex::new(HashMap::new()),
+            conflict: parking_lot::Mutex::new(None),
+        }
+    }
+
+    /// The transaction read this collection other than by document key.
+    pub fn mark_ranged(&self) {
+        self.ranged.store(true, Ordering::Release);
+    }
+
+    pub fn is_ranged(&self) -> bool {
+        self.ranged.load(Ordering::Acquire)
+    }
+
+    /// Whether anything was committed to the collection since the
+    /// transaction opened it.
+    pub fn generation_moved(&self) -> bool {
+        self.state.write_generation() != self.generation
+    }
+
+    pub fn state(&self) -> &Arc<KsState> {
+        &self.state
+    }
+
+    /// The documents read by key: key (without the `doc:` prefix) and the
+    /// revision read.
+    pub fn points(&self) -> Vec<(Vec<u8>, Option<Box<str>>)> {
+        self.points
+            .lock()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// A key this transaction read twice at two revisions, if any.
+    pub fn conflict(&self) -> Option<String> {
+        self.conflict.lock().clone()
+    }
+
+    fn is_metadata(logical: &[u8]) -> bool {
+        METADATA_KEY_PREFIXES.iter().any(|p| logical.starts_with(p))
+    }
+
+    /// A point read of `logical`, which returned `value`.
+    fn note_get(&self, logical: &[u8], value: Option<&[u8]>) {
+        if Self::is_metadata(logical) {
+            return;
+        }
+        let Some(key) = logical
+            .strip_prefix(DOC_KEY_PREFIX)
+            .filter(|_| !logical.starts_with(LEGACY_TTL_KEY_PREFIX))
+        else {
+            self.mark_ranged();
+            return;
+        };
+        let rev: Option<Box<str>> = match value {
+            None => None,
+            Some(bytes) => match stored_rev(bytes) {
+                Some(rev) => Some(rev),
+                None => {
+                    self.mark_ranged();
+                    return;
+                }
+            },
+        };
+        let mut points = self.points.lock();
+        match points.get(key) {
+            Some(seen) if *seen != rev => {
+                let mut conflict = self.conflict.lock();
+                if conflict.is_none() {
+                    *conflict = Some(format!(
+                        "Read conflict: document '{}' changed since this transaction \
+                         first read it; roll back and retry",
+                        String::from_utf8_lossy(key)
+                    ));
+                }
+            }
+            Some(_) => {}
+            None if points.len() >= MAX_TRACKED_POINTS => self.mark_ranged(),
+            None => {
+                points.insert(key.to_vec(), rev);
+            }
+        }
+    }
+
+    /// A read of a range starting at `start` (`None`: the whole keyspace).
+    fn note_range(&self, start: Option<&[u8]>) {
+        if start.is_some_and(Self::is_metadata) {
+            return;
+        }
+        self.mark_ranged();
+    }
+}
+
+/// The revision of a stored document, from its header when it has one.
+fn stored_rev(bytes: &[u8]) -> Option<Box<str>> {
+    if let Some(rev) = crate::storage::serializer::StoredDocRef::parse(bytes)
+        .and_then(|doc| std::str::from_utf8(doc.rev).ok())
+    {
+        return Some(rev.into());
+    }
+    crate::storage::serializer::deserialize_doc(bytes)
+        .ok()
+        .map(|doc| doc.rev.into())
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -202,6 +376,8 @@ pub struct Keyspace {
     prefix: KsPrefix,
     id: KsId,
     state: Arc<KsState>,
+    /// Set on the handle a tracking transaction reads through.
+    tracker: Option<Arc<ReadTracker>>,
 }
 
 impl Keyspace {
@@ -214,6 +390,7 @@ impl Keyspace {
             cf_name,
             prefix: KsPrefix::LEGACY,
             id,
+            tracker: None,
         }
     }
 
@@ -225,11 +402,33 @@ impl Keyspace {
             cf_name: Arc::from(SHARED_CF),
             prefix: KsPrefix::shared(ks),
             id,
+            tracker: None,
         }
     }
 
     pub fn id(&self) -> &KsId {
         &self.id
+    }
+
+    pub fn state(&self) -> &Arc<KsState> {
+        &self.state
+    }
+
+    /// A tracker for a transaction that starts reading this keyspace now.
+    pub fn new_tracker(&self) -> Arc<ReadTracker> {
+        Arc::new(ReadTracker::new(Arc::clone(&self.state)))
+    }
+
+    /// This keyspace, its reads recorded on `tracker`.
+    pub fn tracked(&self, tracker: Arc<ReadTracker>) -> Keyspace {
+        Keyspace {
+            tracker: Some(tracker),
+            ..self.clone()
+        }
+    }
+
+    pub fn tracker(&self) -> Option<&Arc<ReadTracker>> {
+        self.tracker.as_ref()
     }
 
     pub fn prefix(&self) -> KsPrefix {
@@ -257,6 +456,7 @@ impl Keyspace {
         db.cf_handle(&self.cf_name).map(|cf| KsCf {
             cf,
             prefix: self.prefix,
+            tracker: self.tracker.clone(),
         })
     }
 
@@ -295,6 +495,8 @@ impl Keyspace {
 pub struct KsCf<'a> {
     pub(crate) cf: KvCf<'a>,
     pub(crate) prefix: KsPrefix,
+    /// Records what is read through this handle (see [`ReadTracker`]).
+    pub(crate) tracker: Option<Arc<ReadTracker>>,
 }
 
 impl KsCf<'_> {
@@ -421,10 +623,19 @@ pub trait KsDbExt {
 
 impl KsDbExt for Kv {
     fn get_ks<K: AsRef<[u8]>>(&self, cf: &KsCf, key: K) -> Result<Option<Vec<u8>>, KvError> {
-        if cf.prefix.is_legacy() {
-            return self.get_cf(&cf.cf, key);
+        let key = key.as_ref();
+        let found = if cf.prefix.is_legacy() {
+            self.get_cf(&cf.cf, key)
+        } else {
+            self.get_cf(&cf.cf, cf.key(key))
+        };
+        if let Some(tracker) = &cf.tracker {
+            match &found {
+                Ok(value) => tracker.note_get(key, value.as_deref()),
+                Err(_) => tracker.mark_ranged(),
+            }
         }
-        self.get_cf(&cf.cf, cf.key(key.as_ref()))
+        found
     }
 
     fn get_pinned_ks<K: AsRef<[u8]>>(
@@ -432,10 +643,19 @@ impl KsDbExt for Kv {
         cf: &KsCf,
         key: K,
     ) -> Result<Option<KvPinned<'_>>, KvError> {
-        if cf.prefix.is_legacy() {
-            return self.get_pinned_cf(&cf.cf, key);
+        let key = key.as_ref();
+        let found = if cf.prefix.is_legacy() {
+            self.get_pinned_cf(&cf.cf, key)
+        } else {
+            self.get_pinned_cf(&cf.cf, cf.key(key))
+        };
+        if let Some(tracker) = &cf.tracker {
+            match &found {
+                Ok(value) => tracker.note_get(key, value.as_deref()),
+                Err(_) => tracker.mark_ranged(),
+            }
         }
-        self.get_pinned_cf(&cf.cf, cf.key(key.as_ref()))
+        found
     }
 
     fn put_ks<K: AsRef<[u8]>, V: AsRef<[u8]>>(
@@ -463,7 +683,17 @@ impl KsDbExt for Kv {
         keys: I,
     ) -> Vec<Result<Option<Vec<u8>>, KvError>> {
         let physical: Vec<Vec<u8>> = keys.into_iter().map(|k| cf.key(k.as_ref())).collect();
-        self.multi_get_cf(physical.iter().map(|k| (&cf.cf, k)))
+        let found = self.multi_get_cf(physical.iter().map(|k| (&cf.cf, k)));
+        if let Some(tracker) = &cf.tracker {
+            let strip = cf.prefix.as_bytes().len();
+            for (key, value) in physical.iter().zip(&found) {
+                match value {
+                    Ok(value) => tracker.note_get(&key[strip..], value.as_deref()),
+                    Err(_) => tracker.mark_ranged(),
+                }
+            }
+        }
+        found
     }
 
     fn multi_get_pinned_ks<K: AsRef<[u8]>>(
@@ -471,11 +701,21 @@ impl KsDbExt for Kv {
         cf: &KsCf,
         keys: &[K],
     ) -> Vec<Result<Option<KvPinned<'_>>, KvError>> {
-        if cf.prefix.is_legacy() {
-            return self.multi_get_pinned_cf(&cf.cf, keys);
+        let found = if cf.prefix.is_legacy() {
+            self.multi_get_pinned_cf(&cf.cf, keys)
+        } else {
+            let physical: Vec<Vec<u8>> = keys.iter().map(|k| cf.key(k.as_ref())).collect();
+            self.multi_get_pinned_cf(&cf.cf, &physical)
+        };
+        if let Some(tracker) = &cf.tracker {
+            for (key, value) in keys.iter().zip(&found) {
+                match value {
+                    Ok(value) => tracker.note_get(key.as_ref(), value.as_deref()),
+                    Err(_) => tracker.mark_ranged(),
+                }
+            }
         }
-        let physical: Vec<Vec<u8>> = keys.iter().map(|k| cf.key(k.as_ref())).collect();
-        self.multi_get_pinned_cf(&cf.cf, &physical)
+        found
     }
 
     fn prefix_iterator_ks<P: AsRef<[u8]>>(&self, cf: &KsCf, prefix: P) -> KsIter<'_> {
@@ -493,6 +733,12 @@ impl KsDbExt for Kv {
         lower: Option<&[u8]>,
         upper: Option<&[u8]>,
     ) -> KsIter<'_> {
+        if let Some(tracker) = &cf.tracker {
+            tracker.note_range(match &mode {
+                IterMode::From(k, _) => Some(k),
+                _ => lower,
+            });
+        }
         let opts = bounded_opts(cf.prefix, lower, upper);
         let inner = match mode {
             IterMode::From(k, dir) => {
@@ -508,6 +754,12 @@ impl KsDbExt for Kv {
     }
 
     fn iterator_ks_opt(&self, cf: &KsCf, read: KvReadOptions, mode: IterMode) -> KsIter<'_> {
+        if let Some(tracker) = &cf.tracker {
+            tracker.note_range(match &mode {
+                IterMode::From(k, _) => Some(k),
+                _ => None,
+            });
+        }
         let mut opts = read;
         if let Some(end) = cf.prefix.upper() {
             opts.set_iterate_lower_bound(cf.prefix.as_bytes().to_vec());
@@ -545,6 +797,9 @@ impl KsDbExt for Kv {
         snapshot: Option<&KvSnapshot<'_>>,
         mut f: impl FnMut(&[u8], &[u8]) -> bool,
     ) -> Result<(), KvError> {
+        if let Some(tracker) = &cf.tracker {
+            tracker.note_range(Some(lower));
+        }
         let mut opts = bounded_opts(cf.prefix, Some(lower), Some(upper));
         opts.set_readahead_size(readahead);
         let start = cf.key(lower);
@@ -560,6 +815,9 @@ impl KsDbExt for Kv {
         n: usize,
         snapshot: Option<&KvSnapshot<'_>>,
     ) -> Option<Vec<Vec<u8>>> {
+        if let Some(tracker) = &cf.tracker {
+            tracker.note_range(Some(lo));
+        }
         let strip = cf.prefix.as_bytes().len();
         let points = self.split_points_cf(&cf.cf, &cf.key(lo), &cf.key(hi), n, snapshot)?;
         Some(points.into_iter().map(|k| k[strip..].to_vec()).collect())

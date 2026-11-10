@@ -149,6 +149,25 @@ What it means:
   - keys that are only read are never validated at commit (G2, write skew).
 - `internal` stays the documented read-your-own-writes gap.
 
+### After card #802 (2026-11-10)
+
+`results/2026-11-10/isolation/`: a build of `main` with the read checks of
+card #802, `--mode sdbql`, 10 clients, 8 active keys, 30 s, seed 11, run on a
+16-core workstation; Elle as above.
+
+| Level | Committed | Refused | Harness anomalies | Elle `-c serializable` |
+|---|---|---|---|---|
+| `serializable` | 215,631 | 248,356 | none | **valid** |
+| `repeatable_read` | 184,666 | 213,246 | none | **valid** |
+| `read_committed` | 264,470 | 166,646 | none | G-single 10,429, G2 5,856, lost-update 181, internal 4,760 |
+
+At the two upper levels a transaction's reads are recorded and checked at
+commit (`docs/transactions` on the site). The refusals are locks held by a
+writer (about 70%), a read that changed (about 29%) and stale writes.
+`read_committed` no longer shows the harness's own `internal` anomaly: a
+query now reads by key what its transaction staged. Elle's `internal` there
+is a key read twice at two versions.
+
 ## `probe-client-tx`
 
 Checks what the Rust client's transaction calls do against a real server: a

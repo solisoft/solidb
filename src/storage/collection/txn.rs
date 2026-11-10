@@ -337,7 +337,23 @@ impl Collection {
         &self,
         operations: &[Operation],
     ) -> Vec<super::locks::WriteGuard> {
-        let key_guard = self.lock_keys(operations.iter().map(|op| op.key()));
+        self.lock_for_transaction_reading(operations, &[])
+    }
+
+    /// [`Self::lock_for_transaction`], also taking the write locks of the
+    /// keys the transaction read (`read_keys`): its commit checks them, and
+    /// they must not change between that check and its write.
+    pub(crate) fn lock_for_transaction_reading(
+        &self,
+        operations: &[Operation],
+        read_keys: &[(String, Option<Box<str>>)],
+    ) -> Vec<super::locks::WriteGuard> {
+        let key_guard = self.lock_keys(
+            operations
+                .iter()
+                .map(|op| op.key())
+                .chain(read_keys.iter().map(|(key, _)| key.as_str())),
+        );
         let tokens: Vec<String> = operations
             .iter()
             .filter_map(|op| match op {
@@ -673,6 +689,51 @@ impl Collection {
                 _ => None,
             }
         })
+    }
+
+    /// What `tx` has staged for `key`, as a document: `Some(None)` when it
+    /// deleted it, `None` when it has not written it.
+    pub(crate) fn tx_staged_document(
+        &self,
+        tx: &Transaction,
+        key: &str,
+    ) -> Option<Option<Document>> {
+        let (db_name, coll_name) = self.parse_db_coll();
+        Self::tx_local_state(tx, &db_name, &coll_name, key)
+            .map(|staged| staged.map(|value| Self::txn_document(&self.name, key, &value)))
+    }
+
+    /// Check what a transaction read from this collection against what is
+    /// stored now. The caller holds the write locks of every key in
+    /// `points`, and the collection's commit gate exclusively when the
+    /// transaction read it by range, so nothing checked here can change
+    /// before the commit's batch is written.
+    pub(crate) fn validate_reads(
+        &self,
+        tracker: &crate::storage::keyspace::ReadTracker,
+        points: &[(String, Option<Box<str>>)],
+    ) -> DbResult<()> {
+        if let Some(conflict) = tracker.conflict() {
+            return Err(DbError::TransactionConflict(conflict));
+        }
+        if tracker.is_ranged() && (tracker.state().is_dead() || tracker.generation_moved()) {
+            return Err(DbError::TransactionConflict(format!(
+                "Read conflict: collection '{}' was written since this transaction read \
+                 it other than by document key; roll back and retry",
+                self.parse_db_coll().1
+            )));
+        }
+        for (key, read) in points {
+            if self.stored_rev(key)?.as_deref() != read.as_deref() {
+                return Err(DbError::TransactionConflict(format!(
+                    "Read conflict: document '{}' in '{}' changed since this transaction \
+                     read it; roll back and retry",
+                    key,
+                    self.parse_db_coll().1
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// The document an update/delete inside `tx` is based on: the

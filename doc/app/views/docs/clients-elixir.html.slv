@@ -385,7 +385,7 @@ tx = SoliDB.Client.in_transaction(client, tx_id)
 {:ok, _} = SoliDB.Client.commit_transaction(client, tx_id)  # or rollback_transaction/2</code></pre>
         </div>
         <p class="text-gray-400 text-sm leading-relaxed mb-6">
-          Inside a transaction, <code class="text-blue-400">insert</code>, <code class="text-blue-400">update</code> and <code class="text-blue-400">delete</code> are staged and applied at the commit; a read-only <code class="text-blue-400">query</code> runs on committed data and does not see the transaction's own writes, nor does <code class="text-blue-400">get</code>; the writes of a query that writes are staged as well (servers since 2.9.2; 2.9.1 and earlier refuse it). Writes made through the plain <code class="text-blue-400">client</code> are not part of the transaction: they apply at once.
+          Inside a transaction, <code class="text-blue-400">insert</code>, <code class="text-blue-400">update</code> and <code class="text-blue-400">delete</code> are staged and applied at the commit; a read-only <code class="text-blue-400">query</code> runs on committed data and sees the transaction's own writes only for a document it reads by key (servers after 2.9.3; none before), and <code class="text-blue-400">get</code> does not see them; the writes of a query that writes are staged as well (servers since 2.9.2; 2.9.1 and earlier refuse it). Writes made through the plain <code class="text-blue-400">client</code> are not part of the transaction: they apply at once.
         </p>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">

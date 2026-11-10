@@ -1126,6 +1126,22 @@ impl StorageEngine {
         operations: &[crate::transaction::Operation],
         sync: bool,
     ) -> DbResult<()> {
+        self.apply_operations_checking_reads(operations, sync, &[])
+    }
+
+    /// [`Self::apply_operations_atomically`] for a transaction that tracked
+    /// what it read (`reads`, per collection): the commit goes through only
+    /// if every document it read by key is still at the revision read, and
+    /// nothing was committed to a collection it read by range. The checks
+    /// and the write are one step as far as other commits are concerned:
+    /// the keys read are locked like the keys written, and a collection
+    /// read by range is closed to other transactions' commits meanwhile.
+    fn apply_operations_checking_reads(
+        &self,
+        operations: &[crate::transaction::Operation],
+        sync: bool,
+        reads: &[(String, Arc<super::keyspace::ReadTracker>)],
+    ) -> DbResult<()> {
         // Group by collection, keeping each collection's operations in order.
         let mut order: Vec<String> = Vec::new();
         let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
@@ -1141,30 +1157,77 @@ impl StorageEngine {
 
         // Collections are locked in name order: a commit is the only writer
         // that holds write stripes of several collections at once, and a
-        // fixed order keeps two commits from deadlocking on them.
+        // fixed order keeps two commits from deadlocking on them. The
+        // collections only read are locked too, in the same order.
+        let read_by: HashMap<&str, &Arc<super::keyspace::ReadTracker>> = reads
+            .iter()
+            .map(|(name, tracker)| (name.as_str(), tracker))
+            .collect();
+        for (name, _) in reads {
+            if !ops_by_collection.contains_key(name) {
+                order.push(name.clone());
+            }
+        }
         order.sort();
+
+        let collections = order
+            .iter()
+            .map(|name| self.system_collection(name))
+            .collect::<DbResult<Vec<_>>>()?;
+
+        // Commit gates, before any key lock: shared for a collection this
+        // commit writes, exclusive for one it read by range, held until the
+        // written collections' generations have moved (`finish_…` below), so
+        // a commit that checks a generation sees every commit before it.
+        let mut shared_gates = Vec::new();
+        let mut exclusive_gates = Vec::new();
+        for (name, collection) in order.iter().zip(&collections) {
+            let gate = collection.ks.state().commit_gate();
+            if read_by.get(name.as_str()).is_some_and(|t| t.is_ranged()) {
+                exclusive_gates.push(gate.write());
+            } else if ops_by_collection.contains_key(name) {
+                shared_gates.push(gate.read());
+            }
+        }
 
         let mut batch = super::kv::KvBatch::default();
         let mut staged = Vec::with_capacity(order.len());
         let mut guards = Vec::new();
-        for coll_name in order {
-            let ops = ops_by_collection.remove(&coll_name).unwrap_or_default();
-            let collection = self.system_collection(&coll_name)?;
-            guards.extend(collection.lock_for_transaction(&ops));
-            let plan = collection.stage_transaction_operations(&ops, &mut batch)?;
-            staged.push((collection, plan));
+        for (coll_name, collection) in order.iter().zip(&collections) {
+            let ops = ops_by_collection.remove(coll_name).unwrap_or_default();
+            let tracker = read_by.get(coll_name.as_str());
+            let read_keys: Vec<(String, Option<Box<str>>)> = tracker
+                .map(|t| {
+                    t.points()
+                        .into_iter()
+                        .map(|(key, rev)| (String::from_utf8_lossy(&key).into_owned(), rev))
+                        .collect()
+                })
+                .unwrap_or_default();
+            guards.extend(collection.lock_for_transaction_reading(&ops, &read_keys));
+            if let Some(tracker) = tracker {
+                collection.validate_reads(tracker, &read_keys)?;
+            }
+            if !ops.is_empty() {
+                let plan = collection.stage_transaction_operations(&ops, &mut batch)?;
+                staged.push((collection, plan));
+            }
         }
 
-        let mut write_opts = crate::storage::kv::KvWriteOptions::default();
-        write_opts.set_sync(sync);
-        self.db.write_opt(batch, &write_opts).map_err(|e| {
-            DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
-        })?;
+        // A transaction that only read has nothing to write, or to sync.
+        if !staged.is_empty() {
+            let mut write_opts = crate::storage::kv::KvWriteOptions::default();
+            write_opts.set_sync(sync);
+            self.db.write_opt(batch, &write_opts).map_err(|e| {
+                DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
+            })?;
+        }
         drop(guards);
 
         for (collection, plan) in staged {
             collection.finish_transaction_operations(plan);
         }
+        drop((shared_gates, exclusive_gates));
         Ok(())
     }
 
@@ -1179,13 +1242,21 @@ impl StorageEngine {
     pub fn commit_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = self.initialized_transaction_manager()?;
 
+        // What its queries read, at the levels that track it (else empty).
+        let reads = manager
+            .get(tx_id)?
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .reads
+            .trackers();
+
         // Freezes the transaction and validates it; aborts it on failure.
         let (operations, sync) = manager.prepare_commit(tx_id)?;
 
         // Staging re-reads every touched document while this transaction
         // still holds its exclusive locks, so the conflict checks see the
         // state the write will land on.
-        if let Err(e) = self.apply_operations_atomically(&operations, sync) {
+        if let Err(e) = self.apply_operations_checking_reads(&operations, sync, &reads) {
             manager.abort(tx_id);
             return Err(e);
         }

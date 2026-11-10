@@ -25,7 +25,30 @@ pub(super) struct RowPolicyGate {
 }
 
 impl<'a> QueryExecutor<'a> {
+    /// A collection the query reads. In a transaction that tracks its reads
+    /// the handle records them (`keyspace::ReadTracker`).
     pub(super) fn get_collection(&self, name: &str) -> DbResult<crate::storage::Collection> {
+        let collection = self.get_collection_untracked(name)?;
+        match self.tx_writer.as_ref().and_then(|tw| tw.reads.as_ref()) {
+            Some(reads) => Ok(reads.track(&collection)),
+            None => Ok(collection),
+        }
+    }
+
+    /// A read the transaction's read tracking cannot see (`what`) is refused
+    /// at the levels that promise it is checked, rather than left unchecked.
+    pub(super) fn refuse_untracked_read(&self, what: &str) -> DbResult<()> {
+        match self.tx_writer.as_ref().and_then(|tw| tw.reads.as_ref()) {
+            Some(_) => Err(DbError::OperationNotSupported(format!(
+                "reading {} is not supported in a transaction at repeatable_read or \
+                 serializable; use read_committed",
+                what
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    fn get_collection_untracked(&self, name: &str) -> DbResult<crate::storage::Collection> {
         // Credential collections (`_env`, `_admins`, `_api_keys`) are ordinary
         // column families, so without this a `FOR d IN _env RETURN d` hands
         // provider API keys to anyone with Read on the database. Server-side
@@ -58,7 +81,9 @@ impl<'a> QueryExecutor<'a> {
         name: &str,
     ) -> DbResult<crate::storage::Collection> {
         crate::storage::check_write_access(name, self.write_actor())?;
-        self.get_collection(name)
+        // Not the tracked handle: what a write reads on its way (a unique
+        // value, the document it replaces) is checked by the commit itself.
+        self.get_collection_untracked(name)
     }
 
     /// Who this executor writes as: the principal a client handler attached,
@@ -141,6 +166,7 @@ impl<'a> QueryExecutor<'a> {
         if !self.is_columnar(&database, name) {
             return Ok(None);
         }
+        self.refuse_untracked_read("a columnar collection")?;
 
         let columnar =
             crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
@@ -515,7 +541,11 @@ impl<'a> QueryExecutor<'a> {
     ) -> Option<Value> {
         // Decoded straight to the API value, as a scan's rows are: no
         // `Document`, and no timestamp parsed only to be formatted again.
-        let doc = coll.get_value(key).ok()?;
+        // In a transaction, a document it has written reads as staged.
+        let doc = match self.staged_in_transaction(coll, key) {
+            Some(staged) => staged?.into_value(),
+            None => coll.get_value(key).ok()?,
+        };
         match self.row_policy_gate_for(coll, binding) {
             Some(gate) if !self.row_policy_allows(&gate, &doc, ctx) => None,
             _ => Some(doc),
@@ -542,6 +572,7 @@ impl<'a> QueryExecutor<'a> {
         coordinator: &crate::sharding::ShardCoordinator,
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
+        self.refuse_untracked_read("a sharded collection")?;
         let db_name = self.database.as_ref().ok_or_else(|| {
             DbError::ExecutionError("No database context for scatter-gather".to_string())
         })?;

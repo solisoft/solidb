@@ -2427,6 +2427,16 @@ impl<'a> QueryExecutor<'a> {
         collection: &Collection,
         condition: &IndexableCondition,
     ) -> Option<Vec<crate::storage::Document>> {
+        // In a transaction, a document it has written reads as staged
+        // (and one it deleted as missing).
+        let get = |key: &str| match self.staged_in_transaction(collection, key) {
+            Some(staged) => Ok(staged),
+            None => match collection.get(key) {
+                Ok(doc) => Ok(Some(doc)),
+                Err(DbError::DocumentNotFound(_)) => Ok(None),
+                Err(e) => Err(e),
+            },
+        };
         if let (BinaryOperator::In, Value::Array(keys)) = (&condition.op, &condition.value) {
             let mut seen: HashSet<&str> = HashSet::with_capacity(keys.len());
             let mut out = Vec::new();
@@ -2434,9 +2444,9 @@ impl<'a> QueryExecutor<'a> {
                 if !seen.insert(key) {
                     continue;
                 }
-                match collection.get(key) {
-                    Ok(doc) => out.push(doc),
-                    Err(DbError::DocumentNotFound(_)) => {}
+                match get(key) {
+                    Ok(Some(doc)) => out.push(doc),
+                    Ok(None) => {}
                     Err(_) => return None,
                 }
             }
@@ -2450,11 +2460,27 @@ impl<'a> QueryExecutor<'a> {
         let Some(key) = condition.value.as_str() else {
             return Some(Vec::new());
         };
-        match collection.get(key) {
-            Ok(doc) => Some(vec![doc]),
-            Err(DbError::DocumentNotFound(_)) => Some(Vec::new()),
+        match get(key) {
+            Ok(Some(doc)) => Some(vec![doc]),
+            Ok(None) => Some(Vec::new()),
             Err(_) => None,
         }
+    }
+
+    /// What the executor's transaction has staged for `key` of `collection`:
+    /// `Some(None)` when it deleted it, `None` when it did not write it (or
+    /// there is no transaction).
+    pub(super) fn staged_in_transaction(
+        &self,
+        collection: &Collection,
+        key: &str,
+    ) -> Option<Option<crate::storage::Document>> {
+        let writer = self.tx_writer.as_ref()?;
+        let tx = writer.tx.read().ok()?;
+        if tx.operations.is_empty() {
+            return None;
+        }
+        collection.tx_staged_document(&tx, key)
     }
 
     /// Whether this FILTER miss is allowed to create `_auto_{field}`.

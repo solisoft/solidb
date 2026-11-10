@@ -286,7 +286,12 @@ pub async fn handle_transaction_command(
                         )))
                     }
                 };
-            if !prepared.query.has_mutations() {
+            let mutates = prepared.query.has_mutations();
+            // A query that only reads still runs on the transaction when it
+            // has something to see there (its own staged writes, by key) or
+            // to record (the levels that track reads). Otherwise it is an
+            // ordinary query.
+            if !mutates && !reads_through_transaction(handler, id) {
                 return Box::pin(handler.execute_command(Command::Query {
                     database,
                     sdbql,
@@ -301,6 +306,7 @@ pub async fn handle_transaction_command(
                 database,
                 prepared.query.clone(),
                 bind_vars.unwrap_or_default(),
+                mutates,
             )
             .await
         }
@@ -308,6 +314,22 @@ pub async fn handle_transaction_command(
             "only Insert, Update, Delete and Query can run inside a transaction".to_string(),
         )),
     }
+}
+
+/// Whether a read-only query has a reason to run on transaction `id`: the
+/// transaction tracks its reads, or has staged writes the query may read.
+fn reads_through_transaction(
+    handler: &DriverHandler,
+    id: crate::transaction::TransactionId,
+) -> bool {
+    let Ok(manager) = handler.storage.transaction_manager() else {
+        return false;
+    };
+    let Ok(tx) = manager.get(id) else {
+        return false;
+    };
+    let tx = tx.read().unwrap_or_else(|e| e.into_inner());
+    tx.isolation_level.tracks_reads() || !tx.operations.is_empty()
 }
 
 /// Stage a query that writes on transaction `id`, as the HTTP transactional
@@ -322,15 +344,18 @@ async fn stage_query(
     database: String,
     query: std::sync::Arc<crate::sdbql::Query>,
     bind_vars: std::collections::HashMap<String, serde_json::Value>,
+    mutates: bool,
 ) -> Response {
     // The dispatch check only required Read for a query.
-    if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
-        &handler.session_permissions,
-        crate::server::PermissionAction::Write,
-        Some(&database),
-        handler.session_scoped_databases.as_deref(),
-    ) {
-        return Response::error(DriverError::AuthError(e.to_string()));
+    if mutates {
+        if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
+            &handler.session_permissions,
+            crate::server::PermissionAction::Write,
+            Some(&database),
+            handler.session_scoped_databases.as_deref(),
+        ) {
+            return Response::error(DriverError::AuthError(e.to_string()));
+        }
     }
     if query.has_unstageable_writes() {
         return Response::error(DriverError::TransactionError(
@@ -344,11 +369,7 @@ async fn stage_query(
         Err(e) => return Response::error(DriverError::TransactionError(e.to_string())),
     };
     let writer = match manager.get(id) {
-        Ok(tx) => crate::sdbql::executor::TxWriter {
-            tx,
-            wal: manager.wal().clone(),
-            locks: manager.lock_manager().clone(),
-        },
+        Ok(tx) => crate::sdbql::executor::TxWriter::new(tx, &manager),
         Err(e) => return Response::error(DriverError::TransactionError(e.to_string())),
     };
     let principal = handler.query_principal(&database);
@@ -703,11 +724,12 @@ mod tests {
         );
     }
 
-    /// A query reads committed data, so an `UPDATE` it computes over a
-    /// version it did not read (here the transaction's own staged write) is
+    /// A query reads by key what its transaction staged, so an `UPDATE` it
+    /// computes there builds on the staged write. A scan reads committed
+    /// data: an `UPDATE` computed from it over the staged version is
     /// refused with a conflict instead of overwriting it (card #796).
     #[tokio::test]
-    async fn an_update_over_a_version_the_query_did_not_read_is_refused() {
+    async fn an_update_builds_on_a_staged_write_read_by_key_and_is_refused_from_a_scan() {
         let (_t, mut h) = handler();
         admin_session(&mut h);
         h.get_collection("d", "c")
@@ -732,7 +754,33 @@ mod tests {
             &mut h,
             tx.clone(),
             query(
-                "FOR x IN c FILTER x._key == 'a' UPDATE x WITH {n: x.n + 1} IN c",
+                "FOR x IN c FILTER x._key == 'a' UPDATE x WITH {n: x.n + 1} IN c RETURN NEW.n",
+                json!({}),
+            ),
+        )
+        .await;
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([2])),
+            "{:?}",
+            r
+        );
+        // A read-only query in the transaction sees it too.
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query("FOR x IN c FILTER x._key == 'a' RETURN x.n", json!({})),
+        )
+        .await;
+        assert!(
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([2])),
+            "{:?}",
+            r
+        );
+        let r = handle_transaction_command(
+            &mut h,
+            tx.clone(),
+            query(
+                "FOR x IN c FILTER x.n >= 0 UPDATE x WITH {n: x.n + 1} IN c",
                 json!({}),
             ),
         )

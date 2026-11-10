@@ -9,6 +9,20 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>repeatable_read</code> and <code>serializable</code> check what a transaction read</strong> &mdash; the two levels were accepted and behaved as <code>read_committed</code>: a document read twice could return two values, and two transactions could each decide from documents the other then changed (write skew). What a transaction's queries read is now recorded and checked at commit: a document read by key must still be at the revision read (or still absent), and a collection read by a scan or an index must not have been written since. Otherwise the commit is refused with a <code>409</code> and nothing is written. Checked with Elle (Jepsen's checker): both levels are serializable on the fault harness's concurrent append workload, where they showed thousands of anomalies. <code>read_committed</code>, the default, is unchanged. Columnar and sharded collections cannot be read in a transaction at these two levels.</li>
+        <li><strong class="text-white">A query reads its transaction's own writes by key</strong> &mdash; at every level, <code>FILTER d._key == @k</code> and <code>DOCUMENT()</code> in a transaction return the document as the transaction staged it (an insert, an update; a delete reads as missing), over HTTP and over the driver. It read the committed version, so a second <code>UPDATE d WITH {n: d.n + 1}</code> of one document in one transaction was refused with a conflict. Scans and index reads still see committed data only.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.9.3 -->
   <section id="v2-9-3" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

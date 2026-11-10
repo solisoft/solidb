@@ -1,0 +1,25 @@
+{
+  "anomalies": {},
+  "clients": 10,
+  "examples": {},
+  "failed_because": {
+    "lock conflict: held by a writer": {
+      "count": 164384,
+      "example": "append k2: {\"code\":409,\"error\":\"Write conflict: Key faults_iso/la/k2 is locked by transaction tx:1794316210146435124\",\"type\":\"TransactionConflict\"}"
+    },
+    "stale write refused": {
+      "count": 2262,
+      "example": "append k0: {\"code\":409,\"error\":\"Write conflict: document 'k0' changed since this query read it (revision '53cbfa1f-3a72-4734-96cb-9377c8492765', now '08f8b821-15a9-4da4-85d0-31b8670681ff'); roll back "
+    }
+  },
+  "history": "main-sdbql-read_committed.history.json",
+  "isolation": "read_committed",
+  "keys": 8,
+  "mode": "sdbql",
+  "secs": 30,
+  "transactions": {
+    "fail": 166646,
+    "info": 0,
+    "ok": 264470
+  }
+}

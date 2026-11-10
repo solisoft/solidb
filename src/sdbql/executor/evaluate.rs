@@ -990,6 +990,8 @@ impl<'a> QueryExecutor<'a> {
                 if self.row_policy_applies(collection_name) {
                     return Ok(Value::Null);
                 }
+                // The cached count is not a read of stored keys.
+                collection.note_range_read();
                 let count = collection.count();
                 Ok(Value::Number(serde_json::Number::from(count)))
             }

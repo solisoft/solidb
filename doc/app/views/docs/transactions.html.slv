@@ -69,7 +69,7 @@
           </div>
 
           <p class="text-gray-300 mb-6">
-            A transaction takes an isolation level when it begins; the default is <strong>Read Committed</strong>. Today the level decides one thing: whether the commit is fsynced. What a transaction sees, and what it locks, is the same at every level, described below. Measured with the fault harness in <code>faults/</code> (10 clients, 8 contended keys).
+            A transaction takes an isolation level when it begins; the default is <strong>Read Committed</strong>. The level decides whether the commit is fsynced, and whether what the transaction's queries read is checked when it commits. Measured with the fault harness in <code>faults/</code> (10 clients, 8 contended keys) and checked with Elle, Jepsen's checker.
           </p>
 
           <div class="grid gap-4 mb-6">
@@ -83,17 +83,32 @@
 
             <div class="bg-gray-950/50 rounded-xl p-5 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]">
               <div class="flex justify-between items-start mb-2">
-                <h4 class="text-indigo-400 font-bold">Read Committed, Repeatable Read, Serializable</h4>
+                <h4 class="text-indigo-400 font-bold">Read Committed</h4>
                 <span class="px-2 py-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 rounded uppercase">Commit fsynced</span>
               </div>
-              <p class="text-sm text-gray-300">The commit is fsynced before it is acknowledged. The three behave alike otherwise; Repeatable Read and Serializable do not yet add guarantees of their own.</p>
+              <p class="text-sm text-gray-300">The commit is fsynced before it is acknowledged. Each query reads what is committed when it runs: a document read twice in one transaction can return two values, and a decision taken from documents the transaction only read is not re-checked (write skew).</p>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
+              <div class="flex justify-between items-start mb-2">
+                <h4 class="text-white font-bold">Repeatable Read, Serializable</h4>
+                <span class="px-2 py-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 rounded uppercase">Reads checked at commit</span>
+              </div>
+              <p class="text-sm text-gray-300">Fsynced as well, and what the transaction's queries read is recorded and checked when it commits; the two levels behave alike. If another writer changed something it read, the commit is refused with a <code>409</code> and nothing is written: roll back and retry. No lock is taken while reading.</p>
             </div>
           </div>
 
           <ul class="space-y-3 text-sm text-gray-300">
-            <li><strong class="text-white">Documents read and written by key</strong> (<code>GET</code>, <code>PUT</code>, <code>POST</code>, <code>DELETE</code> under <code>…/transaction/{id}/document/…</code>): a read takes a shared lock on the key, a write an exclusive one, both held until the commit or the rollback. A lock another transaction holds is refused at once with a <code>409</code>, without waiting: roll back and retry. On contended keys most transactions are refused (about 70% in the measurement), and none of the committed ones lost or reordered a write.</li>
-            <li><strong class="text-white">Queries</strong> (<code>…/transaction/{id}/query</code>) read committed data, take no lock, and do not see the transaction's own writes. Their writes are staged. An <code>UPDATE</code> computed from a document the query read (<code>UPDATE d WITH {n: d.n + 1}</code>) is staged only if that document has not changed since; otherwise the statement fails with a <code>409</code>: roll back and retry. Up to 2.9.0 it was staged anyway and overwrote the newer version: 8,112 of 125,047 committed appends were lost in the measurement.</li>
-            <li><strong class="text-white">Checked with Elle</strong> (Jepsen's checker, on the same histories): the document path is serializable. The query path is read committed and no more, at every level: the same document read twice in one transaction can return two values, an <code>UPDATE</code> is checked against what it read itself but not against an earlier statement's read of the same document, and nothing re-checks a document a transaction only read, so write skew goes through (thousands of G-single and G2 cycles per 10 s run). To enforce a rule across documents, read them through the document routes, which lock them.</li>
+            <li><strong class="text-white">Documents read and written by key</strong> (<code>GET</code>, <code>PUT</code>, <code>POST</code>, <code>DELETE</code> under <code>&hellip;/transaction/{id}/document/&hellip;</code>): a read takes a shared lock on the key, a write an exclusive one, both held until the commit or the rollback. A lock another transaction holds is refused at once with a <code>409</code>, without waiting: roll back and retry. On contended keys most transactions are refused (about 70% in the measurement), and none of the committed ones lost or reordered a write.</li>
+            <li><strong class="text-white">Queries</strong> (<code>&hellip;/transaction/{id}/query</code>, or the driver) read committed data and take no lock. Their writes are staged. A document read by its key (<code>FILTER d._key == @k</code>, <code>DOCUMENT()</code>) reads as the transaction staged it, at every level; a scan or an index read does not see the transaction's own writes. An <code>UPDATE</code> computed from a document the query read (<code>UPDATE d WITH {n: d.n + 1}</code>) is staged only if that document has not changed since; otherwise the statement fails with a <code>409</code>.</li>
+            <li><strong class="text-white">What Repeatable Read and Serializable check at commit:</strong>
+              <ul class="list-disc ml-5 mt-2 space-y-1">
+                <li>a document read by key is still at the revision read, or still absent. Reading it a second time at another revision fails that statement at once;</li>
+                <li>a collection read any other way (a scan, an index, a count) has not been written at all since the transaction first read it. That is coarse: any committed write to that collection refuses the commit, which is also what covers a document that appears (a phantom). Keep such transactions short, or read by key.</li>
+              </ul>
+            </li>
+            <li><strong class="text-white">Checked with Elle:</strong> at Repeatable Read and Serializable, 30 s of concurrent read-and-append transactions through queries (184,666 and 215,631 committed) are serializable, with no anomaly; so is the document path. At Read Committed the same workload shows the expected ones (non-repeatable reads, write skew). About half the transactions are refused under that contention, on a lock or on a changed read.</li>
+            <li><strong class="text-white">Limits:</strong> the checks hold between transactions at these levels. A plain write outside any transaction takes part as a writer (it refuses a commit that read what it changed) but its own reads are not checked. Columnar and sharded collections cannot be read in a transaction at these levels; use Read Committed.</li>
           </ul>
         </div>
       </section>

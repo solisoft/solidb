@@ -45,7 +45,18 @@ impl<'a> QueryExecutor<'a> {
         // the evaluator and never copied into the context, which is cloned per
         // row: a 3 MB `@rows` iterated 20k times was 60 GB, and the server was
         // OOM-killed.
-        self.execute_query_with_bindings(query, Context::default())
+        let outcome = self.execute_query_with_bindings(query, Context::default())?;
+        // A transaction that tracks its reads and has just read a document
+        // at a second revision cannot commit: say so now rather than then.
+        if let Some(conflict) = self
+            .tx_writer
+            .as_ref()
+            .and_then(|tw| tw.reads.as_ref())
+            .and_then(|reads| reads.conflict())
+        {
+            return Err(DbError::TransactionConflict(conflict));
+        }
+        Ok(outcome)
     }
 
     /// Execute a query block against a set of outer bindings.

@@ -429,6 +429,39 @@ schema, versioning, a vector index — an active replication log, and any
 document it refuses go the decoded way (`Collection::raw_write_ready`,
 `document::prepare_raw`).
 
+### Reads a transaction has checked at commit (after 2.9.3)
+
+At `repeatable_read` and `serializable` (`IsolationLevel::tracks_reads`) a
+transaction's queries read through a tracked `Collection` handle
+(`QueryExecutor::get_collection` → `ReadSet::track`), and the keyspace layer
+records what passes (`storage/keyspace.rs`, `ReadTracker`): a `get` /
+`multi_get` of a `doc:` key is a point read (key and revision, or absent);
+an iterator, `for_each_ks`, split points, or a `get` of any other data key
+marks the collection as read by range; metadata prefixes (`idx_meta:` …) are
+ignored. `StorageEngine::commit_transaction` checks it
+(`Collection::validate_reads`): point reads against the stored revision,
+under the same key locks as the writes; a ranged collection against its
+keyspace's write generation (`KsState`, bumped by
+`Collection::invalidate_cached_queries`), holding that keyspace's commit gate
+exclusively while other transaction commits hold it shared.
+
+Rules that keep it sound:
+
+- A read that answers from anywhere but the stored keys — a cached count, an
+  in-memory index, another store — must call `Collection::note_range_read`
+  (as `vector_search` and `COLLECTION_COUNT` do) or be refused with
+  `QueryExecutor::refuse_untracked_read` (columnar, sharded).
+- A new data key prefix is ranged by default; only add it to
+  `METADATA_KEY_PREFIXES` if reading it says nothing about the documents.
+- `get_collection_for_write` hands out the untracked handle on purpose: what
+  a write reads on its way is checked by the commit itself, and tracking it
+  would turn every insert into a range read of its collection.
+- A document write that does not reach `invalidate_cached_queries` is
+  invisible to the range check.
+
+At every level, the executor's point reads (`key_fast_path`, `get_visible`)
+return what the transaction staged (`staged_in_transaction`); scans do not.
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a
