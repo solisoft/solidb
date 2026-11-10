@@ -151,6 +151,8 @@ run_one() {
   # ONLY_MODES="driver" runs only those modes of the configuration.
   # shellcheck disable=SC2206
   [[ -n ${ONLY_MODES:-} ]] && MODES=($ONLY_MODES)
+  # ONLY_SERIES="10000:32" runs only those accounts:clients series.
+  [[ -n ${ONLY_SERIES:-} ]] && SERIES=$ONLY_SERIES
   $DOCKER rm -f "$NAME" >/dev/null 2>&1 || true
   echo "== $cfg: ${RUN[*]}"
   "${RUN[@]}" >/dev/null

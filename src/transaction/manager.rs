@@ -161,6 +161,17 @@ impl TransactionManager {
     ///
     /// Returns the operations to apply and whether the write must be synced.
     pub fn prepare_commit(&self, tx_id: TransactionId) -> DbResult<(Vec<Operation>, bool)> {
+        self.prepare_commit_with_reads(tx_id)
+            .map(|(operations, sync, _)| (operations, sync))
+    }
+
+    /// [`Self::prepare_commit`], also returning what the transaction's
+    /// queries read, for the commit to check (`None` at the levels that do
+    /// not track it).
+    pub fn prepare_commit_with_reads(
+        &self,
+        tx_id: TransactionId,
+    ) -> DbResult<(Vec<Operation>, bool, Option<super::ReadSet>)> {
         let tx_arc = self.get(tx_id)?;
 
         let requires_sync = {
@@ -181,8 +192,8 @@ impl TransactionManager {
             return Err(e);
         }
 
-        let operations = tx_arc.read().unwrap().operations.clone();
-        Ok((operations, requires_sync))
+        let tx = tx_arc.read().unwrap();
+        Ok((tx.operations.clone(), requires_sync, tx.reads.clone()))
     }
 
     /// Second half of a commit, once its writes are durable: mark it

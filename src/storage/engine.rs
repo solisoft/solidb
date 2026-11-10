@@ -1242,16 +1242,10 @@ impl StorageEngine {
     pub fn commit_transaction(&self, tx_id: crate::transaction::TransactionId) -> DbResult<()> {
         let manager = self.initialized_transaction_manager()?;
 
-        // What its queries read, at the levels that track it (else empty).
-        let reads = manager
-            .get(tx_id)?
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .reads
-            .trackers();
-
         // Freezes the transaction and validates it; aborts it on failure.
-        let (operations, sync) = manager.prepare_commit(tx_id)?;
+        // `reads`: what its queries read, at the levels that track it.
+        let (operations, sync, reads) = manager.prepare_commit_with_reads(tx_id)?;
+        let reads = reads.map(|reads| reads.trackers()).unwrap_or_default();
 
         // Staging re-reads every touched document while this transaction
         // still holds its exclusive locks, so the conflict checks see the

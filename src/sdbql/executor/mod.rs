@@ -116,10 +116,7 @@ impl TxWriter {
         tx: std::sync::Arc<std::sync::RwLock<crate::transaction::Transaction>>,
         manager: &crate::transaction::manager::TransactionManager,
     ) -> Self {
-        let reads = {
-            let tx = tx.read().unwrap_or_else(|e| e.into_inner());
-            tx.isolation_level.tracks_reads().then(|| tx.reads.clone())
-        };
+        let reads = tx.read().unwrap_or_else(|e| e.into_inner()).reads.clone();
         TxWriter {
             tx,
             wal: manager.wal().clone(),

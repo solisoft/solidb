@@ -129,6 +129,14 @@ impl KsPrefix {
 #[derive(Debug, Default)]
 pub struct KsState {
     dead: AtomicBool,
+    /// What every commit writes to, away from `dead`, which every read and
+    /// write of the keyspace loads: on one cache line, each commit would
+    /// take that line from all the other cores.
+    commits: OwnCacheLines<CommitState>,
+}
+
+#[derive(Debug, Default)]
+struct CommitState {
     /// Moved after every committed change to the keyspace's documents or
     /// indexes (`Collection::invalidate_cached_queries`). A transaction that
     /// read a range of the collection compares it at commit.
@@ -139,21 +147,27 @@ pub struct KsState {
     commit_gate: parking_lot::RwLock<()>,
 }
 
+/// `T` starting on a cache line of its own (128 bytes: two lines, for the
+/// adjacent-line prefetcher).
+#[derive(Debug, Default)]
+#[repr(align(128))]
+struct OwnCacheLines<T>(T);
+
 impl KsState {
     pub fn is_dead(&self) -> bool {
         self.dead.load(Ordering::Acquire)
     }
 
     pub fn write_generation(&self) -> u64 {
-        self.write_gen.load(Ordering::Acquire)
+        self.commits.0.write_gen.load(Ordering::Acquire)
     }
 
     pub fn bump_write_generation(&self) {
-        self.write_gen.fetch_add(1, Ordering::AcqRel);
+        self.commits.0.write_gen.fetch_add(1, Ordering::AcqRel);
     }
 
     pub fn commit_gate(&self) -> &parking_lot::RwLock<()> {
-        &self.commit_gate
+        &self.commits.0.commit_gate
     }
 }
 
@@ -449,19 +463,19 @@ impl Keyspace {
 
     /// The handle to read and write through, or `None` when the keyspace was
     /// dropped (or, for legacy, its column family is gone).
-    pub fn handle<'a>(&self, db: &'a DB) -> Option<KsCf<'a>> {
+    pub fn handle<'a>(&'a self, db: &'a DB) -> Option<KsCf<'a>> {
         if self.state.is_dead() {
             return None;
         }
         db.cf_handle(&self.cf_name).map(|cf| KsCf {
             cf,
             prefix: self.prefix,
-            tracker: self.tracker.clone(),
+            tracker: self.tracker.as_deref(),
         })
     }
 
     /// [`Keyspace::handle`], as a `CollectionNotFound` error naming `what`.
-    pub fn live<'a>(&self, db: &'a DB, what: &str) -> DbResult<KsCf<'a>> {
+    pub fn live<'a>(&'a self, db: &'a DB, what: &str) -> DbResult<KsCf<'a>> {
         self.handle(db)
             .ok_or_else(|| DbError::CollectionNotFound(format!("{} (dropped mid-operation)", what)))
     }
@@ -496,7 +510,9 @@ pub struct KsCf<'a> {
     pub(crate) cf: KvCf<'a>,
     pub(crate) prefix: KsPrefix,
     /// Records what is read through this handle (see [`ReadTracker`]).
-    pub(crate) tracker: Option<Arc<ReadTracker>>,
+    /// Borrowed, so that a handle stays a plain value: one is made for
+    /// every read and write.
+    pub(crate) tracker: Option<&'a ReadTracker>,
 }
 
 impl KsCf<'_> {

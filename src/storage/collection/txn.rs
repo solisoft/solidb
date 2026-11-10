@@ -698,8 +698,8 @@ impl Collection {
         tx: &Transaction,
         key: &str,
     ) -> Option<Option<Document>> {
-        let (db_name, coll_name) = self.parse_db_coll();
-        Self::tx_local_state(tx, &db_name, &coll_name, key)
+        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
+        Self::tx_local_state(tx, db_name, coll_name, key)
             .map(|staged| staged.map(|value| Self::txn_document(&self.name, key, &value)))
     }
 

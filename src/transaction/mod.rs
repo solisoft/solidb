@@ -271,9 +271,9 @@ pub struct Transaction {
     pub created_at: DateTime<Utc>,
     /// Validation errors encountered (cleared on successful validation)
     pub validation_errors: Vec<String>,
-    /// What its queries read, when the level tracks it.
+    /// What its queries read, at the levels that track it.
     #[serde(skip)]
-    pub reads: ReadSet,
+    pub reads: Option<ReadSet>,
 }
 
 impl Transaction {
@@ -291,7 +291,7 @@ impl Transaction {
             write_timestamp: None,
             created_at: Utc::now(),
             validation_errors: Vec::new(),
-            reads: ReadSet::default(),
+            reads: isolation_level.tracks_reads().then(ReadSet::default),
         }
     }
 

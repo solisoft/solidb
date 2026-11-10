@@ -364,9 +364,11 @@ pub(crate) fn create_shared(db: &Arc<DB>, full_name: &str, type_: &str) -> DbRes
     batch.put_cf(&meta_cf, entry_key(full_name).as_bytes(), value);
 
     let keyspace = Keyspace::shared(db, ks);
-    let data = keyspace.live(db, full_name)?;
-    use super::keyspace::KsBatchExt;
-    batch.put_ks(&data, "_stats:type".as_bytes(), type_.as_bytes());
+    {
+        use super::keyspace::KsBatchExt;
+        let data = keyspace.live(db, full_name)?;
+        batch.put_ks(&data, "_stats:type".as_bytes(), type_.as_bytes());
+    }
 
     db.write(batch)
         .map_err(|e| DbError::InternalError(format!("Failed to create collection: {e}")))?;

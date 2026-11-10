@@ -427,3 +427,111 @@ async fn a_query_reads_its_transactions_own_writes_by_key() {
         );
     }
 }
+
+/// Run `workers` tasks, each trying `rounds` transactions at `level`:
+/// `query(worker)` then commit. Returns how many committed.
+async fn hammer(
+    app: &Arc<App>,
+    level: &'static str,
+    workers: usize,
+    rounds: usize,
+    query: fn(usize) -> &'static str,
+) -> usize {
+    let mut tasks = Vec::new();
+    for worker in 0..workers {
+        let app = Arc::clone(app);
+        tasks.push(tokio::spawn(async move {
+            let mut committed = 0;
+            for _ in 0..rounds {
+                let tx = app.begin(level).await;
+                let (status, _) = app.query(&tx, query(worker)).await;
+                if status == StatusCode::OK && app.commit(&tx).await == StatusCode::OK {
+                    committed += 1;
+                }
+            }
+            committed
+        }));
+    }
+    let mut committed = 0;
+    for task in tasks {
+        committed += task.await.unwrap();
+    }
+    committed
+}
+
+/// Concurrent transactions that each count a collection (a range read) and
+/// insert the count into it. Run one after another, every committed one
+/// sees a different count; two that commit the same count both read the
+/// collection before either wrote it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_counts_of_a_collection_are_all_different_at_serializable() {
+    let app = Arc::new(App::new().await);
+    let committed = hammer(&app, "serializable", 8, 60, |_| {
+        "LET n = LENGTH(FOR l IN log RETURN 1) INSERT {seq: n} INTO log RETURN n"
+    })
+    .await;
+    assert!(committed > 0, "nothing committed");
+
+    let (_, out) = app.cursor("FOR l IN log SORT l.seq RETURN l.seq").await;
+    let seqs: Vec<u64> = out["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap())
+        .collect();
+    let expected: Vec<u64> = (0..committed as u64).collect();
+    assert_eq!(seqs, expected, "{committed} committed");
+}
+
+/// Two kinds of transactions across two collections: one counts `log` and
+/// inserts into `doctors`, the other counts `doctors` and inserts into
+/// `log`. In any serial order, a row's count is the number of rows of the
+/// other kind before it; replaying the rows must never find one of each
+/// kind that both saw the state before the other (write skew).
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_cross_collection_counts_have_a_serial_order_at_serializable() {
+    let app = Arc::new(App::new().await);
+    let (status, _) = app.cursor("FOR d IN doctors REMOVE d IN doctors").await;
+    assert!(status.is_success());
+    let committed = hammer(&app, "serializable", 8, 60, |worker| {
+        if worker % 2 == 0 {
+            "LET n = LENGTH(FOR l IN log RETURN 1) INSERT {saw: n} INTO doctors RETURN n"
+        } else {
+            "LET n = LENGTH(FOR d IN doctors RETURN 1) INSERT {saw: n} INTO log RETURN n"
+        }
+    })
+    .await;
+    assert!(committed > 0, "nothing committed");
+
+    let saw = |collection: &'static str| {
+        let app = Arc::clone(&app);
+        async move {
+            let (_, out) = app
+                .cursor(&format!("FOR x IN {collection} SORT x.saw RETURN x.saw"))
+                .await;
+            out["result"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as usize)
+                .collect::<Vec<_>>()
+        }
+    };
+    // A row of `doctors` saw a number of `log` rows, and the reverse.
+    let (doctors, log) = (saw("doctors").await, saw("log").await);
+    assert_eq!(doctors.len() + log.len(), committed);
+    let (mut d, mut l) = (0, 0);
+    while d < doctors.len() || l < log.len() {
+        let doctor_next = d < doctors.len() && doctors[d] == l;
+        let log_next = l < log.len() && log[l] == d;
+        assert!(
+            doctor_next != log_next,
+            "no serial order after {d} doctors and {l} log rows: doctors saw {doctors:?}, log saw {log:?}"
+        );
+        if doctor_next {
+            d += 1;
+        } else {
+            l += 1;
+        }
+    }
+}
