@@ -1050,6 +1050,60 @@ pub async fn delete_user(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetPasswordRequest {
+    pub password: String,
+}
+
+/// Set another user's password (admin only): the `ALTER ROLE … PASSWORD` of
+/// SoliDB. `PUT /_api/auth/password` changes the caller's own password and
+/// needs the current one; this is for an admin resetting a password the user
+/// has lost. Tokens already issued stay valid until they expire, as with a
+/// self-service change; deleting the user is what revokes them.
+pub async fn set_user_password(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(username): Path<String>,
+    Json(req): Json<SetPasswordRequest>,
+) -> Result<StatusCode, DbError> {
+    AuthorizationService::check_permission(&claims, &state, PermissionAction::Admin, None).await?;
+
+    if req.password.len() < 12 {
+        return Err(DbError::BadRequest(
+            "Password must be at least 12 characters".to_string(),
+        ));
+    }
+
+    let db = state.storage.get_database("_system")?;
+    let collection = db.system_collection(ADMIN_COLL)?;
+    if collection.get(&username).is_err() {
+        return Err(DbError::DocumentNotFound(format!(
+            "User '{}' not found",
+            username
+        )));
+    }
+
+    let user = crate::server::auth::User {
+        username: username.clone(),
+        password_hash: crate::server::auth::hash_password_blocking(&req.password).await?,
+    };
+    let doc_value = serde_json::to_value(&user)?;
+    collection.update(&username, doc_value.clone())?;
+    log_system_write(
+        state.replication_log.as_deref(),
+        ADMIN_COLL,
+        Operation::Update,
+        &username,
+        Some(&doc_value),
+    );
+
+    // The old password must stop working now, not when its cached Basic-auth
+    // result expires.
+    crate::server::auth::invalidate_basic_auth_cache_for_user(&username);
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
