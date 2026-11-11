@@ -44,8 +44,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(18)
-    newest = body.index_of("/blog/durability-and-transactions")
+    expect(body.split("class=\"post-card\"").length()).to_equal(19)
+    newest = body.index_of("/blog/sdbql-and-sql-side-by-side")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })

@@ -69,6 +69,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "sdbql-and-sql-side-by-side",
+        "title": "SDBQL and SQL, side by side",
+        "date": "2026-11-11",
+        "display_date": "November 11, 2026",
+        "summary": "Can SDBQL do things SQL cannot? No. Six questions asked of the same small shop in both "
+        + "languages, on SoliDB 2.9.4 and PostgreSQL 18, with the answers each gave: nested results, "
+        + "arrays, groups, a graph, a write that returns what it changed. Then what SQL does that "
+        + "SDBQL does not.",
+        "tags": ["SDBQL", "Query language"],
+        "read_minutes": 8
+      },
+      {
         "slug": "durability-and-transactions",
         "title": "Durability and transactions: what a SoliDB commit promises, and how we checked",
         "date": "2026-11-10",
@@ -76,7 +88,8 @@ class BlogController < Controller
         "summary": "Is SoliDB ACID? A commit is one write batch, fsynced before it is acknowledged; 100 kill -9 "
         + "lost no acknowledged transfer. Since 2.9.1 concurrent transfers conserve money. Its isolation "
         + "is weaker than its level names, with a write skew that commits, and PostgreSQL is still faster "
-        + "per transaction except among hot accounts. Every claim comes with the test behind it.",
+        + "per transaction except among hot accounts. Every claim comes with the test behind it. "
+        + "Updated for 2.9.4, which closed most of that gap.",
         "tags": ["Correctness", "Transactions", "Benchmarks"],
         "read_minutes": 13
       },

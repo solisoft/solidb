@@ -1,0 +1,217 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">SDBQL · Query language</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">Someone asked whether SDBQL can do things SQL cannot. The honest answer is no: with JSON functions and recursive queries, PostgreSQL returns every result on this page. What differs is how much you write to get it, and what the database checks for you. So here are six questions asked of the same small shop, in both languages, with the answers each gave, and then the things SQL does that SDBQL does not.</p>
+  <p class="post-note">Every query and every result on this page was run on November 11, 2026: the SDBQL on the released SoliDB 2.9.4 binary, on a throwaway server; the SQL on PostgreSQL 18.6 in a container. The two hold the same four customers, four orders and four &ldquo;follows&rdquo; links.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#data">The same shop, twice</a></li>
+    <li><a href="#nested">A customer with their orders</a></li>
+    <li><a href="#arrays">The lines inside an order</a></li>
+    <li><a href="#groups">Groups that keep their rows</a></li>
+    <li><a href="#graph">Who follows whom</a></li>
+    <li><a href="#write">Change a document and get it back</a></li>
+    <li><a href="#sql">What SQL does that SDBQL does not</a></li>
+    <li><a href="#verdict">So which one</a></li>
+  </ol>
+</nav>
+
+<section id="data"><h2>The same shop, twice</h2>
+<p>In SoliDB an order is one document, and its lines live inside it. A customer who follows another is an edge between two documents.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> c <span class="tok-kw">IN</span> [{_key: <span class="tok-str">"ann"</span>, name: <span class="tok-str">"Ann"</span>, city: <span class="tok-str">"Lyon"</span>}, {_key: <span class="tok-str">"bob"</span>, name: <span class="tok-str">"Bob"</span>, city: <span class="tok-str">"Paris"</span>},
+          {_key: <span class="tok-str">"cid"</span>, name: <span class="tok-str">"Cid"</span>, city: <span class="tok-str">"Lyon"</span>}, {_key: <span class="tok-str">"dee"</span>, name: <span class="tok-str">"Dee"</span>, city: <span class="tok-str">"Nice"</span>}]
+  <span class="tok-kw">INSERT</span> c <span class="tok-kw">INTO</span> customers
+
+<span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> [
+  {_key: <span class="tok-str">"o1"</span>, customer: <span class="tok-str">"ann"</span>, status: <span class="tok-str">"paid"</span>,
+   items: [{sku: <span class="tok-str">"pen"</span>, qty: <span class="tok-num">2</span>, price: <span class="tok-num">3</span>}, {sku: <span class="tok-str">"ink"</span>, qty: <span class="tok-num">1</span>, price: <span class="tok-num">9</span>}]},
+  {_key: <span class="tok-str">"o2"</span>, customer: <span class="tok-str">"ann"</span>, status: <span class="tok-str">"open"</span>, items: [{sku: <span class="tok-str">"pad"</span>, qty: <span class="tok-num">1</span>, price: <span class="tok-num">5</span>}]},
+  {_key: <span class="tok-str">"o3"</span>, customer: <span class="tok-str">"bob"</span>, status: <span class="tok-str">"paid"</span>, items: [{sku: <span class="tok-str">"pen"</span>, qty: <span class="tok-num">10</span>, price: <span class="tok-num">3</span>}]},
+  {_key: <span class="tok-str">"o4"</span>, customer: <span class="tok-str">"cid"</span>, status: <span class="tok-str">"paid"</span>, gift: {note: <span class="tok-str">"Happy birthday"</span>},
+   items: [{sku: <span class="tok-str">"ink"</span>, qty: <span class="tok-num">2</span>, price: <span class="tok-num">9</span>}, {sku: <span class="tok-str">"pad"</span>, qty: <span class="tok-num">3</span>, price: <span class="tok-num">5</span>}]}]
+  <span class="tok-kw">INSERT</span> o <span class="tok-kw">INTO</span> orders
+
+<span class="tok-kw">FOR</span> e <span class="tok-kw">IN</span> [[<span class="tok-str">"ann"</span>, <span class="tok-str">"bob"</span>], [<span class="tok-str">"bob"</span>, <span class="tok-str">"cid"</span>], [<span class="tok-str">"cid"</span>, <span class="tok-str">"dee"</span>], [<span class="tok-str">"ann"</span>, <span class="tok-str">"cid"</span>]]
+  <span class="tok-kw">INSERT</span> {_from: <span class="tok-fn">CONCAT</span>(<span class="tok-str">"customers/"</span>, e[<span class="tok-num">0</span>]), _to: <span class="tok-fn">CONCAT</span>(<span class="tok-str">"customers/"</span>, e[<span class="tok-num">1</span>])} <span class="tok-kw">INTO</span> follows</pre></div>
+<p>Three collections were created first, <code>follows</code> as an edge collection; nothing else was declared. Only one order has a <code>gift</code>, and no schema had to say that it may.</p>
+<p>In PostgreSQL the same shop is four tables, as anyone would model it: the lines of an order are rows of their own, and so are the links.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">create</span> <span class="tok-kw">table</span> customers (key text <span class="tok-kw">primary</span> <span class="tok-kw">key</span>, name text <span class="tok-kw">not</span> <span class="tok-kw">null</span>, city text <span class="tok-kw">not</span> <span class="tok-kw">null</span>);
+<span class="tok-kw">create</span> <span class="tok-kw">table</span> orders (
+  key text <span class="tok-kw">primary</span> <span class="tok-kw">key</span>,
+  customer text <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">references</span> customers,
+  status text <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">check</span> (status <span class="tok-kw">in</span> (<span class="tok-str">'open'</span>, <span class="tok-str">'paid'</span>)),
+  gift_note text);
+<span class="tok-kw">create</span> <span class="tok-kw">table</span> order_items (
+  order_key text <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">references</span> orders,
+  sku text <span class="tok-kw">not</span> <span class="tok-kw">null</span>, qty int <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">check</span> (qty &gt; <span class="tok-num">0</span>), price numeric <span class="tok-kw">not</span> <span class="tok-kw">null</span>);
+<span class="tok-kw">create</span> <span class="tok-kw">table</span> follows (
+  follower text <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">references</span> customers,
+  followed text <span class="tok-kw">not</span> <span class="tok-kw">null</span> <span class="tok-kw">references</span> customers,
+  <span class="tok-kw">primary</span> <span class="tok-kw">key</span> (follower, followed));</pre></div>
+<p>The SQL side is longer before a single row is stored, and that length is not waste: it is the part of the answer that comes <a href="#sql">at the end</a>.</p>
+</section>
+
+<section id="nested"><h2>A customer with their orders</h2>
+<p>The page of a customer shows their name and, under it, their orders. The result has a shape: an object holding a list.</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> c <span class="tok-kw">IN</span> customers
+  <span class="tok-kw">SORT</span> c._key
+  <span class="tok-kw">RETURN</span> {
+    name: c.name,
+    orders: (<span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders
+               <span class="tok-kw">FILTER</span> o.customer == c._key
+               <span class="tok-kw">SORT</span> o._key
+               <span class="tok-kw">RETURN</span> {id: o._key, status: o.status, lines: <span class="tok-fn">LENGTH</span>(o.items)})
+  }</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"name": "Ann", "orders": [{"id": "o1", "lines": 2, "status": "paid"},
+                            {"id": "o2", "lines": 1, "status": "open"}]},
+ {"name": "Bob", "orders": [{"id": "o3", "lines": 1, "status": "paid"}]},
+ {"name": "Cid", "orders": [{"id": "o4", "lines": 2, "status": "paid"}]},
+ {"name": "Dee", "orders": []}]</pre></div>
+<p>A subquery in parentheses is a list, and a list can sit anywhere a value can. Dee, who has ordered nothing, gets an empty one without being asked for. SQL returns rows of columns, so the shape has to be built with JSON functions, and the empty list written out:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">select</span> <span class="tok-fn">json_build_object</span>(
+  <span class="tok-str">'name'</span>, c.name,
+  <span class="tok-str">'orders'</span>, <span class="tok-fn">coalesce</span>(
+    (<span class="tok-kw">select</span> <span class="tok-fn">json_agg</span>(<span class="tok-fn">json_build_object</span>(
+              <span class="tok-str">'id'</span>, o.key, <span class="tok-str">'status'</span>, o.status,
+              <span class="tok-str">'lines'</span>, (<span class="tok-kw">select</span> <span class="tok-fn">count</span>(*) <span class="tok-kw">from</span> order_items i <span class="tok-kw">where</span> i.order_key = o.key))
+              <span class="tok-kw">order</span> <span class="tok-kw">by</span> o.key)
+       <span class="tok-kw">from</span> orders o <span class="tok-kw">where</span> o.customer = c.key),
+    <span class="tok-str">'[]'</span>::json))
+<span class="tok-kw">from</span> customers c
+<span class="tok-kw">order</span> <span class="tok-kw">by</span> c.key;</pre></div>
+<p>It returns the same four objects. The other way SQL applications do it is a join that repeats the customer on every order row, and a loop in the application that folds the rows back into objects. Either way the nesting is yours to write.</p>
+</section>
+
+<section id="arrays"><h2>The lines inside an order</h2>
+<p>The total of each order, and what was in it:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders
+  <span class="tok-kw">SORT</span> o._key
+  <span class="tok-kw">RETURN</span> {id: o._key,
+          total: <span class="tok-fn">SUM</span>(<span class="tok-kw">FOR</span> i <span class="tok-kw">IN</span> o.items <span class="tok-kw">RETURN</span> i.qty * i.price),
+          skus: o.items[*].sku}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"id": "o1", "skus": ["pen", "ink"], "total": 15.0},
+ {"id": "o2", "skus": ["pad"],        "total": 5.0},
+ {"id": "o3", "skus": ["pen"],        "total": 30.0},
+ {"id": "o4", "skus": ["ink", "pad"], "total": 33.0}]</pre></div>
+<p><code>o.items[*].sku</code> takes one field from every element of an array. The orders holding ink are <code>FOR o IN orders FILTER "ink" IN o.items[*].sku RETURN o._key</code>, which answers <code>["o1", "o4"]</code>. And an array can be looped over like a collection, which gives the sales per article:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders
+  <span class="tok-kw">FOR</span> i <span class="tok-kw">IN</span> o.items
+  <span class="tok-kw">COLLECT</span> sku = i.sku <span class="tok-kw">AGGREGATE</span> qty = <span class="tok-fn">SUM</span>(i.qty), revenue = <span class="tok-fn">SUM</span>(i.qty * i.price)
+  <span class="tok-kw">SORT</span> revenue <span class="tok-kw">DESC</span>
+  <span class="tok-kw">RETURN</span> {sku, qty, revenue}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"qty": 12.0, "revenue": 36.0, "sku": "pen"},
+ {"qty": 3.0,  "revenue": 27.0, "sku": "ink"},
+ {"qty": 4.0,  "revenue": 20.0, "sku": "pad"}]</pre></div>
+<p>Here SQL is no longer than SDBQL, and this is worth saying plainly. With the lines in their own table, the three questions are a join and a <code>group by</code>:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">select</span> o.key, <span class="tok-fn">sum</span>(i.qty * i.price) <span class="tok-kw">as</span> total, <span class="tok-fn">array_agg</span>(i.sku) <span class="tok-kw">as</span> skus
+  <span class="tok-kw">from</span> orders o <span class="tok-kw">join</span> order_items i <span class="tok-kw">on</span> i.order_key = o.key
+ <span class="tok-kw">group</span> <span class="tok-kw">by</span> o.key <span class="tok-kw">order</span> <span class="tok-kw">by</span> o.key;
+
+<span class="tok-kw">select</span> o.key <span class="tok-kw">from</span> orders o
+ <span class="tok-kw">where</span> <span class="tok-kw">exists</span> (<span class="tok-kw">select</span> <span class="tok-num">1</span> <span class="tok-kw">from</span> order_items i <span class="tok-kw">where</span> i.order_key = o.key <span class="tok-kw">and</span> i.sku = <span class="tok-str">'ink'</span>)
+ <span class="tok-kw">order</span> <span class="tok-kw">by</span> o.key;
+
+<span class="tok-kw">select</span> sku, <span class="tok-fn">sum</span>(qty) <span class="tok-kw">as</span> qty, <span class="tok-fn">sum</span>(qty * price) <span class="tok-kw">as</span> revenue
+  <span class="tok-kw">from</span> order_items <span class="tok-kw">group</span> <span class="tok-kw">by</span> sku <span class="tok-kw">order</span> <span class="tok-kw">by</span> revenue <span class="tok-kw">desc</span>;</pre></div>
+<p>The difference is not in the queries. It is that the document needed no second table, no key to tie the lines to their order, and no join to read an order whole: the order <em>is</em> its lines. If you keep the lines in a <code>jsonb</code> column to get that back, the queries turn into <code>jsonb_array_elements</code> and casts, and SQL becomes the longer one.</p>
+<p>The same goes for the field only some documents have. <code>FOR o IN orders FILTER o.gift != null RETURN {id: o._key, note: o.gift.note}</code> returns <code>[{"id": "o4", "note": "Happy birthday"}]</code>; on an order without a gift, <code>o.gift.note</code> is simply <code>null</code>. In the table it was a nullable column added for one order in four.</p>
+</section>
+
+<section id="groups"><h2>Groups that keep their rows</h2>
+<p>SQL&rsquo;s <code>group by</code> gives one row per group and aggregates of the rest. SDBQL&rsquo;s <code>COLLECT … INTO</code> gives the group itself, as a list you can go on querying:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> c <span class="tok-kw">IN</span> customers
+  <span class="tok-kw">COLLECT</span> city = c.city <span class="tok-kw">INTO</span> g
+  <span class="tok-kw">SORT</span> city
+  <span class="tok-kw">RETURN</span> {city, n: <span class="tok-fn">LENGTH</span>(g), names: g[*].c.name}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"city": "Lyon",  "n": 2, "names": ["Ann", "Cid"]},
+ {"city": "Nice",  "n": 1, "names": ["Dee"]},
+ {"city": "Paris", "n": 1, "names": ["Bob"]}]</pre></div>
+<p>For a list of names PostgreSQL has <code>array_agg</code>, and the query is as short:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">select</span> city, <span class="tok-fn">count</span>(*) <span class="tok-kw">as</span> n, <span class="tok-fn">array_agg</span>(name <span class="tok-kw">order</span> <span class="tok-kw">by</span> name) <span class="tok-kw">as</span> names
+  <span class="tok-kw">from</span> customers <span class="tok-kw">group</span> <span class="tok-kw">by</span> city <span class="tok-kw">order</span> <span class="tok-kw">by</span> city;</pre></div>
+<p><code>g</code> holds the whole documents, though, not one column of them. To keep every customer of a city with all their fields, SQL goes back to <code>json_agg</code>, or to a window function over ungrouped rows. SDBQL has those too: <code>ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)</code> is written as in SQL.</p>
+</section>
+
+<section id="graph"><h2>Who follows whom</h2>
+<p>Ann follows Bob and Cid; Bob follows Cid; Cid follows Dee. Whom does Ann reach in two steps or fewer, and in how many?</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> v, e, p <span class="tok-kw">IN</span> <span class="tok-num">1</span>..2 <span class="tok-kw">OUTBOUND</span> <span class="tok-str">"customers/ann"</span> follows
+  <span class="tok-kw">SORT</span> v._key
+  <span class="tok-kw">RETURN</span> {name: v.name, hops: <span class="tok-fn">LENGTH</span>(p.edges)}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"hops": 1, "name": "Bob"}, {"hops": 1, "name": "Cid"}, {"hops": 2, "name": "Dee"}]</pre></div>
+<p>The depth is <code>1..2</code>, the direction <code>OUTBOUND</code>, <code>INBOUND</code> or <code>ANY</code>, and the loop hands you the vertex, the edge that led to it and the path so far. In SQL a traversal is a recursive query, and you carry the depth and guard against cycles yourself:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">with</span> <span class="tok-kw">recursive</span> reach(key, depth) <span class="tok-kw">as</span> (
+  <span class="tok-kw">select</span> followed, <span class="tok-num">1</span> <span class="tok-kw">from</span> follows <span class="tok-kw">where</span> follower = <span class="tok-str">'ann'</span>
+  <span class="tok-kw">union</span>
+  <span class="tok-kw">select</span> f.followed, r.depth + <span class="tok-num">1</span>
+    <span class="tok-kw">from</span> reach r <span class="tok-kw">join</span> follows f <span class="tok-kw">on</span> f.follower = r.key
+   <span class="tok-kw">where</span> r.depth &lt; <span class="tok-num">2</span>)
+<span class="tok-kw">select</span> <span class="tok-kw">distinct</span> c.name
+  <span class="tok-kw">from</span> reach <span class="tok-kw">join</span> customers c <span class="tok-kw">on</span> c.key = reach.key
+ <span class="tok-kw">order</span> <span class="tok-kw">by</span> c.name;                                 <span class="tok-com">-- Bob, Cid, Dee</span></pre></div>
+<p>It works, and for a fixed, shallow depth it is fine. It is also the query in this post that people get wrong: <code>union all</code> instead of <code>union</code> on a graph with a cycle never ends.</p>
+<p>By default the traversal visits each vertex once, which is what &ldquo;whom do I reach&rdquo; wants. There are two paths of two steps from Ann, through Bob to Cid and through Cid to Dee, and Cid was already reached in one step, so asking for the paths of length two returns one of them. An option asks for every route instead:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> v, e, p <span class="tok-kw">IN</span> <span class="tok-num">2</span>..<span class="tok-num">2</span> <span class="tok-kw">OUTBOUND</span> <span class="tok-str">"customers/ann"</span> follows
+  OPTIONS { uniqueVertices: <span class="tok-str">"path"</span> }
+  <span class="tok-kw">RETURN</span> p.vertices[*].name</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[["Ann", "Bob", "Cid"], ["Ann", "Cid", "Dee"]]</pre></div>
+<p>The recursive query does the same by carrying the path in an array and refusing a vertex already on it, a few lines more.</p>
+</section>
+
+<section id="write"><h2>Change a document and get it back</h2>
+<p>Mark the open orders paid, and say what each one was:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders
+  <span class="tok-kw">FILTER</span> o.status == <span class="tok-str">"open"</span>
+  <span class="tok-kw">UPDATE</span> o <span class="tok-kw">WITH</span> {status: <span class="tok-str">"paid"</span>} <span class="tok-kw">IN</span> orders
+  <span class="tok-kw">RETURN</span> {id: <span class="tok-kw">NEW</span>._key, was: <span class="tok-kw">OLD</span>.status, now: <span class="tok-kw">NEW</span>.status}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>[{"id": "o2", "now": "paid", "was": "open"}]</pre></div>
+<p>A write is one more step of the pipeline: the same <code>FOR</code> and <code>FILTER</code> as a read, then <code>UPDATE</code>, then a <code>RETURN</code> that sees the document before and after. PostgreSQL has had <code>RETURNING</code> for a long time, and since version 18 it can return the old row beside the new one:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">update</span> orders o <span class="tok-kw">set</span> status = <span class="tok-str">'paid'</span> <span class="tok-kw">where</span> status = <span class="tok-str">'open'</span>
+<span class="tok-kw">returning</span> o.key, old.status <span class="tok-kw">as</span> was, new.status <span class="tok-kw">as</span> now;      <span class="tok-com">-- o2 | open | paid</span></pre></div>
+<p>A tie, on PostgreSQL 18. On an older PostgreSQL the old value takes a self-join or a CTE, and MySQL has no <code>RETURNING</code> at all.</p>
+</section>
+
+<section id="sql"><h2>What SQL does that SDBQL does not</h2>
+<p>Go back to the four <code>create table</code> statements. They are a contract the database enforces on every write, whoever writes:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">insert</span> <span class="tok-kw">into</span> order_items <span class="tok-kw">values</span> (<span class="tok-str">'o9'</span>, <span class="tok-str">'pen'</span>, <span class="tok-num">1</span>, <span class="tok-num">3</span>);
+ERROR:  insert or update on table "order_items" violates foreign key constraint
+DETAIL:  Key (order_key)=(o9) is not present in table "orders".
+
+<span class="tok-kw">insert</span> <span class="tok-kw">into</span> order_items <span class="tok-kw">values</span> (<span class="tok-str">'o1'</span>, <span class="tok-str">'pen'</span>, <span class="tok-num">0</span>, <span class="tok-num">3</span>);
+ERROR:  new row for relation "order_items" violates check constraint "order_items_qty_check"</pre></div>
+<p>SoliDB took the equivalent without a word:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">INSERT</span> {_key: <span class="tok-str">"o9"</span>, customer: <span class="tok-str">"zed"</span>, status: <span class="tok-str">"shipped?"</span>,
+        items: [{sku: <span class="tok-str">"pen"</span>, qty: <span class="tok-num">0</span>, price: <span class="tok-num">3</span>}]} <span class="tok-kw">INTO</span> orders <span class="tok-kw">RETURN</span> <span class="tok-kw">NEW</span>._key
+<span class="tok-com">-- ["o9"]      a customer that does not exist, a status nobody defined, a quantity of zero</span></pre></div>
+<ul>
+<li><strong>Foreign keys.</strong> SoliDB has none. Nothing stops an order from naming a customer that is gone, or a customer from being deleted while orders point at it. A collection can be given a JSON schema, which would have refused the status and the quantity, and an index can be unique; a reference to another document is never checked.</li>
+<li><strong>Transactions in the language.</strong> SQL has <code>begin</code>, <code>commit</code> and savepoints as statements. In SoliDB a transaction is opened through the API or the driver and queries run inside it; SDBQL itself has no statement for it. What a transaction promises is the subject of <a href="/blog/durability-and-transactions">another post</a>.</li>
+<li><strong>Forty years of everything else.</strong> A planner that keeps statistics on your data, views, stored procedures, triggers written in the same language, and every reporting tool and ORM ever made. SDBQL has an index planner, materialized views and Lua scripts, and none of the tools.</li>
+</ul>
+</section>
+
+<section id="verdict"><h2>So which one</h2>
+<p>Nothing on this page is beyond SQL. Counting what had to be written, and what had to be known to write it:</p>
+<table>
+  <thead><tr><th>Question</th><th>SDBQL</th><th>SQL (PostgreSQL 18)</th></tr></thead>
+  <tbody>
+    <tr><td>A customer with their orders</td><td>A subquery where the list goes</td><td><code>json_build_object</code>, <code>json_agg</code>, <code>coalesce</code></td></tr>
+    <tr><td>Totals and contents of an order</td><td>The order is one document</td><td>As short, with a second table and a join</td></tr>
+    <tr><td>A group and its rows</td><td><code>COLLECT … INTO</code></td><td><code>array_agg</code> for one column, JSON for whole rows</td></tr>
+    <tr><td>Reach in a graph</td><td>One <code>FOR</code> with a depth and a direction</td><td>A recursive query, cycles guarded by hand</td></tr>
+    <tr><td>Every route of a given length</td><td>The same <code>FOR</code>, with <code>uniqueVertices: "path"</code></td><td>The same recursive query, carrying the path</td></tr>
+    <tr><td>Update and return old and new</td><td><code>RETURN OLD</code>, <code>NEW</code></td><td><code>returning old, new</code> (from 18)</td></tr>
+    <tr><td>Refuse an order for an unknown customer</td><td>No</td><td>A foreign key</td></tr>
+  </tbody>
+</table>
+<p>SDBQL is shorter where the data is shaped like what the application shows: an object with lists in it, a field that is sometimes there, a graph. SQL is ahead where you want the database, and not each application, to hold the rules of the model. If your data is rows that reference rows, and several programs write them, that second half matters more than any query on this page.</p>
+<p>The language is described in the <a href="/docs/sdbql">SDBQL reference</a>, and graph traversal in <a href="/docs/graphs">the graphs guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>
