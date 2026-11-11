@@ -1,0 +1,78 @@
+{
+  "label": "solidb-main-query",
+  "engine": "solidb",
+  "mode": "query",
+  "initial_balance": 1000,
+  "max_amount": 100,
+  "max_attempts": 200,
+  "seed": 1,
+  "meta": {
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -e SOLIDB_ADMIN_PASSWORD=bench -e SOLIDB_PORT=6800 -v /home/rocky/bench/data/solidb-main:/data:Z,U -e SOLIDB_ENGINE=solistore -e SOLIDB_DURABILITY=full localhost/solidb-perf:797-b",
+    "image": "localhost/solidb-perf:797-b",
+    "image_digest": "sha256:f2cadec91792a26f5118b6389ffa275a92f3fda08384ce8859d02034d3b6e2f0",
+    "server_version": "solidb 2.9.3",
+    "db_cpus": "0-3,16-19",
+    "client_cpus": "8-15,24-31",
+    "db_memory": "16g",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "harness_args": ""
+  },
+  "series": [
+    {
+      "accounts": 10,
+      "clients": 32,
+      "median_run": 0,
+      "runs": [
+        {
+          "accounts": 10,
+          "clients": 32,
+          "run": 0,
+          "commits": 58351,
+          "per_sec": 5835.1,
+          "attempts": 170224,
+          "conflicts": 109276,
+          "conflicts_per_commit": 1.87273568576374,
+          "insufficient": 2597,
+          "gave_up": 1,
+          "failed": 0,
+          "p50_us": 494,
+          "p90_us": 3806,
+          "p99_us": 111329,
+          "p999_us": 352025,
+          "max_us": 1020777,
+          "db_cpu_s": 31.429977,
+          "db_cpu_us_per_commit": 538.6364758101832,
+          "load_before": 2.52,
+          "audits": {
+            "n": 1126,
+            "wrong_total": 0,
+            "wrong_count": 0,
+            "negative_min": 0,
+            "first_wrong": null,
+            "errors": 0
+          },
+          "check": {
+            "acknowledged": 75405,
+            "in_flight": 0,
+            "in_flight_landed": 0,
+            "ledger_rows": 75405,
+            "acknowledged_missing": 0,
+            "ledger_extra": 0,
+            "ledger_workers_mismatched": 0,
+            "accounts_read": 10,
+            "money_drift": 0,
+            "negative_balances": 0,
+            "accounts_off_acknowledged": 0,
+            "accounts_off_ledger": 0,
+            "violations": []
+          },
+          "errors": [
+            "gave up after 200 conflicts: credit: {\"code\":409,\"error\":\"Write conflict: Key bank/accounts/a0 is locked by transaction tx:1794345129264008359\",\"type\":\"TransactionConflict\"}"
+          ],
+          "stopped_workers": []
+        }
+      ]
+    }
+  ]
+}

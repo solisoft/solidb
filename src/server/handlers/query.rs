@@ -665,14 +665,18 @@ pub async fn execute_query(
                             &key,
                             &collection,
                         ) {
-                            Some((_, rev)) => collection.update_tx_if_unchanged(
-                                &mut tx,
-                                &wal,
-                                &lock_manager,
-                                &key,
-                                changes_value,
-                                &rev,
-                            )?,
+                            Some((_, rev)) => collection
+                                .update_tx_if_unchanged(
+                                    &mut tx,
+                                    &wal,
+                                    &lock_manager,
+                                    &key,
+                                    changes_value,
+                                    &rev,
+                                )?
+                                .ok_or_else(|| {
+                                    crate::storage::Collection::stale_write(&key, &rev)
+                                })?,
                             None => collection.update_tx(
                                 &mut tx,
                                 &wal,

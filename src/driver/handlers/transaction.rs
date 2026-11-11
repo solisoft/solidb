@@ -726,10 +726,12 @@ mod tests {
 
     /// A query reads by key what its transaction staged, so an `UPDATE` it
     /// computes there builds on the staged write. A scan reads committed
-    /// data: an `UPDATE` computed from it over the staged version is
-    /// refused with a conflict instead of overwriting it (card #796).
+    /// data, but an `UPDATE` computed from it over the staged version is
+    /// evaluated again on that version (the transaction holds its lock):
+    /// it builds on the staged write too, instead of overwriting it
+    /// (card #796) or being refused (as up to 2.9.3).
     #[tokio::test]
-    async fn an_update_builds_on_a_staged_write_read_by_key_and_is_refused_from_a_scan() {
+    async fn an_update_builds_on_a_staged_write_read_by_key_or_by_a_scan() {
         let (_t, mut h) = handler();
         admin_session(&mut h);
         h.get_collection("d", "c")
@@ -780,18 +782,22 @@ mod tests {
             &mut h,
             tx.clone(),
             query(
-                "FOR x IN c FILTER x.n >= 0 UPDATE x WITH {n: x.n + 1} IN c",
+                "FOR x IN c FILTER x.n >= 0 UPDATE x WITH {n: x.n + 1} IN c RETURN NEW.n",
                 json!({}),
             ),
         )
         .await;
         assert!(
-            matches!(&r, Response::Error { error } if error.to_string().contains("conflict")),
+            matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([3])),
             "{:?}",
             r
         );
-        handle_rollback_transaction(&mut h, tx);
-        assert_eq!(balance(&h, "a"), json!(10));
+        assert_eq!(balance(&h, "a"), json!(10), "staged, not applied");
+        assert!(matches!(
+            handle_commit_transaction(&mut h, tx),
+            Response::Ok { .. }
+        ));
+        assert_eq!(balance(&h, "a"), json!(3));
     }
 
     fn step(command: Command, require_rows: bool) -> crate::driver::protocol::TransactionStep {

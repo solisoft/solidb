@@ -143,7 +143,13 @@ impl Collection {
         };
 
         let (db_name, coll_name) = self.parse_db_coll();
-        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, &key)?;
+        lock_manager.acquire_exclusive_for(
+            tx.id,
+            &db_name,
+            &coll_name,
+            &key,
+            !tx.isolation_level.tracks_reads(),
+        )?;
 
         let doc = Document::with_key(&self.name, key.clone(), data);
         self.check_unique_constraints(&key, &doc.to_value())?;
@@ -166,7 +172,8 @@ impl Collection {
         key: &str,
         data: Value,
     ) -> DbResult<Value> {
-        self.update_tx_guarded(tx, wal, lock_manager, key, data, None)
+        self.update_tx_guarded(tx, wal, lock_manager, key, data, None)?
+            .ok_or_else(|| DbError::InternalError("an unguarded update was refused".into()))
     }
 
     /// [`Self::update_tx`] for changes computed from a document read at
@@ -175,8 +182,11 @@ impl Collection {
     /// — another transaction committed it since, or this one staged a write
     /// to it that the query, reading committed data, did not see — staging
     /// it would overwrite that write with a value computed from the older
-    /// one (card #796). It is refused with `TransactionConflict` instead:
-    /// roll back and retry.
+    /// one (card #796). It is not staged, and `None` is returned: the
+    /// transaction then holds the key's lock, and the caller either
+    /// evaluates the row again on the current document (a query at
+    /// `read_committed`, as a statement outside a transaction does) or
+    /// refuses the statement ([`Self::stale_write`]).
     pub fn update_tx_if_unchanged(
         &self,
         tx: &mut Transaction,
@@ -185,8 +195,18 @@ impl Collection {
         key: &str,
         data: Value,
         expected_rev: &str,
-    ) -> DbResult<Value> {
+    ) -> DbResult<Option<Value>> {
         self.update_tx_guarded(tx, wal, lock_manager, key, data, Some(expected_rev))
+    }
+
+    /// The conflict of a write computed from a revision that is no longer
+    /// the document's: roll back and retry.
+    pub fn stale_write(key: &str, read_rev: &str) -> DbError {
+        DbError::TransactionConflict(format!(
+            "Write conflict: document '{}' changed since this query read it \
+             (revision '{}'); roll back and retry",
+            key, read_rev
+        ))
     }
 
     fn update_tx_guarded(
@@ -197,7 +217,7 @@ impl Collection {
         key: &str,
         data: Value,
         expected_rev: Option<&str>,
-    ) -> DbResult<Value> {
+    ) -> DbResult<Option<Value>> {
         Self::ensure_tx_active(tx)?;
         if self.collection_type.read().as_str() == "timeseries" {
             return Err(DbError::OperationNotSupported(
@@ -206,7 +226,13 @@ impl Collection {
         }
 
         let (db_name, coll_name) = self.parse_db_coll();
-        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
+        lock_manager.acquire_exclusive_for(
+            tx.id,
+            &db_name,
+            &coll_name,
+            key,
+            !tx.isolation_level.tracks_reads(),
+        )?;
 
         // The staged state is a value throughout (`Document::to_value`'s
         // shape), read straight from the stored bytes: building a `Document`
@@ -223,11 +249,7 @@ impl Collection {
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             if now != rev {
-                return Err(DbError::TransactionConflict(format!(
-                    "Write conflict: document '{}' changed since this query read it \
-                     (revision '{}', now '{}'); roll back and retry",
-                    key, rev, now
-                )));
+                return Ok(None);
             }
         }
         let new_data = Self::updated_value(&self.name, key, &old_data, data);
@@ -244,7 +266,7 @@ impl Collection {
             new_data: new_data.clone(),
         });
 
-        Ok(new_data)
+        Ok(Some(new_data))
     }
 
     /// `Document::update` applied to a staged value: the change's fields
@@ -298,7 +320,13 @@ impl Collection {
     ) -> DbResult<()> {
         Self::ensure_tx_active(tx)?;
         let (db_name, coll_name) = self.parse_db_coll();
-        lock_manager.acquire_exclusive(tx.id, &db_name, &coll_name, key)?;
+        lock_manager.acquire_exclusive_for(
+            tx.id,
+            &db_name,
+            &coll_name,
+            key,
+            !tx.isolation_level.tracks_reads(),
+        )?;
 
         let doc = self.tx_base_document(tx, &db_name, &coll_name, key)?;
         let old_data = doc.to_value();

@@ -168,6 +168,25 @@ writer (about 70%), a read that changed (about 29%) and stale writes.
 query now reads by key what its transaction staged. Elle's `internal` there
 is a key read twice at two versions.
 
+### With locks that wait (2026-11-10, after 2.9.3)
+
+A build of `main` whose transactions wait for a document lock (500 ms at
+most; a deadlock is refused at once) and, at `read_committed`, evaluate an
+`UPDATE` again on the current document once they hold it. Same workload,
+15 s, same workstation.
+
+| Mode, level | Committed | Refused | Harness anomalies | Elle `-c serializable` |
+|---|---|---|---|---|
+| `sdbql`, `serializable` | 107,295 | 122,316 | none | **valid** |
+| `sdbql`, `repeatable_read` | 109,863 | 125,012 | none | **valid** |
+| `doc`, `serializable` | 89,684 | 124,878 | none | **valid** |
+| `sdbql`, `read_committed` | 144,008 | 3,426 | none | not run (the level allows anomalies) |
+
+At `read_committed` 2.3% of the transactions are refused, all of them
+deadlocks, where 39% were. The two upper levels do not wait for a write
+lock, so their refusals are as before. In `doc` mode nearly every refusal
+is two transactions that read a key and then both want to write it.
+
 ## `probe-client-tx`
 
 Checks what the Rust client's transaction calls do against a real server: a

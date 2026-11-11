@@ -1,0 +1,76 @@
+{
+  "label": "solidb-main-query",
+  "engine": "solidb",
+  "mode": "query",
+  "initial_balance": 1000,
+  "max_amount": 100,
+  "max_attempts": 200,
+  "seed": 1,
+  "meta": {
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -e SOLIDB_ADMIN_PASSWORD=bench -e SOLIDB_PORT=6800 -v /home/rocky/bench/data/solidb-main:/data:Z,U -e SOLIDB_ENGINE=solistore -e SOLIDB_DURABILITY=full localhost/solidb-perf:797-e",
+    "image": "localhost/solidb-perf:797-e",
+    "image_digest": "sha256:a0367ad7d9f858d44325a84bae811d45f77c3ae727bd61c0faa4cda4ca7f9c19",
+    "server_version": "solidb 2.9.3",
+    "db_cpus": "0-3,16-19",
+    "client_cpus": "8-15,24-31",
+    "db_memory": "16g",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "harness_args": ""
+  },
+  "series": [
+    {
+      "accounts": 10,
+      "clients": 32,
+      "median_run": 0,
+      "runs": [
+        {
+          "accounts": 10,
+          "clients": 32,
+          "run": 0,
+          "commits": 91160,
+          "per_sec": 9116.0,
+          "attempts": 95411,
+          "conflicts": 0,
+          "conflicts_per_commit": 0.0,
+          "insufficient": 4251,
+          "gave_up": 0,
+          "failed": 0,
+          "p50_us": 905,
+          "p90_us": 13147,
+          "p99_us": 16999,
+          "p999_us": 19448,
+          "max_us": 24361,
+          "db_cpu_s": 32.071871,
+          "db_cpu_us_per_commit": 351.8195590171128,
+          "load_before": 3.41,
+          "audits": {
+            "n": 1126,
+            "wrong_total": 0,
+            "wrong_count": 0,
+            "negative_min": 0,
+            "first_wrong": null,
+            "errors": 0
+          },
+          "check": {
+            "acknowledged": 117509,
+            "in_flight": 0,
+            "in_flight_landed": 0,
+            "ledger_rows": 117509,
+            "acknowledged_missing": 0,
+            "ledger_extra": 0,
+            "ledger_workers_mismatched": 0,
+            "accounts_read": 10,
+            "money_drift": 0,
+            "negative_balances": 0,
+            "accounts_off_acknowledged": 0,
+            "accounts_off_ledger": 0,
+            "violations": []
+          },
+          "errors": [],
+          "stopped_workers": []
+        }
+      ]
+    }
+  ]
+}

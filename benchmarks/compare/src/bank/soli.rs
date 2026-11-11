@@ -8,9 +8,12 @@
 //!
 //! - `query`: the idiom. `FOR a IN accounts FILTER a._key == @k FILTER
 //!   a.balance >= @x UPDATE a WITH {balance: a.balance - @x} IN accounts`,
-//!   the credit the same way, then `INSERT` the ledger row. A transaction's
-//!   locks do not wait: a key another transaction holds is refused with 409
-//!   at once, and the transfer is retried.
+//!   the credit the same way, then `INSERT` the ledger row. The two
+//!   accounts are written in account order, as the PostgreSQL harness
+//!   does, so that two transfers between the same pair never wait for
+//!   each other (a server whose locks wait, after 2.9.3, would refuse one
+//!   of them as a deadlock; up to 2.9.3 a held key is refused at once
+//!   either way).
 //! - `doc`: read both accounts with `GET` (shared locks), decide in the
 //!   client, write the new balances with `PUT` (exclusive locks), insert
 //!   the ledger row with `POST`.
@@ -365,6 +368,26 @@ impl Conn {
     }
 
     async fn query_body(&self, txu: &str, t: &Transfer) -> Result<(), Attempt> {
+        // In account order: a debit that finds too little money rolls the
+        // credit back with it.
+        let debit_first = t.from < t.to;
+        let credit = || async {
+            match self
+                .tx_query(
+                    txu,
+                    Q_CREDIT,
+                    json!({"k": key(t.to), "x": t.amount}),
+                    "credit",
+                )
+                .await?
+            {
+                1 => Ok(()),
+                _ => Err(Attempt::Failed("credit matched no account".into())),
+            }
+        };
+        if !debit_first {
+            credit().await?;
+        }
         if self
             .tx_query(
                 txu,
@@ -377,17 +400,8 @@ impl Conn {
         {
             return Err(Attempt::Insufficient);
         }
-        if self
-            .tx_query(
-                txu,
-                Q_CREDIT,
-                json!({"k": key(t.to), "x": t.amount}),
-                "credit",
-            )
-            .await?
-            != 1
-        {
-            return Err(Attempt::Failed("credit matched no account".into()));
+        if debit_first {
+            credit().await?;
         }
         self.tx_query(
             txu,
@@ -498,9 +512,18 @@ impl DriverConn {
                 ("x".to_string(), json!(t.amount)),
             ]))
         };
+        // In account order, as in the other modes.
+        let debit = TransactionStep::query(DB, Q_DEBIT_RETURN, vars(t.from)).require_rows();
+        let credit = TransactionStep::query(DB, Q_CREDIT_RETURN, vars(t.to)).require_rows();
+        let debit_step = usize::from(t.from > t.to);
+        let (first, second) = if debit_step == 0 {
+            (debit, credit)
+        } else {
+            (credit, debit)
+        };
         let steps = vec![
-            TransactionStep::query(DB, Q_DEBIT_RETURN, vars(t.from)).require_rows(),
-            TransactionStep::query(DB, Q_CREDIT_RETURN, vars(t.to)).require_rows(),
+            first,
+            second,
             TransactionStep::insert(
                 DB,
                 "transfers",
@@ -510,7 +533,7 @@ impl DriverConn {
         ];
         match self.c.run_transaction(DB, steps).await {
             Ok(TransactionOutcome::Committed(_)) => Attempt::Committed,
-            Ok(TransactionOutcome::Stopped { step: 0 }) => Attempt::Insufficient,
+            Ok(TransactionOutcome::Stopped { step }) if step == debit_step => Attempt::Insufficient,
             Ok(TransactionOutcome::Stopped { step }) => {
                 Attempt::Failed(format!("step {step} matched nothing"))
             }
@@ -549,24 +572,30 @@ impl DriverConn {
                 ("x".to_string(), json!(t.amount)),
             ]))
         };
-        let debited = self
-            .c
-            .query_with_cache(DB, Q_DEBIT_RETURN, vars(t.from), false)
-            .await
-            .map_err(|e| driver_refused(e, "debit"))?;
-        let t2 = step(1, t1);
-        if debited.is_empty() {
-            return Err(Attempt::Insufficient);
+        // In account order, as in the other modes. The step timings keep
+        // their names: the first write is counted as the debit.
+        let debit_first = t.from < t.to;
+        let mut at = t1;
+        for (i, is_debit) in [debit_first, !debit_first].into_iter().enumerate() {
+            let (q, account, what) = if is_debit {
+                (Q_DEBIT_RETURN, t.from, "debit")
+            } else {
+                (Q_CREDIT_RETURN, t.to, "credit")
+            };
+            let rows = self
+                .c
+                .query_with_cache(DB, q, vars(account), false)
+                .await
+                .map_err(|e| driver_refused(e, what))?;
+            at = step(1 + i, at);
+            if is_debit && rows.is_empty() {
+                return Err(Attempt::Insufficient);
+            }
+            if !is_debit && rows.len() != 1 {
+                return Err(Attempt::Failed("credit matched no account".into()));
+            }
         }
-        let credited = self
-            .c
-            .query_with_cache(DB, Q_CREDIT_RETURN, vars(t.to), false)
-            .await
-            .map_err(|e| driver_refused(e, "credit"))?;
-        let t3 = step(2, t2);
-        if credited.len() != 1 {
-            return Err(Attempt::Failed("credit matched no account".into()));
-        }
+        let t3 = at;
         self.c
             .insert(
                 DB,

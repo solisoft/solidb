@@ -1,0 +1,121 @@
+{
+  "engine": "solidb",
+  "label": "solidb",
+  "server_version": "see meta.server_version",
+  "settings": {
+    "durable": false,
+    "typed": false
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1
+  ],
+  "warm_secs": 2,
+  "measure_secs": 8,
+  "runs": 3,
+  "queries": [
+    {
+      "scenario": "get",
+      "query": "driver Get {database, collection: \"orders\", key}"
+    },
+    {
+      "scenario": "update",
+      "query": "driver Update {collection: \"orders\", key, document: {status}, merge: true}"
+    },
+    {
+      "scenario": "insert",
+      "query": "driver Insert {collection: \"orders\", key, document}"
+    },
+    {
+      "scenario": "load",
+      "query": "driver BulkInsert {collection, documents: [1,000 documents]}"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "FOR o IN orders FILTER o.customer_id == @c RETURN o"
+    },
+    {
+      "scenario": "recent",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 RETURN o"
+    },
+    {
+      "scenario": "join",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "FOR o IN orders COLLECT status = o.status AGGREGATE n = COUNT(), total = SUM(o.amount) RETURN {status, n, total}"
+    },
+    {
+      "scenario": "indexes",
+      "query": "persistent indexes on orders: customer_id, created_at, status"
+    }
+  ],
+  "meta": {},
+  "load": [],
+  "series": [
+    {
+      "scenario": "by_customer",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 202163,
+      "secs": 8.000962495,
+      "ops_per_sec": 25267.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.3674557907048407,
+      "db_cpu_cores": null,
+      "load_avg_before": 1.49,
+      "p50_us": 39,
+      "p90_us": 47,
+      "p99_us": 55,
+      "p999_us": 63,
+      "max_us": 634
+    },
+    {
+      "scenario": "by_customer",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 201950,
+      "secs": 8.000364872,
+      "ops_per_sec": 25243.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.36498335347423133,
+      "db_cpu_cores": null,
+      "load_avg_before": 1.41,
+      "p50_us": 39,
+      "p90_us": 47,
+      "p99_us": 55,
+      "p999_us": 63,
+      "max_us": 215
+    },
+    {
+      "scenario": "by_customer",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 201794,
+      "secs": 8.000473669,
+      "ops_per_sec": 25223.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.36747824211856667,
+      "db_cpu_cores": null,
+      "load_avg_before": 1.35,
+      "p50_us": 39,
+      "p90_us": 47,
+      "p99_us": 55,
+      "p999_us": 63,
+      "max_us": 202
+    }
+  ],
+  "aborted": [],
+  "after_all": {
+    "disk": null,
+    "memory": null
+  }
+}

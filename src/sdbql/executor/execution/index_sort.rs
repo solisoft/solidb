@@ -293,13 +293,14 @@ impl QueryExecutor<'_> {
         }
         let db_name = self.database.as_ref()?;
         let database = self.storage.get_database(db_name).ok()?;
-        if self.is_columnar(&database, name)
-            || !matches!(self.resolve_search_view_collection(name), Ok(None))
-        {
+        if self.is_columnar(&database, name) {
             return None;
         }
         // Also the protected-collection guard: an error here is reported by
-        // the ordinary path.
+        // the ordinary path. A name that is a collection is not a search
+        // view (a view is looked up only when no collection has the name),
+        // so the collection found is the whole check: it used to be opened
+        // twice on every request, once to find it was no view.
         let collection = self.get_collection(name).ok()?;
         if collection
             .get_shard_config()

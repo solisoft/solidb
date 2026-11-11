@@ -866,7 +866,8 @@ mod decode_command_tests {
         // Hand-written frames: fields in another order and left out, a
         // repeated field, an unknown level, a truncated frame.
         use rmp::encode as e;
-        let frame = |fields: &[(&str, &dyn Fn(&mut Vec<u8>))]| {
+        type Field<'a> = (&'a str, &'a dyn Fn(&mut Vec<u8>));
+        let frame = |fields: &[Field]| {
             let mut f = Vec::new();
             e::write_map_len(&mut f, fields.len() as u32).unwrap();
             for (name, write) in fields {

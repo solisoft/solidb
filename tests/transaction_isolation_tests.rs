@@ -535,3 +535,87 @@ async fn concurrent_cross_collection_counts_have_a_serial_order_at_serializable(
         }
     }
 }
+
+/// At `read_committed`, an `UPDATE` in a transaction waits for the lock
+/// another transaction holds on its document, then is evaluated again on
+/// what that transaction committed: no refusal, and no lost update.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_update_waits_for_the_lock_and_builds_on_what_was_committed() {
+    let app = Arc::new(App::new().await);
+    let bump = "FOR d IN doctors FILTER d._key == 'alice' \
+                UPDATE d WITH {shifts: d.shifts + 1} IN doctors RETURN NEW.shifts";
+    let first = app.begin("read_committed").await;
+    assert_eq!(app.rows(&first, bump).await, json!([1]));
+
+    // The second transaction's statement blocks on alice's lock.
+    let second = app.begin("read_committed").await;
+    let waiting = {
+        let (app, second) = (Arc::clone(&app), second.clone());
+        tokio::spawn(async move { app.query(&second, bump).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(!waiting.is_finished(), "it did not wait for the lock");
+
+    assert_eq!(app.commit(&first).await, StatusCode::OK);
+    let (status, out) = waiting.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["result"], json!([2]), "computed from the committed 1");
+    assert_eq!(app.commit(&second).await, StatusCode::OK);
+    let (_, out) = app.cursor("RETURN DOCUMENT('doctors/alice').shifts").await;
+    assert_eq!(out["result"], json!([2]));
+}
+
+/// At `serializable` the same update does not wait: once the first
+/// transaction commits, what the second read is stale, and it would be
+/// refused anyway. It is refused at once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn at_serializable_the_update_is_refused_without_waiting() {
+    let app = Arc::new(App::new().await);
+    let bump = "FOR d IN doctors FILTER d._key == 'alice' \
+                UPDATE d WITH {shifts: d.shifts + 1} IN doctors RETURN NEW.shifts";
+    let first = app.begin("serializable").await;
+    assert_eq!(app.rows(&first, bump).await, json!([1]));
+    let second = app.begin("serializable").await;
+    let started = std::time::Instant::now();
+    let (status, out) = app.query(&second, bump).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{out}");
+    assert!(started.elapsed() < std::time::Duration::from_millis(250));
+    assert_eq!(app.commit(&first).await, StatusCode::OK);
+}
+
+/// A filter that no longer holds on the committed document leaves the row
+/// alone: two transactions cannot both take the last shift.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_row_that_no_longer_passes_its_filter_is_not_written() {
+    let app = Arc::new(App::new().await);
+    let take = "FOR d IN doctors FILTER d._key == 'alice' FILTER d.on_call == true \
+                UPDATE d WITH {on_call: false} IN doctors RETURN 1";
+    let first = app.begin("read_committed").await;
+    assert_eq!(app.rows(&first, take).await, json!([1]));
+    let second = app.begin("read_committed").await;
+    let waiting = {
+        let (app, second) = (Arc::clone(&app), second.clone());
+        tokio::spawn(async move { app.query(&second, take).await })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(app.commit(&first).await, StatusCode::OK);
+    let (status, out) = waiting.await.unwrap();
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["result"], json!([]), "alice was already off call");
+    assert_eq!(app.commit(&second).await, StatusCode::OK);
+}
+
+/// Many transactions incrementing one document: every one commits (none
+/// is refused for a lock, they wait), and none of the increments is lost.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_increments_all_commit_and_none_is_lost() {
+    let app = Arc::new(App::new().await);
+    let committed = hammer(&app, "read_committed", 8, 40, |_| {
+        "FOR d IN doctors FILTER d._key == 'bob' \
+         UPDATE d WITH {shifts: d.shifts + 1} IN doctors RETURN 1"
+    })
+    .await;
+    assert_eq!(committed, 8 * 40, "a transaction was refused");
+    let (_, out) = app.cursor("RETURN DOCUMENT('doctors/bob').shifts").await;
+    assert_eq!(out["result"], json!([committed]));
+}

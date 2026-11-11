@@ -289,6 +289,20 @@ A commit acknowledged before its fsync lost nothing to a process kill: it is ack
 
 **Write skew** (`write_skew.sh`, output in `results/2026-11-10/write-skew.txt`): two transactions at `serializable`, each taking one of two on-call doctors off call through a query if both are on call, both commit. Through documents read by key, the second write gets a `409` and one doctor stays on call.
 
+**Locks that wait** (`results/2026-11-10/lock-wait/`; a build of `main` after 2.9.3, `797-e`, against the one before it, `797-b`, alternating, fresh servers, 2 × 12 s each, twice). Up to 2.9.3 a document lock another transaction holds is refused at once and the transfer retried after a backoff. After it, the transaction waits for the lock (500 ms at most, `SOLIDB_TX_LOCK_WAIT_MS`), a deadlock is refused at once, and at `read_committed` an `UPDATE` whose document changed while it waited is evaluated again on the current one. From this measurement on, the SoliDB harness writes the two accounts in account order, as the PostgreSQL harness always did. 10 accounts, 32 clients, every commit fsynced:
+
+| Mode | Locks refuse at once | Locks wait | PostgreSQL |
+|---|---:|---:|---:|
+| `run` (one request) | 16,990/s, p99 42 ms, 1.1 refusals per commit | **27,330/s, p50 292 µs, p99 5.4 ms, none refused** | `postgres-function` 10,406/s, p99 34 ms |
+| `driver` (five round trips) | 10,930/s, p99 68 ms, 1.17 | **17,440/s, p99 8.5 ms, none** | `postgres-update` 8,339/s |
+| `query` (HTTP) | 5,715/s, p99 114 ms, 1.9 | **8,610/s, p99 17 ms, none** | |
+
+Among 10,000 accounts nothing changes (`run` 77,400 against 77,500 at 32 clients, 13,530 against 13,500 at one; p99 at 32 clients 750 µs against 845).
+
+The order matters, and only once locks wait (`hot-series/`, the 10-account series alone, 10 s, twice, with the harness of before and the ordered one). In either order a server that refuses at once does the same (`run` 11,860 and 11,840/s). A server that waits, given the two accounts in the transfer's own order, has two transfers between the same pair deadlock: `run` 11,440/s (0.72 refusals per commit, p99 14 ms), `driver` 7,260/s against 10,370, `query` 3,650/s against 5,430, so fewer transfers than refusing at once, with a tail two to four times shorter. In account order: 22,940, 17,400 and 9,100/s, none refused. (The series alone measures lower than after the two 10,000-account series, on both builds.)
+
+**Sorted reads, planner** (`results/2026-11-10/sorted-read-planner/`, `797-b` against `797-c`, one client): the plan of an index-ordered read opens its collection once, clones only the index it chose, and does not look for an index to narrow a filter that is only a range on the sort field. The join 13,003 → 13,485/s (median 76–77 → 73–74 µs; PostgreSQL 71 µs), the 20 most recent 14,707 → 14,971/s, ten documents by index 24,980 → 25,175/s.
+
 ### Results, 2026-11-10: ArangoDB 3.12.4
 
 `results/2026-11-10/bank-arango/`. The same transfer, checks and machine, on ArangoDB 3.12.4-3 (Community) through its HTTP API. Both collections are created with `waitForSync` and every transaction asks for it too (the two do not add up: the rates are the same without the collections' flag). Two transactions that write one document do not wait: the second is refused with error 1200 and retried.

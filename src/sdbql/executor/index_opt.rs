@@ -1353,9 +1353,11 @@ impl<'a> QueryExecutor<'a> {
                 .map(|c| &c.value)
         };
         let bounds = range_bounds(sort_field, &terms);
-        let (index, eq_values) = collection
-            .get_all_indexes()
-            .into_iter()
+        // From the cached definitions, and only the index chosen is copied.
+        let meta = collection.index_meta()?;
+        let (index, eq_values) = meta
+            .indexes
+            .iter()
             .filter(|index| matches!(index.index_type, IndexType::Persistent | IndexType::Hash))
             .filter_map(|index| {
                 let (last, leading) = index.fields.split_last()?;
@@ -1376,12 +1378,22 @@ impl<'a> QueryExecutor<'a> {
             .max_by_key(|(_, values)| values.len())?;
         let (lower, upper) = bounds.unwrap_or((None, None));
         let plan = SortedReadPlan {
-            index,
+            index: index.clone(),
             eq_values,
             lower,
             upper,
         };
-        if plan.eq_values.is_empty() {
+        // A FILTER made only of ranges on the sort field has no other read
+        // to compare with: every candidate would read that same range.
+        let only_ranges_on_sort_field = {
+            let mut conjuncts = Vec::new();
+            push_conjuncts(filter, &mut conjuncts);
+            conjuncts.len() == terms.len()
+                && terms.iter().all(|(field, term)| {
+                    field == sort_field && matches!(term, CompositeTerm::Range(..))
+                })
+        };
+        if plan.eq_values.is_empty() && !only_ranges_on_sort_field {
             let others: Vec<ReadPlan> = self
                 .read_candidates(collection, filter, var_name, ctx)
                 .into_iter()

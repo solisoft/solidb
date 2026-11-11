@@ -114,6 +114,18 @@ impl QueryExecutor<'_> {
                 "{statement}: an unguarded write reported a conflict"
             )));
         };
+        if let Some(writer) = &self.tx_writer {
+            return self.update_row_in_transaction(
+                writer.reads.is_some(),
+                clauses,
+                at,
+                update,
+                collection,
+                ctx,
+                statement,
+                (&key, &var, &read_rev),
+            );
+        }
         let start = self.rerun_start(clauses, at, update, &var).map_err(|why| {
             DbError::ConflictError(format!(
                 "{statement}: document '{key}' of {} changed while this query ran \
@@ -161,6 +173,81 @@ impl QueryExecutor<'_> {
                 })?;
             Ok(Some((write, fresh)))
         })
+    }
+
+    /// A transaction's `UPDATE` whose document moved on since the query read
+    /// it. The transaction holds the key's lock by now (it waited for it if
+    /// another held it), so no other transaction can change the document
+    /// again.
+    ///
+    /// At `read_committed` the row is evaluated again on the current
+    /// document, as a statement outside a transaction is and as PostgreSQL
+    /// does at that level: its filters, its LETs, then WITH. A row that no
+    /// longer passes is left alone. At `repeatable_read` and `serializable`
+    /// the transaction has read a version that is no longer current, which
+    /// its commit would refuse anyway: the statement is refused now.
+    #[allow(clippy::too_many_arguments)]
+    fn update_row_in_transaction(
+        &self,
+        reads_tracked: bool,
+        clauses: &[BodyClause],
+        at: usize,
+        update: &UpdateClause,
+        collection: &Collection,
+        ctx: Context,
+        statement: &str,
+        (key, var, read_rev): (&str, &str, &str),
+    ) -> DbResult<Option<(RowWrite, Context)>> {
+        if reads_tracked {
+            return Err(Collection::stale_write(key, read_rev));
+        }
+        let Ok(start) = self.rerun_start(clauses, at, update, var) else {
+            return Err(Collection::stale_write(key, read_rev));
+        };
+        // What the transaction staged for it, else what is committed.
+        let current = match self.staged_in_transaction(collection, key) {
+            Some(Some(doc)) => doc.into_value(),
+            Some(None) => return Ok(None),
+            None => match collection.get_value(key) {
+                Ok(value) => value,
+                Err(DbError::DocumentNotFound(_)) => return Ok(None),
+                Err(e) => return Err(e),
+            },
+        };
+        let rev = current
+            .get("_rev")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let mut fresh = ctx;
+        fresh.insert(var.to_string(), current);
+        if !self.rerun_row(&clauses[start + 1..at], &mut fresh)? {
+            return Ok(None);
+        }
+        let selector_value = self.evaluate_expr_with_context(&update.selector, &fresh)?;
+        if selector_key(&selector_value, statement)? != key {
+            return Err(Collection::stale_write(key, read_rev));
+        }
+        let changes = if update.changes == update.selector {
+            selector_value
+        } else {
+            self.evaluate_expr_with_context(&update.changes, &fresh)?
+        };
+        // Under the transaction's lock only a write outside any transaction
+        // can have moved the document again: that one is a conflict.
+        let write = self
+            .write_update_row(
+                collection,
+                &update.collection,
+                key,
+                changes,
+                update.replace,
+                &update.options,
+                update.binds_old,
+                RowGuard::IfUnchanged(&rev),
+            )?
+            .ok_or_else(|| Collection::stale_write(key, &rev))?;
+        Ok(Some((write, fresh)))
     }
 
     /// Where the row that bound `var` starts: the last `FOR` over it before
