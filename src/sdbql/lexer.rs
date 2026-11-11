@@ -146,6 +146,11 @@ pub struct Lexer {
     input: Vec<char>,
     position: usize,
     current_char: Option<char>,
+    /// The text of the last token when it is a keyword, as written: a
+    /// keyword is also a legal field name (`{on: 1}`, `d.order`), and the
+    /// token alone does not say how it was spelled (`SORT` and `ORDER` are
+    /// one token).
+    word: Option<String>,
 }
 
 impl Lexer {
@@ -157,6 +162,7 @@ impl Lexer {
             input: chars,
             position: 0,
             current_char,
+            word: None,
         }
     }
 
@@ -368,7 +374,7 @@ impl Lexer {
         }
 
         // Check for keywords
-        match ident.to_uppercase().as_str() {
+        let token = match ident.to_uppercase().as_str() {
             "FOR" => Token::For,
             "IN" => Token::In,
             "FILTER" => Token::Filter,
@@ -439,8 +445,10 @@ impl Lexer {
             "OUTER" => Token::Outer,
             "ON" => Token::On,
 
-            _ => Token::Identifier(ident),
-        }
+            _ => return Token::Identifier(ident),
+        };
+        self.word = Some(ident);
+        token
     }
 
     fn read_bind_var(&mut self) -> DbResult<Token> {
@@ -695,10 +703,19 @@ impl Lexer {
     }
 
     pub fn tokenize(&mut self) -> DbResult<Vec<Token>> {
+        Ok(self.tokenize_with_words()?.0)
+    }
+
+    /// The tokens and, beside each keyword token, the word as it was
+    /// written (`None` for every other token).
+    pub fn tokenize_with_words(&mut self) -> DbResult<(Vec<Token>, Vec<Option<String>>)> {
         let mut tokens = Vec::new();
+        let mut words = Vec::new();
 
         loop {
+            self.word = None;
             let token = self.next_token()?;
+            words.push(self.word.take());
             if token == Token::Eof {
                 tokens.push(token);
                 break;
@@ -706,7 +723,7 @@ impl Lexer {
             tokens.push(token);
         }
 
-        Ok(tokens)
+        Ok((tokens, words))
     }
 }
 

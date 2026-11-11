@@ -40,6 +40,21 @@ pub(crate) struct EdgeExpander<'e> {
     edge: &'e Collection,
     direction: EdgeDirection,
     adjacency: Option<HashMap<String, Vec<Document>>>,
+    /// `"<database>:"`, what a document's `_id` starts with and an edge's
+    /// `_from` / `_to` usually do not (see [`local_id`]).
+    db_prefix: String,
+}
+
+/// A vertex id without its database: `"shop:customers/ann"` and
+/// `"customers/ann"` name one document of database `shop`, the first as its
+/// `_id` reads, the second as edges are usually written. A traversal works on
+/// the second form and looks edges up under both, so that a start vertex
+/// given as `c._id`, or edges inserted with `_from: a._id`, are found.
+pub(crate) fn local_id<'i>(id: &'i str, db_prefix: &str) -> &'i str {
+    if db_prefix.is_empty() {
+        return id;
+    }
+    id.strip_prefix(db_prefix).unwrap_or(id)
 }
 
 impl<'e> EdgeExpander<'e> {
@@ -57,6 +72,11 @@ impl<'e> EdgeExpander<'e> {
         max_edges: usize,
     ) -> crate::error::DbResult<Self> {
         let probe = Value::String(String::new());
+        let db_prefix = edge
+            .name
+            .split_once(':')
+            .map(|(db, _)| format!("{db}:"))
+            .unwrap_or_default();
         let want_from = matches!(direction, EdgeDirection::Outbound | EdgeDirection::Any);
         let want_to = matches!(direction, EdgeDirection::Inbound | EdgeDirection::Any);
 
@@ -102,11 +122,11 @@ impl<'e> EdgeExpander<'e> {
             }
             for doc in docs {
                 let from = match doc.get("_from") {
-                    Some(Value::String(s)) => Some(s.clone()),
+                    Some(Value::String(s)) => Some(local_id(&s, &db_prefix).to_string()),
                     _ => None,
                 };
                 let to = match doc.get("_to") {
-                    Some(Value::String(s)) => Some(s.clone()),
+                    Some(Value::String(s)) => Some(local_id(&s, &db_prefix).to_string()),
                     _ => None,
                 };
                 if want_from {
@@ -132,6 +152,7 @@ impl<'e> EdgeExpander<'e> {
             edge,
             direction,
             adjacency,
+            db_prefix,
         })
     }
 
@@ -142,21 +163,41 @@ impl<'e> EdgeExpander<'e> {
             .unwrap_or_default()
     }
 
+    /// The vertex id as this traversal names it: without its database.
+    pub(crate) fn local<'i>(&self, id: &'i str) -> &'i str {
+        local_id(id, &self.db_prefix)
+    }
+
+    /// Edges whose `field` is `current_id`, written with or without the
+    /// database. `None` when the field has no index.
+    fn indexed_edges(&self, field: &str, current_id: &str) -> Option<Vec<Document>> {
+        let mut edges = self
+            .edge
+            .index_lookup_eq(field, &Value::String(current_id.to_string()))?;
+        if !self.db_prefix.is_empty() {
+            let with_db = Value::String(format!("{}{}", self.db_prefix, current_id));
+            edges.extend(
+                self.edge
+                    .index_lookup_eq(field, &with_db)
+                    .unwrap_or_default(),
+            );
+        }
+        Some(edges)
+    }
+
     /// Edges incident to `current_id` in the configured direction.
     pub(crate) fn edges_for(&self, current_id: &str) -> Vec<Document> {
-        let current_value = Value::String(current_id.to_string());
+        let current_id = self.local(current_id);
         match self.direction {
             EdgeDirection::Outbound => self
-                .edge
-                .index_lookup_eq("_from", &current_value)
+                .indexed_edges("_from", current_id)
                 .unwrap_or_else(|| self.adjacency_edges(current_id)),
             EdgeDirection::Inbound => self
-                .edge
-                .index_lookup_eq("_to", &current_value)
+                .indexed_edges("_to", current_id)
                 .unwrap_or_else(|| self.adjacency_edges(current_id)),
             EdgeDirection::Any => match (
-                self.edge.index_lookup_eq("_from", &current_value),
-                self.edge.index_lookup_eq("_to", &current_value),
+                self.indexed_edges("_from", current_id),
+                self.indexed_edges("_to", current_id),
             ) {
                 (Some(from_edges), Some(to_edges)) => {
                     let mut seen: HashSet<String> = HashSet::new();
@@ -179,6 +220,8 @@ impl<'e> EdgeExpander<'e> {
         to: Option<&str>,
         current_id: &str,
     ) -> Option<String> {
+        let (from, to) = (from.map(|s| self.local(s)), to.map(|s| self.local(s)));
+        let current_id = self.local(current_id);
         match self.direction {
             EdgeDirection::Outbound => to.map(|s| s.to_string()),
             EdgeDirection::Inbound => from.map(|s| s.to_string()),

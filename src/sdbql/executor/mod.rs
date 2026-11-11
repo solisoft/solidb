@@ -186,6 +186,9 @@ struct ExecCaches {
     /// (0.56 µs) that every index-path FOR made, once per run of a
     /// correlated subquery.
     auto_index: parking_lot::Mutex<HashMap<String, bool>>,
+    /// The first mistake of the query itself met while a FILTER was
+    /// evaluated (see `QueryExecutor::filter_row`): the query fails with it.
+    filter_mistake: parking_lot::Mutex<Option<String>>,
 }
 
 impl ExecCaches {
@@ -232,6 +235,7 @@ impl ExecCaches {
         self.scan_projections.lock().clear();
         self.columnar.lock().clear();
         self.auto_index.lock().clear();
+        *self.filter_mistake.lock() = None;
     }
 }
 

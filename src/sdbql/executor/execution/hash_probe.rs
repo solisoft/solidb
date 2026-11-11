@@ -371,10 +371,7 @@ impl QueryExecutor<'_> {
                 let mut new_ctx = ctx.clone();
                 new_ctx.insert_shared(for_clause.variable.clone(), docs[idx as usize].clone());
                 checked += 1;
-                if filters.iter().all(|f| {
-                    self.evaluate_filter_with_context(f, &new_ctx)
-                        .unwrap_or(false)
-                }) {
+                if filters.iter().all(|f| self.filter_row(f, &new_ctx)) {
                     out.push(new_ctx);
                 }
                 if checked == BUDGET_CHECK_INTERVAL {

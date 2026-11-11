@@ -448,7 +448,7 @@ fn test_window_function_single_row() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["row_num"], json!(1));
-    assert_eq!(results[0]["running_sum"], json!(100.0));
+    assert_eq!(results[0]["running_sum"], json!(100));
 }
 
 #[test]

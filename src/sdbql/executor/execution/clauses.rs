@@ -379,11 +379,8 @@ impl<'a> QueryExecutor<'a> {
                                 // applied by the index path. Re-evaluate every FILTER,
                                 // in order, against the index-loaded rows so multi-term
                                 // filters return correct results.
-                                new_rows.retain(|ctx| {
-                                    filters.iter().all(|f| {
-                                        self.evaluate_filter_with_context(f, ctx).unwrap_or(false)
-                                    })
-                                });
+                                new_rows
+                                    .retain(|ctx| filters.iter().all(|f| self.filter_row(f, ctx)));
                                 rows = new_rows;
                                 self.check_budget(rows.len())?;
                                 i += 1 + filters.len(); // Skip the FOR and its FILTERs
@@ -461,10 +458,7 @@ impl<'a> QueryExecutor<'a> {
                 }
                 BodyClause::Filter(filter_clause) => {
                     // Filter out rows that don't match
-                    rows.retain(|ctx| {
-                        self.evaluate_filter_with_context(&filter_clause.expression, ctx)
-                            .unwrap_or(false)
-                    });
+                    rows.retain(|ctx| self.filter_row(&filter_clause.expression, ctx));
                 }
                 BodyClause::Search(filter_clause) => {
                     let mut kept = Vec::new();
@@ -1335,15 +1329,9 @@ impl<'a> QueryExecutor<'a> {
                     for ctx in &rows {
                         // Evaluate start vertex
                         let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
-                        let start_id = match &start_value {
-                            Value::String(s) => s.clone(),
-                            _ => {
-                                return Err(DbError::ExecutionError(
-                                    "Start vertex must be a string (e.g., 'users/alice')"
-                                        .to_string(),
-                                ))
-                            }
-                        };
+                        let start_id = expander
+                            .local(vertex_id(&start_value, "Start")?)
+                            .to_string();
 
                         // BFS (queue) or DFS (stack) per OPTIONS { order }.
                         let opts = gt.options;
@@ -1493,24 +1481,10 @@ impl<'a> QueryExecutor<'a> {
 
                     for ctx in &rows {
                         let start_value = self.evaluate_expr_with_context(&sp.start_vertex, ctx)?;
-                        let start_id = match &start_value {
-                            Value::String(s) => s.clone(),
-                            _ => {
-                                return Err(DbError::ExecutionError(
-                                    "Start vertex must be a string".to_string(),
-                                ))
-                            }
-                        };
+                        let start_id = self.local_vertex_id(vertex_id(&start_value, "Start")?);
 
                         let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
-                        let end_id = match &end_value {
-                            Value::String(s) => s.clone(),
-                            _ => {
-                                return Err(DbError::ExecutionError(
-                                    "End vertex must be a string".to_string(),
-                                ))
-                            }
-                        };
+                        let end_id = self.local_vertex_id(vertex_id(&end_value, "End")?);
 
                         let edge_name = self.resolve_edge_collection_name(&sp.edge_collection)?;
                         let edge_collection = self.get_collection(&edge_name)?;
@@ -1762,6 +1736,33 @@ fn count_write(stats: &mut MutationStats, write: &RowWrite) {
         stats.documents_updated += 1;
     } else {
         stats.documents_inserted += 1;
+    }
+}
+
+/// The id a traversal's start or end vertex names: a string
+/// (`"users/alice"`, or a document's `_id`) or the document itself.
+fn vertex_id<'v>(value: &'v Value, which: &str) -> DbResult<&'v str> {
+    match value {
+        Value::String(id) => Ok(id),
+        Value::Object(doc) => doc.get("_id").and_then(Value::as_str).ok_or_else(|| {
+            DbError::ExecutionError(format!("{which} vertex: the document has no _id"))
+        }),
+        _ => Err(DbError::ExecutionError(format!(
+            "{which} vertex must be a string (e.g., 'users/alice') or a document"
+        ))),
+    }
+}
+
+impl QueryExecutor<'_> {
+    /// `id` without this executor's database, as edges name their vertices
+    /// (see `graph::local_id`).
+    fn local_vertex_id(&self, id: &str) -> String {
+        let prefix = self
+            .database
+            .as_deref()
+            .map(|db| format!("{db}:"))
+            .unwrap_or_default();
+        super::graph::local_id(id, &prefix).to_string()
     }
 }
 

@@ -147,7 +147,7 @@ fn test_subquery_in_let() {
     );
 
     // 100 + 200 + 150 + 75 + 250 + 50 = 825
-    assert_eq!(result, json!(825.0));
+    assert_eq!(result, json!(825));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn test_subquery_with_filter() {
         "LET widgets = (FOR s IN sales FILTER s.product == 'Widget' RETURN s.amount) RETURN SUM(widgets)");
 
     // Widget amounts: 100 + 150 + 50 = 300
-    assert_eq!(result, json!(300.0));
+    assert_eq!(result, json!(300));
 }
 
 // ============================================================================
@@ -185,7 +185,7 @@ fn test_sum_with_subquery() {
         &engine,
         "LET amounts = (FOR s IN sales RETURN s.amount) RETURN SUM(amounts)",
     );
-    assert_eq!(result, json!(825.0));
+    assert_eq!(result, json!(825));
 }
 
 #[test]
@@ -580,8 +580,8 @@ fn test_range_with_calculation() {
         "LET nums = (FOR i IN 1..5 RETURN i) RETURN SUM(nums)",
     );
 
-    // 1+2+3+4+5 = 15
-    assert_eq!(result, json!(15.0));
+    // 1+2+3+4+5 = 15, an integer: the sum of integers is one.
+    assert_eq!(result, json!(15));
 }
 
 // ============================================================================
@@ -644,7 +644,7 @@ fn test_collect_streaming_aggregates_match_list_semantics() {
 
     let b = &results[1];
     assert_eq!(b["g"], json!("b"));
-    assert_eq!(b["total"], json!(0.0));
+    assert_eq!(b["total"], json!(0));
     assert_eq!(b["mean"], json!(null), "AVG over no numbers is null");
     assert_eq!(
         b["lo"],

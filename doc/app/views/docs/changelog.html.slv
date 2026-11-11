@@ -9,6 +9,22 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <span class="text-sm font-medium text-gray-400">Not yet tagged</span>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A mistake in a <code>FILTER</code> fails the query</strong> &mdash; a function that does not exist (<code>FILTER NOPE(d.x)</code>) or a bind variable that was not sent (<code>FILTER d.x == @x</code>) dropped every row, and the query answered <code>[]</code> with success. It now fails with the error, in a subquery too. An error that is a fact about one row (a function given a value it cannot take) still only drops that row.</li>
+        <li><strong class="text-white">The sum of integers is an integer</strong> &mdash; <code>SUM([5, 10])</code> answers <code>15</code>, where it answered <code>15.0</code>; so do <code>COLLECT &hellip; AGGREGATE s = SUM(d.n)</code> and <code>SUM(d.n) OVER (&hellip;)</code>. One float among the values makes the sum a float, as before. <code>SUM</code> of no number at all is <code>0</code>, where it was <code>-0.0</code>. <strong>A result that was <code>15.0</code> is now <code>15</code></strong>: a typed client that read the sum of an integer field as a float has to accept an integer. A sum past 2<sup>63</sup> is still a float; columnar collections are unchanged.</li>
+        <li><strong class="text-white">A traversal starts from an <code>_id</code> or a document</strong> &mdash; <code>FOR v IN 1..2 OUTBOUND c._id follows</code> returned nothing: a document's <code>_id</code> carries its database (<code>"shop:customers/ann"</code>) and edges usually do not (<code>"customers/ann"</code>). A start vertex is taken in either form, or as the document itself (<code>OUTBOUND c follows</code>), also for <code>SHORTEST_PATH</code>, and edges written with <code>_from: a._id</code> are followed.</li>
+        <li><strong class="text-white">Any keyword is a field name</strong> &mdash; <code>RETURN {on: 1}</code> and <code>{to: x}</code> were parse errors, and <code>d.to</code> needed <code>d["to"]</code>. A keyword is now a field name as it was written, in an object and after a dot. <code>{sort: 1}</code> made a field named <code>order</code>, and <code>d.order</code> read the field <code>sort</code>: both are fixed.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.9.4 -->
   <section id="v2-9-4" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

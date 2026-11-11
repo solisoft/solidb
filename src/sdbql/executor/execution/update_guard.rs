@@ -291,10 +291,7 @@ impl QueryExecutor<'_> {
         for clause in between {
             match clause {
                 BodyClause::Filter(f) => {
-                    if !self
-                        .evaluate_filter_with_context(&f.expression, ctx)
-                        .unwrap_or(false)
-                    {
+                    if !self.filter_row(&f.expression, ctx) {
                         return Ok(false);
                     }
                 }

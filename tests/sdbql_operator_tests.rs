@@ -473,8 +473,8 @@ fn test_subquery_in_let() {
         &engine,
         "LET values = (FOR n IN nums RETURN n.value) RETURN SUM(values)",
     );
-    // SUM returns float
-    assert_eq!(result, json!(6.0));
+    // The sum of integers is an integer.
+    assert_eq!(result, json!(6));
 }
 
 // ============================================================================

@@ -277,14 +277,19 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
             // Exact, rounded once: what `COLLECT … AGGREGATE SUM` gives. The
             // sign of a zero is the running sum's, which started at -0.0:
             // `-0.0` for no numbers or only `-0.0`s, else `+0.0`.
+            // Integers add to an integer (`0` for no number at all).
             let arr = args[0].as_array().unwrap();
             let mut sum = ExactSum::default();
             let mut negative_zero = true;
-            for x in arr.iter().filter_map(|v| v.as_f64()) {
-                negative_zero &= x == 0.0 && x.is_sign_negative();
-                sum.add(x);
+            for n in arr.iter().filter_map(|v| v.as_number()) {
+                if let Some(x) = n.as_f64() {
+                    negative_zero &= x == 0.0 && x.is_sign_negative();
+                }
+                sum.add_number(n);
             }
-            Ok(Some(num(if negative_zero { -0.0 } else { sum.value() })))
+            Ok(Some(sum.integer().unwrap_or_else(|| {
+                num(if negative_zero { -0.0 } else { sum.value() })
+            })))
         }
         "PRODUCT" => {
             // AQL: product of the numbers in the array; null is skipped and

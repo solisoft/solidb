@@ -416,36 +416,18 @@ impl Parser {
             return Ok(k);
         }
 
-        // Handle keyword tokens that can be used as field names
-        let keyword_name = match self.current_token() {
-            Token::Sort => Some("order"),
-            Token::Count => Some("count"),
-            Token::Filter => Some("filter"),
-            Token::Return => Some("return"),
-            Token::In => Some("in"),
-            Token::For => Some("for"),
-            Token::Let => Some("let"),
-            Token::Limit => Some("limit"),
-            Token::Partition => Some("partition"),
-            Token::Over => Some("over"),
-            Token::Case => Some("case"),
-            Token::When => Some("when"),
-            Token::Then => Some("then"),
-            Token::Else => Some("else"),
-            Token::End => Some("end"),
-            Token::As => Some("as"),
-            Token::Window => Some("window"),
-            _ => None,
-        };
-
-        if let Some(name) = keyword_name {
+        // Any keyword is a field name here, as it was written: `{on: 1}`,
+        // `{to: x}`, `{sort: s}`. It used to be a fixed list of keywords,
+        // each mapped to one spelling (`{sort: 1}` made a field `order`).
+        if let Some(word) = self.keyword_as_written() {
+            let k = word.to_string();
             self.advance();
-            Ok(name.to_string())
-        } else {
-            Err(DbError::ParseError(
-                "Expected field name in object".to_string(),
-            ))
+            return Ok(k);
         }
+
+        Err(DbError::ParseError(
+            "Expected field name in object".to_string(),
+        ))
     }
 
     /// Parse array expression: [elem1, elem2, ...]

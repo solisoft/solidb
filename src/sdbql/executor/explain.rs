@@ -813,10 +813,7 @@ impl<'a> QueryExecutor<'a> {
                     );
                     let filter_start = Instant::now();
                     let before_count = rows.len();
-                    rows.retain(|ctx| {
-                        self.evaluate_filter_with_context(&filter_clause.expression, ctx)
-                            .unwrap_or(false)
-                    });
+                    rows.retain(|ctx| self.filter_row(&filter_clause.expression, ctx));
                     let after_count = rows.len();
                     let duration = filter_start.elapsed().as_micros() as u64;
                     filter_us += duration;

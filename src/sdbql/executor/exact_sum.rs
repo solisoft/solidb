@@ -47,6 +47,12 @@ pub(crate) struct ExactSum {
     /// A non-finite input (none can come from JSON; kept for safety): the
     /// sum is then not a number.
     non_finite: bool,
+    /// The sum of the integers added with [`Self::add_number`], while every
+    /// value added was one: `SUM` of integers is an integer, as in SQL, and
+    /// not `15.0` for 5 + 10. `not_integers` once a float was added or the
+    /// total left an `i128`.
+    integers: i128,
+    not_integers: bool,
 }
 
 impl std::fmt::Debug for ExactSum {
@@ -56,9 +62,43 @@ impl std::fmt::Debug for ExactSum {
 }
 
 impl ExactSum {
-    /// Add `x`, exactly.
+    /// Add `x`, exactly. The sum is a float from then on.
     #[inline]
     pub(crate) fn add(&mut self, x: f64) {
+        self.not_integers = true;
+        self.accumulate(x);
+    }
+
+    /// Add a JSON number: an integer keeps the sum an integer.
+    #[inline]
+    pub(crate) fn add_number(&mut self, n: &serde_json::Number) {
+        let integer = n
+            .as_i64()
+            .map(i128::from)
+            .or_else(|| n.as_u64().map(i128::from));
+        match integer.and_then(|i| self.integers.checked_add(i)) {
+            Some(total) if !self.not_integers => self.integers = total,
+            _ => self.not_integers = true,
+        }
+        if let Some(x) = n.as_f64() {
+            self.accumulate(x);
+        }
+    }
+
+    /// The sum as an integer, when every value added was one (`0` for no
+    /// value at all) and it fits a JSON integer; `None` for a float sum.
+    pub(crate) fn integer(&self) -> Option<serde_json::Value> {
+        if self.not_integers || self.non_finite {
+            return None;
+        }
+        i64::try_from(self.integers)
+            .map(serde_json::Value::from)
+            .or_else(|_| u64::try_from(self.integers).map(serde_json::Value::from))
+            .ok()
+    }
+
+    #[inline]
+    fn accumulate(&mut self, x: f64) {
         let bits = x.to_bits();
         let exp = ((bits >> 52) & 0x7ff) as u32;
         let mut mantissa = bits & ((1u64 << 52) - 1);
@@ -125,6 +165,10 @@ impl ExactSum {
     /// Add everything `other` holds: the sum of both sets of values, exactly.
     pub(crate) fn merge(&mut self, other: &ExactSum) {
         self.non_finite |= other.non_finite;
+        match self.integers.checked_add(other.integers) {
+            Some(total) if !self.not_integers && !other.not_integers => self.integers = total,
+            _ => self.not_integers = true,
+        }
         if other.chunks.is_empty() {
             return;
         }

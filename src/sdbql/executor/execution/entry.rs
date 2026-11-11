@@ -46,6 +46,12 @@ impl<'a> QueryExecutor<'a> {
         // row: a 3 MB `@rows` iterated 20k times was 60 GB, and the server was
         // OOM-killed.
         let outcome = self.execute_query_with_bindings(query, Context::default())?;
+        // A FILTER that named a function that does not exist, or a bind
+        // variable that was not sent, dropped its rows: the query is wrong,
+        // not empty.
+        if let Some(mistake) = self.filter_mistake() {
+            return Err(mistake);
+        }
         // A transaction that tracks its reads and has just read a document
         // at a second revision cannot commit: say so now rather than then.
         if let Some(conflict) = self
@@ -567,10 +573,7 @@ impl<'a> QueryExecutor<'a> {
             let mut rows =
                 self.build_row_combinations_with_context(&query.for_clauses, &initial_bindings)?;
             for filter in &query.filter_clauses {
-                rows.retain(|ctx| {
-                    self.evaluate_filter_with_context(&filter.expression, ctx)
-                        .unwrap_or(false)
-                });
+                rows.retain(|ctx| self.filter_row(&filter.expression, ctx));
             }
             (rows, MutationStats::new())
         };

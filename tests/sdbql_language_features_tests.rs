@@ -770,3 +770,203 @@ fn mutation_in_post_limit_let_counts_as_write() {
     let q = parse(r#"REPLACE { _key: "a" } IN users"#).unwrap();
     assert!(q.has_mutations());
 }
+
+// ---------------------------------------------------------------- mistakes
+
+/// A FILTER that names a function that does not exist, or a bind variable
+/// that was not sent, is a mistake in the query: it fails, where it used to
+/// drop every row and answer `[]` (card #794). An error that is a fact about
+/// one row still only drops that row.
+#[test]
+fn a_mistake_in_a_filter_fails_the_query() {
+    let (engine, _tmp) = engine();
+    engine.create_collection("users".to_string(), None).unwrap();
+    let users = engine.get_collection("users").unwrap();
+    for (k, n) in [("a", 1), ("b", 2)] {
+        users.insert(json!({"_key": k, "n": n})).unwrap();
+    }
+
+    let unknown = run_err(&engine, "FOR u IN users FILTER NOPE(u.n) RETURN u._key");
+    assert!(unknown.contains("Unknown function: NOPE"), "{unknown}");
+    let unbound = run_err(&engine, "FOR u IN users FILTER u.n == @n RETURN u._key");
+    assert!(unbound.contains("Bind variable '@n'"), "{unbound}");
+    // In a subquery, and behind an index-free second FILTER, too.
+    let nested = run_err(
+        &engine,
+        "FOR u IN users RETURN LENGTH(FOR x IN users FILTER NOPE(x.n) RETURN 1)",
+    );
+    assert!(nested.contains("Unknown function: NOPE"), "{nested}");
+    let second = run_err(
+        &engine,
+        "FOR u IN users FILTER u.n > 0 FILTER u.n == @missing RETURN u._key",
+    );
+    assert!(second.contains("Bind variable '@missing'"), "{second}");
+
+    // The same filters, written right, still answer.
+    let mut rows = run(&engine, "FOR u IN users FILTER ABS(u.n) > 1 RETURN u._key");
+    rows.sort_by_key(|v| v.to_string());
+    assert_eq!(rows, vec![json!("b")]);
+    // And a query that writes nothing because of the mistake wrote nothing.
+    let refused = run_err(
+        &engine,
+        "FOR u IN users FILTER NOPE(u.n) UPDATE u WITH {n: 99} IN users",
+    );
+    assert!(refused.contains("Unknown function"), "{refused}");
+    assert_eq!(
+        run(&engine, "FOR u IN users SORT u._key RETURN u.n"),
+        vec![json!(1), json!(2)]
+    );
+}
+
+// ---------------------------------------------------------------- keywords
+
+/// A keyword is a field name as it was written, in an object and after a
+/// dot. Only some were accepted in an object, and each as one fixed
+/// spelling: `{on: 1}` did not parse, and `{sort: 1}` made a field `order`.
+#[test]
+fn a_keyword_is_a_field_name_as_written() {
+    let (engine, _tmp) = engine();
+    assert_eq!(
+        one(
+            &engine,
+            "RETURN {on: 1, to: 2, sort: 3, order: 4, Filter: 5, left: 6}"
+        ),
+        json!({"on": 1, "to": 2, "sort": 3, "order": 4, "Filter": 5, "left": 6})
+    );
+    assert_eq!(
+        one(
+            &engine,
+            r#"LET d = {"order": 1, "to": 2, "sort": 3, "on": 4} RETURN [d.order, d.to, d.sort, d.on]"#
+        ),
+        json!([1, 2, 3, 4])
+    );
+    // Keywords are still keywords where a clause begins.
+    assert_eq!(
+        run(&engine, "FOR x IN [3, 1, 2] SORT x RETURN {sort: x}"),
+        vec![json!({"sort": 1}), json!({"sort": 2}), json!({"sort": 3})]
+    );
+}
+
+// --------------------------------------------------------------------- SUM
+
+/// The sum of integers is an integer, as in SQL: `SUM([5, 10])` is `15`,
+/// not `15.0`, in the function, in COLLECT and over a window. One float
+/// among the values makes the sum a float.
+#[test]
+fn the_sum_of_integers_is_an_integer() {
+    let (engine, _tmp) = engine();
+    let is_int = |v: &Value| v.is_i64() || v.is_u64();
+
+    let sum = one(&engine, "RETURN SUM([5, 10])");
+    assert!(is_int(&sum) && sum == json!(15), "{sum:?}");
+    let none = one(&engine, "RETURN SUM([])");
+    assert!(is_int(&none) && none == json!(0), "{none:?}");
+    let mixed = one(&engine, "RETURN SUM([1, 2.5])");
+    assert!(mixed.is_f64() && mixed == json!(3.5), "{mixed:?}");
+    let floats = one(&engine, "RETURN SUM([1.0, 2.0])");
+    assert!(floats.is_f64() && floats == json!(3.0), "{floats:?}");
+    // Past an i64 the integer does not fit a JSON number: a float.
+    let wide = one(
+        &engine,
+        "RETURN SUM([9223372036854775807, 9223372036854775807, 9223372036854775807])",
+    );
+    assert!(wide.is_f64(), "{wide:?}");
+
+    engine.create_collection("sales".to_string(), None).unwrap();
+    let sales = engine.get_collection("sales").unwrap();
+    for (k, shop, qty, price) in [("1", "a", 2, 1.5), ("2", "a", 3, 2.0), ("3", "b", 4, 0.25)] {
+        sales
+            .insert(json!({"_key": k, "shop": shop, "qty": qty, "price": price}))
+            .unwrap();
+    }
+    let by_shop = run(
+        &engine,
+        "FOR s IN sales COLLECT shop = s.shop AGGREGATE qty = SUM(s.qty), paid = SUM(s.qty * s.price) \
+         SORT shop RETURN [shop, qty, paid]",
+    );
+    assert_eq!(by_shop, vec![json!(["a", 5, 9.0]), json!(["b", 4, 1.0])]);
+    assert!(
+        is_int(&by_shop[0][1]) && by_shop[0][2].is_f64(),
+        "{by_shop:?}"
+    );
+    let total = one(
+        &engine,
+        "FOR s IN sales COLLECT AGGREGATE qty = SUM(s.qty) RETURN qty",
+    );
+    assert!(is_int(&total) && total == json!(9), "{total:?}");
+    let running = run(
+        &engine,
+        "FOR s IN sales SORT s._key RETURN SUM(s.qty) OVER (ORDER BY s._key)",
+    );
+    assert_eq!(running, vec![json!(2), json!(5), json!(9)]);
+    assert!(running.iter().all(is_int), "{running:?}");
+}
+
+// ------------------------------------------------------------ vertex ids
+
+/// A traversal takes its start as edges name it (`"people/ann"`), as the
+/// document's `_id` reads (`"shop:people/ann"`) or as the document itself,
+/// and finds edges written either way.
+#[test]
+fn a_traversal_starts_from_an_id_or_a_document() {
+    let (engine, _tmp) = engine();
+    engine.create_database("shop".to_string()).unwrap();
+    let db = engine.get_database("shop").unwrap();
+    db.create_collection("people".to_string(), None).unwrap();
+    db.create_collection("follows".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let in_shop = |q: &str| {
+        let query = parse(q).unwrap_or_else(|e| panic!("parse failed for {q}: {e:?}"));
+        QueryExecutor::with_database(&engine, "shop".to_string())
+            .execute(&query)
+            .unwrap_or_else(|e| panic!("query failed for {q}: {e:?}"))
+    };
+    in_shop(r#"FOR k IN ["ann", "bob", "cid", "dee"] INSERT {_key: k} INTO people"#);
+    in_shop(
+        r#"FOR e IN [["ann", "bob"], ["bob", "cid"]]
+             INSERT {_from: CONCAT("people/", e[0]), _to: CONCAT("people/", e[1])} INTO follows"#,
+    );
+    // One edge written with the documents' own ids.
+    in_shop(
+        r#"FOR a IN people FILTER a._key == "cid" FOR b IN people FILTER b._key == "dee"
+             INSERT {_from: a._id, _to: b._id} INTO follows"#,
+    );
+    assert_eq!(
+        in_shop(r#"FOR p IN people FILTER p._key == "ann" RETURN p._id"#),
+        vec![json!("shop:people/ann")]
+    );
+
+    let reached = vec![json!("bob"), json!("cid"), json!("dee")];
+    for start in [
+        r#""people/ann""#,
+        r#""shop:people/ann""#,
+        "p._id",
+        "p",
+        r#"CONCAT("people/", p._key)"#,
+    ] {
+        let q = format!(
+            r#"FOR p IN people FILTER p._key == "ann"
+                 FOR v IN 1..3 OUTBOUND {start} follows SORT v._key RETURN v._key"#
+        );
+        assert_eq!(in_shop(&q), reached, "start {start}");
+    }
+    assert_eq!(
+        in_shop(r#"FOR v IN 1..3 INBOUND "shop:people/dee" follows SORT v._key RETURN v._key"#),
+        vec![json!("ann"), json!("bob"), json!("cid")]
+    );
+    assert_eq!(
+        in_shop(r#"FOR v IN 1..1 ANY "people/cid" follows SORT v._key RETURN v._key"#),
+        vec![json!("bob"), json!("dee")]
+    );
+    let not_a_vertex = {
+        let query = parse("FOR v IN 1..1 OUTBOUND 42 follows RETURN v").unwrap();
+        QueryExecutor::with_database(&engine, "shop".to_string())
+            .execute(&query)
+            .expect_err("a number is no vertex")
+            .to_string()
+    };
+    assert!(
+        not_a_vertex.contains("Start vertex must be"),
+        "{not_a_vertex}"
+    );
+}

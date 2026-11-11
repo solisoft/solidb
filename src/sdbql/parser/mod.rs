@@ -15,6 +15,8 @@ use crate::error::{DbError, DbResult};
 /// Parser for SDBQL queries
 pub struct Parser {
     pub(crate) tokens: Vec<Token>,
+    /// Beside each keyword token, the word as written (see the lexer).
+    pub(crate) words: Vec<Option<String>>,
     pub(crate) position: usize,
     pub(crate) allow_in_operator: bool,
     depth: usize,
@@ -26,10 +28,11 @@ impl Parser {
     /// Create a new parser from an input string
     pub fn new(input: &str) -> DbResult<Self> {
         let mut lexer = Lexer::new(input);
-        let tokens = lexer.tokenize()?;
+        let (tokens, words) = lexer.tokenize_with_words()?;
 
         Ok(Self {
             tokens,
+            words,
             position: 0,
             allow_in_operator: true,
             depth: 0,

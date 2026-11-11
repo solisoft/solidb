@@ -718,11 +718,11 @@ fn test_function_sum() {
 
     assert_eq!(
         execute_query(&engine, "RETURN SUM([1, 2, 3, 4, 5])"),
-        json!(15.0)
+        json!(15)
     );
     assert_eq!(
         execute_query(&engine, "RETURN SUM([10, 20, 30])"),
-        json!(60.0)
+        json!(60)
     );
 }
 

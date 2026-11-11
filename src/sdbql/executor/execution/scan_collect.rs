@@ -606,10 +606,7 @@ impl QueryExecutor<'_> {
             match stage {
                 BodyClause::Filter(f) => {
                     passes[filter].0 += 1;
-                    if !self
-                        .evaluate_filter_with_context(&f.expression, ctx)
-                        .unwrap_or(false)
-                    {
+                    if !self.filter_row(&f.expression, ctx) {
                         return Ok(false);
                     }
                     passes[filter].1 += 1;

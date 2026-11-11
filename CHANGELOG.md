@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Changed
+
+* **The sum of integers is an integer.** `SUM([5, 10])` answers `15`, not
+  `15.0`; so do `COLLECT … AGGREGATE s = SUM(d.n)` and `SUM(d.n) OVER (…)`.
+  One float among the values makes the sum a float. `SUM` of no number is
+  `0` (it was `-0.0`). A typed client that read the sum of an integer field
+  as a float has to accept an integer.
+* **A mistake in a `FILTER` fails the query.** A function that does not
+  exist or a bind variable that was not sent dropped every row and the
+  query answered `[]` with success (card #794). Row-level evaluation errors
+  still only drop their row.
+
+### Fixed
+
+* **A traversal started from an `_id` or a document** finds its edges:
+  `OUTBOUND c._id follows` returned nothing, `_id` carrying the database and
+  edges not (card #819). Edges written with `_from: a._id` are followed.
+* **Any keyword is a field name, as written**: `{on: 1}`, `{to: x}`, `d.to`.
+  `{sort: 1}` made a field `order`, and `d.order` read the field `sort`.
+
 ## [2.9.4](https://github.com/solisoft/solidb/compare/v2.9.3...v2.9.4) (2026-11-11)
 
 Transactions: the two upper isolation levels check what was read, locks

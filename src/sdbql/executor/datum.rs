@@ -82,6 +82,16 @@ impl<'a> Datum<'a> {
         }
     }
 
+    /// The number itself, which says whether it is an integer.
+    #[inline]
+    pub(crate) fn as_number(&self) -> Option<&serde_json::Number> {
+        match self {
+            Datum::Num(n) => Some(n),
+            Datum::Val(v) => v.as_number(),
+            _ => None,
+        }
+    }
+
     /// The value as a `Value` when that needs no allocation.
     #[inline]
     fn scalar(&self) -> Option<Value> {

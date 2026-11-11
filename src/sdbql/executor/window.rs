@@ -526,16 +526,20 @@ impl<'a> QueryExecutor<'a> {
             // MIN keeps the first minimum, MAX the last maximum.
             agg @ ("SUM" | "AVG" | "COUNT" | "MIN" | "MAX") => {
                 let mut sum = 0.0f64;
+                // The running sum as an integer, while every value was one:
+                // SUM of integers is an integer.
+                let mut integers: Option<i64> = Some(0);
                 let mut numeric = 0usize;
                 let mut non_null = 0usize;
                 let mut extreme: Option<Value> = None;
 
                 let current = |sum: f64,
+                               integers: Option<i64>,
                                numeric: usize,
                                non_null: usize,
                                extreme: &Option<Value>| {
                     match agg {
-                        "SUM" => float(sum),
+                        "SUM" => integers.map_or_else(|| float(sum), Value::from),
                         "AVG" => {
                             if numeric == 0 {
                                 Value::Null
@@ -557,6 +561,9 @@ impl<'a> QueryExecutor<'a> {
                     if let Some(x) = value.as_f64() {
                         sum += x;
                         numeric += 1;
+                        integers = integers
+                            .zip(value.as_i64())
+                            .and_then(|(total, i)| total.checked_add(i));
                     }
                     if !value.is_null() {
                         non_null += 1;
@@ -579,11 +586,11 @@ impl<'a> QueryExecutor<'a> {
                     }
 
                     if has_order {
-                        results.push(current(sum, numeric, non_null, &extreme));
+                        results.push(current(sum, integers, numeric, non_null, &extreme));
                     }
                 }
                 if !has_order {
-                    results.resize(n, current(sum, numeric, non_null, &extreme));
+                    results.resize(n, current(sum, integers, numeric, non_null, &extreme));
                 }
             }
 

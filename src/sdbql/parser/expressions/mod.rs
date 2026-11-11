@@ -124,7 +124,17 @@ impl Parser {
 
     /// Get field name from current token - handles both identifiers and keywords
     pub(super) fn get_field_name(&self) -> Option<String> {
+        // A keyword is a field name as it was written: `d.order` is the
+        // field `order`, though ORDER and SORT are one token.
+        if let Some(word) = self.keyword_as_written() {
+            return Some(word.to_string());
+        }
         Self::token_to_field_name(self.current_token())
+    }
+
+    /// The current token's text when it is a keyword.
+    pub(super) fn keyword_as_written(&self) -> Option<&str> {
+        self.words.get(self.position)?.as_deref()
     }
 
     /// Parse a keyword token as a function call.

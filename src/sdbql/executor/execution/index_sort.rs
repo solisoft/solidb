@@ -537,10 +537,7 @@ impl QueryExecutor<'_> {
                 let mut ctx = bindings.clone();
                 ctx.insert(var.clone(), row);
                 for filter in &plan.filters {
-                    if !self
-                        .evaluate_filter_with_context(filter, &ctx)
-                        .unwrap_or(false)
-                    {
+                    if !self.filter_row(filter, &ctx) {
                         return Some(None);
                     }
                 }
@@ -579,10 +576,7 @@ impl QueryExecutor<'_> {
             ctx.insert(var.clone(), doc.to_value());
             for (filter, (checked, kept)) in plan.filters.iter().zip(filter_counts.iter_mut()) {
                 *checked += 1;
-                if !self
-                    .evaluate_filter_with_context(filter, &ctx)
-                    .unwrap_or(false)
-                {
+                if !self.filter_row(filter, &ctx) {
                     return false;
                 }
                 *kept += 1;

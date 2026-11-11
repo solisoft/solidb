@@ -202,7 +202,7 @@ fn every_aggregate_over_mixed_values() {
         "FOR d IN c FILTER d.v == 'nothing' COLLECT AGGREGATE s = SUM(d.v), a = AVG(d.v), \
          m = MIN(d.v), n = COUNT() RETURN {s, a, m, n}",
     );
-    assert_eq!(empty, vec![json!({"s": 0.0, "a": null, "m": null, "n": 0})]);
+    assert_eq!(empty, vec![json!({"s": 0, "a": null, "m": null, "n": 0})]);
     assert_eq!(
         same(
             &engine,
@@ -709,8 +709,8 @@ async fn sharded_collections_are_read_from_their_shards() {
     assert_eq!(
         on,
         vec![
-            json!({"tag": "even", "total": 42.0, "n": 6}),
-            json!({"tag": "odd", "total": 36.0, "n": 6}),
+            json!({"tag": "even", "total": 42, "n": 6}),
+            json!({"tag": "odd", "total": 36, "n": 6}),
         ]
     );
 }
@@ -1066,8 +1066,8 @@ fn float_sums_do_not_depend_on_the_split() {
             "{threads}"
         );
     }
-    // The array builtins add the same way; a zero keeps the running sum's
-    // sign, which started at -0.0.
+    // The array builtins add the same way. Integers, and no number at all,
+    // add to an integer; a float zero keeps its sign.
     let ret = |q: &str| serde_json::to_string(&run(&engine, q, true, &binds).unwrap()).unwrap();
     assert_eq!(
         ret("RETURN SUM([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])"),
@@ -1076,7 +1076,7 @@ fn float_sums_do_not_depend_on_the_split() {
     assert_eq!(ret("RETURN AVG([0.1, 0.2, 0.3])"), "[0.19999999999999998]");
     assert_eq!(
         ret("RETURN [SUM([]), SUM([-0.0]), SUM([1, -1]), SUM(['x'])]"),
-        "[[-0.0,-0.0,0.0,-0.0]]"
+        "[[0,-0.0,0,0]]"
     );
 
     // 100 repetitions of the nine values per group: exactly 100 times their

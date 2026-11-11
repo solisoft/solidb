@@ -305,6 +305,33 @@ impl<'a> QueryExecutor<'a> {
         Ok(to_bool(&self.evaluate_expr_with_context(expr, ctx)?))
     }
 
+    /// Whether a row passes `expr`, for a FILTER. An evaluation error drops
+    /// the row, as it always has: a function given a value it cannot take is
+    /// a fact about that row. Two errors are not: a function that does not
+    /// exist and a bind variable that was not sent are mistakes in the query,
+    /// true of every row, and dropping them all answered `[]` and success
+    /// (card #794). The first one is kept, and the query fails with it
+    /// (`execute_with_stats`).
+    pub(in crate::sdbql::executor) fn filter_row(&self, expr: &Expression, ctx: &Context) -> bool {
+        match self.evaluate_filter_with_context(expr, ctx) {
+            Ok(passes) => passes,
+            Err(DbError::ExecutionError(message)) if is_query_mistake(&message) => {
+                self.caches.filter_mistake.lock().get_or_insert(message);
+                false
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// The mistake a FILTER of this query met, if any.
+    pub(in crate::sdbql::executor) fn filter_mistake(&self) -> Option<DbError> {
+        self.caches
+            .filter_mistake
+            .lock()
+            .clone()
+            .map(DbError::ExecutionError)
+    }
+
     /// Evaluate an expression with a context containing multiple variables
     pub fn evaluate_expr_with_context(&self, expr: &Expression, ctx: &Context) -> DbResult<Value> {
         match expr {
@@ -1258,4 +1285,10 @@ fn array_position(n: &serde_json::Number, len: usize) -> DbResult<Option<usize>>
     } else {
         Ok(usize::try_from(i).ok())
     }
+}
+
+/// Errors that say the query is wrong, whatever the row: the messages of an
+/// unknown function (`evaluate.rs`) and of a missing bind variable (above).
+fn is_query_mistake(message: &str) -> bool {
+    message.starts_with("Unknown function: ") || message.starts_with("Bind variable '@")
 }

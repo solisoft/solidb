@@ -374,8 +374,8 @@ impl AggregateAccumulator {
                 false
             }
             Self::Sum(sum) => {
-                if let Some(n) = value.as_ref().and_then(Datum::as_f64) {
-                    sum.add(n);
+                if let Some(n) = value.as_ref().and_then(Datum::as_number) {
+                    sum.add_number(n);
                 }
                 false
             }
@@ -548,7 +548,7 @@ impl AggregateAccumulator {
     pub(super) fn finish(self) -> Value {
         match self {
             Self::CountRows(n) | Self::CountNonNull(n) => Value::Number(n.into()),
-            Self::Sum(sum) => float_value(sum.value()),
+            Self::Sum(sum) => sum.integer().unwrap_or_else(|| float_value(sum.value())),
             Self::Avg { count: 0, .. } => Value::Null,
             Self::Avg { sum, count } => float_value(sum.value() / count as f64),
             Self::Min(v) | Self::Max(v) => v.map_or(Value::Null, |(v, _)| v),

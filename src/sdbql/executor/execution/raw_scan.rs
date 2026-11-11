@@ -322,10 +322,7 @@ impl QueryExecutor<'_> {
                 let mut ctx = Context::default();
                 ctx.insert(var.to_string(), row);
                 for filter in &plan.filters {
-                    if !self
-                        .evaluate_filter_with_context(filter, &ctx)
-                        .unwrap_or(false)
-                    {
+                    if !self.filter_row(filter, &ctx) {
                         return Some(None);
                     }
                 }

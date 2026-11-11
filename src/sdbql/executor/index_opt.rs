@@ -2866,11 +2866,7 @@ impl QueryExecutor<'_> {
                 }
             }
         }
-        new_rows.retain(|ctx| {
-            filters
-                .iter()
-                .all(|f| self.evaluate_filter_with_context(f, ctx).unwrap_or(false))
-        });
+        new_rows.retain(|ctx| filters.iter().all(|f| self.filter_row(f, ctx)));
         // Reported as the planner reports a single-field lookup.
         let (index_name, index_type) = used
             .and_then(|field| {

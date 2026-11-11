@@ -361,10 +361,7 @@ impl<'a> QueryExecutor<'a> {
             let admits_missing = guard_parts
                 .into_iter()
                 .filter(|c| self.depends_only_on_field(c, var_name, &call.field))
-                .all(|c| {
-                    self.evaluate_filter_with_context(c, &probe)
-                        .unwrap_or(false)
-                });
+                .all(|c| self.filter_row(c, &probe));
             if admits_missing {
                 continue;
             }
