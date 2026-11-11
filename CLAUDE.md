@@ -432,7 +432,7 @@ schema, versioning, a vector index — an active replication log, and any
 document it refuses go the decoded way (`Collection::raw_write_ready`,
 `document::prepare_raw`).
 
-### Reads a transaction has checked at commit (after 2.9.3)
+### Reads a transaction has checked at commit (2.9.4)
 
 At `repeatable_read` and `serializable` (`IsolationLevel::tracks_reads`) a
 transaction's queries read through a tracked `Collection` handle
@@ -465,7 +465,7 @@ Rules that keep it sound:
 At every level, the executor's point reads (`key_fast_path`, `get_visible`)
 return what the transaction staged (`staged_in_transaction`); scans do not.
 
-### Commits written in groups (after 2.9.3)
+### Commits written in groups (2.9.4)
 
 `StorageEngine::prepare_commit` does everything a commit does before its
 write (locks, read checks, staging into the batch) and returns a

@@ -20,6 +20,7 @@
 #   solidb-2.9.2    2.9.2; modes query, driver (the transfer over the native
 #                   driver, which runs writing queries in transactions since 2.9.2)
 #   solidb-2.9.3    2.9.3; modes query, driver, run (run_transaction, since 2.9.3)
+#   solidb-2.9.4    2.9.4, the same modes: locks that wait, commits in groups
 #   arango          ArangoDB 3.12.4, both collections waitForSync; modes stream
 #                   (a stream transaction, five requests) and js (a JavaScript
 #                   transaction, one request)
@@ -62,8 +63,9 @@ SOLIDB_290=${SOLIDB_290:-ghcr.io/solisoft/solidb@sha256:05a5da7d3961d2358db55453
 SOLIDB_291=${SOLIDB_291:-ghcr.io/solisoft/solidb@sha256:29f31b15a448fd7c680fb52c4a9e29dd16ea3c3de2eaf9181a17f1df63d94214} # v2.9.1
 SOLIDB_292=${SOLIDB_292:-ghcr.io/solisoft/solidb@sha256:2bc1036dd698ffb1232d235a50ef875417fb98e9dec1f06c4cadacc9f95c6b12} # v2.9.2
 SOLIDB_293=${SOLIDB_293:-ghcr.io/solisoft/solidb:v2.9.3}
+SOLIDB_294=${SOLIDB_294:-ghcr.io/solisoft/solidb:v2.9.4}
 
-ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2 solidb-2.9.3 arango
+ALL=(postgres postgres-naive solidb-2.9.0 solidb-2.9.1 solidb-2.9.2 solidb-2.9.3 solidb-2.9.4 arango
   crash-postgres crash-postgres-async crash-solidb crash-solidb-eventual crash-solidb-unsynced
   crash-arango)
 
@@ -116,12 +118,13 @@ configure() {
       [[ $cfg == postgres-naive ]] && MODES=(naive) && SERIES=10:32
       [[ $cfg == crash-* ]] && MODES=(update)
       ;;
-    solidb-2.9.0 | solidb-2.9.1 | solidb-2.9.2 | solidb-2.9.3 | solidb-main | crash-solidb | crash-solidb-eventual | crash-solidb-unsynced)
+    solidb-2.9.0 | solidb-2.9.1 | solidb-2.9.2 | solidb-2.9.3 | solidb-2.9.4 | solidb-main | crash-solidb | crash-solidb-eventual | crash-solidb-unsynced)
       ENGINE=solidb PORT=6800 IMAGE=$SOLIDB_291
       [[ $cfg == crash-* ]] && IMAGE=${SOLIDB_CRASH:-$SOLIDB_291}
       [[ $cfg == solidb-2.9.0 ]] && IMAGE=$SOLIDB_290
       [[ $cfg == solidb-2.9.2 ]] && IMAGE=$SOLIDB_292
       [[ $cfg == solidb-2.9.3 ]] && IMAGE=$SOLIDB_293
+      [[ $cfg == solidb-2.9.4 ]] && IMAGE=$SOLIDB_294
       if [[ $cfg == solidb-main ]]; then
         IMAGE=${SOLIDB_MAIN:?set SOLIDB_MAIN to the image of the build to measure}
       fi
@@ -135,7 +138,7 @@ configure() {
       RUN+=("$IMAGE")
       MODES=(query doc)
       [[ $cfg == solidb-2.9.2 ]] && MODES=(query driver)
-      [[ $cfg == solidb-main || $cfg == solidb-2.9.3 ]] && MODES=(query driver run)
+      [[ $cfg == solidb-main || $cfg == solidb-2.9.3 || $cfg == solidb-2.9.4 ]] && MODES=(query driver run)
       # CRASH_MODE=run or driver: the kills over the driver, where commits are
       # grouped (the default, query, commits over HTTP).
       [[ $cfg == crash-* ]] && MODES=("${CRASH_MODE:-query}")

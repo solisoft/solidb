@@ -2,6 +2,62 @@
 
 ## [Unreleased]
 
+## [2.9.4](https://github.com/solisoft/solidb/compare/v2.9.3...v2.9.4) (2026-11-11)
+
+Transactions: the two upper isolation levels check what was read, locks
+wait, and durable commits cost less at one client and at many.
+
+### Features
+
+* **`repeatable_read` and `serializable` check what a transaction read.**
+  The two levels were accepted and behaved as `read_committed`. What a
+  transaction's queries read is now recorded and checked at commit: a
+  document read by key must still be at the revision read (or still
+  absent), a collection read by a scan or an index must not have been
+  written since. Otherwise the commit is refused with a `409` and nothing
+  is written. Elle finds both levels serializable on the fault harness's
+  append workload. `read_committed`, the default, is unchanged. Columnar
+  and sharded collections cannot be read in a transaction at these levels.
+* **A transaction waits for a document lock.** A lock another transaction
+  held was refused at once with a `409`. It is waited for, up to 500 ms
+  (`SOLIDB_TX_LOCK_WAIT_MS`; `0` keeps the old behaviour); a deadlock is
+  refused at once. At `read_committed`, an `UPDATE d WITH {n: d.n + 1}`
+  whose document changed while it waited is evaluated again on the current
+  document. Writes at the two upper levels do not wait. Transactions that
+  take contended documents in different orders deadlock: write them in
+  one order. Card #797.
+* **A query reads its transaction's own writes by key**, at every level,
+  over HTTP and over the driver. Scans and index reads still see committed
+  data only.
+
+### Performance
+
+Bank benchmark, every commit fsynced, in containers of 8 CPUs
+(`benchmarks/compare`, `results/2026-11-10` and `2026-11-11`).
+
+* **Durable commits in groups** (solistore engine, card #804). Under load
+  a driver connection prepares its commit and hands it to one thread,
+  which writes every commit waiting as one batch with one fsync; no
+  connection thread sleeps through an fsync. A busy server also looks at
+  its sockets every 4 tasks instead of every 61
+  (`SOLIDB_IO_POLL_INTERVAL`). 32 clients: 85,820 → 108,620 transfers a
+  second in one request, 57,170 → 71,740 over five round trips, 28,320 →
+  35,070 among 10 hot accounts. `SOLIDB_TX_GROUP_COMMIT=0` turns it off.
+  Reads at 32 clients: point reads +13%, a longer p99 for index reads
+  (240 → 350 µs; card #818).
+* **A durable commit stays on its worker while the server is quiet.** One
+  client: 13,920 → 18,460 transfers a second in one request (median 58 →
+  51 µs), 7,290 → 9,730 over five round trips.
+* **Locks that wait**, 10 hot accounts, 32 clients: 16,990 → 27,330
+  transfers a second in one request, p99 42 → 5.4 ms, no transfer refused.
+* **solistore 0.4.0**: the leader of a small fsynced group inserts its
+  members' writes and wakes them once; a WAL file is allocated ahead of
+  its writes; cached blocks are read without the cache's lock.
+* **Cheaper transactions**: a commit moves each document instead of
+  copying it; `run_transaction` is decoded straight off its frame; a
+  sorted page with a `DOCUMENT()` per row reads them as one batch; an
+  index-ordered read plans faster.
+
 ## [2.9.3](https://github.com/solisoft/solidb/compare/v2.9.2...v2.9.3) (2026-11-10)
 
 Transactions in one request over the driver, cheaper transactions and
