@@ -172,6 +172,9 @@ pub struct StorageEngine {
     /// background CF droppers. `Arc<PendingCfDrops>`'s own count cannot serve:
     /// the dropper threads and every `Database` hold one too.
     liveness: Arc<()>,
+    /// The thread that writes driver commits in groups, started on first
+    /// use (`group_commit`).
+    committer: Arc<once_cell::sync::OnceCell<super::group_commit::GroupCommitter>>,
 }
 
 impl Clone for StorageEngine {
@@ -186,6 +189,7 @@ impl Clone for StorageEngine {
             transaction_manager: Arc::clone(&self.transaction_manager),
             pending_cf_drops: self.pending_cf_drops.clone(),
             liveness: Arc::clone(&self.liveness),
+            committer: Arc::clone(&self.committer),
         }
     }
 }
@@ -216,6 +220,7 @@ impl StorageEngine {
             transaction_manager: Arc::new(once_cell::sync::OnceCell::new()),
             pending_cf_drops: PendingCfDrops::new(),
             liveness: Arc::new(()),
+            committer: Arc::default(),
         })
     }
 
@@ -1142,6 +1147,29 @@ impl StorageEngine {
         sync: bool,
         reads: &[(String, Arc<super::keyspace::ReadTracker>)],
     ) -> DbResult<()> {
+        let mut prepared = self.prepare_commit(operations, reads)?;
+        // A transaction that only read has nothing to write, or to sync.
+        if !prepared.staged.is_empty() {
+            let mut write_opts = crate::storage::kv::KvWriteOptions::default();
+            write_opts.set_sync(sync);
+            self.db
+                .write_opt(std::mem::take(&mut prepared.batch), &write_opts)
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
+                })?;
+        }
+        prepared.finish();
+        Ok(())
+    }
+
+    /// Lock, check and stage a transaction's operations: everything a
+    /// commit does before its write. Nothing is written; dropping the
+    /// result releases what it holds.
+    fn prepare_commit(
+        &self,
+        operations: Vec<crate::transaction::Operation>,
+        reads: &[(String, Arc<super::keyspace::ReadTracker>)],
+    ) -> DbResult<super::group_commit::PreparedCommit> {
         // Group by collection, keeping each collection's operations in order.
         // The operations are moved, not copied: they hold the documents.
         let mut order: Vec<String> = Vec::new();
@@ -1186,23 +1214,19 @@ impl StorageEngine {
 
         // Commit gates, before any key lock: shared for a collection this
         // commit writes, exclusive for one it read by range, held until the
-        // written collections' generations have moved (`finish_…` below), so
-        // a commit that checks a generation sees every commit before it.
-        let mut shared_gates = Vec::new();
-        let mut exclusive_gates = Vec::new();
+        // written collections' generations have moved (`finish`), so a
+        // commit that checks a generation sees every commit before it.
+        let mut prepared = super::group_commit::PreparedCommit::default();
         for (name, collection) in order.iter().zip(&collections) {
-            let gate = collection.ks.state().commit_gate();
+            let state = collection.ks.state();
             if read_by.get(name.as_str()).is_some_and(|t| t.is_ranged()) {
-                exclusive_gates.push(gate.write());
+                prepared.gates.push(state.hold_commit_gate(true));
             } else if ops_by_collection.contains_key(name) {
-                shared_gates.push(gate.read());
+                prepared.gates.push(state.hold_commit_gate(false));
             }
         }
 
-        let mut batch = super::kv::KvBatch::default();
-        let mut staged = Vec::with_capacity(order.len());
-        let mut guards = Vec::new();
-        for (coll_name, collection) in order.iter().zip(&collections) {
+        for (coll_name, collection) in order.iter().zip(collections) {
             let ops = ops_by_collection.remove(coll_name).unwrap_or_default();
             let tracker = read_by.get(coll_name.as_str());
             let read_keys: Vec<(String, Option<Box<str>>)> = tracker
@@ -1213,31 +1237,66 @@ impl StorageEngine {
                         .collect()
                 })
                 .unwrap_or_default();
-            guards.extend(collection.lock_for_transaction_reading(&ops, &read_keys));
+            prepared
+                .guards
+                .extend(collection.lock_for_transaction_reading(&ops, &read_keys));
             if let Some(tracker) = tracker {
                 collection.validate_reads(tracker, &read_keys)?;
             }
             if !ops.is_empty() {
-                let plan = collection.stage_transaction_operations(ops, &mut batch)?;
-                staged.push((collection, plan));
+                let plan = collection.stage_transaction_operations(ops, &mut prepared.batch)?;
+                prepared.staged.push((collection, plan));
             }
         }
+        Ok(prepared)
+    }
 
-        // A transaction that only read has nothing to write, or to sync.
-        if !staged.is_empty() {
-            let mut write_opts = crate::storage::kv::KvWriteOptions::default();
-            write_opts.set_sync(sync);
-            self.db.write_opt(batch, &write_opts).map_err(|e| {
-                DbError::InternalError(format!("Failed to commit transaction batch: {}", e))
-            })?;
+    /// Whether commits can be handed to the group committer: the engine
+    /// must be able to write several commits' batches as one.
+    pub fn groups_commits(&self) -> bool {
+        #[cfg(feature = "engine-solistore")]
+        {
+            self.db.engine_kind() == super::kv::EngineKind::Solistore
         }
-        drop(guards);
+        #[cfg(not(feature = "engine-solistore"))]
+        {
+            false
+        }
+    }
 
-        for (collection, plan) in staged {
-            collection.finish_transaction_operations(plan);
+    /// [`Self::commit_transaction`] without a thread waiting for the fsync:
+    /// the commit is prepared here, then written by the group committer
+    /// with every other commit waiting at that moment, as one batch and one
+    /// fsync, and finished there. Only for engines that
+    /// [`Self::groups_commits`].
+    pub async fn commit_transaction_grouped(
+        &self,
+        tx_id: crate::transaction::TransactionId,
+    ) -> DbResult<()> {
+        let manager = self.initialized_transaction_manager()?;
+        let (operations, sync, reads) = manager.prepare_commit_with_reads(tx_id)?;
+        let reads = reads.map(|reads| reads.trackers()).unwrap_or_default();
+        let prepared = match self.prepare_commit(operations, &reads) {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                manager.abort(tx_id);
+                return Err(e);
+            }
+        };
+        let written = if prepared.staged.is_empty() {
+            prepared.finish();
+            Ok(())
+        } else {
+            let committer = self
+                .committer
+                .get_or_init(|| super::group_commit::GroupCommitter::start(&self.db));
+            committer.commit(prepared, sync).await
+        };
+        if let Err(e) = written {
+            manager.abort(tx_id);
+            return Err(e);
         }
-        drop((shared_gates, exclusive_gates));
-        Ok(())
+        manager.finish_commit(tx_id)
     }
 
     /// Commit a transaction by applying all operations atomically.

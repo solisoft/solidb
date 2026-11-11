@@ -169,6 +169,41 @@ impl KsState {
     pub fn commit_gate(&self) -> &parking_lot::RwLock<()> {
         &self.commits.0.commit_gate
     }
+
+    /// Take the commit gate, shared or exclusively, as a value that owns
+    /// its hold: a commit prepared on one thread may be written and
+    /// finished on another (`storage::group_commit`).
+    pub fn hold_commit_gate(self: &Arc<Self>, exclusive: bool) -> HeldCommitGate {
+        if exclusive {
+            std::mem::forget(self.commit_gate().write());
+        } else {
+            std::mem::forget(self.commit_gate().read());
+        }
+        HeldCommitGate {
+            state: Arc::clone(self),
+            exclusive,
+        }
+    }
+}
+
+/// A hold on a keyspace's commit gate, released when dropped.
+pub struct HeldCommitGate {
+    state: Arc<KsState>,
+    exclusive: bool,
+}
+
+impl Drop for HeldCommitGate {
+    fn drop(&mut self) {
+        // SAFETY: `hold_commit_gate` took the lock this way and forgot its
+        // guard; this value is the only thing that releases it, once.
+        unsafe {
+            if self.exclusive {
+                self.state.commit_gate().force_unlock_write();
+            } else {
+                self.state.commit_gate().force_unlock_read();
+            }
+        }
+    }
 }
 
 /// What a transaction at `repeatable_read` or `serializable` read from one

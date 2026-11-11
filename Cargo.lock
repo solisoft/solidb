@@ -4607,13 +4607,14 @@ dependencies = [
 
 [[package]]
 name = "solistore"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819f98c36f57bda589e004bff3c94c08a9bc6682bde516fd52c625d03e7b2b39"
+checksum = "11df7e8ca417d483a49c9c7d2ebbfe5f0270b8d91a68bb54c862836c333aeee1"
 dependencies = [
  "arc-swap",
  "bytes",
  "crc32c",
+ "crossbeam-epoch",
  "libc",
  "lz4_flex 0.11.6",
  "parking_lot",

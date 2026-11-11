@@ -50,6 +50,42 @@ pub fn handle_commit_transaction(handler: &mut DriverHandler, tx_id: String) -> 
     }
 }
 
+/// [`handle_commit_transaction`] as the server runs it: on a busy server
+/// whose engine merges batches, the commit goes to the group committer
+/// and this connection waits for it as a future, with no thread held.
+pub async fn handle_commit(handler: &mut DriverHandler, tx_id: String) -> Response {
+    if !commits_in_groups(handler) {
+        return handle_commit_transaction(handler, tx_id);
+    }
+    let Some(tx) = handler.transactions.remove(&tx_id) else {
+        return Response::error(DriverError::TransactionError(
+            "Transaction not found".to_string(),
+        ));
+    };
+    let touched = touched_collections(handler, tx);
+    match handler.storage.commit_transaction_grouped(tx).await {
+        Ok(_) => {
+            for c in touched {
+                crate::storage::query_cache::get_query_cache().invalidate_collection(&c);
+            }
+            Response::ok_empty()
+        }
+        Err(e) => Response::error(DriverError::TransactionError(e.to_string())),
+    }
+}
+
+/// Under the load at which a commit would leave its worker
+/// ([`off_the_worker`]), and only there: on a quiet server the commit in
+/// place is the shortest path.
+fn commits_in_groups(handler: &DriverHandler) -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    HANDOFF.leaving.0.load(Ordering::Relaxed)
+        && *ENABLED.get_or_init(|| std::env::var("SOLIDB_TX_GROUP_COMMIT").as_deref() != Ok("0"))
+        && handler.storage.groups_commits()
+        && tokio::runtime::Handle::try_current()
+            .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
+}
+
 /// Begin, run each step in the transaction, commit: a whole transaction in
 /// one round trip (`Command::RunTransaction`).
 ///
@@ -118,7 +154,7 @@ pub async fn handle_run_transaction(
         }
         results.push(value);
     }
-    match handle_commit_transaction(handler, tx_id) {
+    match handle_commit(handler, tx_id).await {
         Response::Ok { .. } => {
             Response::ok(serde_json::json!({"committed": true, "results": results}))
         }
@@ -790,6 +826,80 @@ mod tests {
             .unwrap()
             .to_value()["n"]
             .clone()
+    }
+
+    /// The checks of `serializable` hold when the commits are written by
+    /// the group committer: of two transactions that each counted the
+    /// documents on call and took one off, the second is refused, nothing
+    /// of it lands, and the collection's commit gate is free afterwards.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_grouped_commit_checks_what_its_transaction_read() {
+        let (_t, mut h) = handler();
+        admin_session(&mut h);
+        let c = h.get_collection("d", "c").unwrap();
+        for key in ["a", "b"] {
+            c.insert(json!({"_key": key, "call": true})).unwrap();
+        }
+        let begin = |h: &mut DriverHandler| match handle_begin_transaction(
+            h,
+            "d".to_string(),
+            IsolationLevel::Serializable,
+        ) {
+            Response::Ok {
+                tx_id: Some(id), ..
+            } => id,
+            other => panic!("begin failed: {:?}", other),
+        };
+        let (t1, t2) = (begin(&mut h), begin(&mut h));
+        for (tx, key) in [(&t1, "a"), (&t2, "b")] {
+            let r = handle_transaction_command(
+                &mut h,
+                tx.clone(),
+                query(
+                    "FOR x IN c FILTER x.call == true COLLECT WITH COUNT INTO n RETURN n",
+                    json!({}),
+                ),
+            )
+            .await;
+            assert!(
+                matches!(&r, Response::Ok { data: Some(d), .. } if d == &json!([2])),
+                "{:?}",
+                r
+            );
+            let r = handle_transaction_command(
+                &mut h,
+                tx.clone(),
+                query("UPDATE @k WITH {call: false} IN c", json!({"k": key})),
+            )
+            .await;
+            assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        }
+        let (t1, t2) = (
+            h.transactions.remove(&t1).unwrap(),
+            h.transactions.remove(&t2).unwrap(),
+        );
+        h.storage.commit_transaction_grouped(t1).await.unwrap();
+        let refused = h.storage.commit_transaction_grouped(t2).await;
+        assert!(
+            matches!(refused, Err(crate::error::DbError::TransactionConflict(_))),
+            "{:?}",
+            refused
+        );
+        assert_eq!(c.get("a").unwrap().to_value()["call"], json!(false));
+        assert_eq!(c.get("b").unwrap().to_value()["call"], json!(true));
+
+        // The gate the refused commit held exclusively is free.
+        let t3 = begin(&mut h);
+        let r = handle_transaction_command(
+            &mut h,
+            t3.clone(),
+            query("UPDATE 'b' WITH {call: false} IN c", json!({})),
+        )
+        .await;
+        assert!(!matches!(r, Response::Error { .. }), "{:?}", r);
+        let t3 = h.transactions.remove(&t3).unwrap();
+        h.storage.commit_transaction_grouped(t3).await.unwrap();
+        assert_eq!(c.get("b").unwrap().to_value()["call"], json!(false));
     }
 
     #[tokio::test]

@@ -323,6 +323,8 @@ Rules for code that touches storage:
 | `SOLIDB_CF_REUSE_GRACE_SECS` | 300 | Legacy collections only: grace before an emptied 1.x column family is dropped. |
 | `SOLIDB_BLOCK_CACHE` | 40% of (memory − 1 GiB), ≥ 64 MiB, prod / 128MB `--dev` | Block cache of either engine (`--block-cache`). "Memory" is the tightest cgroup `memory.max` on the process's cgroup path, else the host's total (`storage/memory_limit.rs`); 512MB when neither can be read. The startup log names the basis; `/metrics` has `solidb_block_cache_capacity_bytes`. |
 | `SOLIDB_TX_LOCK_WAIT_MS` | 500 | How long a transaction waits for a document lock another transaction holds before it is refused with a conflict (`transaction/lock_manager.rs`). `0`: refused at once, the behaviour up to 2.9.3. A deadlock (two transactions waiting for each other) is refused at once whatever the value. The wait runs under `block_in_place`, so only on the multi-threaded runtime: a `#[tokio::test]` without `flavor = "multi_thread"` never waits. Transactions at `repeatable_read` / `serializable` do not wait for a write lock. |
+| `SOLIDB_TX_GROUP_COMMIT` | on | Under load (when a driver commit would leave its async worker) and on an engine that merges batches (solistore), a driver commit is prepared on its connection and written by the commit thread with every other commit waiting, as one batch and one fsync (`storage/group_commit.rs`). `0`: each commit writes its own batch from its own thread, as up to 2.9.3. HTTP commits and RocksDB are not concerned. |
+| `SOLIDB_IO_POLL_INTERVAL` | 4 | Tasks a busy async worker runs between two looks at the sockets (tokio's `event_interval`, whose own default is 61). Set in `main.rs`; applies to every transport. Lower reads arriving requests sooner under load (grouped commits need it: 56,000 transfers/s at 61, 75,600 at 4) and lengthens the p99 of reads at 32 clients. |
 | `SOLIDB_SCAN_THREADS` | the CPUs the process may use (cgroup `cpu.max`, else `available_parallelism`) | Threads a full-scan `COLLECT` may split into, and a process-wide cap on scan threads (`execution/scan_threads.rs`). `1` turns parallel scans off. Only engines with snapshots run them, which both have (solistore since 0.3); a collection under 65,536 documents stays on one thread. |
 | `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap. Lowering it to save disk is a false economy — it produces thousands of tiny SSTs. Bound memory with `--memtable-budget`. |
 
@@ -462,6 +464,32 @@ Rules that keep it sound:
 
 At every level, the executor's point reads (`key_fast_path`, `get_visible`)
 return what the transaction staged (`staged_in_transaction`); scans do not.
+
+### Commits written in groups (after 2.9.3)
+
+`StorageEngine::prepare_commit` does everything a commit does before its
+write (locks, read checks, staging into the batch) and returns a
+`PreparedCommit` that owns what it holds: key and unique-value locks, and the
+commit gates as `HeldCommitGate` values rather than guards, so that it can
+cross threads (`parking_lot`'s `send_guard` feature is on for the same
+reason). `commit_transaction` writes it in place. `commit_transaction_grouped`
+hands it to the `solidb-commit` thread (`storage/group_commit.rs`), which
+merges the batches of every commit waiting (`KvBatch::append`), writes once,
+then finishes each commit and wakes its connection.
+
+Rules that keep it sound:
+
+- What a prepared commit holds is released by the commit thread, never by the
+  waiting task: a task needs a free worker to be polled, and a worker blocked
+  on a key a suspended task held would wait for ever.
+- A commit is visible, and its locks free, only after its group's write
+  returned: nothing is acknowledged or readable before its fsync.
+- The driver takes this path only under load (`commits_in_groups`, the same
+  signal as `off_the_worker`): at one client the commit in place is 14 µs
+  shorter than any hand-off.
+- It relies on `SOLIDB_IO_POLL_INTERVAL` being low: once commits stop putting
+  threads to sleep, workers stay busy and, at tokio's default, read arriving
+  requests only every 61 tasks.
 
 ### Three tiers of protected collections
 

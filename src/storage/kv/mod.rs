@@ -887,6 +887,25 @@ pub enum KvBatch {
 }
 
 impl KvBatch {
+    /// Add `other`'s operations after this batch's own, to write the two as
+    /// one. `Err(other)` where the engine has no way to (RocksDB), or the
+    /// two are not of one engine.
+    pub fn append(&mut self, other: KvBatch) -> Result<(), KvBatch> {
+        match (&mut *self, other) {
+            (_, KvBatch::Empty) => Ok(()),
+            (KvBatch::Empty, other) => {
+                *self = other;
+                Ok(())
+            }
+            #[cfg(feature = "engine-solistore")]
+            (KvBatch::Solistore(mine), KvBatch::Solistore(other)) => {
+                mine.append(other);
+                Ok(())
+            }
+            (_, other) => Err(other),
+        }
+    }
+
     fn for_cf(&mut self, cf: &KvCf) -> &mut Self {
         if let KvBatch::Empty = self {
             *self = match cf {

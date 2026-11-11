@@ -136,7 +136,9 @@ configure() {
       MODES=(query doc)
       [[ $cfg == solidb-2.9.2 ]] && MODES=(query driver)
       [[ $cfg == solidb-main || $cfg == solidb-2.9.3 ]] && MODES=(query driver run)
-      [[ $cfg == crash-* ]] && MODES=(query)
+      # CRASH_MODE=run or driver: the kills over the driver, where commits are
+      # grouped (the default, query, commits over HTTP).
+      [[ $cfg == crash-* ]] && MODES=("${CRASH_MODE:-query}")
       [[ $cfg == crash-solidb-unsynced ]] && HARNESS=(--isolation read_uncommitted)
       # BANK_ISOLATION=serializable: the level the HTTP modes begin at.
       [[ $cfg != crash-* && -n ${BANK_ISOLATION:-} ]] && HARNESS=(--isolation "$BANK_ISOLATION")

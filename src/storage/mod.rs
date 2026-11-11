@@ -11,6 +11,7 @@ pub mod database;
 pub mod document;
 pub mod engine;
 pub mod geo;
+pub(crate) mod group_commit;
 pub mod http_client;
 pub mod index;
 pub mod keyspace;

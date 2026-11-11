@@ -153,3 +153,105 @@ fn recreated_collection_is_not_served_its_predecessors_handle() {
     let via_db = db.get_collection("a").unwrap();
     assert!(Arc::ptr_eq(&fresh.change_sender, &via_db.change_sender));
 }
+
+/// Commits handed to the group committer: every one lands, whole, and
+/// leaves nothing locked behind it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn grouped_commits_all_land_and_release_their_locks() {
+    let (engine, _tmp) = setup();
+    let manager = engine.transaction_manager().unwrap();
+    let a = engine.get_collection("app:a").unwrap();
+    let b = engine.get_collection("app:b").unwrap();
+
+    let mut commits = Vec::new();
+    for i in 0..64 {
+        let tx_id = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+        {
+            let tx_arc = manager.get(tx_id).unwrap();
+            let mut tx = tx_arc.write().unwrap();
+            let wal = manager.wal().clone();
+            let locks = manager.lock_manager().clone();
+            a.insert_tx(
+                &mut tx,
+                &wal,
+                &locks,
+                json!({"_key": format!("k{i}"), "v": i}),
+            )
+            .unwrap();
+            b.insert_tx(
+                &mut tx,
+                &wal,
+                &locks,
+                json!({"_key": format!("k{i}"), "v": i}),
+            )
+            .unwrap();
+        }
+        let engine = engine.clone();
+        commits.push(tokio::spawn(async move {
+            engine.commit_transaction_grouped(tx_id).await
+        }));
+    }
+    for commit in commits {
+        commit.await.unwrap().unwrap();
+    }
+    for i in 0..64 {
+        assert_eq!(a.get(&format!("k{i}")).unwrap().data["v"], json!(i));
+        assert_eq!(b.get(&format!("k{i}")).unwrap().data["v"], json!(i));
+    }
+
+    // Keys and gates are free again: a plain write and another commit pass.
+    a.update("k0", json!({"v": "after"})).unwrap();
+    let next = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+    assert!(manager
+        .lock_manager()
+        .acquire_exclusive(next, "app", "a", "k1")
+        .is_ok());
+    engine.commit_transaction_grouped(next).await.unwrap();
+}
+
+/// A grouped commit that fails its checks writes nothing, in any
+/// collection, and frees what it held, as a plain commit does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_grouped_commit_that_conflicts_writes_nothing() {
+    let (engine, _tmp) = setup();
+    let manager = engine.transaction_manager().unwrap();
+    let a = engine.get_collection("app:a").unwrap();
+    let b = engine.get_collection("app:b").unwrap();
+
+    let tx_id = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+    {
+        let tx_arc = manager.get(tx_id).unwrap();
+        let mut tx = tx_arc.write().unwrap();
+        let wal = manager.wal().clone();
+        let locks = manager.lock_manager().clone();
+        a.insert_tx(&mut tx, &wal, &locks, json!({"_key": "a1", "v": 1}))
+            .unwrap();
+        b.insert_tx(&mut tx, &wal, &locks, json!({"_key": "b1", "v": 1}))
+            .unwrap();
+    }
+    b.insert(json!({"_key": "b1", "v": "outside"})).unwrap();
+
+    let res = engine.commit_transaction_grouped(tx_id).await;
+    assert!(
+        matches!(res, Err(DbError::TransactionConflict(_))),
+        "{:?}",
+        res
+    );
+    assert!(matches!(a.get("a1"), Err(DbError::DocumentNotFound(_))));
+    assert_eq!(b.get("b1").unwrap().data["v"], json!("outside"));
+    assert!(!manager.is_active(tx_id));
+
+    // Nothing is left held: the same keys can be written and committed.
+    a.insert(json!({"_key": "a1", "v": 2})).unwrap();
+    let next = manager.begin(IsolationLevel::ReadCommitted).unwrap();
+    {
+        let tx_arc = manager.get(next).unwrap();
+        let mut tx = tx_arc.write().unwrap();
+        let wal = manager.wal().clone();
+        let locks = manager.lock_manager().clone();
+        b.update_tx(&mut tx, &wal, &locks, "b1", json!({"v": "grouped"}))
+            .unwrap();
+    }
+    engine.commit_transaction_grouped(next).await.unwrap();
+    assert_eq!(b.get("b1").unwrap().data["v"], json!("grouped"));
+}

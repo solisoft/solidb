@@ -1,0 +1,178 @@
+# cn.sh, bare metal (server on 8 CPUs), 10,000 accounts, 7 s per point. One binary (804 prototype on solistore perf/wal-preallocate):
+# gc=0: commits as before (SOLIDB_TX_GROUP_COMMIT=0); gc=1: grouped. evi: tokio event_interval (0 = its default, 61).
+== gc=1 evi=0 driver
+1 clients: 9982/s p50 98 µs p99 114 µs
+8 clients: 39024/s p50 198 µs p99 283 µs
+16 clients: 46019/s p50 299 µs p99 809 µs
+32 clients: 56255/s p50 493 µs p99 1420 µs
+64 clients: 68677/s p50 861 µs p99 1943 µs
+== gc=1 evi=0 run
+1 clients: 18530/s p50 52 µs p99 69 µs
+8 clients: 52782/s p50 145 µs p99 232 µs
+16 clients: 81288/s p50 173 µs p99 466 µs
+32 clients: 103521/s p50 272 µs p99 714 µs
+64 clients: 119295/s p50 482 µs p99 1116 µs
+== gc=1 evi=8 driver
+1 clients: 9904/s p50 99 µs p99 119 µs
+8 clients: 38414/s p50 201 µs p99 285 µs
+16 clients: 52338/s p50 299 µs p99 414 µs
+32 clients: 66234/s p50 449 µs p99 932 µs
+64 clients: 79550/s p50 757 µs p99 1631 µs
+== gc=1 evi=8 run
+1 clients: 18613/s p50 51 µs p99 70 µs
+8 clients: 52686/s p50 145 µs p99 233 µs
+16 clients: 85097/s p50 167 µs p99 390 µs
+32 clients: 115745/s p50 242 µs p99 596 µs
+64 clients: 125373/s p50 442 µs p99 1343 µs
+== gc=1 evi=4 driver
+1 clients: 9839/s p50 100 µs p99 120 µs
+8 clients: 38733/s p50 199 µs p99 282 µs
+16 clients: 51231/s p50 288 µs p99 639 µs
+32 clients: 75566/s p50 394 µs p99 835 µs
+64 clients: 78836/s p50 776 µs p99 1666 µs
+== gc=1 evi=4 run
+1 clients: 18685/s p50 51 µs p99 67 µs
+8 clients: 53430/s p50 142 µs p99 231 µs
+16 clients: 89572/s p50 161 µs p99 364 µs
+32 clients: 121778/s p50 228 µs p99 621 µs
+64 clients: 126749/s p50 438 µs p99 1452 µs
+== gc=1 evi=2 driver
+1 clients: 9861/s p50 100 µs p99 114 µs
+8 clients: 38962/s p50 199 µs p99 282 µs
+16 clients: 57109/s p50 262 µs p99 537 µs
+32 clients: 79064/s p50 378 µs p99 865 µs
+64 clients: 79977/s p50 767 µs p99 1773 µs
+== gc=1 evi=2 run
+1 clients: 18960/s p50 51 µs p99 65 µs
+8 clients: 54236/s p50 139 µs p99 228 µs
+16 clients: 93894/s p50 155 µs p99 355 µs
+32 clients: 124078/s p50 222 µs p99 658 µs
+64 clients: 123662/s p50 447 µs p99 1512 µs
+== gc=1 evi=1 driver
+1 clients: 9831/s p50 100 µs p99 114 µs
+8 clients: 39425/s p50 197 µs p99 278 µs
+16 clients: 57168/s p50 264 µs p99 519 µs
+32 clients: 78473/s p50 381 µs p99 896 µs
+64 clients: 78795/s p50 772 µs p99 1910 µs
+== gc=1 evi=1 run
+1 clients: 18670/s p50 52 µs p99 67 µs
+8 clients: 54989/s p50 134 µs p99 226 µs
+16 clients: 92628/s p50 156 µs p99 378 µs
+32 clients: 122348/s p50 220 µs p99 716 µs
+64 clients: 122613/s p50 446 µs p99 1554 µs
+== gc=0 evi=0 driver
+1 clients: 9964/s p50 98 µs p99 113 µs
+8 clients: 38921/s p50 198 µs p99 281 µs
+16 clients: 51782/s p50 300 µs p99 438 µs
+32 clients: 61467/s p50 504 µs p99 849 µs
+64 clients: 67188/s p50 923 µs p99 1550 µs
+== gc=0 evi=0 run
+1 clients: 18805/s p50 51 µs p99 65 µs
+8 clients: 52287/s p50 148 µs p99 235 µs
+16 clients: 68184/s p50 227 µs p99 358 µs
+32 clients: 88783/s p50 346 µs p99 583 µs
+64 clients: 99106/s p50 619 µs p99 1114 µs
+== gc=0 evi=8 driver
+1 clients: 9885/s p50 99 µs p99 113 µs
+8 clients: 38504/s p50 201 µs p99 283 µs
+16 clients: 51712/s p50 298 µs p99 468 µs
+32 clients: 63303/s p50 487 µs p99 851 µs
+64 clients: 68990/s p50 893 µs p99 1664 µs
+== gc=0 evi=8 run
+1 clients: 19123/s p50 51 µs p99 64 µs
+8 clients: 53873/s p50 143 µs p99 231 µs
+16 clients: 73194/s p50 210 µs p99 348 µs
+32 clients: 91322/s p50 339 µs p99 582 µs
+64 clients: 99512/s p50 616 µs p99 1166 µs
+== gc=0 evi=4 driver
+1 clients: 9900/s p50 99 µs p99 114 µs
+8 clients: 38869/s p50 199 µs p99 282 µs
+16 clients: 51746/s p50 298 µs p99 475 µs
+32 clients: 63337/s p50 486 µs p99 874 µs
+64 clients: 67983/s p50 913 µs p99 1736 µs
+== gc=0 evi=4 run
+1 clients: 19188/s p50 50 µs p99 64 µs
+8 clients: 53527/s p50 144 µs p99 230 µs
+16 clients: 68520/s p50 223 µs p99 398 µs
+32 clients: 90188/s p50 341 µs p99 600 µs
+64 clients: 100963/s p50 604 µs p99 1164 µs
+== gc=0 evi=2 driver
+1 clients: 9779/s p50 101 µs p99 117 µs
+8 clients: 38917/s p50 199 µs p99 282 µs
+16 clients: 53994/s p50 288 µs p99 442 µs
+32 clients: 64014/s p50 479 µs p99 868 µs
+64 clients: 69116/s p50 896 µs p99 1739 µs
+== gc=0 evi=2 run
+1 clients: 18963/s p50 51 µs p99 64 µs
+8 clients: 54184/s p50 140 µs p99 227 µs
+16 clients: 71576/s p50 211 µs p99 357 µs
+32 clients: 89420/s p50 341 µs p99 603 µs
+64 clients: 97964/s p50 618 µs p99 1205 µs
+== gc=0 evi=1 driver
+1 clients: 9713/s p50 101 µs p99 117 µs
+8 clients: 38845/s p50 199 µs p99 281 µs
+16 clients: 52689/s p50 291 µs p99 472 µs
+32 clients: 62243/s p50 490 µs p99 884 µs
+64 clients: 68392/s p50 895 µs p99 1769 µs
+== gc=0 evi=1 run
+1 clients: 18660/s p50 52 µs p99 65 µs
+8 clients: 53986/s p50 137 µs p99 229 µs
+16 clients: 71381/s p50 211 µs p99 363 µs
+32 clients: 89313/s p50 341 µs p99 611 µs
+64 clients: 97900/s p50 615 µs p99 1239 µs
+
+# rdevi.sh: reads and single updates, group commit not involved, per event_interval
+== evi 0
+[solidb] get c=1 run 1: 62343.0 ops/s p50 15us p99 17us errors 0 wrong 0
+[solidb] get c=32 run 1: 737807.0 ops/s p50 41us p99 155us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25303.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 227289.0 ops/s p50 139us p99 247us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15189.0 ops/s p50 65us p99 70us errors 0 wrong 0
+[solidb] recent c=32 run 1: 127715.0 ops/s p50 249us p99 421us errors 0 wrong 0
+[solidb] update c=1 run 1: 39303.0 ops/s p50 25us p99 30us errors 0 wrong 0
+[solidb] update c=32 run 1: 178378.0 ops/s p50 153us p99 580us errors 0 wrong 0
+== evi 2
+[solidb] get c=1 run 1: 61431.0 ops/s p50 16us p99 17us errors 0 wrong 0
+[solidb] get c=32 run 1: 890747.0 ops/s p50 34us p99 63us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25112.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 234434.0 ops/s p50 114us p99 390us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15144.0 ops/s p50 65us p99 70us errors 0 wrong 0
+[solidb] recent c=32 run 1: 129255.0 ops/s p50 239us p99 565us errors 0 wrong 0
+[solidb] update c=1 run 1: 38628.0 ops/s p50 25us p99 32us errors 0 wrong 0
+[solidb] update c=32 run 1: 188857.0 ops/s p50 132us p99 707us errors 0 wrong 0
+== evi 4
+[solidb] get c=1 run 1: 61877.0 ops/s p50 16us p99 17us errors 0 wrong 0
+[solidb] get c=32 run 1: 837568.0 ops/s p50 36us p99 79us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25250.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 230320.0 ops/s p50 130us p99 342us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15218.0 ops/s p50 65us p99 70us errors 0 wrong 0
+[solidb] recent c=32 run 1: 129537.0 ops/s p50 241us p99 547us errors 0 wrong 0
+[solidb] update c=1 run 1: 38934.0 ops/s p50 25us p99 31us errors 0 wrong 0
+[solidb] update c=32 run 1: 185009.0 ops/s p50 138us p99 667us errors 0 wrong 0
+== evi 0
+[solidb] get c=1 run 1: 62304.0 ops/s p50 15us p99 17us errors 0 wrong 0
+[solidb] get c=32 run 1: 754084.0 ops/s p50 41us p99 67us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25276.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 229355.0 ops/s p50 138us p99 231us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15233.0 ops/s p50 65us p99 70us errors 0 wrong 0
+[solidb] recent c=32 run 1: 128191.0 ops/s p50 249us p99 409us errors 0 wrong 0
+[solidb] update c=1 run 1: 39264.0 ops/s p50 25us p99 32us errors 0 wrong 0
+[solidb] update c=32 run 1: 182721.0 ops/s p50 149us p99 544us errors 0 wrong 0
+== evi 2
+[solidb] get c=1 run 1: 61013.0 ops/s p50 16us p99 17us errors 0 wrong 0
+[solidb] get c=32 run 1: 842340.0 ops/s p50 35us p99 117us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25145.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 230373.0 ops/s p50 115us p99 402us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15087.0 ops/s p50 66us p99 71us errors 0 wrong 0
+[solidb] recent c=32 run 1: 131459.0 ops/s p50 235us p99 562us errors 0 wrong 0
+[solidb] update c=1 run 1: 38598.0 ops/s p50 25us p99 32us errors 0 wrong 0
+[solidb] update c=32 run 1: 186931.0 ops/s p50 133us p99 718us errors 0 wrong 0
+== evi 4
+[solidb] get c=1 run 1: 61811.0 ops/s p50 16us p99 18us errors 0 wrong 0
+[solidb] get c=32 run 1: 848759.0 ops/s p50 36us p99 68us errors 0 wrong 0
+[solidb] by_customer c=1 run 1: 25243.0 ops/s p50 39us p99 55us errors 0 wrong 0
+[solidb] by_customer c=32 run 1: 230566.0 ops/s p50 130us p99 351us errors 0 wrong 0
+[solidb] recent c=1 run 1: 15184.0 ops/s p50 65us p99 70us errors 0 wrong 0
+[solidb] recent c=32 run 1: 129907.0 ops/s p50 241us p99 539us errors 0 wrong 0
+[solidb] update c=1 run 1: 38758.0 ops/s p50 25us p99 31us errors 0 wrong 0
+[solidb] update c=32 run 1: 190916.0 ops/s p50 136us p99 595us errors 0 wrong 0

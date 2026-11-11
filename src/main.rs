@@ -461,6 +461,24 @@ async fn accept_failed(e: &std::io::Error) {
     }
 }
 
+/// How many tasks a busy worker runs between two looks at the sockets
+/// (`SOLIDB_IO_POLL_INTERVAL`, tokio's `event_interval`). Tokio's own
+/// default is 61: a worker that never runs out of tasks leaves requests
+/// that have arrived unread for that long, which no longer happens by
+/// itself once commits stop putting threads to sleep (`group_commit`).
+/// With 61, grouped commits over five round trips ran at 56,000 transfers
+/// a second at 32 clients where 4 gives 75,600; point reads at 32 clients
+/// go from 745,000 to 843,000 a second. The price is a longer tail on
+/// reads at 32 clients (p99 of an index read 240 -> 350 µs) and under 1%
+/// at one client.
+fn io_poll_interval() -> u32 {
+    std::env::var("SOLIDB_IO_POLL_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(4)
+}
+
 fn main() -> anyhow::Result<()> {
     // Install JWT crypto provider (aws-lc backend; avoids vulnerable `rsa` crate)
     let _ = jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.install_default();
@@ -593,7 +611,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Start the async runtime
-    let runtime = tokio::runtime::Runtime::new()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .event_interval(io_poll_interval())
+        .build()?;
     runtime.block_on(async_main(args))
 }
 

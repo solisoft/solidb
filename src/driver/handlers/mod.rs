@@ -532,9 +532,7 @@ impl DriverHandler {
                 isolation_level,
             } => transaction::handle_begin_transaction(self, database, isolation_level),
 
-            Command::CommitTransaction { tx_id } => {
-                transaction::handle_commit_transaction(self, tx_id)
-            }
+            Command::CommitTransaction { tx_id } => transaction::handle_commit(self, tx_id).await,
 
             Command::RollbackTransaction { tx_id } => {
                 transaction::handle_rollback_transaction(self, tx_id)

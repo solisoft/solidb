@@ -317,6 +317,23 @@ The order matters, and only once locks wait (`hot-series/`, the 10-account serie
 
 HTTP commits are not concerned (they run on the blocking pool). Where the two ways cross (`bare-metal.txt`: no container, server on 8 CPUs, `run`, 10,000 accounts; `f` always leaves, `k` decides): 1 client 13,280 → 19,410/s, 2: 21,920 → 24,260, 4: 31,990 → 33,650, 8: 53,000 → 55,210, 12: 62,680 → 70,230, 16: 68,770 → 69,740, then equal within the 1% between two passes of one binary (20: 74,260 and 74,210; 32: 85,490 and 85,430; 64: 97,050 and 96,940). A server where some commits stay and some leave does worse than either (25,000/s at four clients against 33,000 and 31,000), which is why the choice is made for the server, from an average, and not per commit. PostgreSQL remains 1.17× ahead at one client and 1.41× at 32 in one request.
 
+**Commits in groups** (`results/2026-11-11/group-commit/`; a build of `main` with the group committer on a solistore with `WriteBatch::append` and the group insert below, `gci`, against the same solistore without the committer, `sgrp3`; alternating, fresh servers, 2 × 12 s each, twice). Under load a driver connection prepares its commit and hands it to one thread, which writes every commit waiting as one batch with one fsync; no connection thread sleeps through an fsync. The server also looks at its sockets every 4 tasks instead of tokio's 61 (`SOLIDB_IO_POLL_INTERVAL`): without that the grouped commits were slower over five round trips (56,000/s at 32 clients against 61,000), requests that had arrived waiting to be read.
+
+| Mode | Accounts | Clients | Before | Grouped | PostgreSQL |
+|---|---:|---:|---:|---:|---:|
+| `run` | 10,000 | 1 | 18,290/s | 18,510/s | 21,674/s |
+| `run` | 10,000 | 32 | 85,820/s, p50 350 µs, p99 636 µs | **108,620/s, p50 245 µs, p99 747 µs** | 113,920/s |
+| `run` | 10 | 32 | 28,320/s, p99 5.3 ms | **35,070/s, p99 4.3 ms** | 10,406/s |
+| `driver` | 10,000 | 1 | 9,670/s | 9,670/s | 10,555/s |
+| `driver` | 10,000 | 32 | 57,170/s, p50 525 µs, p99 968 µs | **71,740/s, p50 406 µs, p99 1,031 µs** | 67,383/s |
+| `driver` | 10 | 32 | 18,050/s | 19,780/s | 8,339/s |
+
+`bare-metal.txt`: the committer and the socket interval apart, 1 to 64 clients. With tokio's interval the committer gives 103,500/s at 32 clients in one request (88,800 without) and loses over five round trips; at 4 or 2, 121,800–124,100 and 75,600–79,100. Without the committer the interval moves nothing by more than 2%. Reads and single updates at interval 4 against 61: point reads at 32 clients 746,000 → 843,000/s, index reads and sorted pages unchanged in throughput with a longer p99 (240 → 350 µs, 415 → 545 µs), one client within 1%.
+
+`crash-run/`, `crash-driver/`: `CRASH_MODE=run` and `driver` (`bank.sh crash-solidb crash-solidb-eventual`), so that the killed commits are grouped ones: 80 `kill -9`, 14.8 million transfers acknowledged, no violation.
+
+**The leader of a small fsynced group inserts it** (`results/2026-11-11/solistore-group-insert/`; solistore, same SoliDB): 32 clients 80,800 → 86,430/s in one request, 53,370 → 58,180 over five round trips. It is the `Before` column above.
+
 **Sorted reads, planner** (`results/2026-11-10/sorted-read-planner/`, `797-b` against `797-c`, one client): the plan of an index-ordered read opens its collection once, clones only the index it chose, and does not look for an index to narrow a filter that is only a range on the sort field. The join 13,003 → 13,485/s (median 76–77 → 73–74 µs; PostgreSQL 71 µs), the 20 most recent 14,707 → 14,971/s, ten documents by index 24,980 → 25,175/s.
 
 ### Results, 2026-11-10: ArangoDB 3.12.4
