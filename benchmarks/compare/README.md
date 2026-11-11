@@ -301,6 +301,22 @@ Among 10,000 accounts nothing changes (`run` 77,400 against 77,500 at 32 clients
 
 The order matters, and only once locks wait (`hot-series/`, the 10-account series alone, 10 s, twice, with the harness of before and the ordered one). In either order a server that refuses at once does the same (`run` 11,860 and 11,840/s). A server that waits, given the two accounts in the transfer's own order, has two transfers between the same pair deadlock: `run` 11,440/s (0.72 refusals per commit, p99 14 ms), `driver` 7,260/s against 10,370, `query` 3,650/s against 5,430, so fewer transfers than refusing at once, with a tail two to four times shorter. In account order: 22,940, 17,400 and 9,100/s, none refused. (The series alone measures lower than after the two 10,000-account series, on both builds.)
 
+**Commits in place on a quiet server** (`results/2026-11-11/commit-handoff/`; a build of `main`, `797-k`, against `797-e`, alternating, fresh servers, 2 × 12 s each, twice; the second run of each is given, the first of a fresh server writes a WAL file it has not written before and is slower on both: 10,230 and 14,150/s). Since 2.9.3 a driver commit leaves its async worker for its fsync (`block_in_place`), so the worker's other connections go on. With one client there are none, and leaving cost a thread wake-up per commit and the next request on another core: 14 of a transfer's 64 µs. The commit now stays on its worker while few driver connections are active and leaves from more than two per worker thread (counted per 4 ms, averaged; back under one and a half). The same build reads a stored document without bincode and plans a lone `FILTER d._key == …` without listing the indexes.
+
+| Mode | Accounts | Clients | `797-e` | `797-k` | PostgreSQL |
+|---|---:|---:|---:|---:|---:|
+| `run` (one request) | 10,000 | 1 | 13,920/s, p50 58 µs, p99 119 µs | **18,460/s, p50 51 µs, p99 80 µs** | `postgres-function` 21,674/s, p50 44 µs |
+| `run` | 10,000 | 32 | 77,720/s, p50 389 µs | 80,630/s, p50 376 µs | 113,920/s |
+| `run` | 10 | 32 | 28,010/s | 28,630/s | 10,406/s |
+| `driver` (five round trips) | 10,000 | 1 | 7,290/s, p50 147 µs, p99 188 µs | **9,730/s, p50 99 µs, p99 151 µs** | `postgres-update` 10,555/s |
+| `driver` | 10,000 | 32 | 51,780/s | 54,050/s | 67,383/s |
+| `driver` | 10 | 32 | 17,840/s | 18,170/s | 8,339/s |
+| `query` (HTTP) | 10,000 | 1 | 4,080/s | 4,130/s | |
+| `query` | 10,000 | 32 | 20,580/s | 21,270/s | |
+| `query` | 10 | 32 | 8,760/s | 8,990/s | |
+
+HTTP commits are not concerned (they run on the blocking pool). Where the two ways cross (`bare-metal.txt`: no container, server on 8 CPUs, `run`, 10,000 accounts; `f` always leaves, `k` decides): 1 client 13,280 → 19,410/s, 2: 21,920 → 24,260, 4: 31,990 → 33,650, 8: 53,000 → 55,210, 12: 62,680 → 70,230, 16: 68,770 → 69,740, then equal within the 1% between two passes of one binary (20: 74,260 and 74,210; 32: 85,490 and 85,430; 64: 97,050 and 96,940). A server where some commits stay and some leave does worse than either (25,000/s at four clients against 33,000 and 31,000), which is why the choice is made for the server, from an average, and not per commit. PostgreSQL remains 1.17× ahead at one client and 1.41× at 32 in one request.
+
 **Sorted reads, planner** (`results/2026-11-10/sorted-read-planner/`, `797-b` against `797-c`, one client): the plan of an index-ordered read opens its collection once, clones only the index it chose, and does not look for an index to narrow a filter that is only a range on the sort field. The join 13,003 → 13,485/s (median 76–77 → 73–74 µs; PostgreSQL 71 µs), the 20 most recent 14,707 → 14,971/s, ten documents by index 24,980 → 25,175/s.
 
 ### Results, 2026-11-10: ArangoDB 3.12.4

@@ -1007,6 +1007,28 @@ impl<'a> QueryExecutor<'a> {
             return None;
         }
 
+        // `FILTER d._key == x` alone names one document: there is nothing to
+        // rank it against, so the candidates are not listed.
+        if !matches!(
+            filter,
+            Expression::BinaryOp {
+                op: BinaryOperator::And | BinaryOperator::Or,
+                ..
+            }
+        ) {
+            if let Some(cond) = self
+                .extract_indexable_condition(filter, var_name, ctx)
+                .filter(|c| c.field == "_key" && matches!(c.op, BinaryOperator::Equal))
+            {
+                let terms = self.composite_terms(filter, var_name, ctx);
+                if let Some((name, type_str)) = self.plan_single_field(collection, &cond, &terms) {
+                    if let Some(docs) = self.use_index_for_condition(collection, &cond, limit) {
+                        return Some((docs, name, type_str));
+                    }
+                }
+            }
+        }
+
         // Every index read that could serve the FILTER, cheapest first (ties
         // in the order the planner always tried them); a read that declines
         // (a trigram too common to narrow anything) gives way to the next. A

@@ -1,0 +1,96 @@
+# cn.sh, bare metal (server on 8 CPUs, client on 16), run mode, 10,000 accounts, 7 s per point after a warm-up.
+# f: every commit leaves its worker. k: adaptive. f2: f rebuilt from its sources.
+## 1 to 64 clients
+== k
+1 clients: 19408/s p50 50 µs p99 63 µs
+2 clients: 24260/s p50 83 µs p99 106 µs
+4 clients: 33648/s p50 117 µs p99 158 µs
+8 clients: 55210/s p50 139 µs p99 227 µs
+12 clients: 70234/s p50 166 µs p99 240 µs
+16 clients: 69743/s p50 222 µs p99 359 µs
+20 clients: 74206/s p50 259 µs p99 428 µs
+32 clients: 85434/s p50 358 µs p99 638 µs
+64 clients: 96937/s p50 628 µs p99 1295 µs
+== f
+1 clients: 13280/s p50 64 µs p99 110 µs
+2 clients: 21922/s p50 98 µs p99 134 µs
+4 clients: 31991/s p50 124 µs p99 171 µs
+8 clients: 53004/s p50 146 µs p99 230 µs
+12 clients: 62684/s p50 183 µs p99 310 µs
+16 clients: 68768/s p50 224 µs p99 370 µs
+20 clients: 74259/s p50 260 µs p99 435 µs
+32 clients: 85489/s p50 359 µs p99 641 µs
+64 clients: 97053/s p50 627 µs p99 1289 µs
+== k
+1 clients: 18730/s p50 51 µs p99 65 µs
+2 clients: 24346/s p50 84 µs p99 112 µs
+4 clients: 33215/s p50 119 µs p99 158 µs
+8 clients: 54209/s p50 141 µs p99 229 µs
+12 clients: 68632/s p50 169 µs p99 242 µs
+16 clients: 67774/s p50 226 µs p99 372 µs
+20 clients: 72782/s p50 263 µs p99 436 µs
+32 clients: 82997/s p50 366 µs p99 657 µs
+64 clients: 95216/s p50 638 µs p99 1308 µs
+== f
+1 clients: 12837/s p50 66 µs p99 113 µs
+2 clients: 21880/s p50 98 µs p99 134 µs
+4 clients: 31699/s p50 125 µs p99 174 µs
+8 clients: 52771/s p50 147 µs p99 231 µs
+12 clients: 62292/s p50 184 µs p99 312 µs
+16 clients: 65955/s p50 234 µs p99 396 µs
+20 clients: 74172/s p50 261 µs p99 433 µs
+32 clients: 85300/s p50 360 µs p99 643 µs
+64 clients: 96958/s p50 628 µs p99 1297 µs
+## 20, 32, 64 clients, three passes
+== f
+20 clients: 75113/s p50 257 µs p99 426 µs
+32 clients: 85948/s p50 357 µs p99 636 µs
+64 clients: 97707/s p50 624 µs p99 1280 µs
+== k
+20 clients: 73781/s p50 261 µs p99 434 µs
+32 clients: 84678/s p50 362 µs p99 647 µs
+64 clients: 95139/s p50 634 µs p99 1309 µs
+== f
+20 clients: 73601/s p50 260 µs p99 429 µs
+32 clients: 84090/s p50 361 µs p99 641 µs
+64 clients: 95814/s p50 630 µs p99 1296 µs
+== k
+20 clients: 72458/s p50 264 µs p99 437 µs
+32 clients: 82870/s p50 366 µs p99 652 µs
+64 clients: 92977/s p50 645 µs p99 1338 µs
+== f
+20 clients: 73881/s p50 258 µs p99 429 µs
+32 clients: 84199/s p50 360 µs p99 645 µs
+64 clients: 96121/s p50 629 µs p99 1285 µs
+== k
+20 clients: 72326/s p50 264 µs p99 437 µs
+32 clients: 83007/s p50 366 µs p99 651 µs
+64 clients: 93696/s p50 640 µs p99 1319 µs
+## f, f rebuilt (f2), k
+== f
+32 clients: 84636/s p50 363 µs p99 650 µs
+64 clients: 89255/s p50 630 µs p99 1303 µs
+== f2
+32 clients: 86380/s p50 355 µs p99 632 µs
+64 clients: 97350/s p50 624 µs p99 1288 µs
+== k
+32 clients: 84415/s p50 364 µs p99 650 µs
+64 clients: 95538/s p50 636 µs p99 1313 µs
+== f
+32 clients: 86264/s p50 356 µs p99 634 µs
+64 clients: 97131/s p50 625 µs p99 1297 µs
+== f2
+32 clients: 85341/s p50 360 µs p99 643 µs
+64 clients: 90066/s p50 626 µs p99 1290 µs
+== k
+32 clients: 85119/s p50 361 µs p99 645 µs
+64 clients: 96094/s p50 633 µs p99 1306 µs
+== f
+32 clients: 85322/s p50 360 µs p99 642 µs
+64 clients: 94166/s p50 638 µs p99 1317 µs
+== f2
+32 clients: 84399/s p50 361 µs p99 641 µs
+64 clients: 88115/s p50 633 µs p99 1308 µs
+== k
+32 clients: 84463/s p50 359 µs p99 639 µs
+64 clients: 87846/s p50 634 µs p99 1309 µs

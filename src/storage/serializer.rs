@@ -570,15 +570,81 @@ pub(crate) fn write_msgpack(out: &mut Vec<u8>, value: &serde_json::Value) {
     }
 }
 
+/// A current-format document read off its header by hand, its two
+/// timestamps in the form every writer stores. `None` for anything else,
+/// which the caller reads through bincode and chrono as before: that way
+/// was about 3% of a transaction that reads two documents by key.
+fn stored_document(bytes: &[u8]) -> Option<Document> {
+    let stored = StoredDocRef::parse(bytes)?;
+    let text = |b: &[u8]| std::str::from_utf8(b).ok().map(str::to_owned);
+    Some(Document {
+        created_at: parse_stored_timestamp(stored.created_at)?,
+        updated_at: parse_stored_timestamp(stored.updated_at)?,
+        data: rmp_serde::from_slice(stored.data).ok()?,
+        key: text(stored.key)?,
+        id: text(stored.id)?,
+        rev: text(stored.rev)?,
+    })
+}
+
+/// `YYYY-MM-DDTHH:MM:SS[.fraction]Z`, the form chrono serializes a
+/// `DateTime<Utc>` in. `None` for any other spelling (an offset, a leap
+/// second, a year outside four digits), which chrono parses.
+fn parse_stored_timestamp(b: &[u8]) -> Option<chrono::DateTime<chrono::Utc>> {
+    fn number(b: &[u8]) -> Option<u32> {
+        b.iter().try_fold(0u32, |n, &c| {
+            c.is_ascii_digit().then(|| n * 10 + u32::from(c - b'0'))
+        })
+    }
+    let (&b'Z', b) = b.split_last()? else {
+        return None;
+    };
+    if b.len() < 19
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || b[16] != b':'
+    {
+        return None;
+    }
+    let nanos = match &b[19..] {
+        [] => 0,
+        [b'.', fraction @ ..] if (1..=9).contains(&fraction.len()) => {
+            number(fraction)? * 10u32.pow(9 - fraction.len() as u32)
+        }
+        _ => return None,
+    };
+    let date = chrono::NaiveDate::from_ymd_opt(
+        number(&b[..4])? as i32,
+        number(&b[5..7])?,
+        number(&b[8..10])?,
+    )?;
+    let second = number(&b[17..19])?;
+    if second > 59 {
+        return None;
+    }
+    let time = date.and_hms_nano_opt(number(&b[11..13])?, number(&b[14..16])?, second, nanos)?;
+    Some(chrono::DateTime::from_naive_utc_and_offset(
+        time,
+        chrono::Utc,
+    ))
+}
+
 pub fn deserialize_doc(bytes: &[u8]) -> DbResult<Document> {
     if bytes.is_empty() {
         return Err(DbError::DocumentNotFound("empty bytes".to_string()));
     }
 
     match bytes[0] {
-        2 => bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
-            .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))
-            .map(|doc_with_version| doc_with_version.into_doc()),
+        2 => {
+            if let Some(doc) = stored_document(bytes) {
+                return Ok(doc);
+            }
+            bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
+                .map_err(|e| DbError::InternalError(format!("Deserialization failed: {}", e)))
+                .map(|doc_with_version| doc_with_version.into_doc())
+        }
         1 => {
             // Version 1: Legacy format with JSON in data field
             bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
@@ -639,6 +705,59 @@ mod tests {
     /// then `serialize_doc`), against `serialize_api_value` on the same
     /// staged value: every kind of field, timestamps with and without a
     /// fraction, and after an update.
+    /// The hand-written document read gives what bincode and chrono give,
+    /// and declines whatever it does not read the same way.
+    #[test]
+    fn a_stored_document_reads_by_hand_as_through_bincode() {
+        let stamps = [
+            "2026-11-09T19:40:13.635839364Z",
+            "2026-11-09T19:40:13Z",
+            "2026-11-09T19:40:13.100Z",
+            "2026-11-09T19:40:13.000001Z",
+            "1970-01-01T00:00:00Z",
+            "2024-02-29T23:59:59.999999999Z",
+        ];
+        for stamp in stamps {
+            let t = chrono::DateTime::parse_from_rfc3339(stamp)
+                .unwrap()
+                .with_timezone(&chrono::Utc);
+            assert_eq!(parse_stored_timestamp(stamp.as_bytes()), Some(t), "{stamp}");
+            let mut doc = Document::with_key(
+                "coll",
+                "k1".to_string(),
+                json!({"n": 1, "s": "é", "arr": [1, {"x": null}], "obj": {"k": -1}}),
+            );
+            doc.created_at = t;
+            doc.updated_at = t;
+            let bytes = serialize_doc(&doc).unwrap();
+            let by_hand = stored_document(&bytes).expect("a current-format document");
+            let through_bincode = bincode::deserialize::<DocumentWithVersion>(&bytes[1..])
+                .unwrap()
+                .into_doc();
+            assert_eq!(by_hand.to_value(), through_bincode.to_value());
+            assert_eq!(by_hand.created_at, through_bincode.created_at);
+            assert_eq!(by_hand.updated_at, through_bincode.updated_at);
+            assert_eq!(deserialize_doc(&bytes).unwrap().to_value(), doc.to_value());
+        }
+        // Spellings chrono reads and the hand parser leaves to it, or that
+        // are no date at all.
+        for other in [
+            "2026-11-09T19:40:13+00:00",
+            "2026-11-09T19:40:60Z",
+            "2026-11-09 19:40:13Z",
+            "2026-02-30T19:40:13Z",
+            "2026-11-09T19:40:13.Z",
+            "2026-11-09T19:40:13.1234567890Z",
+            "2026-11-09T24:00:00Z",
+            "+12026-11-09T19:40:13Z",
+            "2026-11-0xT19:40:13Z",
+            "",
+            "Z",
+        ] {
+            assert_eq!(parse_stored_timestamp(other.as_bytes()), None, "{other}");
+        }
+    }
+
     #[test]
     fn serialize_api_value_matches_the_document_path() {
         let shapes = [

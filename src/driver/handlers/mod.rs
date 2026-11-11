@@ -53,6 +53,9 @@ pub struct DriverHandler {
     /// Peer IP, the IP half of the login limiter bucket (same `ip|username`
     /// format as `/_api/auth/login`).
     pub(crate) peer_ip: String,
+    /// The last window of time this connection was counted active in
+    /// (`transaction::note_request`).
+    pub(crate) active_window: u64,
 }
 
 /// How long a client has to deliver a payload once it has sent its length.
@@ -129,6 +132,7 @@ impl DriverHandler {
             session_api_key_id: None,
             session_validated_at: None,
             peer_ip: String::new(),
+            active_window: 0,
         }
     }
 
@@ -315,6 +319,7 @@ impl DriverHandler {
             }
 
             // Execute command
+            transaction::note_request(&mut self.active_window);
             let raw_response = raw.and_then(|write| document::run_raw(self, write));
             let response = match (raw_response, command) {
                 (Some(response), _) => response,
@@ -324,7 +329,6 @@ impl DriverHandler {
                     Err(e) => Response::error(e),
                 },
             };
-
             // Send response
             if let Err(e) = self.send_response(&mut stream, &response).await {
                 tracing::warn!("Failed to send response to {}: {}", addr, e);

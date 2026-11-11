@@ -1,0 +1,73 @@
+# cn.sh, bare metal, run mode, 10,000 accounts. Same SoliDB (797-k).
+# swal: solistore main + perf/wal-preallocate. sgrp: the leader of a small fsynced group inserts it, from groups of 2. sgrp3: from groups of 3 (kept).
+== swal
+1 clients: 18866/s p50 51 µs p99 64 µs
+4 clients: 32836/s p50 120 µs p99 159 µs
+8 clients: 53475/s p50 144 µs p99 233 µs
+16 clients: 67840/s p50 227 µs p99 368 µs
+32 clients: 83618/s p50 365 µs p99 648 µs
+64 clients: 94507/s p50 639 µs p99 1316 µs
+== sgrp
+1 clients: 19018/s p50 51 µs p99 64 µs
+4 clients: 31824/s p50 124 µs p99 162 µs
+8 clients: 53478/s p50 143 µs p99 231 µs
+16 clients: 72132/s p50 212 µs p99 347 µs
+32 clients: 89037/s p50 342 µs p99 578 µs
+64 clients: 98682/s p50 613 µs p99 1119 µs
+== swal
+1 clients: 18847/s p50 51 µs p99 64 µs
+4 clients: 33030/s p50 118 µs p99 164 µs
+8 clients: 53502/s p50 143 µs p99 233 µs
+16 clients: 67694/s p50 228 µs p99 352 µs
+32 clients: 83545/s p50 365 µs p99 650 µs
+64 clients: 93378/s p50 642 µs p99 1320 µs
+== sgrp
+1 clients: 19129/s p50 51 µs p99 63 µs
+4 clients: 32205/s p50 124 µs p99 160 µs
+8 clients: 54440/s p50 142 µs p99 229 µs
+16 clients: 74088/s p50 207 µs p99 342 µs
+32 clients: 90946/s p50 337 µs p99 580 µs
+64 clients: 101576/s p50 607 µs p99 1116 µs
+## with sgrp3
+== swal
+2 clients: 24457/s p50 83 µs p99 111 µs
+4 clients: 33138/s p50 118 µs p99 162 µs
+6 clients: 50685/s p50 115 µs p99 203 µs
+8 clients: 54567/s p50 141 µs p99 230 µs
+16 clients: 68252/s p50 226 µs p99 373 µs
+32 clients: 84268/s p50 365 µs p99 653 µs
+== sgrp
+2 clients: 23795/s p50 83 µs p99 109 µs
+4 clients: 32587/s p50 121 µs p99 162 µs
+6 clients: 50659/s p50 115 µs p99 203 µs
+8 clients: 53860/s p50 143 µs p99 230 µs
+16 clients: 68350/s p50 229 µs p99 351 µs
+32 clients: 90761/s p50 339 µs p99 578 µs
+== sgrp3
+2 clients: 23985/s p50 84 µs p99 109 µs
+4 clients: 33380/s p50 118 µs p99 159 µs
+6 clients: 50843/s p50 114 µs p99 204 µs
+8 clients: 54626/s p50 141 µs p99 227 µs
+16 clients: 74437/s p50 206 µs p99 340 µs
+32 clients: 93846/s p50 330 µs p99 556 µs
+== swal
+2 clients: 24310/s p50 83 µs p99 111 µs
+4 clients: 33341/s p50 118 µs p99 160 µs
+6 clients: 50686/s p50 115 µs p99 203 µs
+8 clients: 54463/s p50 141 µs p99 230 µs
+16 clients: 68434/s p50 225 µs p99 372 µs
+32 clients: 84471/s p50 364 µs p99 649 µs
+== sgrp
+2 clients: 24006/s p50 84 µs p99 109 µs
+4 clients: 32488/s p50 122 µs p99 160 µs
+6 clients: 50941/s p50 114 µs p99 202 µs
+8 clients: 53951/s p50 142 µs p99 230 µs
+16 clients: 67276/s p50 232 µs p99 353 µs
+32 clients: 91116/s p50 337 µs p99 574 µs
+== sgrp3
+2 clients: 23631/s p50 84 µs p99 109 µs
+4 clients: 33253/s p50 118 µs p99 162 µs
+6 clients: 50212/s p50 116 µs p99 205 µs
+8 clients: 53328/s p50 145 µs p99 231 µs
+16 clients: 72493/s p50 212 µs p99 349 µs
+32 clients: 90792/s p50 341 µs p99 579 µs

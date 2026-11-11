@@ -1,6 +1,7 @@
 use crate::driver::handlers::DriverHandler;
 use crate::driver::protocol::{Command, DriverError, IsolationLevel, Response};
 use crate::transaction::IsolationLevel as TxIsolationLevel;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 pub fn handle_begin_transaction(
     handler: &mut DriverHandler,
@@ -153,15 +154,111 @@ fn at_step(i: usize, e: DriverError) -> DriverError {
     }
 }
 
-/// Run work that waits (a commit waits for its fsync) without holding up
-/// the other connections this async worker serves: `block_in_place` hands
-/// the worker's queue to another thread while it runs, and costs nothing
-/// when that queue is empty (one client). The server runs on the
-/// multi-threaded runtime; anywhere else (unit tests) the work runs as is.
+/// A value on cache lines of its own.
+#[repr(align(128))]
+struct OwnCacheLines<T>(T);
+
+/// Whether commits leave their async worker, decided from how many driver
+/// connections have sent requests lately rather than from what runs at
+/// this instant: a server where some commits stay and some leave does
+/// worse than either (33,000 transfers per second at four clients all
+/// staying, 31,000 all leaving, 25,000 mixed). Requests being executed
+/// cannot be the measure: while commits stay, there are never more of them
+/// than worker threads.
+struct Handoff {
+    /// The window being counted: 4 ms of the server's life, numbered from 1.
+    window: AtomicU64,
+    /// Connections that sent a request in it.
+    seen: OwnCacheLines<AtomicUsize>,
+    /// Connections per window, averaged over the last few, in 256ths.
+    average: AtomicUsize,
+    /// Read by every commit, written when the answer changes.
+    leaving: OwnCacheLines<AtomicBool>,
+}
+
+static HANDOFF: Handoff = Handoff {
+    window: AtomicU64::new(0),
+    seen: OwnCacheLines(AtomicUsize::new(0)),
+    average: AtomicUsize::new(0),
+    leaving: OwnCacheLines(AtomicBool::new(false)),
+};
+
+/// Count the connection whose last counted window is `counted` as active
+/// now. Called once per request; all but the first of a window in each
+/// connection only read the clock.
+pub(super) fn note_request(counted: &mut u64) {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let window = 1
+        + (START
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_micros() as u64
+            >> 12);
+    if *counted == window {
+        return;
+    }
+    *counted = window;
+    let workers = || tokio::runtime::Handle::try_current().map_or(1, |h| h.metrics().num_workers());
+    HANDOFF.note(window, workers);
+}
+
+impl Handoff {
+    /// One more connection is active in `window`. The first to say so of a
+    /// new window closes the one before.
+    fn note(&self, window: u64, workers: impl FnOnce() -> usize) {
+        let current = self.window.load(Ordering::Relaxed);
+        if current != window
+            && self
+                .window
+                .compare_exchange(current, window, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        {
+            let active = self.seen.0.swap(0, Ordering::Relaxed);
+            if current != 0 {
+                self.close_window(active, workers());
+            }
+        }
+        self.seen.0.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// A window ended with `active` connections, on a runtime of `workers`
+    /// threads. Commits leave their worker from an average of more than
+    /// two active connections per worker, until it is back under one and a
+    /// half.
+    fn close_window(&self, active: usize, workers: usize) -> bool {
+        let old = self.average.load(Ordering::Relaxed);
+        let average = old - old / 4 + active.min(1 << 20) * 64;
+        self.average.store(average, Ordering::Relaxed);
+        let leaving = self.leaving.0.load(Ordering::Relaxed);
+        let now = if leaving {
+            average * 2 >= workers * 3 * 256
+        } else {
+            average > workers * 2 * 256
+        };
+        if now != leaving {
+            self.leaving.0.store(now, Ordering::Relaxed);
+        }
+        now
+    }
+}
+
+/// Run work that waits (a commit waits for its fsync) where it costs
+/// least. On a busy server, off the async worker: `block_in_place` hands
+/// the worker's other connections to another thread, so that they go on
+/// (and their commits join this one's fsync) while it waits. On a quiet
+/// one, in place: the hand-off wakes a thread per commit and the
+/// connection's next request runs on another core, which at one client
+/// was 14 of a transfer's 64 µs (13,300 transfers per second against
+/// 19,400), and staying is no slower up to two active connections per
+/// worker thread. The server runs on the multi-threaded runtime; anywhere
+/// else (unit tests) the work runs as is.
 fn off_the_worker<T>(work: impl FnOnce() -> T) -> T {
-    match tokio::runtime::Handle::try_current().map(|h| h.runtime_flavor()) {
-        Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
-        _ => work(),
+    let on_workers = tokio::runtime::Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    if on_workers && HANDOFF.leaving.0.load(Ordering::Relaxed) {
+        tokio::task::block_in_place(work)
+    } else {
+        work()
     }
 }
 
@@ -525,6 +622,63 @@ where
 
 #[cfg(test)]
 mod tests {
+    /// Commits stay on their worker while few connections are active,
+    /// leave once there are lastingly more than two per worker thread, and
+    /// come back only under one and a half: one busy window does not flip
+    /// it, nor does a load at the edge make it alternate.
+    #[test]
+    fn commits_leave_their_worker_only_under_lasting_load() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+        let fresh = || super::Handoff {
+            window: AtomicU64::new(0),
+            seen: super::OwnCacheLines(AtomicUsize::new(0)),
+            average: AtomicUsize::new(0),
+            leaving: super::OwnCacheLines(AtomicBool::new(false)),
+        };
+        let workers = 8;
+        let settle = |h: &super::Handoff, active| {
+            (0..100)
+                .map(|_| h.close_window(active, workers))
+                .last()
+                .unwrap()
+        };
+
+        let h = fresh();
+        for quiet in [0, 1, 8, 16] {
+            assert!(!settle(&h, quiet), "{quiet} active");
+        }
+        // One busy window among quiet ones changes nothing.
+        assert!(!settle(&h, 4));
+        assert!(!h.close_window(40, workers));
+        assert!(!settle(&h, 4));
+        // Lasting load does, and not in its first window.
+        assert!(!h.close_window(32, workers));
+        assert!(settle(&h, 32));
+        // Between the two thresholds it stays as it was, from either side.
+        assert!(settle(&h, 14));
+        assert!(!settle(&h, 11));
+        assert!(!settle(&h, 14));
+        assert!(settle(&h, 17));
+
+        // Windows are counted as connections report in: each connection
+        // once, and the first of a new window closes the last.
+        let h = fresh();
+        let mut window = 1;
+        for _ in 0..50 {
+            for _connection in 0..32 {
+                h.note(window, || workers);
+            }
+            window += 1;
+        }
+        assert_eq!(h.seen.0.load(Ordering::Relaxed), 32);
+        assert!(h.leaving.0.load(Ordering::Relaxed));
+        for _ in 0..50 {
+            h.note(window, || workers);
+            window += 1;
+        }
+        assert!(!h.leaving.0.load(Ordering::Relaxed));
+    }
+
     use super::*;
     use crate::driver::protocol::IsolationLevel;
     use crate::storage::StorageEngine;
