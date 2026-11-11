@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.9.5](https://github.com/solisoft/solidb/compare/v2.9.4...v2.9.5) (2026-11-12)
+
+SDBQL: four behaviours that surprised while writing queries by hand. Two
+of them change what a query that used to succeed answers.
+
 ### Changed
 
 * **The sum of integers is an integer.** `SUM([5, 10])` answers `15`, not
