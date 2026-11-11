@@ -56,7 +56,7 @@
                 <p class="text-sm text-gray-400">
                   There are no <code>db:get</code>/<code>db:insert</code> shortcuts, and no elevated "script user". Every read and write runs under the principal that invoked the endpoint:
                   <code>db:query</code> applies that user's row policies (admins are exempt), and writes are authorised the same way as the HTTP API.
-                  Ordinary collections are unrestricted, <code>_jobs</code> needs an admin caller, and the collections the server executes or reads back for authorisation
+                  Ordinary collections are unrestricted, <code>_jobs</code> needs an admin caller (the global <code>admin</code>, or an admin of that database), and the collections the server executes or reads back for authorisation
                   (<code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, <code>_views</code>, <code>_graphs</code>, <code>_config</code>, <code>_rag_pipelines</code>, and the credential collections)
                   are never writable from a script: the attempt fails with a 403.
                 </p>
