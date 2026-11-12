@@ -1,0 +1,346 @@
+{
+  "engine": "mongo",
+  "label": "mongo-durable",
+  "server_version": "9.0.4",
+  "settings": {
+    "durable": true,
+    "typed": false
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1,
+    32
+  ],
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 3,
+  "queries": [
+    {
+      "scenario": "load",
+      "query": "orders.insertMany([1,000 documents], {ordered: false}), write concern {w: 1, j: true}"
+    },
+    {
+      "scenario": "insert",
+      "query": "orders.insertOne(document), write concern {w: 1, j: true}"
+    },
+    {
+      "scenario": "get",
+      "query": "orders.findOne({_id: key})"
+    },
+    {
+      "scenario": "update",
+      "query": "orders.updateOne({_id: key}, {$set: {status}}), write concern {w: 1, j: true}"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "orders.find({customer_id: c})"
+    },
+    {
+      "scenario": "recent",
+      "query": "orders.find({created_at: {$gte: lo, $lt: hi}}).sort({created_at: -1}).limit(20)"
+    },
+    {
+      "scenario": "join",
+      "query": "orders.aggregate([{ \"$match\": { \"created_at\": { \"$gte\": \"lo\", \"$lt\": \"hi\" } } }, { \"$sort\": { \"created_at\": -1 } }, { \"$limit\": 20 }, { \"$lookup\": { \"from\": \"customers\", \"localField\": \"customer_id\", \"foreignField\": \"_id\", \"as\": \"c\" } }, { \"$unwind\": \"$c\" }, { \"$project\": { \"_id\": 1, \"amount\": 1, \"name\": \"$c.name\", \"tier\": \"$c.tier\" } }])"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "orders.aggregate([{ \"$group\": { \"_id\": \"$status\", \"n\": { \"$sum\": 1 }, \"total\": { \"$sum\": \"$amount\" } } }])"
+    },
+    {
+      "scenario": "indexes",
+      "query": "orders.createIndex({customer_id: 1}), ({created_at: 1}), ({status: 1})"
+    }
+  ],
+  "meta": {
+    "host_memory": "125 GB",
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -v /home/rocky/bench/data/mongo-durable:/data/db:Z docker.io/library/mongo@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058",
+    "client_cpus": "8-15,24-31",
+    "db_memory": "16g",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "image": "docker.io/library/mongo@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058",
+    "db_cpus": "0-3,16-19",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "image_digest": "sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058",
+    "server_version": ""
+  },
+  "load": [
+    {
+      "phase": "customers",
+      "result": {
+        "docs": 100000,
+        "loaders": 8,
+        "secs": 0.129072257,
+        "docs_per_sec": 774760.0
+      }
+    },
+    {
+      "phase": "orders_1",
+      "result": {
+        "docs": 100000,
+        "loaders": 1,
+        "secs": 0.954182725,
+        "docs_per_sec": 104802.0
+      }
+    },
+    {
+      "phase": "orders_8",
+      "result": {
+        "docs": 900000,
+        "loaders": 8,
+        "secs": 3.9393384129999998,
+        "docs_per_sec": 228465.0
+      }
+    }
+  ],
+  "series": [
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 290986,
+      "secs": 20.000857421,
+      "ops_per_sec": 14549.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.40548261653447243,
+      "db_cpu_cores": 0.4668029376679192,
+      "load_avg_before": 4.88,
+      "p50_us": 65,
+      "p90_us": 82,
+      "p99_us": 98,
+      "p999_us": 115,
+      "max_us": 29424
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 296482,
+      "secs": 20.000185918,
+      "ops_per_sec": 14824.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.4039962444913108,
+      "db_cpu_cores": 0.5195803700328383,
+      "load_avg_before": 3.64,
+      "p50_us": 63,
+      "p90_us": 80,
+      "p99_us": 96,
+      "p999_us": 117,
+      "max_us": 28006
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 292946,
+      "secs": 20.00021355,
+      "ops_per_sec": 14647.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.40349569167475213,
+      "db_cpu_cores": 0.5164087360457209,
+      "load_avg_before": 3.02,
+      "p50_us": 65,
+      "p90_us": 82,
+      "p99_us": 98,
+      "p999_us": 116,
+      "max_us": 11653
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 1613697,
+      "secs": 20.001407275,
+      "ops_per_sec": 80679.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 2.7708050357671645,
+      "db_cpu_cores": 6.0375268769682116,
+      "load_avg_before": 3.95,
+      "p50_us": 323,
+      "p90_us": 455,
+      "p99_us": 1150,
+      "p999_us": 12663,
+      "max_us": 63715
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 1224092,
+      "secs": 20.017525417,
+      "ops_per_sec": 61151.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 2.0771798278666327,
+      "db_cpu_cores": 6.526864249116591,
+      "load_avg_before": 10.16,
+      "p50_us": 363,
+      "p90_us": 549,
+      "p99_us": 3344,
+      "p999_us": 39232,
+      "max_us": 91038
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 1172444,
+      "secs": 20.001661221,
+      "ops_per_sec": 58617.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.9603371723361107,
+      "db_cpu_cores": 6.938605372152254,
+      "load_avg_before": 13.18,
+      "p50_us": 413,
+      "p90_us": 649,
+      "p99_us": 3266,
+      "p999_us": 22373,
+      "max_us": 111840
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 351143,
+      "secs": 20.00070853,
+      "ops_per_sec": 17557.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.28348995694304113,
+      "db_cpu_cores": 0.767214270283654,
+      "load_avg_before": 14.19,
+      "p50_us": 54,
+      "p90_us": 73,
+      "p99_us": 95,
+      "p999_us": 118,
+      "max_us": 32701
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 350360,
+      "secs": 20.001077874,
+      "ops_per_sec": 17517.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.28298474890483777,
+      "db_cpu_cores": 0.7979063978719638,
+      "load_avg_before": 10.37,
+      "p50_us": 54,
+      "p90_us": 73,
+      "p99_us": 95,
+      "p999_us": 118,
+      "max_us": 45009
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 352840,
+      "secs": 20.016939886,
+      "ops_per_sec": 17627.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.28176134974280687,
+      "db_cpu_cores": 0.7418041960742101,
+      "load_avg_before": 7.78,
+      "p50_us": 54,
+      "p90_us": 73,
+      "p99_us": 95,
+      "p999_us": 113,
+      "max_us": 18269
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 1424931,
+      "secs": 20.001256642,
+      "ops_per_sec": 71242.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.2759198312775697,
+      "db_cpu_cores": 6.567298962814833,
+      "load_avg_before": 7.81,
+      "p50_us": 359,
+      "p90_us": 525,
+      "p99_us": 996,
+      "p999_us": 24323,
+      "max_us": 73946
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 1467208,
+      "secs": 20.001084357,
+      "ops_per_sec": 73356.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.3199284363180293,
+      "db_cpu_cores": 6.514287759323409,
+      "load_avg_before": 11.58,
+      "p50_us": 361,
+      "p90_us": 530,
+      "p99_us": 1025,
+      "p999_us": 16207,
+      "max_us": 64950
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 1449491,
+      "secs": 20.001095728,
+      "ops_per_sec": 72471.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.304928507664809,
+      "db_cpu_cores": 6.50506426094737,
+      "load_avg_before": 14.94,
+      "p50_us": 358,
+      "p90_us": 526,
+      "p99_us": 1030,
+      "p999_us": 20100,
+      "max_us": 67710
+    }
+  ],
+  "aborted": [],
+  "after_load": {
+    "disk": "520713580",
+    "memory": {
+      "anon_bytes": 1147793408,
+      "file_bytes": 411328512,
+      "current_bytes": 1566863360,
+      "peak_bytes": 1566867456
+    }
+  },
+  "after_all": {
+    "disk": "3585987837",
+    "memory": {
+      "anon_bytes": 4944338944,
+      "file_bytes": 3409707008,
+      "current_bytes": 8377012224,
+      "peak_bytes": 8597024768
+    }
+  }
+}

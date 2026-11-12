@@ -1,0 +1,374 @@
+{
+  "engine": "surreal",
+  "label": "surreal-durable",
+  "server_version": "4.0.0",
+  "settings": {
+    "durable": true,
+    "typed": false
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1,
+    32
+  ],
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 3,
+  "queries": [
+    {
+      "scenario": "load",
+      "query": "INSERT INTO orders $docs RETURN NONE"
+    },
+    {
+      "scenario": "insert",
+      "query": "INSERT INTO orders $doc RETURN NONE"
+    },
+    {
+      "scenario": "get",
+      "query": "SDK select((\"orders\", key))"
+    },
+    {
+      "scenario": "update",
+      "query": "UPDATE type::record('orders', $k) SET status = $s RETURN NONE"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "SELECT * FROM orders WHERE customer_id = $c"
+    },
+    {
+      "scenario": "recent",
+      "query": "SELECT * FROM orders WHERE created_at >= $lo AND created_at < $hi ORDER BY created_at DESC LIMIT 20"
+    },
+    {
+      "scenario": "join",
+      "query": "SELECT id, amount, customer.name AS name, customer.tier AS tier FROM orders WHERE created_at >= $lo AND created_at < $hi ORDER BY created_at DESC LIMIT 20"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "SELECT status, count() AS n, math::sum(amount) AS total FROM orders GROUP BY status"
+    },
+    {
+      "scenario": "schema",
+      "query": "REMOVE TABLE IF EXISTS orders"
+    },
+    {
+      "scenario": "schema",
+      "query": "REMOVE TABLE IF EXISTS customers"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE TABLE orders SCHEMALESS"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE TABLE customers SCHEMALESS"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE FIELD customer ON orders VALUE type::record('customers', customer_id)"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE INDEX idx_customer_id ON orders FIELDS customer_id"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE INDEX idx_created_at ON orders FIELDS created_at"
+    },
+    {
+      "scenario": "schema",
+      "query": "DEFINE INDEX idx_status ON orders FIELDS status"
+    }
+  ],
+  "meta": {
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -v /home/rocky/bench/data/surreal-durable:/data:Z,U docker.io/surrealdb/surrealdb@sha256:c35893410644e65fa90aa1bef446ac9cb0a0c2733b9d405ce3eb56754b85c330 start --user root --pass bench --bind 0.0.0.0:8000 surrealkv:///data/db",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "image_digest": "sha256:c35893410644e65fa90aa1bef446ac9cb0a0c2733b9d405ce3eb56754b85c330",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "image": "docker.io/surrealdb/surrealdb@sha256:c35893410644e65fa90aa1bef446ac9cb0a0c2733b9d405ce3eb56754b85c330",
+    "server_version": "",
+    "host_memory": "125 GB",
+    "db_memory": "16g",
+    "db_cpus": "0-3,16-19",
+    "client_cpus": "8-15,24-31"
+  },
+  "load": [
+    {
+      "phase": "customers",
+      "result": {
+        "docs": 100000,
+        "loaders": 8,
+        "secs": 0.127893742,
+        "docs_per_sec": 781899.0
+      }
+    },
+    {
+      "phase": "orders_1",
+      "result": {
+        "docs": 100000,
+        "loaders": 1,
+        "secs": 3.389171814,
+        "docs_per_sec": 29506.0
+      }
+    },
+    {
+      "phase": "orders_8",
+      "result": {
+        "docs": 900000,
+        "loaders": 8,
+        "secs": 16.951952099,
+        "docs_per_sec": 53091.0
+      }
+    }
+  ],
+  "series": [
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 37818,
+      "secs": 20.000837373,
+      "ops_per_sec": 1891.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.029998743993087298,
+      "db_cpu_cores": 0.977444425721445,
+      "load_avg_before": 3.22,
+      "p50_us": 525,
+      "p90_us": 556,
+      "p99_us": 576,
+      "p999_us": 653,
+      "max_us": 12520
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 37784,
+      "secs": 20.000920414,
+      "ops_per_sec": 1889.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.029998619442534204,
+      "db_cpu_cores": 0.9774155686513398,
+      "load_avg_before": 2.59,
+      "p50_us": 526,
+      "p90_us": 557,
+      "p99_us": 576,
+      "p999_us": 658,
+      "max_us": 12395
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 37673,
+      "secs": 20.001912283,
+      "ops_per_sec": 1883.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.029997131849735823,
+      "db_cpu_cores": 0.9768500993080774,
+      "load_avg_before": 2.13,
+      "p50_us": 527,
+      "p90_us": 559,
+      "p99_us": 578,
+      "p999_us": 655,
+      "max_us": 12287
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 217562,
+      "secs": 20.002658616,
+      "ops_per_sec": 10877.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.33645527473116577,
+      "db_cpu_cores": 7.162401896186018,
+      "load_avg_before": 2.39,
+      "p50_us": 2827,
+      "p90_us": 3817,
+      "p99_us": 5380,
+      "p999_us": 14540,
+      "max_us": 44939
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 216286,
+      "secs": 20.002120485,
+      "ops_per_sec": 10813.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.33396459165464326,
+      "db_cpu_cores": 7.111455613252197,
+      "load_avg_before": 4.7,
+      "p50_us": 2835,
+      "p90_us": 3905,
+      "p99_us": 5387,
+      "p999_us": 14300,
+      "max_us": 21538
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 208234,
+      "secs": 20.002425603,
+      "ops_per_sec": 10410.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.3184613769564334,
+      "db_cpu_cores": 7.002070587828796,
+      "load_avg_before": 5.46,
+      "p50_us": 2868,
+      "p90_us": 3970,
+      "p99_us": 5708,
+      "p999_us": 28969,
+      "max_us": 88509
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 36359,
+      "secs": 20.001012567,
+      "ops_per_sec": 1818.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.015999189987409616,
+      "db_cpu_cores": 0.9911292707603832,
+      "load_avg_before": 6.33,
+      "p50_us": 553,
+      "p90_us": 587,
+      "p99_us": 613,
+      "p999_us": 754,
+      "max_us": 22229
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 36992,
+      "secs": 20.001597916,
+      "ops_per_sec": 1849.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.01649868182461659,
+      "db_cpu_cores": 0.9908973314649839,
+      "load_avg_before": 4.82,
+      "p50_us": 549,
+      "p90_us": 578,
+      "p99_us": 602,
+      "p999_us": 635,
+      "max_us": 12554
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 36996,
+      "secs": 20.001838488,
+      "ops_per_sec": 1850.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.01599852934478911,
+      "db_cpu_cores": 0.9923545284053907,
+      "load_avg_before": 3.73,
+      "p50_us": 549,
+      "p90_us": 578,
+      "p99_us": 602,
+      "p999_us": 656,
+      "max_us": 12048
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 215647,
+      "secs": 20.002345612,
+      "ops_per_sec": 10781.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.11398663157945645,
+      "db_cpu_cores": 7.599342344570225,
+      "load_avg_before": 3.44,
+      "p50_us": 3044,
+      "p90_us": 4102,
+      "p99_us": 5992,
+      "p999_us": 12909,
+      "max_us": 42885
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 215220,
+      "secs": 20.002498108,
+      "ops_per_sec": 10760.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.11448570011783245,
+      "db_cpu_cores": 7.57215364711984,
+      "load_avg_before": 4.5,
+      "p50_us": 3055,
+      "p90_us": 4101,
+      "p99_us": 6027,
+      "p999_us": 12738,
+      "max_us": 44432
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 215060,
+      "secs": 20.003391213,
+      "ops_per_sec": 10751.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.11448058859698507,
+      "db_cpu_cores": 7.551868100336195,
+      "load_avg_before": 6.04,
+      "p50_us": 3061,
+      "p90_us": 4083,
+      "p99_us": 5972,
+      "p999_us": 12009,
+      "max_us": 45349
+    }
+  ],
+  "aborted": [],
+  "after_load": {
+    "disk": "747801484",
+    "memory": {
+      "anon_bytes": 1165651968,
+      "file_bytes": 747819008,
+      "current_bytes": 2116079616,
+      "peak_bytes": 3489280000
+    }
+  },
+  "after_all": {
+    "disk": "1786673857",
+    "memory": {
+      "anon_bytes": 1474752512,
+      "file_bytes": 1786716160,
+      "current_bytes": 3929563136,
+      "peak_bytes": 4590854144
+    }
+  }
+}

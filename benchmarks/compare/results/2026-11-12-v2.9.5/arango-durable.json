@@ -1,0 +1,350 @@
+{
+  "engine": "arango",
+  "label": "arango-durable",
+  "server_version": "3.12.4-3",
+  "settings": {
+    "durable": true,
+    "typed": false
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1,
+    32
+  ],
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 3,
+  "queries": [
+    {
+      "scenario": "load",
+      "query": "POST /_db/bench/_api/document/orders?silent=true [1,000 documents]"
+    },
+    {
+      "scenario": "insert",
+      "query": "POST /_db/bench/_api/document/orders {document}"
+    },
+    {
+      "scenario": "get",
+      "query": "GET /_db/bench/_api/document/orders/{key}"
+    },
+    {
+      "scenario": "update",
+      "query": "PATCH /_db/bench/_api/document/orders/{key} {status}"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "FOR o IN orders FILTER o.customer_id == @c RETURN o"
+    },
+    {
+      "scenario": "recent",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 RETURN o"
+    },
+    {
+      "scenario": "join",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "FOR o IN orders COLLECT status = o.status AGGREGATE n = COUNT(1), total = SUM(o.amount) RETURN {status, n, total}"
+    },
+    {
+      "scenario": "indexes",
+      "query": "persistent indexes on orders: customer_id, created_at, status"
+    },
+    {
+      "scenario": "collections",
+      "query": "waitForSync: true"
+    }
+  ],
+  "meta": {
+    "client_cpus": "8-15,24-31",
+    "server_version": "",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "db_cpus": "0-3,16-19",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -e ARANGO_ROOT_PASSWORD=bench -e ARANGODB_OVERRIDE_DETECTED_TOTAL_MEMORY=16G -e ARANGODB_OVERRIDE_DETECTED_NUMBER_OF_CORES=8 -v /home/rocky/bench/data/arango-durable:/var/lib/arangodb3:Z docker.io/arangodb/arangodb@sha256:258323b83ed5cd5bacc6e2d7574777db5a8a61ec75f663e4d690824c3301c7c2",
+    "image": "docker.io/arangodb/arangodb@sha256:258323b83ed5cd5bacc6e2d7574777db5a8a61ec75f663e4d690824c3301c7c2",
+    "db_memory": "16g",
+    "image_digest": "sha256:258323b83ed5cd5bacc6e2d7574777db5a8a61ec75f663e4d690824c3301c7c2",
+    "host_memory": "125 GB"
+  },
+  "load": [
+    {
+      "phase": "customers",
+      "result": {
+        "docs": 100000,
+        "loaders": 8,
+        "secs": 0.093149674,
+        "docs_per_sec": 1073541.0
+      }
+    },
+    {
+      "phase": "orders_1",
+      "result": {
+        "docs": 100000,
+        "loaders": 1,
+        "secs": 1.381016751,
+        "docs_per_sec": 72410.0
+      }
+    },
+    {
+      "phase": "orders_8",
+      "result": {
+        "docs": 900000,
+        "loaders": 8,
+        "secs": 4.121059972,
+        "docs_per_sec": 218390.0
+      }
+    }
+  ],
+  "series": [
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 239198,
+      "secs": 20.000821362,
+      "ops_per_sec": 11959.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.153993675772324,
+      "db_cpu_cores": 0.9987391836793306,
+      "load_avg_before": 11.01,
+      "p50_us": 78,
+      "p90_us": 87,
+      "p99_us": 105,
+      "p999_us": 158,
+      "max_us": 95689
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 241660,
+      "secs": 20.000348253,
+      "ops_per_sec": 12083.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.1559972836738984,
+      "db_cpu_cores": 1.0057241876767233,
+      "load_avg_before": 8.23,
+      "p50_us": 78,
+      "p90_us": 87,
+      "p99_us": 107,
+      "p999_us": 148,
+      "max_us": 99766
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 243724,
+      "secs": 20.000294753,
+      "ops_per_sec": 12186.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.15699768622304977,
+      "db_cpu_cores": 1.040085821579192,
+      "load_avg_before": 6.33,
+      "p50_us": 78,
+      "p90_us": 86,
+      "p99_us": 103,
+      "p999_us": 156,
+      "max_us": 45991
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 391974,
+      "secs": 20.001517502,
+      "ops_per_sec": 19597.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.3269751907247064,
+      "db_cpu_cores": 2.9225211034190264,
+      "load_avg_before": 4.79,
+      "p50_us": 1321,
+      "p90_us": 2441,
+      "p99_us": 5090,
+      "p999_us": 12084,
+      "max_us": 482581
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 389769,
+      "secs": 20.002106057,
+      "ops_per_sec": 19486.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.3229659907607197,
+      "db_cpu_cores": 2.8236776586950585,
+      "load_avg_before": 4.67,
+      "p50_us": 1343,
+      "p90_us": 2500,
+      "p99_us": 5227,
+      "p999_us": 12192,
+      "max_us": 447216
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 398535,
+      "secs": 20.001168481,
+      "ops_per_sec": 19926.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.32748086724143843,
+      "db_cpu_cores": 2.7732990726363154,
+      "load_avg_before": 4.79,
+      "p50_us": 1336,
+      "p90_us": 2407,
+      "p99_us": 4227,
+      "p999_us": 8146,
+      "max_us": 541711
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 202423,
+      "secs": 20.000863331,
+      "ops_per_sec": 10121.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.09999568353132705,
+      "db_cpu_cores": 1.0746485611291534,
+      "load_avg_before": 4.02,
+      "p50_us": 92,
+      "p90_us": 102,
+      "p99_us": 126,
+      "p999_us": 208,
+      "max_us": 97527
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 202889,
+      "secs": 20.000251482,
+      "ops_per_sec": 10144.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.0999987426058106,
+      "db_cpu_cores": 1.1006648101306113,
+      "load_avg_before": 3.74,
+      "p50_us": 92,
+      "p90_us": 102,
+      "p99_us": 133,
+      "p999_us": 316,
+      "max_us": 60331
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 198306,
+      "secs": 20.000480934,
+      "ops_per_sec": 9915.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.09749765550312721,
+      "db_cpu_cores": 1.1278114798556886,
+      "load_avg_before": 3.33,
+      "p50_us": 93,
+      "p90_us": 102,
+      "p99_us": 130,
+      "p999_us": 1385,
+      "max_us": 59781
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 404095,
+      "secs": 20.001754857,
+      "ops_per_sec": 20203.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.2364792506365831,
+      "db_cpu_cores": 3.524452554488178,
+      "load_avg_before": 3.04,
+      "p50_us": 1281,
+      "p90_us": 2278,
+      "p99_us": 4703,
+      "p999_us": 11698,
+      "max_us": 546772
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 407003,
+      "secs": 20.002167783,
+      "ops_per_sec": 20348.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.23947404361196578,
+      "db_cpu_cores": 3.5042862233948897,
+      "load_avg_before": 4.57,
+      "p50_us": 1281,
+      "p90_us": 2297,
+      "p99_us": 4853,
+      "p999_us": 11440,
+      "max_us": 368797
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 407966,
+      "secs": 20.00168706,
+      "ops_per_sec": 20397.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.23997975698755905,
+      "db_cpu_cores": 3.5562690180395236,
+      "load_avg_before": 5.62,
+      "p50_us": 1290,
+      "p90_us": 2378,
+      "p99_us": 5105,
+      "p999_us": 10512,
+      "max_us": 389293
+    }
+  ],
+  "aborted": [],
+  "after_load": {
+    "disk": "1180234991",
+    "memory": {
+      "anon_bytes": 558981120,
+      "file_bytes": 1180508160,
+      "current_bytes": 1854816256,
+      "peak_bytes": 2236461056
+    }
+  },
+  "after_all": {
+    "disk": "1197689783",
+    "memory": {
+      "anon_bytes": 4810629120,
+      "file_bytes": 1197940736,
+      "current_bytes": 6445580288,
+      "peak_bytes": 6968524800
+    }
+  }
+}
