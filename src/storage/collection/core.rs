@@ -459,7 +459,7 @@ impl Collection {
         config: &crate::sharding::coordinator::CollectionShardConfig,
     ) -> DbResult<()> {
         // A foreign key is checked against this node's documents only.
-        if self.fk().is_some() {
+        if config.num_shards > 0 && self.fk().is_some() {
             return Err(DbError::OperationNotSupported(format!(
                 "'{}' takes part in a foreign key and cannot be sharded",
                 self.name

@@ -270,7 +270,10 @@ impl Collection {
                 role, bare, kind
             )));
         }
-        if collection.is_sharded() {
+        // A stored configuration with no shard (what setting a collection's
+        // properties leaves behind) is not sharding.
+        let shards = collection.get_shard_config().map_or(0, |c| c.num_shards);
+        if shards > 0 {
             return Err(DbError::OperationNotSupported(format!(
                 "Foreign keys are not supported on sharded collections ('{}')",
                 bare

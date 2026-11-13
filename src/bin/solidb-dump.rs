@@ -1191,6 +1191,28 @@ async fn dump_collection_indexes(
         }
     }
 
+    // Foreign keys, after the indexes they stand on. Restore declares them
+    // once every document is in, so the order of collections in the dump
+    // does not matter. A server from before foreign keys answers 404, which
+    // is not worth a warning.
+    let url = format!(
+        "{}/_api/database/{}/collection/{}/foreign-keys",
+        base_url, db, coll
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                for key in body["foreign_keys"].as_array().into_iter().flatten() {
+                    let mut record = key.clone();
+                    record["_type"] = Value::String("foreign_key".to_string());
+                    record["_database"] = Value::String(database.to_string());
+                    record["_collection"] = Value::String(collection.to_string());
+                    writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

@@ -87,6 +87,7 @@ fn control_record_type(record: &Value) -> Option<String> {
         t,
         "collection"
             | "index"
+            | "foreign_key"
             | "document"
             | "columnar"
             | "columnar_row"
@@ -708,6 +709,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    // Declared once every document is in: see
+                    // `declare_foreign_keys`.
+                    if record_type.as_deref() == Some("foreign_key") {
+                        if let Some((db, coll)) = resolve_target(&doc, &args) {
+                            hold_foreign_key(&db, &coll, doc, true);
+                        }
+                        buffer.clear();
+                        continue;
+                    }
+
                     if record_type.as_deref() == Some("index") {
                         if let Some((db, coll)) = current_batch_meta.clone() {
                             flush_batch(
@@ -855,6 +866,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut total_failed,
     )
     .await?;
+
+    declare_foreign_keys(&client, &base_url, &mut total_imported, &mut total_failed).await;
 
     eprintln!("✓ Restore completed");
     eprintln!("  → {} items imported", total_imported.to_string().green());
@@ -1578,6 +1591,9 @@ async fn ensure_collection_exists(
     drop: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if drop {
+        // A collection that others refer to cannot be dropped: its keys are
+        // set aside and declared again at the end.
+        release_foreign_keys(client, base_url, database, collection).await;
         let url = format!(
             "{}/_api/database/{}/collection/{}",
             base_url,
@@ -1622,6 +1638,115 @@ async fn ensure_collection_exists(
         );
     }
     Ok(())
+}
+
+/// Foreign keys to declare once the data is in: `(database, collection,
+/// definition)`. Those read from the dump come first and win over those
+/// set aside by `--drop`.
+static FOREIGN_KEYS: std::sync::Mutex<Vec<(String, String, Value)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn hold_foreign_key(database: &str, collection: &str, key: Value, from_dump: bool) {
+    let mut held = FOREIGN_KEYS.lock().unwrap_or_else(|e| e.into_inner());
+    let same = |(db, coll, other): &(String, String, Value)| {
+        db == database && coll == collection && other["name"] == key["name"]
+    };
+    match held.iter().position(same) {
+        Some(at) if from_dump => held[at].2 = key,
+        Some(_) => {}
+        None => held.push((database.to_string(), collection.to_string(), key)),
+    }
+}
+
+/// Before `collection` is dropped: remove the foreign keys declared on it
+/// and those of other collections that refer to it, keeping them for
+/// [`declare_foreign_keys`]. Silent on a server without foreign keys.
+async fn release_foreign_keys(
+    client: &reqwest::Client,
+    base_url: &str,
+    database: &str,
+    collection: &str,
+) {
+    let keys_url = |coll: &str| {
+        format!(
+            "{}/_api/database/{}/collection/{}/foreign-keys",
+            base_url,
+            path_seg(database),
+            path_seg(coll)
+        )
+    };
+    let Ok(resp) = client.get(keys_url(collection)).send().await else {
+        return;
+    };
+    if !resp.status().is_success() {
+        return;
+    }
+    let Ok(body) = resp.json::<Value>().await else {
+        return;
+    };
+    let own = body["foreign_keys"].as_array().into_iter().flatten();
+    let referring = body["referenced_by"].as_array().into_iter().flatten();
+    let all = own
+        .map(|key| (collection.to_string(), key))
+        .chain(referring.filter_map(|key| Some((key["collection"].as_str()?.to_string(), key))));
+    for (child, key) in all {
+        let Some(name) = key["name"].as_str() else {
+            continue;
+        };
+        let url = format!("{}/{}", keys_url(&child), path_seg(name));
+        if client.delete(&url).send().await.is_ok() {
+            hold_foreign_key(database, &child, key.clone(), false);
+        }
+    }
+}
+
+/// Declare the foreign keys held back during the restore. Declaring checks
+/// the documents: a key the restored data breaks is reported and left out.
+async fn declare_foreign_keys(
+    client: &reqwest::Client,
+    base_url: &str,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) {
+    let held = std::mem::take(&mut *FOREIGN_KEYS.lock().unwrap_or_else(|e| e.into_inner()));
+    for (database, collection, key) in held {
+        let url = format!(
+            "{}/_api/database/{}/collection/{}/foreign-keys",
+            base_url,
+            path_seg(&database),
+            path_seg(&collection)
+        );
+        let mut body = serde_json::Map::new();
+        for field in ["name", "field", "references", "on_delete", "by"] {
+            if let Some(value) = key.get(field).filter(|v| !v.is_null()) {
+                body.insert(field.to_string(), value.clone());
+            }
+        }
+        let name = key["name"].as_str().unwrap_or("?");
+        match client.post(&url).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => *total_imported += 1,
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                // Already there: the collection was not dropped.
+                if status.as_u16() == 409 && text.contains("already") {
+                    continue;
+                }
+                eprintln!(
+                    " Warning: foreign key '{}' of {}/{} was not declared: {} {}",
+                    name, database, collection, status, text
+                );
+                *total_failed += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    " Warning: foreign key '{}' of {}/{} was not declared: {}",
+                    name, database, collection, e
+                );
+                *total_failed += 1;
+            }
+        }
+    }
 }
 
 /// Create the database unless we already tried during this run.
@@ -2149,6 +2274,7 @@ COMMIT;
         for t in [
             "collection",
             "index",
+            "foreign_key",
             "document",
             "columnar",
             "columnar_row",
