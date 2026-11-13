@@ -101,11 +101,7 @@ impl ClusterManager {
             // Check heartbeat timeout (30 seconds)
             let now = chrono::Utc::now().timestamp_millis() as u64;
             let timeout_ms = 30_000; // 30 seconds
-            if now - member.last_heartbeat > timeout_ms {
-                return false;
-            }
-
-            true
+            now - member.last_heartbeat <= timeout_ms
         } else {
             // Unknown node is considered unhealthy
             false

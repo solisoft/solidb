@@ -478,7 +478,7 @@ impl<'a> QueryExecutor<'a> {
     /// something else the merged document is computed here and written with
     /// `insert_or_replace`. That path, like REPLACE, reads then writes, so a
     /// concurrent writer of the same document between the two can be lost.
-    #[allow(clippy::too_many_arguments)]
+    ///
     /// Write one row of an `UPDATE` / `REPLACE`, guarded as `guard` says.
     /// `None` when an [`RowGuard::IfUnchanged`] document has moved on:
     /// nothing is written, and the caller evaluates the row again

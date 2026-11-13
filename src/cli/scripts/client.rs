@@ -195,7 +195,6 @@ impl ScriptClient {
 
     /// Update an existing script
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     pub fn update_script(
         &self,
         database: &str,
