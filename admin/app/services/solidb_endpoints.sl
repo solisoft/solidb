@@ -123,6 +123,14 @@ class SolidbEndpoints
     return SolidbEndpoints.collection_indexes(db, name) + "/" + index_name
   end
 
+  static def collection_foreign_keys(db, name)
+    return "/_api/database/" + db + "/collection/" + name + "/foreign-keys"
+  end
+
+  static def collection_foreign_key(db, name, key_name)
+    return SolidbEndpoints.collection_foreign_keys(db, name) + "/" + key_name
+  end
+
   static def collection_indexes_rebuild(db, name)
     return SolidbEndpoints.collection_indexes(db, name) + "/rebuild"
   end

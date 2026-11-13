@@ -68,6 +68,8 @@ get("/databases/:db/collections/:name/indexes", "collections#indexes")
 post("/databases/:db/collections/:name/indexes", "collections#create_index")
 put("/databases/:db/collections/:name/indexes/rebuild", "collections#rebuild_indexes")
 delete("/databases/:db/collections/:name/indexes/:index_name", "collections#delete_index")
+post("/databases/:db/collections/:name/foreign_keys", "collections#create_foreign_key")
+delete("/databases/:db/collections/:name/foreign_keys/:key_name", "collections#delete_foreign_key")
 put("/databases/:db/collections/:name/versioning", "collections#set_versioning")
 put("/databases/:db/collections/:name/auto_index", "collections#set_auto_index")
 

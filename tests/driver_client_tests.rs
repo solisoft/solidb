@@ -728,3 +728,118 @@ fn reads_over_a_real_connection_match_the_server() {
         );
     });
 }
+
+/// Foreign keys through the driver and the Rust client: declared, listed,
+/// checked and dropped by commands; enforced on the driver's own writes.
+#[test]
+fn foreign_keys_over_a_real_connection() {
+    use solidb::storage::StorageEngine;
+
+    const DB: &str = "keys";
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "reads-password");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let engine = std::sync::Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database(DB.to_string()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("customers".to_string(), None).unwrap();
+    db.create_collection("orders".to_string(), None).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let listener = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let storage = engine.clone();
+    rt.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = solidb::driver::DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+
+    rt.block_on(async {
+        let mut c = SoliDBClientBuilder::new(&addr)
+            .auth(DB, "admin", "reads-password")
+            .build()
+            .await
+            .unwrap();
+        let violates =
+            |e: &solidb_client::DriverError| e.to_string().contains("Foreign key violation");
+
+        c.insert(DB, "customers", Some("ann"), json!({}))
+            .await
+            .unwrap();
+        c.insert(DB, "orders", Some("o0"), json!({"customer": "zed"}))
+            .await
+            .unwrap();
+
+        // What the key would be refused for, then the refusal.
+        let orphans = c
+            .check_foreign_key(DB, "orders", "customer", "customers")
+            .await
+            .unwrap();
+        assert_eq!(orphans["count"], json!(1));
+        assert_eq!(orphans["sample"][0]["_key"], json!("o0"));
+        let refused = c
+            .create_foreign_key(DB, "orders", "customer", "customers", Some("cascade"))
+            .await
+            .unwrap_err();
+        assert!(violates(&refused), "{refused}");
+        let unknown = c
+            .create_foreign_key(DB, "orders", "customer", "customers", Some("explode"))
+            .await;
+        assert!(unknown.is_err());
+
+        c.delete(DB, "orders", "o0").await.unwrap();
+        let key = c
+            .create_foreign_key(DB, "orders", "customer", "customers", Some("cascade"))
+            .await
+            .unwrap();
+        assert_eq!(key["name"], json!("fk_customer"));
+        assert_eq!(key["on_delete"], json!("cascade"));
+
+        let listed = c.list_foreign_keys(DB, "orders").await.unwrap();
+        assert_eq!(listed["foreign_keys"][0]["field"], json!("customer"));
+        let parent = c.list_foreign_keys(DB, "customers").await.unwrap();
+        assert_eq!(parent["referenced_by"][0]["collection"], json!("orders"));
+
+        // The driver's writes meet it, and its deletes cascade.
+        let orphan = c
+            .insert(DB, "orders", Some("o1"), json!({"customer": "zed"}))
+            .await
+            .unwrap_err();
+        assert!(violates(&orphan), "{orphan}");
+        c.insert(DB, "orders", Some("o2"), json!({"customer": "ann"}))
+            .await
+            .unwrap();
+        let held = c
+            .delete_index(DB, "orders", "fk_customer")
+            .await
+            .unwrap_err();
+        assert!(
+            held.to_string().contains("serves the foreign key"),
+            "{held}"
+        );
+        c.delete(DB, "customers", "ann").await.unwrap();
+        assert!(c.get(DB, "orders", "o2").await.is_err());
+
+        c.delete_foreign_key(DB, "orders", "fk_customer")
+            .await
+            .unwrap();
+        assert!(c
+            .delete_foreign_key(DB, "orders", "fk_customer")
+            .await
+            .is_err());
+        let listed = c.list_foreign_keys(DB, "orders").await.unwrap();
+        assert_eq!(listed["foreign_keys"], json!([]));
+    });
+}

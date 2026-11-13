@@ -50,9 +50,14 @@ pub fn handle_delete_index(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => {
-            // Try dropping as standard index first
-            if coll.drop_index(&name).is_ok() {
-                return Response::ok_empty();
+            // Try dropping as standard index first. An index a foreign key
+            // stands on is there and refused: say so, not "not found".
+            match coll.drop_index(&name) {
+                Ok(()) => return Response::ok_empty(),
+                Err(e @ crate::error::DbError::ConflictError(_)) => {
+                    return Response::error(DriverError::DatabaseError(e.to_string()))
+                }
+                Err(_) => {}
             }
             // Try dropping as fulltext index
             if coll.drop_fulltext_index(&name).is_ok() {
@@ -85,6 +90,76 @@ pub fn handle_list_indexes(
             let indexes = coll.list_indexes();
             Response::ok(serde_json::to_value(indexes).unwrap_or_default())
         }
+        Err(e) => Response::error(e),
+    }
+}
+
+// ==================== Foreign Keys ====================
+
+/// A foreign key to declare or check, from a command's fields.
+pub fn foreign_key_spec(
+    field: String,
+    references: String,
+    on_delete: Option<String>,
+    by: Option<String>,
+    name: Option<String>,
+) -> Result<crate::storage::collection::references::ForeignKeySpec, DriverError> {
+    // The names the HTTP endpoint takes, read the same way.
+    let word = |value: Option<String>| value.map(serde_json::Value::String);
+    let mut spec = serde_json::Map::new();
+    spec.insert("field".to_string(), serde_json::Value::String(field));
+    spec.insert(
+        "references".to_string(),
+        serde_json::Value::String(references),
+    );
+    for (key, value) in [
+        ("on_delete", word(on_delete)),
+        ("by", word(by)),
+        ("name", word(name)),
+    ] {
+        if let Some(value) = value {
+            spec.insert(key.to_string(), value);
+        }
+    }
+    serde_json::from_value(serde_json::Value::Object(spec))
+        .map_err(|e| DriverError::InvalidCommand(format!("Invalid foreign key: {}", e)))
+}
+
+pub fn handle_list_foreign_keys(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+) -> Response {
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => Response::ok(serde_json::json!({
+            "collection": collection,
+            "foreign_keys": coll.foreign_keys(),
+            "referenced_by": coll.referenced_by(),
+        })),
+        Err(e) => Response::error(e),
+    }
+}
+
+pub fn handle_delete_foreign_key(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    name: String,
+) -> Response {
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => match coll.drop_foreign_key(&name) {
+            Ok(()) => {
+                handler.log_replication(
+                    &database,
+                    &collection,
+                    crate::sync::protocol::Operation::DropForeignKey,
+                    &name,
+                    None,
+                );
+                Response::ok_empty()
+            }
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
         Err(e) => Response::error(e),
     }
 }

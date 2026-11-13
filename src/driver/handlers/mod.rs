@@ -526,6 +526,87 @@ impl DriverHandler {
                 collection,
             } => index::handle_list_indexes(self, database, collection),
 
+            // ==================== Foreign Keys ====================
+            Command::ListForeignKeys {
+                database,
+                collection,
+            } => index::handle_list_foreign_keys(self, database, collection),
+
+            Command::CreateForeignKey {
+                database,
+                collection,
+                field,
+                references,
+                on_delete,
+                by,
+                name,
+            } => {
+                // Off the runtime: declaring reads every stored document.
+                let spec = index::foreign_key_spec(field, references, on_delete, by, name);
+                match (spec, self.get_collection(&database, &collection)) {
+                    (Ok(spec), Ok(coll)) => {
+                        let declared =
+                            tokio::task::spawn_blocking(move || coll.add_foreign_key(spec)).await;
+                        match declared {
+                            Ok(Ok(key)) => {
+                                let value = serde_json::to_value(&key).unwrap_or_default();
+                                self.log_replication(
+                                    &database,
+                                    &collection,
+                                    crate::sync::protocol::Operation::CreateForeignKey,
+                                    &key.name,
+                                    Some(&value),
+                                );
+                                Response::ok(value)
+                            }
+                            Ok(Err(e)) => {
+                                Response::error(DriverError::DatabaseError(e.to_string()))
+                            }
+                            Err(e) => Response::error(DriverError::DatabaseError(format!(
+                                "Task join error: {}",
+                                e
+                            ))),
+                        }
+                    }
+                    (Err(e), _) | (_, Err(e)) => Response::error(e),
+                }
+            }
+
+            Command::DeleteForeignKey {
+                database,
+                collection,
+                name,
+            } => index::handle_delete_foreign_key(self, database, collection, name),
+
+            Command::CheckForeignKey {
+                database,
+                collection,
+                field,
+                references,
+                by,
+            } => {
+                let spec = index::foreign_key_spec(field, references, None, by, None);
+                match (spec, self.get_collection(&database, &collection)) {
+                    (Ok(spec), Ok(coll)) => {
+                        match tokio::task::spawn_blocking(move || coll.foreign_key_orphans(&spec))
+                            .await
+                        {
+                            Ok(Ok(orphans)) => {
+                                Response::ok(serde_json::to_value(orphans).unwrap_or_default())
+                            }
+                            Ok(Err(e)) => {
+                                Response::error(DriverError::DatabaseError(e.to_string()))
+                            }
+                            Err(e) => Response::error(DriverError::DatabaseError(format!(
+                                "Task join error: {}",
+                                e
+                            ))),
+                        }
+                    }
+                    (Err(e), _) | (_, Err(e)) => Response::error(e),
+                }
+            }
+
             // ==================== Transaction Operations ====================
             Command::BeginTransaction {
                 database,

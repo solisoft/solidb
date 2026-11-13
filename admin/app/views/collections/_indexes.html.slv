@@ -109,6 +109,83 @@
     <p class="mt-3 font-mono text-xs text-zinc-600">no indexes on <%= collection_name %></p>
   <% end %>
 
+  <%# Foreign keys: what this collection refers to, and what refers to it.
+      Declared inline; the server refuses a key that stored documents break. %>
+  <div class="mt-5 border-t border-zinc-800 pt-4">
+    <p class="console-label">foreign keys / <span class="text-teal-500"><%= collection_name %></span>
+      <span class="text-zinc-700">(<%= foreign_keys.length() %>)</span></p>
+
+    <% if foreign_keys.length() > 0 %>
+      <div class="overflow-x-auto"><table class="console-table mt-3">
+        <thead>
+          <tr>
+            <th>name</th>
+            <th>field</th>
+            <th>references</th>
+            <th>on delete</th>
+            <th>index</th>
+            <th class="text-right">actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for key in foreign_keys %>
+            <% key_name = key["name"] ?? "" %>
+            <tr>
+              <td class="font-mono text-zinc-200"><%= key_name %></td>
+              <td class="font-mono text-zinc-300"><%= key["field"] %><%= key["by"] == "id" ? " (_id)" : "" %></td>
+              <td class="font-mono text-zinc-300"><%= key["references"] %></td>
+              <td class="font-mono text-zinc-500"><%= key["on_delete"] %></td>
+              <td class="font-mono text-zinc-500"><%= key["index"] %></td>
+              <td class="w-px whitespace-nowrap text-right">
+                <button class="btn-danger"
+                        hx-delete="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/foreign_keys/<%= url(key_name) %>"
+                        hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                        hx-confirm="Drop foreign key '<%= attr(key_name) %>'? References will no longer be checked.">
+                  Drop
+                </button>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table></div>
+    <% else %>
+      <p class="mt-3 font-mono text-xs text-zinc-600">no foreign keys on <%= collection_name %></p>
+    <% end %>
+
+    <% if referenced_by.length() > 0 %>
+      <p class="mt-3 font-mono text-xs text-zinc-500">referenced by:
+        <% for referrer in referenced_by %>
+          <span class="text-zinc-300"><%= referrer["collection"] %>.<%= referrer["field"] %></span>
+          <span class="text-zinc-600">(<%= referrer["on_delete"] %>)</span>
+        <% end %>
+      </p>
+    <% end %>
+
+    <form class="mt-3 flex flex-wrap items-end gap-2"
+          hx-post="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/foreign_keys"
+          hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML">
+      <div>
+        <label class="console-label" for="fk-field-<%= attr(collection_name) %>">field</label>
+        <input id="fk-field-<%= attr(collection_name) %>" name="field" type="text"
+               placeholder="customer_id" class="console-input mt-1 w-44 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="fk-references-<%= attr(collection_name) %>">references</label>
+        <input id="fk-references-<%= attr(collection_name) %>" name="references" type="text"
+               placeholder="customers" class="console-input mt-1 w-44 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="fk-on-delete-<%= attr(collection_name) %>">on delete</label>
+        <select id="fk-on-delete-<%= attr(collection_name) %>" name="on_delete" class="console-input mt-1 font-mono">
+          <option value="restrict">restrict</option>
+          <option value="cascade">cascade</option>
+          <option value="set_null">set_null</option>
+        </select>
+      </div>
+      <button type="submit" class="btn-ghost">Add foreign key</button>
+    </form>
+  </div>
+
   <%# Teleported to <body>: the panel lives inside a table row, and an
       ancestor there acts as containing block for position:fixed, cropping
       the modal to the panel area. htmx.process() is required because htmx

@@ -135,6 +135,33 @@ class CollectionsController < Controller
     return this._render_indexes(result, "index " + index_name + " dropped")
   end
 
+  # POST /databases/:db/collections/:name/foreign_keys
+  # Declares that a field holds the _key of a document of another collection.
+  # The server refuses a key that stored documents already break, and its
+  # message names the first of them.
+  def create_foreign_key
+    this._ctx_indexes()
+    field = params["field"].to_s.trim()
+    references = params["references"].to_s.trim()
+    if field.blank? || references.blank?
+      return this._render_indexes({ "ok": false, "status": 422,
+                                    "error": "a foreign key needs a field and a referenced collection" }, "")
+    end
+    on_delete = params["on_delete"].to_s.trim()
+    on_delete = "restrict" if on_delete.blank?
+    result = SolidbClient.post_api(SolidbEndpoints.collection_foreign_keys(@db, @collection_name),
+                                   { "field": field, "references": references, "on_delete": on_delete })
+    return this._render_indexes(result, "foreign key on " + field + " declared")
+  end
+
+  # DELETE /databases/:db/collections/:name/foreign_keys/:key_name
+  def delete_foreign_key
+    this._ctx_indexes()
+    key_name = params["key_name"].to_s
+    result = SolidbClient.delete_api(SolidbEndpoints.collection_foreign_key(@db, @collection_name, key_name))
+    return this._render_indexes(result, "foreign key " + key_name + " dropped")
+  end
+
   # Geo and TTL indexes are created through their own API families; everything
   # else (persistent / hash / fulltext / bloom / cuckoo) goes to /index.
   def _create_index_request(index_name, fields_text, index_type)
@@ -173,10 +200,24 @@ class CollectionsController < Controller
     return render("collections/_indexes", { "layout": false })
   end
 
+  # The keys declared on the collection, and those of other collections that
+  # refer to it. A server from before foreign keys answers 404: none.
+  def _load_foreign_keys
+    @foreign_keys = []
+    @referenced_by = []
+    result = SolidbClient.get_api(SolidbEndpoints.collection_foreign_keys(@db, @collection_name))
+    return unless result["ok"]
+
+    data = result["data"] ?? {}
+    @foreign_keys = data["foreign_keys"] ?? []
+    @referenced_by = data["referenced_by"] ?? []
+  end
+
   # Merge the three index families (standard+fulltext, geo, ttl) into one
   # display list of { name, fields, type, unique, detail } rows.
   def _load_indexes
     @indexes = []
+    this._load_foreign_keys()
     # Current versioning (time-travel) state comes from the collection summary.
     @versioning = false
     @auto_index = false

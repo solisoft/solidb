@@ -165,6 +165,48 @@ describe("CollectionsController") do
       assert_contains(body, "Auto-index: off")
     end
 
+    test("declares, lists and drops a foreign key") do
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_colls"), { "name": "fk_parents" })
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "fk_parents"), { "_key": "p1" })
+
+      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+                      { "field": "parent", "references": "fk_parents", "on_delete": "cascade" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "foreign key on parent declared")
+      assert_contains(body, "fk_parent")
+      assert_contains(body, "cascade")
+
+      # The parent's panel names what refers to it.
+      response = get("/databases/admin_spec_colls/collections/fk_parents/indexes")
+      assert_contains(res_body(response), "idx_specs.parent")
+
+      # The index the key stands on is held: the server's reason is shown.
+      response = delete("/databases/admin_spec_colls/collections/idx_specs/indexes/fk_parent")
+      assert_contains(res_body(response), "serves the foreign key")
+
+      response = delete("/databases/admin_spec_colls/collections/idx_specs/foreign_keys/fk_parent")
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "foreign key fk_parent dropped")
+
+      delete("/databases/admin_spec_colls/collections/idx_specs/indexes/fk_parent")
+      SolidbClient.delete_api(SolidbEndpoints.collection("admin_spec_colls", "fk_parents"))
+    end
+
+    test("rejects a foreign key without a field or a target") do
+      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+                      { "field": "", "references": "" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "a foreign key needs a field and a referenced collection")
+    end
+
+    test("shows why a foreign key was refused") do
+      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+                      { "field": "parent", "references": "no_such_collection" })
+      assert_eq(res_status(response), 200)
+      assert_contains(res_body(response), "no_such_collection")
+    end
+
     test("creates a multi-field hash index") do
       response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
                       { "index_name": "by_pair", "fields": "first, last", "index_type": "hash" })

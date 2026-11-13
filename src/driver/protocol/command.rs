@@ -102,6 +102,40 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// The foreign keys declared on a collection, and those that refer to it.
+    ListForeignKeys {
+        database: String,
+        collection: String,
+    },
+    /// Declare that `field` holds the `_key` (or, with `by: "id"`, the
+    /// `_id`) of a document of `references`.
+    CreateForeignKey {
+        database: String,
+        collection: String,
+        field: String,
+        references: String,
+        /// "restrict" (the default), "cascade" or "set_null".
+        #[serde(default)]
+        on_delete: Option<String>,
+        #[serde(default)]
+        by: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    DeleteForeignKey {
+        database: String,
+        collection: String,
+        name: String,
+    },
+    /// The documents a foreign key would be refused for.
+    CheckForeignKey {
+        database: String,
+        collection: String,
+        field: String,
+        references: String,
+        #[serde(default)]
+        by: Option<String>,
+    },
     BeginTransaction {
         database: String,
         #[serde(default)]
@@ -536,6 +570,10 @@ impl Command {
             | CreateIndex { database, .. }
             | DeleteIndex { database, .. }
             | ListIndexes { database, .. }
+            | ListForeignKeys { database, .. }
+            | CreateForeignKey { database, .. }
+            | DeleteForeignKey { database, .. }
+            | CheckForeignKey { database, .. }
             | BeginTransaction { database, .. }
             | BulkInsert { database, .. }
             | CreateScript { database, .. }
@@ -643,6 +681,8 @@ impl Command {
             | Query { .. }
             | Explain { .. }
             | ListIndexes { .. }
+            | ListForeignKeys { .. }
+            | CheckForeignKey { .. }
             | ListScripts { .. }
             | GetScript { .. }
             | GetScriptStats

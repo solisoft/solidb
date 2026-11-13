@@ -40,6 +40,10 @@ describe("SolidbEndpoints") do
     assert_eq(SolidbEndpoints.collection_indexes("app", "users"), "/_api/database/app/index/users")
     assert_eq(SolidbEndpoints.collection_index("app", "users", "by_email"), "/_api/database/app/index/users/by_email")
     assert_eq(SolidbEndpoints.collection_indexes_rebuild("app", "users"), "/_api/database/app/index/users/rebuild")
+    assert_eq(SolidbEndpoints.collection_foreign_keys("app", "orders"),
+              "/_api/database/app/collection/orders/foreign-keys")
+    assert_eq(SolidbEndpoints.collection_foreign_key("app", "orders", "fk_customer"),
+              "/_api/database/app/collection/orders/foreign-keys/fk_customer")
     assert_eq(SolidbEndpoints.geo_indexes("app", "places"), "/_api/database/app/geo/places")
     assert_eq(SolidbEndpoints.ttl_indexes("app", "sessions"), "/_api/database/app/ttl/sessions")
   end

@@ -61,6 +61,90 @@ impl SoliDBClient {
             .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e)))
     }
 
+    /// The foreign keys declared on `collection` (`foreign_keys`) and those
+    /// of other collections that refer to it (`referenced_by`).
+    pub async fn list_foreign_keys(
+        &mut self,
+        database: &str,
+        collection: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::ListForeignKeys {
+                database: database.to_string(),
+                collection: collection.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Declare that `field` of `collection` holds the `_key` of a document
+    /// of `references`, a collection of the same database, or null.
+    /// `on_delete` is "restrict" (the default), "cascade" or "set_null".
+    /// Refused when stored documents already refer to a missing parent:
+    /// [`Self::check_foreign_key`] lists them. Returns the key as declared.
+    pub async fn create_foreign_key(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+        references: &str,
+        on_delete: Option<&str>,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::CreateForeignKey {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+                references: references.to_string(),
+                on_delete: on_delete.map(str::to_string),
+                by: None,
+                name: None,
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    pub async fn delete_foreign_key(
+        &mut self,
+        database: &str,
+        collection: &str,
+        name: &str,
+    ) -> Result<(), DriverError> {
+        let response = self
+            .send_command(Command::DeleteForeignKey {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                name: name.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?;
+        Ok(())
+    }
+
+    /// The documents of `collection` whose `field` names a document that is
+    /// not in `references`: `{"count": n, "sample": [...]}`.
+    pub async fn check_foreign_key(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+        references: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::CheckForeignKey {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+                references: references.to_string(),
+                by: None,
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
     /// Combined vector + fulltext search with score fusion.
     ///
     /// Optional weights default to 0.5/0.5, `limit` to 10 and `fusion` to
