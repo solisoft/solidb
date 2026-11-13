@@ -24,6 +24,14 @@ pub struct SyncState {
     /// Highest sequence received from each origin node (for deduplication)
     origin_sequences: RwLock<HashMap<String, u64>>,
 
+    /// For each origin, the sequence up to which its document writes were
+    /// already in the full sync this node started from
+    /// (`SyncMessage::FullSyncOrigins`). Kept apart from `origin_sequences`:
+    /// only document writes are skipped below it, because what else a log
+    /// carries (definitions, blob chunks, columnar rows) is not in a full
+    /// sync's documents and still has to be replayed.
+    snapshot_floor: RwLock<HashMap<String, u64>>,
+
     /// Pull cursor per peer *address*: the last sequence of that peer's log we
     /// have applied. Audit H9: this used to share `origin_sequences`, keyed by
     /// address there, so an origin id equal to a peer's address (e.g. a client
@@ -66,6 +74,7 @@ impl SyncState {
             node_id,
             local_sequence: RwLock::new(0),
             origin_sequences: RwLock::new(HashMap::new()),
+            snapshot_floor: RwLock::new(HashMap::new()),
             pull_cursors: RwLock::new(HashMap::new()),
             sent_sequences: RwLock::new(HashMap::new()),
             last_heartbeat: RwLock::new(HashMap::new()),
@@ -97,6 +106,14 @@ impl SyncState {
                 if let Some(origins) = data.get("origin_sequences").and_then(|v| v.as_object()) {
                     let mut map = self.origin_sequences.write().unwrap();
                     for (k, v) in origins {
+                        if let Some(seq) = v.as_u64() {
+                            map.insert(k.clone(), seq);
+                        }
+                    }
+                }
+                if let Some(floor) = data.get("snapshot_floor").and_then(|v| v.as_object()) {
+                    let mut map = self.snapshot_floor.write().unwrap();
+                    for (k, v) in floor {
                         if let Some(seq) = v.as_u64() {
                             map.insert(k.clone(), seq);
                         }
@@ -203,6 +220,7 @@ impl SyncState {
         let seq = *self.local_sequence.read().unwrap();
         let origins: HashMap<String, u64> = self.origin_sequences.read().unwrap().clone();
         let cursors: HashMap<String, u64> = self.pull_cursors.read().unwrap().clone();
+        let floor: HashMap<String, u64> = self.snapshot_floor.read().unwrap().clone();
         let sent: HashMap<String, u64> = self.sent_sequences.read().unwrap().clone();
 
         let state_doc = serde_json::json!({
@@ -210,6 +228,7 @@ impl SyncState {
             "sequence": seq,
             "origin_sequences": origins,
             "pull_cursors": cursors,
+            "snapshot_floor": floor,
             "sent_sequences": sent,
         });
 
@@ -296,6 +315,38 @@ impl SyncState {
         if let Some(last) = self.last_heartbeat.write().unwrap().get_mut(node_id) {
             *last = Instant::now();
         }
+    }
+
+    /// Every origin this node has applied entries of, with how far.
+    pub fn origin_sequences(&self) -> Vec<(String, u64)> {
+        self.origin_sequences
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(origin, seq)| (origin.clone(), *seq))
+            .collect()
+    }
+
+    /// Record that the full sync this node started from already held
+    /// `origin`'s document writes up to `seq` (never moves backwards).
+    pub fn raise_snapshot_floor(&self, origin: &str, seq: u64) {
+        let mut floor = self.snapshot_floor.write().unwrap();
+        if seq > floor.get(origin).copied().unwrap_or(0) {
+            floor.insert(origin.to_string(), seq);
+        }
+    }
+
+    /// Whether a *document* write (insert, update, delete) must not be
+    /// applied: already applied, or already in the full sync this node
+    /// started from.
+    pub fn is_duplicate_document(&self, origin: &str, origin_seq: u64) -> bool {
+        self.is_duplicate(origin, origin_seq)
+            || self
+                .snapshot_floor
+                .read()
+                .unwrap()
+                .get(origin)
+                .is_some_and(|floor| *floor >= origin_seq)
     }
 
     /// Check if an entry is a duplicate (already applied)
@@ -426,6 +477,7 @@ impl Clone for SyncState {
             node_id: self.node_id.clone(),
             local_sequence: RwLock::new(*self.local_sequence.read().unwrap()),
             origin_sequences: RwLock::new(self.origin_sequences.read().unwrap().clone()),
+            snapshot_floor: RwLock::new(self.snapshot_floor.read().unwrap().clone()),
             pull_cursors: RwLock::new(self.pull_cursors.read().unwrap().clone()),
             sent_sequences: RwLock::new(self.sent_sequences.read().unwrap().clone()),
             last_heartbeat: RwLock::new(self.last_heartbeat.read().unwrap().clone()),
@@ -452,6 +504,34 @@ mod tests {
 
         assert_eq!(state.node_id(), "node1");
         assert_eq!(state.current_sequence(), 0);
+    }
+
+    /// Below the floor a full sync left, document writes are not applied
+    /// again; what else a log carries still is. The floor survives a
+    /// restart.
+    #[test]
+    fn document_writes_below_the_snapshot_floor_are_duplicates() {
+        let storage = create_test_storage();
+        storage.initialize().unwrap();
+        let state = SyncState::new(storage.clone(), "n3".to_string());
+        assert!(!state.is_duplicate_document("n2", 5));
+
+        state.raise_snapshot_floor("n2", 10);
+        state.raise_snapshot_floor("n2", 4);
+        assert!(state.is_duplicate_document("n2", 10));
+        assert!(!state.is_duplicate_document("n2", 11));
+        assert!(!state.is_duplicate_document("n1", 1));
+        // Not a duplicate for an entry that is not a document write.
+        assert!(!state.is_duplicate("n2", 5));
+
+        // Once applied, an entry is a duplicate of either kind.
+        state.update_origin_sequence("n2", 12);
+        assert!(state.is_duplicate_document("n2", 12));
+        assert!(state.is_duplicate("n2", 12));
+
+        state.persist();
+        let again = SyncState::new(storage, "n3".to_string());
+        assert!(again.is_duplicate_document("n2", 10));
     }
 
     #[test]

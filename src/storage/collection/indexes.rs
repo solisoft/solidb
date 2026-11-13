@@ -79,6 +79,55 @@ impl Collection {
         }
     }
 
+    /// Every index declared on the collection, of every family, as the
+    /// specs [`Self::apply_index_spec`] takes: what a full sync sends.
+    pub fn index_specs(&self) -> Vec<crate::storage::index::IndexSpec> {
+        use crate::storage::index::IndexSpec;
+
+        let mut specs: Vec<IndexSpec> = self
+            .get_all_indexes()
+            .into_iter()
+            .map(|index| IndexSpec::Regular {
+                name: index.name,
+                fields: index.fields,
+                index_type: index.index_type,
+                unique: index.unique,
+                sparse: index.sparse,
+            })
+            .collect();
+        specs.extend(self.get_all_fulltext_indexes().into_iter().map(|index| {
+            IndexSpec::Fulltext {
+                name: index.name,
+                fields: index.fields,
+                min_length: Some(index.min_length),
+                fold_accents: index.fold_accents,
+            }
+        }));
+        specs.extend(
+            self.get_all_geo_indexes()
+                .into_iter()
+                .map(|index| IndexSpec::Geo {
+                    name: index.name,
+                    field: index.field,
+                }),
+        );
+        specs.extend(
+            self.get_all_ttl_indexes()
+                .into_iter()
+                .map(|index| IndexSpec::Ttl {
+                    name: index.name,
+                    field: index.field,
+                    expire_after_seconds: index.expire_after_seconds,
+                }),
+        );
+        specs.extend(
+            self.get_all_vector_index_configs()
+                .into_iter()
+                .map(IndexSpec::Vector),
+        );
+        specs
+    }
+
     /// Idempotent [`Collection::create_index_from_spec`], for replication and
     /// the shard fan-out.
     ///

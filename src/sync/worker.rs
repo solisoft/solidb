@@ -726,7 +726,7 @@ impl SyncWorker {
                             // Check for duplicate
                             if self
                                 .state
-                                .is_duplicate(&entry.origin_node, entry.origin_sequence)
+                                .is_duplicate_document(&entry.origin_node, entry.origin_sequence)
                             {
                                 continue;
                             }
@@ -779,7 +779,7 @@ impl SyncWorker {
                             // Check for duplicate
                             if self
                                 .state
-                                .is_duplicate(&entry.origin_node, entry.origin_sequence)
+                                .is_duplicate_document(&entry.origin_node, entry.origin_sequence)
                             {
                                 continue;
                             }
@@ -825,6 +825,16 @@ impl SyncWorker {
         if self
             .state
             .is_duplicate(&entry.origin_node, entry.origin_sequence)
+        {
+            return Ok(());
+        }
+        // A document write the full sync this node started from already held.
+        if matches!(
+            entry.operation,
+            Operation::Insert | Operation::Update | Operation::Delete
+        ) && self
+            .state
+            .is_duplicate_document(&entry.origin_node, entry.origin_sequence)
         {
             return Ok(());
         }
@@ -1285,6 +1295,57 @@ impl SyncWorker {
                         doc_count, database, collection
                     );
                 }
+                SyncMessage::FullSyncDefinitions {
+                    database,
+                    collection,
+                    indexes,
+                    foreign_keys,
+                } => {
+                    let Ok(coll) = self
+                        .storage
+                        .get_database(&database)
+                        .and_then(|db| db.system_collection(&collection))
+                    else {
+                        continue;
+                    };
+                    for spec in &indexes {
+                        match serde_json::from_slice::<crate::storage::IndexSpec>(spec) {
+                            Ok(spec) => {
+                                if let Err(e) = coll.apply_index_spec(&spec) {
+                                    warn!(
+                                        "Full sync: index '{}' on {}.{} not created: {}",
+                                        spec.name(),
+                                        database,
+                                        collection,
+                                        e
+                                    );
+                                }
+                            }
+                            Err(e) => warn!("Full sync: unreadable index definition: {}", e),
+                        }
+                    }
+                    for key in &foreign_keys {
+                        match serde_json::from_slice::<crate::storage::foreign_keys::ForeignKey>(
+                            key,
+                        ) {
+                            Ok(key) => {
+                                if let Err(e) = coll.apply_foreign_key(&key) {
+                                    warn!(
+                                        "Full sync: foreign key '{}' on {}.{} not declared: {}",
+                                        key.name, database, collection, e
+                                    );
+                                }
+                            }
+                            Err(e) => warn!("Full sync: unreadable foreign key: {}", e),
+                        }
+                    }
+                }
+                SyncMessage::FullSyncOrigins { origins } => {
+                    for (origin, seq) in &origins {
+                        self.state.raise_snapshot_floor(origin, *seq);
+                    }
+                    self.state.persist();
+                }
                 SyncMessage::FullSyncComplete { final_sequence } => {
                     info!("Full sync complete, final sequence: {}", final_sequence);
                     break;
@@ -1464,11 +1525,19 @@ impl SyncWorker {
         stream: &mut W,
         storage: &StorageEngine,
         sync_log: &super::log::SyncLog,
+        state: &SyncState,
     ) -> Result<(), TransportError>
     where
         W: tokio::io::AsyncWrite + Unpin,
     {
         use super::transport::ConnectionPool;
+
+        // Before any document is read: what is written from here on may or
+        // may not be in the documents sent, so the requester has to replay
+        // it, and replaying a write the documents already hold is harmless.
+        let mut origins = state.origin_sequences();
+        origins.retain(|(origin, _)| origin != sync_log.node_id());
+        origins.push((sync_log.node_id().to_string(), sync_log.current_sequence()));
 
         // Enumerate databases and collections
         let databases = storage.list_databases();
@@ -1531,11 +1600,31 @@ impl SyncWorker {
                     continue;
                 }
                 if let Ok(coll) = db.system_collection(&coll_name) {
+                    let indexes: Vec<Vec<u8>> = coll
+                        .index_specs()
+                        .iter()
+                        .filter_map(|spec| serde_json::to_vec(spec).ok())
+                        .collect();
+                    let foreign_keys: Vec<Vec<u8>> = coll
+                        .foreign_keys()
+                        .iter()
+                        .filter_map(|key| serde_json::to_vec(key).ok())
+                        .collect();
+                    if !indexes.is_empty() || !foreign_keys.is_empty() {
+                        let definitions = SyncMessage::FullSyncDefinitions {
+                            database: db_name.clone(),
+                            collection: coll_name.clone(),
+                            indexes,
+                            foreign_keys,
+                        };
+                        ConnectionPool::write_message(stream, &definitions).await?;
+                    }
                     stream_collection_documents(stream, db_name, &coll_name, coll).await?;
                 }
             }
         }
 
+        ConnectionPool::write_message(stream, &SyncMessage::FullSyncOrigins { origins }).await?;
         let complete = SyncMessage::FullSyncComplete {
             final_sequence: sync_log.current_sequence(),
         };
@@ -1713,7 +1802,9 @@ impl SyncWorker {
                 }
                 SyncMessage::FullSyncRequest { from_node } => {
                     info!("Full sync request from {}", from_node);
-                    if let Err(e) = Self::serve_full_sync(&mut stream, &storage, &sync_log).await {
+                    if let Err(e) =
+                        Self::serve_full_sync(&mut stream, &storage, &sync_log, &state).await
+                    {
                         warn!("Full sync to {} aborted: {}", from_node, e);
                         break;
                     }
@@ -1943,4 +2034,135 @@ fn collect_local_stats(system: &mut sysinfo::System, storage: &StorageEngine) ->
 /// Create a command channel for the sync worker
 pub fn create_command_channel() -> (mpsc::Sender<SyncCommand>, mpsc::Receiver<SyncCommand>) {
     mpsc::channel(100)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::log::{LogEntry, SyncLog};
+    use serde_json::json;
+
+    /// What a full sync sends besides the documents: each collection's
+    /// indexes and foreign keys, and how far the serving node had applied
+    /// each origin's log, its own included.
+    #[tokio::test]
+    async fn a_full_sync_sends_definitions_and_origins() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let storage = StorageEngine::new(tmp.path().join("data").to_str().unwrap()).unwrap();
+        storage.initialize().unwrap();
+        storage.create_database("shop".to_string()).unwrap();
+        let db = storage.get_database("shop").unwrap();
+        db.create_collection("customers".to_string(), None).unwrap();
+        db.create_collection("orders".to_string(), None).unwrap();
+        db.get_collection("customers")
+            .unwrap()
+            .insert(json!({"_key": "ann"}))
+            .unwrap();
+        let orders = db.get_collection("orders").unwrap();
+        orders
+            .create_index(
+                "by_status".to_string(),
+                vec!["status".to_string()],
+                crate::storage::IndexType::Hash,
+                false,
+            )
+            .unwrap();
+        orders
+            .create_ttl_index("ttl".to_string(), "expires".to_string(), 60)
+            .unwrap();
+        let key = orders
+            .add_foreign_key(crate::storage::collection::references::ForeignKeySpec::new(
+                "customer",
+                "customers",
+                crate::storage::foreign_keys::OnDelete::Cascade,
+            ))
+            .unwrap();
+        orders
+            .insert(json!({"_key": "o1", "customer": "ann"}))
+            .unwrap();
+
+        let log = SyncLog::new(
+            "n1".to_string(),
+            tmp.path().join("log").to_str().unwrap(),
+            64,
+        )
+        .unwrap();
+        log.append(LogEntry::new_op(
+            "shop",
+            "orders",
+            Operation::Insert,
+            "o1",
+            None,
+        ));
+        log.append(LogEntry::new_op(
+            "shop",
+            "orders",
+            Operation::Insert,
+            "o2",
+            None,
+        ));
+        let state = SyncState::new(Arc::new(storage.clone()), "n1".to_string());
+        state.update_origin_sequence("n2", 7);
+
+        let (mut tx, mut rx) = tokio::io::duplex(1 << 20);
+        SyncWorker::serve_full_sync(&mut tx, &storage, &log, &state)
+            .await
+            .unwrap();
+        drop(tx);
+
+        let mut definitions = Vec::new();
+        let mut origins = None;
+        let mut order = Vec::new();
+        while let Ok(message) = ConnectionPool::read_message(&mut rx).await {
+            match message {
+                SyncMessage::FullSyncDefinitions {
+                    collection,
+                    indexes,
+                    foreign_keys,
+                    ..
+                } => {
+                    order.push(format!("definitions of {collection}"));
+                    definitions.push((collection, indexes, foreign_keys));
+                }
+                SyncMessage::FullSyncDocuments { collection, .. } => {
+                    order.push(format!("documents of {collection}"))
+                }
+                SyncMessage::FullSyncOrigins { origins: sent } => {
+                    order.push("origins".to_string());
+                    origins = Some(sent);
+                }
+                SyncMessage::FullSyncComplete { .. } => order.push("complete".to_string()),
+                _ => {}
+            }
+        }
+
+        let (_, indexes, foreign_keys) = definitions
+            .iter()
+            .find(|(collection, ..)| collection == "orders")
+            .expect("the definitions of orders");
+        let mut names: Vec<String> = indexes
+            .iter()
+            .map(|spec| {
+                serde_json::from_slice::<crate::storage::IndexSpec>(spec)
+                    .unwrap()
+                    .name()
+                    .to_string()
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, ["by_status", "fk_customer", "ttl"]);
+        let sent: crate::storage::foreign_keys::ForeignKey =
+            serde_json::from_slice(&foreign_keys[0]).unwrap();
+        assert_eq!(sent, key);
+        // A collection with nothing declared sends none.
+        assert!(!definitions.iter().any(|(c, ..)| c == "customers"));
+
+        let mut origins = origins.expect("the origins");
+        origins.sort();
+        assert_eq!(origins, [("n1".to_string(), 2), ("n2".to_string(), 7)]);
+        // A collection's definitions before its documents; the origins last.
+        let at = |what: &str| order.iter().position(|o| o == what).unwrap();
+        assert!(at("definitions of orders") < at("documents of orders"));
+        assert_eq!(&order[order.len() - 2..], ["origins", "complete"]);
+    }
 }

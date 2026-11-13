@@ -348,6 +348,28 @@ pub enum SyncMessage {
         #[serde(with = "serde_bytes")]
         data: Vec<u8>,
     },
+
+    /// Full sync: what is declared on a collection, sent after its
+    /// `FullSyncCollection` and before its documents. Each item is JSON: an
+    /// `IndexSpec`, a `ForeignKey`. A node that declared them before its
+    /// replication log had a reader never logged them, and a joining node
+    /// had no other way to learn them.
+    ///
+    /// Appended, like every variant below `SyncEntryPart`: an older
+    /// requester reports an unexpected message and carries on.
+    FullSyncDefinitions {
+        database: String,
+        collection: String,
+        indexes: Vec<Vec<u8>>,
+        foreign_keys: Vec<Vec<u8>>,
+    },
+    /// Full sync: how far the serving node had applied each origin's log
+    /// (its own included) when the sync began. The documents it sends hold
+    /// every document write up to there, so the requester must not apply
+    /// those again from the logs it then pulls: an `Insert` from one peer's
+    /// log brought back a document that another peer's log had deleted
+    /// before the snapshot.
+    FullSyncOrigins { origins: Vec<(String, u64)> },
 }
 
 /// Entry describing a conflict for client resolution
