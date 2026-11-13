@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Foreign keys</strong> &mdash; a collection can declare that a field holds the <code>_key</code> of a document of another collection of its database, or null: <code>POST /_api/database/{db}/collection/{name}/foreign-keys</code> with <code>{"field": "customer", "references": "customers", "on_delete": "restrict" | "cascade" | "set_null"}</code>. A write that names a parent that is not there is refused with a <code>409</code>, on every path: the document API, SDBQL, the driver (its raw writes included), Lua, imports, and a transaction's commit, which is checked as a whole. Deleting a parent is refused, deletes its children (and theirs) or sets their field to null, in the same atomic write as the delete. The referenced collection cannot be dropped, nor truncated while the child holds documents, and the index the key looks children up through cannot be dropped. Declaring a key over documents that already break it is refused; <code>POST &hellip;/foreign-keys/check</code> lists them. A collection that takes part in no key pays nothing; with a key, 200,000 documents inserted by one SDBQL statement took 1.11 s against 0.85 s with the index alone (one workstation, <code>--dev</code>). Not available on sharded collections or on a node whose replication log is active; <code>solidb-dump</code> does not carry the keys. See <a href="/docs/foreign-keys" class="text-cyan-400 hover:underline">Foreign Keys</a>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.9.5 -->
   <section id="v2-9-5" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

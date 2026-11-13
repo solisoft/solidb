@@ -25,9 +25,11 @@ use std::sync::{Arc, Weak};
 
 use super::collection::txn::StagedTransaction;
 use super::collection::Collection;
-use super::keyspace::HeldCommitGate;
+use super::keyspace::{HeldCommitGate, ReadTracker};
 use super::kv::{Kv as DB, KvBatch, KvWriteOptions};
 use crate::error::{DbError, DbResult};
+use crate::transaction::Operation;
+use std::collections::HashMap;
 
 /// A commit ready to be written: its batch, and what it holds until the
 /// write has landed.
@@ -39,8 +41,108 @@ pub(crate) struct PreparedCommit {
     /// Key and unique-value locks, released before the collections are
     /// finished.
     pub(crate) guards: Vec<super::collection::locks::WriteGuard>,
-    /// Commit gates, released last.
+    /// Commit gates, released after the locks.
     pub(crate) gates: Vec<HeldCommitGate>,
+    /// Foreign-key gates (`storage::foreign_keys`), taken first and
+    /// released last.
+    pub(crate) fk_gates: Vec<super::foreign_keys::HeldGate>,
+}
+
+/// Lock, check and stage the operations of one atomic write: everything a
+/// commit does before its write. Nothing is written; dropping the result
+/// releases what it holds. `resolve` finds a collection by its `db:coll`
+/// name.
+pub(crate) fn prepare(
+    db: &Arc<DB>,
+    operations: Vec<Operation>,
+    reads: &[(String, Arc<ReadTracker>)],
+    resolve: &dyn Fn(&str) -> DbResult<Collection>,
+) -> DbResult<PreparedCommit> {
+    // Foreign keys first, and their gates before any other lock: the
+    // operations a delete cascades into are staged with the others.
+    // Group by collection, keeping each collection's operations in order.
+    // The operations are moved, not copied: they hold the documents.
+    let checked = super::foreign_keys::check_operations(db, operations, resolve)?;
+    let operations = checked.operations;
+    let mut order: Vec<String> = Vec::new();
+    let mut ops_by_collection: HashMap<String, Vec<Operation>> = HashMap::new();
+    for op in operations {
+        let known = order
+            .iter()
+            .find(|name| name.split_once(':') == Some((op.database(), op.collection())));
+        match known {
+            Some(name) => ops_by_collection
+                .get_mut(name)
+                .expect("every name in `order` has a group")
+                .push(op),
+            None => {
+                let name = format!("{}:{}", op.database(), op.collection());
+                order.push(name.clone());
+                ops_by_collection.insert(name, vec![op]);
+            }
+        }
+    }
+
+    // Collections are locked in name order: a commit is the only writer
+    // that holds write stripes of several collections at once, and a
+    // fixed order keeps two commits from deadlocking on them. The
+    // collections only read are locked too, in the same order.
+    let read_by: HashMap<&str, &Arc<ReadTracker>> = reads
+        .iter()
+        .map(|(name, tracker)| (name.as_str(), tracker))
+        .collect();
+    for (name, _) in reads {
+        if !ops_by_collection.contains_key(name) {
+            order.push(name.clone());
+        }
+    }
+    order.sort();
+
+    let collections = order
+        .iter()
+        .map(|name| resolve(name))
+        .collect::<DbResult<Vec<_>>>()?;
+
+    // Commit gates, before any key lock: shared for a collection this
+    // commit writes, exclusive for one it read by range, held until the
+    // written collections' generations have moved (`finish`), so a
+    // commit that checks a generation sees every commit before it.
+    let mut prepared = PreparedCommit {
+        fk_gates: checked.gates,
+        ..Default::default()
+    };
+    for (name, collection) in order.iter().zip(&collections) {
+        let state = collection.ks.state();
+        if read_by.get(name.as_str()).is_some_and(|t| t.is_ranged()) {
+            prepared.gates.push(state.hold_commit_gate(true));
+        } else if ops_by_collection.contains_key(name) {
+            prepared.gates.push(state.hold_commit_gate(false));
+        }
+    }
+
+    for (coll_name, collection) in order.iter().zip(collections) {
+        let ops = ops_by_collection.remove(coll_name).unwrap_or_default();
+        let tracker = read_by.get(coll_name.as_str());
+        let read_keys: Vec<(String, Option<Box<str>>)> = tracker
+            .map(|t| {
+                t.points()
+                    .into_iter()
+                    .map(|(key, rev)| (String::from_utf8_lossy(&key).into_owned(), rev))
+                    .collect()
+            })
+            .unwrap_or_default();
+        prepared
+            .guards
+            .extend(collection.lock_for_transaction_reading(&ops, &read_keys));
+        if let Some(tracker) = tracker {
+            collection.validate_reads(tracker, &read_keys)?;
+        }
+        if !ops.is_empty() {
+            let plan = collection.stage_transaction_operations(ops, &mut prepared.batch)?;
+            prepared.staged.push((collection, plan));
+        }
+    }
+    Ok(prepared)
 }
 
 impl PreparedCommit {
@@ -52,6 +154,7 @@ impl PreparedCommit {
             collection.finish_transaction_operations(plan);
         }
         drop(self.gates);
+        drop(self.fk_gates);
     }
 }
 

@@ -10,6 +10,7 @@ pub mod columnar;
 pub mod database;
 pub mod document;
 pub mod engine;
+pub mod foreign_keys;
 pub mod geo;
 pub(crate) mod group_commit;
 pub mod http_client;

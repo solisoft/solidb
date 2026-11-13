@@ -59,6 +59,8 @@ groups = [
       "desc": "Binary storage with on-the-fly image transforms." },
     { "slug": "transactions", "icon": "fa-shield-halved", "label": "Transactions",
       "desc": "Atomic commits and rollbacks on one node." },
+    { "slug": "foreign-keys", "icon": "fa-link", "label": "Foreign Keys",
+      "desc": "References the database checks, with cascades." },
     { "slug": "scripting", "icon": "fa-scroll", "label": "Lua Scripting",
       "desc": "Custom API endpoints in embedded Lua 5.4." },
     { "slug": "observability", "icon": "fa-signal", "label": "Observability",

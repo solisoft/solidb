@@ -342,6 +342,12 @@ impl Collection {
                 name
             )));
         }
+        if let Some(key) = self.foreign_key_using_index(name) {
+            return Err(DbError::ConflictError(format!(
+                "Index '{}' serves the foreign key '{}': drop the foreign key first",
+                name, key.name
+            )));
+        }
 
         let _invalidate = self.invalidate_cached_queries_on_exit();
 

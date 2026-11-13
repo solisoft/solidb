@@ -342,7 +342,28 @@ impl Collection {
         drop(cf);
 
         let mut deleted_count: usize = 0;
+        let referenced = self.referenced();
         for chunk in expired.chunks(BATCH_SIZE) {
+            // The gate before the keys, exclusively when documents of
+            // another collection may refer to the expired ones.
+            let _gate = self.enter_gate(referenced.is_some())?;
+            if let Some(links) = &referenced {
+                // No key lock: the gate is held exclusively. A document
+                // that is still referred to under `restrict` fails the
+                // chunk, and stays until its children are gone.
+                let mut keys = Vec::new();
+                for (_, doc_key) in chunk {
+                    let Ok(doc) = self.get(doc_key) else { continue };
+                    let still_expired = Self::extract_expiry_time(&doc.to_value(), &index.field)
+                        .is_some_and(|t| t.saturating_add(index.expire_after_seconds) <= now);
+                    if still_expired {
+                        keys.push(doc_key.clone());
+                    }
+                }
+                let entries: Vec<Vec<u8>> = chunk.iter().map(|(k, _)| k.clone()).collect();
+                deleted_count += self.delete_referenced(links, keys, entries, false)?;
+                continue;
+            }
             let _key_guard = self.lock_keys(chunk.iter().map(|(_, k)| k.as_str()));
 
             let mut docs = Vec::new();

@@ -30,6 +30,7 @@ pub mod index_meta;
 pub mod indexes;
 pub mod locks;
 pub mod raw_insert;
+pub mod references;
 pub mod schema;
 pub mod ttl;
 pub mod txn;
@@ -199,6 +200,9 @@ pub struct Collection {
     pub(crate) schema_validator: Arc<RwLock<Option<SchemaValidator>>>,
     /// Hash of cached schema for invalidation detection
     pub(crate) schema_hash: Arc<RwLock<Option<u64>>>,
+    /// What this collection has to do with foreign keys, with the epoch it
+    /// was read at (`storage::foreign_keys`).
+    pub(crate) fk_links: Arc<RwLock<references::CachedLinks>>,
 }
 
 impl Clone for Collection {
@@ -221,6 +225,7 @@ impl Clone for Collection {
             vector_indexes: self.vector_indexes.clone(),
             schema_validator: self.schema_validator.clone(),
             schema_hash: self.schema_hash.clone(),
+            fk_links: self.fk_links.clone(),
         }
     }
 }

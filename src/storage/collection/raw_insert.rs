@@ -136,6 +136,14 @@ impl Collection {
             return None;
         }
         let meta = self.index_meta()?;
+        // A foreign key is checked on the indexed view, which holds its
+        // field as long as its index is there.
+        if let Some(links) = self.fk() {
+            let read = |field: &String| meta.read_fields.contains(field);
+            if !links.outgoing.iter().all(|link| read(&link.key.field)) {
+                return None;
+            }
+        }
         meta.vector.is_empty().then_some(meta)
     }
 
@@ -183,6 +191,7 @@ impl Collection {
         if !tokens.is_empty() {
             self.check_unique_constraints(key, view)?;
         }
+        self.check_references(key, view, None, |_| false)?;
 
         let mut batch = KvBatch::default();
         batch.put_ks(&cf, Self::doc_key(key), stored);
@@ -255,8 +264,16 @@ impl Collection {
             doc_keys.push(doc_key);
         }
 
+        let _gate = self.enter_gate(false)?;
         let key_guard = self.lock_keys(headers.iter().map(|h| h.key.as_str()));
         let unique_guard = self.lock_unique_tokens(&tokens);
+        if self.fk().is_some() {
+            for (header, view) in headers.iter().zip(views) {
+                self.check_references(&header.key, view, None, |other| {
+                    headers.iter().any(|h| h.key == other)
+                })?;
+            }
+        }
 
         let existing = db.multi_get_ks(&cf, &doc_keys);
         let mut claimed: HashSet<String> = HashSet::new();

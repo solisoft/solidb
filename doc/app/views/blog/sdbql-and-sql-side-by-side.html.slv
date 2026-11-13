@@ -189,7 +189,7 @@ ERROR:  new row for relation "order_items" violates check constraint "order_item
         items: [{sku: <span class="tok-str">"pen"</span>, qty: <span class="tok-num">0</span>, price: <span class="tok-num">3</span>}]} <span class="tok-kw">INTO</span> orders <span class="tok-kw">RETURN</span> <span class="tok-kw">NEW</span>._key
 <span class="tok-com">-- ["o9"]      a customer that does not exist, a status nobody defined, a quantity of zero</span></pre></div>
 <ul>
-<li><strong>Foreign keys.</strong> SoliDB has none. Nothing stops an order from naming a customer that is gone, or a customer from being deleted while orders point at it. A collection can be given a JSON schema, which would have refused the status and the quantity, and an index can be unique; a reference to another document is never checked.</li>
+<li><strong>Foreign keys.</strong> SoliDB has none. Nothing stops an order from naming a customer that is gone, or a customer from being deleted while orders point at it. A collection can be given a JSON schema, which would have refused the status and the quantity, and an index can be unique; a reference to another document is never checked. <em>Update, November 13: that was true of 2.9.4. A collection can now declare a <a href="/docs/foreign-keys">foreign key</a>, and this insert is refused; see <a href="/blog/foreign-keys-in-a-document-database">the post about it</a>.</em></li>
 <li><strong>Transactions in the language.</strong> SQL has <code>begin</code>, <code>commit</code> and savepoints as statements. In SoliDB a transaction is opened through the API or the driver and queries run inside it; SDBQL itself has no statement for it. What a transaction promises is the subject of <a href="/blog/durability-and-transactions">another post</a>.</li>
 <li><strong>Forty years of everything else.</strong> A planner that keeps statistics on your data, views, stored procedures, triggers written in the same language, and every reporting tool and ORM ever made. SDBQL has an index planner, materialized views and Lua scripts, and none of the tools.</li>
 </ul>
@@ -206,7 +206,7 @@ ERROR:  new row for relation "order_items" violates check constraint "order_item
     <tr><td>Reach in a graph</td><td>One <code>FOR</code> with a depth and a direction</td><td>A recursive query, cycles guarded by hand</td></tr>
     <tr><td>Every route of a given length</td><td>The same <code>FOR</code>, with <code>uniqueVertices: "path"</code></td><td>The same recursive query, carrying the path</td></tr>
     <tr><td>Update and return old and new</td><td><code>RETURN OLD</code>, <code>NEW</code></td><td><code>returning old, new</code> (from 18)</td></tr>
-    <tr><td>Refuse an order for an unknown customer</td><td>No</td><td>A foreign key</td></tr>
+    <tr><td>Refuse an order for an unknown customer</td><td>No in 2.9.4; <a href="/docs/foreign-keys">a foreign key</a> since</td><td>A foreign key</td></tr>
   </tbody>
 </table>
 <p>SDBQL is shorter where the data is shaped like what the application shows: an object with lists in it, a field that is sometimes there, a graph. SQL is ahead where you want the database, and not each application, to hold the rules of the model. If your data is rows that reference rows, and several programs write them, that second half matters more than any query on this page.</p>

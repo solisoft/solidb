@@ -325,8 +325,13 @@ pub async fn delete_index(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    // Try dropping as standard index
-    if collection.drop_index(&index_name).is_ok() {
+    // Try dropping as standard index. An index a foreign key stands on
+    // is there and refused: say so rather than "not found".
+    let dropped = collection.drop_index(&index_name);
+    if let Err(e @ DbError::ConflictError(_)) = dropped {
+        return Err(e);
+    }
+    if dropped.is_ok() {
         propagate_index_drop(
             &state,
             &db_name,

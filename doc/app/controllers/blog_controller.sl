@@ -69,6 +69,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "foreign-keys-in-a-document-database",
+        "title": "Foreign keys in a document database",
+        "date": "2026-11-13",
+        "display_date": "November 13, 2026",
+        "summary": "SoliDB had no foreign keys. A collection can now declare one: a reference to a missing "
+        + "document is refused on every write path, and deleting a parent is refused, cascades or clears "
+        + "the field, in one atomic write. How it holds when writes race, what an insert pays for it, "
+        + "and where it stops.",
+        "tags": ["Correctness", "Storage"],
+        "read_minutes": 7
+      },
+      {
         "slug": "sdbql-and-sql-side-by-side",
         "title": "SDBQL and SQL, side by side",
         "date": "2026-11-11",

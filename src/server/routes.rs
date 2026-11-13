@@ -589,6 +589,19 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/schema",
             delete(super::handlers::delete_collection_schema),
         )
+        // Foreign key routes
+        .route(
+            "/_api/database/{db}/collection/{name}/foreign-keys",
+            get(super::handlers::list_foreign_keys).post(super::handlers::create_foreign_key),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/foreign-keys/check",
+            post(super::handlers::check_foreign_key),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/foreign-keys/{key}",
+            delete(super::handlers::delete_foreign_key),
+        )
         // Env var routes
         .route(
             "/_api/database/{db}/env",

@@ -714,4 +714,72 @@ mod tests {
         h.authenticated_db = None;
         assert!(raw(&h, &insert(json!({"a": 1}))).is_none());
     }
+
+    /// A foreign key on an indexed field is checked on the raw path too,
+    /// with the decoded path's answers.
+    #[test]
+    fn raw_writes_check_foreign_keys() {
+        let (_t, engine, h) = engine_with_indexes();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("states".to_string(), None).unwrap();
+        db.get_collection("states")
+            .unwrap()
+            .insert(json!({"_key": "open"}))
+            .unwrap();
+        let coll = db.get_collection("c").unwrap();
+        coll.add_foreign_key(
+            None,
+            "status",
+            "states",
+            crate::storage::foreign_keys::OnDelete::Restrict,
+        )
+        .unwrap();
+        // Served by the index that was there.
+        assert_eq!(coll.foreign_keys()[0].index, "by_status");
+
+        let violation = |r: &Response| {
+            matches!(r, Response::Error { error }
+                if error.to_string().contains("Foreign key violation"))
+        };
+        let insert = |key: &str, status: &str| Command::Insert {
+            database: "d".into(),
+            collection: "c".into(),
+            key: Some(key.into()),
+            document: json!({"status": status}),
+        };
+        let bulk = |keys: [&str; 2], status: &str| Command::BulkInsert {
+            database: "d".into(),
+            collection: "c".into(),
+            documents: keys
+                .iter()
+                .map(|k| json!({"_key": k, "status": status}))
+                .collect(),
+        };
+        let update = |status: &str| Command::Update {
+            database: "d".into(),
+            collection: "c".into(),
+            key: "a".into(),
+            document: json!({"status": status}),
+            merge: true,
+        };
+
+        // Still the raw path, and it writes what has a parent.
+        let ok = raw(&h, &insert("a", "open")).expect("the raw path");
+        assert!(!matches!(ok, Response::Error { .. }), "{ok:?}");
+        let ok = raw(&h, &bulk(["b", "c"], "open")).expect("the raw path");
+        assert!(!matches!(ok, Response::Error { .. }), "{ok:?}");
+
+        for cmd in [
+            insert("x", "closed"),
+            bulk(["y", "z"], "closed"),
+            update("closed"),
+        ] {
+            let refused = raw(&h, &cmd).expect("the raw path");
+            assert!(violation(&refused), "{refused:?}");
+            let decoded = decoded(&h, cmd);
+            assert!(violation(&decoded), "{decoded:?}");
+        }
+        assert_eq!(coll.count(), 3);
+        assert_eq!(coll.get("a").unwrap().data["status"], json!("open"));
+    }
 }

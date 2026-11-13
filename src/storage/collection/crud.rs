@@ -244,6 +244,9 @@ impl Collection {
         f: impl FnOnce() -> DbResult<T>,
     ) -> DbResult<T> {
         let result = {
+            // Before the key: a delete that cascades holds the gate
+            // exclusively and takes no key lock of its own.
+            let _gate = self.enter_gate(false)?;
             let _key_guard = self.lock_keys([key]);
             f()
         };
@@ -369,6 +372,7 @@ impl Collection {
         if !tokens.is_empty() {
             self.check_unique_constraints(&key, &doc_value)?;
         }
+        self.check_references(&key, &doc.data, None, |_| false)?;
 
         let doc_bytes = serialize_doc(&doc)?;
 
@@ -876,6 +880,7 @@ impl Collection {
         if !tokens.is_empty() {
             self.check_unique_constraints(key, new_value)?;
         }
+        self.check_references(key, new_value, Some(old_value), |_| false)?;
 
         let db = &self.db;
         let cf = self.live_cf()?;
@@ -916,6 +921,11 @@ impl Collection {
 
     /// Delete a document with atomic document + index removal
     pub fn delete(&self, key: &str) -> DbResult<()> {
+        if let Some(links) = self.referenced() {
+            return self
+                .delete_referenced(&links, [key.to_string()], Vec::new(), true)
+                .map(|_| ());
+        }
         self.with_key_locked(key, || {
             let doc_value = self.get(key)?.to_value();
             self.delete_docs_locked(vec![(key.to_string(), doc_value)], Vec::new())?;
@@ -1016,6 +1026,7 @@ impl Collection {
             ));
         }
 
+        let _gate = self.enter_gate(false)?;
         let _key_guard = self.lock_keys(documents.iter().map(|(k, _)| k.as_str()));
 
         let db = &self.db;
@@ -1065,6 +1076,9 @@ impl Collection {
                 continue;
             };
             let new_value = doc.to_value();
+            self.check_references(&key, &new_value, old_value.as_ref(), |other| {
+                positions.contains_key(other)
+            })?;
             batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
             if versioned {
                 self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
@@ -1139,6 +1153,10 @@ impl Collection {
             return Ok(0);
         }
 
+        if let Some(links) = self.referenced() {
+            return self.delete_referenced(&links, keys, Vec::new(), false);
+        }
+        let _gate = self.enter_gate(false)?;
         let _key_guard = self.lock_keys(keys.iter().map(String::as_str));
 
         let db = &self.db;
@@ -1195,6 +1213,7 @@ impl Collection {
             ));
         }
 
+        let _gate = self.enter_gate(false)?;
         let _key_guard = self.lock_keys(updates.iter().map(|(k, _, _)| *k));
 
         let db = &self.db;
@@ -1274,6 +1293,9 @@ impl Collection {
 
         // Pass 2: claim unique values under their stripes (audit D4).
         let new_values: Vec<Value> = pending.iter().map(|(_, _, doc)| doc.to_value()).collect();
+        for ((key, old_value, _), new_value) in pending.iter().zip(&new_values) {
+            self.check_references(key, new_value, Some(old_value), |_| false)?;
+        }
         let tokens: Vec<String> = new_values
             .iter()
             .flat_map(|v| self.unique_tokens(v))
@@ -1428,8 +1450,14 @@ impl Collection {
             doc_keys.push(doc_key);
         }
 
+        let _gate = self.enter_gate(false)?;
         let _key_guard = self.lock_keys(inserted_docs.iter().map(|d| d.key.as_str()));
         let _unique_guard = self.lock_unique_tokens(&tokens);
+        for doc in &inserted_docs {
+            self.check_references(&doc.key, &doc.data, None, |other| {
+                batch_keys.contains(other)
+            })?;
+        }
 
         // Every key's existence in one multi-get, then the checks in batch
         // order: the first conflict reported is the one a check per
@@ -2038,6 +2066,22 @@ impl Collection {
     /// single atomic batch, which is effectively constant-time regardless of
     /// document count.
     pub fn truncate(&self) -> DbResult<usize> {
+        // The children of a truncated collection would all be orphans, and
+        // there is no walking them one parent at a time here.
+        let _gate = self.enter_gate(self.referenced().is_some())?;
+        if let Some(child) = self.referring_collection() {
+            let holds_documents = crate::storage::foreign_keys::resolve(&self.db, &child)
+                .map(|c| c.count() > 0)
+                .unwrap_or(false);
+            if holds_documents {
+                return Err(crate::storage::foreign_keys::violation(format!(
+                    "'{}' is referred to by the documents of '{}': truncate that collection first, or drop its foreign key",
+                    self.name.split_once(':').map_or("", |(_, c)| c),
+                    child.split_once(':').map_or("", |(_, c)| c),
+                )));
+            }
+        }
+
         // Cached count is the maintained document count; report it as "deleted"
         // without paying for a full scan.
         let count = self.count();

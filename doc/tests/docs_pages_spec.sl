@@ -51,6 +51,15 @@ describe("Docs pages") do
     expect(body.include?("engine-solistore")).to_equal(true)
   end
 
+  test("foreign keys has a page, linked from the sidebar") do
+    response = get("/docs/foreign-keys")
+    expect(res_status(response)).to_equal(200)
+    body = res_body(response)
+    expect(body.include?("on_delete")).to_equal(true)
+    expect(body.include?("/foreign-keys/check")).to_equal(true)
+    expect(res_body(get("/docs/indexes")).include?("/docs/foreign-keys")).to_equal(true)
+  end
+
   test("transactions documents what a writing query can and cannot do") do
     response = get("/docs/transactions")
     expect(res_status(response)).to_equal(200)

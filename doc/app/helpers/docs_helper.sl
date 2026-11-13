@@ -54,6 +54,7 @@ def docs_nav()
         { "title": "Core Features", "items": [
           { "slug": "transactions", "label": "ACID & Distributed Tx", "icon": "fa-shield-alt" },
           { "slug": "indexes", "label": "Indexes", "icon": "fa-list-ol" },
+          { "slug": "foreign-keys", "label": "Foreign Keys", "icon": "fa-link" },
           { "slug": "vector-search", "label": "Vector Search", "icon": "fa-brain" },
           { "slug": "hybrid-search", "label": "Hybrid Search", "icon": "fa-layer-group" },
           { "slug": "graphs", "label": "Graphs & Edges", "icon": "fa-project-diagram" },

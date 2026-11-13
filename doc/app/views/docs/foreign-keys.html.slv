@@ -1,0 +1,151 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 mb-4 tracking-tight">
+            Foreign Keys
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Declare that a field holds the <code class="text-indigo-300">_key</code> of a document of another collection, and the database refuses a reference to a document that is not there.
+          </p>
+        </div>
+      </div>
+
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A foreign key is declared on the collection that holds the reference (the <em>child</em>) and names a collection of the same database (the <em>parent</em>). From then on:
+            </p>
+            <ul class="list-disc pl-6 space-y-2 text-gray-300">
+              <li>a write that gives the field a value is refused with <code class="text-indigo-300">409</code> unless a parent document has that <code class="text-indigo-300">_key</code>. <code class="text-indigo-300">null</code> and an absent field refer to nothing and are always accepted;</li>
+              <li>deleting a parent document follows the key's <code class="text-indigo-300">on_delete</code> rule: refused, or completed with its children, in the same atomic write;</li>
+              <li>the parent collection cannot be dropped, nor truncated while the child holds documents.</li>
+            </ul>
+            <p class="text-gray-300 leading-relaxed">
+              The constraint is enforced by storage, so it holds for every writer: the document API, SDBQL, the native driver, Lua scripts, imports and transactions. A collection with no foreign key, and that no key refers to, pays nothing for the feature.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="declare" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-indigo-500/10 to-blue-500/10 rounded-xl border border-indigo-500/20 overflow-hidden">
+          <div class="p-5 border-b border-indigo-500/20 bg-indigo-500/5">
+            <h3 class="text-lg font-bold text-indigo-300">Declaring a key</h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X POST http://localhost:6745/_api/database/shop/collection/orders/foreign-keys \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"field": "customer", "references": "customers", "on_delete": "cascade"}'
+
+{"name": "fk_customer", "field": "customer", "references": "customers",
+ "on_delete": "cascade", "index": "fk_customer"}</code></pre>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs uppercase text-gray-300 border-b border-white/10">
+                  <tr><th class="py-2 pr-4">Field</th><th class="py-2">Meaning</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">field</code></td><td class="py-2">A top-level field of the child that is not a system attribute. Its value is the parent's <code class="text-indigo-300">_key</code> (a string), or <code class="text-indigo-300">null</code>.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">references</code></td><td class="py-2">The parent collection, in the same database. It may be the child itself (a tree).</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">on_delete</code></td><td class="py-2"><code class="text-indigo-300">restrict</code> (the default), <code class="text-indigo-300">cascade</code> or <code class="text-indigo-300">set_null</code>.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">name</code></td><td class="py-2">Optional; <code class="text-indigo-300">fk_&lt;field&gt;</code> by default. One key per field.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-sm text-gray-400">
+              Children are found through an index on the field. A persistent or hash index on that single field is used when there is one; otherwise a persistent index named <code class="text-indigo-300">fk_&lt;field&gt;</code> is created. That index cannot be dropped while the key exists.
+            </p>
+            <p class="text-sm text-gray-400">
+              Documents already stored are checked. If some refer to a missing parent the declaration is refused with <code class="text-indigo-300">409</code>, the first offending keys in the message, and nothing is kept. To see them without declaring anything:
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X POST .../collection/orders/foreign-keys/check \
+  -d '{"field": "customer", "references": "customers"}'
+
+{"count": 1, "sample": [{"_key": "o7", "customer": "nobody"}]}</code></pre>
+            </div>
+            <p class="text-sm text-gray-400">
+              <code class="text-indigo-300">GET .../collection/{name}/foreign-keys</code> lists a collection's keys (<code class="text-indigo-300">foreign_keys</code>) and the keys of other collections that refer to it (<code class="text-indigo-300">referenced_by</code>). <code class="text-indigo-300">DELETE .../foreign-keys/{name}</code> removes a key and leaves its index.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="on-delete" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl border border-amber-500/20 overflow-hidden">
+          <div class="p-5 border-b border-amber-500/20 bg-amber-500/5">
+            <h3 class="text-lg font-bold text-amber-300">Deleting a parent</h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs uppercase text-gray-300 border-b border-white/10">
+                  <tr><th class="py-2 pr-4"><code>on_delete</code></th><th class="py-2">When a parent with children is deleted</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">restrict</code></td><td class="py-2">The delete is refused with <code class="text-indigo-300">409</code>. A batch delete is one write: none of its documents is deleted.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">cascade</code></td><td class="py-2">The children are deleted with it, and their own children in turn, following each key's rule.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">set_null</code></td><td class="py-2">The children stay, with the field set to <code class="text-indigo-300">null</code> and a new <code class="text-indigo-300">_rev</code>.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-sm text-gray-400">
+              The parent's delete and everything it causes are one write batch: all of it is stored or none of it, index entries included. Children deleted or updated by a cascade are announced on their collection's changefeed like any other write. A cascade that would write more than 100,000 documents (<code class="text-indigo-300">SOLIDB_FK_MAX_CASCADE</code>) is refused.
+            </p>
+            <p class="text-sm text-gray-400">
+              A document expired by a TTL index is deleted under the same rule: under <code class="text-indigo-300">restrict</code> it stays until its children are gone.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="transactions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">In a transaction</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A transaction is checked at commit, as a whole: a child may be staged before the parent it refers to, and a parent may be deleted together with its children, in any order. A commit that would leave a child without its parent is refused with <code class="text-indigo-300">409</code> and writes nothing. A delete staged in a transaction cascades at commit; a child the same transaction wrote and that still refers to the deleted parent refuses the commit instead.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="limits" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Limits</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <ul class="list-disc pl-6 space-y-2 text-gray-300">
+              <li><strong class="text-white">One node.</strong> A key cannot be declared on a node whose replication log is active, that is, one that has had a cluster peer or an <a href="/docs/offline-sync" class="text-indigo-400 hover:text-indigo-300">offline-sync</a> client (<code class="text-indigo-300">501</code>), nor on a sharded collection, and a collection that takes part in a key cannot be sharded. A cascade is written by storage and is not in the replication log: a reader that appears after the key was declared does not receive the children's deletes.</li>
+              <li><strong class="text-white">Document and edge collections</strong> of one database; no system collection. The reference is the parent's <code class="text-indigo-300">_key</code>, not its <code class="text-indigo-300">_id</code>: an edge's <code class="text-indigo-300">_from</code> and <code class="text-indigo-300">_to</code> cannot carry a key yet.</li>
+              <li><strong class="text-white">Deletes in a referenced collection are exclusive.</strong> While one runs, writes to the collections of that database that take part in a foreign key wait. Inserts and updates run concurrently as before.</li>
+              <li><strong class="text-white">Dumps.</strong> <code class="text-indigo-300">solidb-dump</code> does not carry the keys: declare them again after a restore, which also checks the restored data.</li>
+              <li><strong class="text-white">Declare on quiet collections.</strong> A write to the child that was already running when the key was declared is not checked; run the check endpoint afterwards if writers were active.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

@@ -1,0 +1,92 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Correctness · Storage</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">Two days ago we wrote that SoliDB has no foreign keys, and that nothing stops an order from naming a customer that is gone. It was the one line of that comparison with SQL where the answer was a plain &ldquo;No&rdquo;. A collection can now declare one. This post shows what it does, how it stays true when writes race, what it costs, and where it stops.</p>
+  <p class="post-note">The feature is in the main branch and not in a release yet: it will be in the one after 2.9.5. Every result on this page was run on November 13, 2026, on a throwaway server built from that branch.</p>
+</header>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#why">Why the application cannot do it</a></li>
+    <li><a href="#declare">Declaring a key</a></li>
+    <li><a href="#refuse">What is refused</a></li>
+    <li><a href="#delete">Deleting a parent</a></li>
+    <li><a href="#race">When writes race</a></li>
+    <li><a href="#cost">What it costs</a></li>
+    <li><a href="#limits">Where it stops</a></li>
+  </ol>
+</nav>
+
+<section id="why"><h2>Why the application cannot do it</h2>
+<p>An application can check that a customer exists before it stores an order. It cannot make that check and the write one step. Between the two, another request may delete the customer, and the order is stored pointing at nothing. The same goes for deletes: an ORM that removes a customer's orders and then the customer does it in several requests, and a crash between them leaves half.</p>
+<p>The check also only protects the writers that make it. SoliDB has nine client libraries, Lua scripts, an import endpoint and a query language. A rule that lives in one application's models is not a rule of the data.</p>
+<p>Only the database can close both gaps, because only it can hold the parent still while the child is written.</p>
+</section>
+
+<section id="declare"><h2>Declaring a key</h2>
+<p>A key is declared on the collection that holds the reference. Here <code>orders.customer</code> must be the <code>_key</code> of a document of <code>customers</code>, or null:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> http</div><pre>POST /_api/database/shop/collection/orders/foreign-keys
+{"field": "customer", "references": "customers", "on_delete": "cascade"}
+
+{"name": "fk_customer", "field": "customer", "references": "customers",
+ "on_delete": "cascade", "index": "fk_customer"}</pre></div>
+<p>The answer names an index. Finding the orders of a customer has to be fast, since every delete of a customer asks for them, so the key uses a persistent or hash index on the field when there is one and creates one otherwise.</p>
+<p>The documents already stored are checked. Our shop had an order for a customer named <code>zed</code>, who does not exist, and the declaration was refused, with nothing kept:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> result</div><pre>409  Foreign key violation: 1 document(s) of 'orders' refer through 'customer'
+     to a document that is not in 'customers' (first keys: o0)</pre></div>
+<p>A second endpoint, <code>POST …/foreign-keys/check</code>, lists those documents without declaring anything, which is the way to find out how much cleaning an existing collection needs.</p>
+</section>
+
+<section id="refuse"><h2>What is refused</h2>
+<p>With the order for <code>zed</code> removed and the key declared, the insert that the earlier post showed going through &ldquo;without a word&rdquo; no longer does:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">INSERT</span> {_key: <span class="tok-str">"o9"</span>, customer: <span class="tok-str">"zed"</span>} <span class="tok-kw">INTO</span> orders <span class="tok-kw">RETURN</span> <span class="tok-kw">NEW</span>._key
+
+409  Foreign key violation: 'customer' in orders refers to 'zed',
+     which is not a document of 'customers'</pre></div>
+<p>The same document sent to the document API gets the same answer, and so does an <code>UPDATE</code> that points an existing order at <code>zed</code>. The check sits in the storage layer, under every way of writing: SDBQL, the document API, the binary driver, Lua, imports. A null or absent field refers to nothing and is always accepted.</p>
+<p>What a key stands on is protected as well. Dropping <code>customers</code> is refused while <code>orders</code> refers to it, truncating it is refused while <code>orders</code> holds documents, and the key's index cannot be dropped from under it.</p>
+</section>
+
+<section id="delete"><h2>Deleting a parent</h2>
+<p>Each key says what happens to the children of a deleted parent: <code>restrict</code> refuses the delete, <code>cascade</code> deletes them too, <code>set_null</code> keeps them and clears the field. Our key cascades. Ann has two orders and Bob one:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">REMOVE</span> <span class="tok-str">"ann"</span> <span class="tok-kw">IN</span> customers
+<span class="tok-kw">FOR</span> o <span class="tok-kw">IN</span> orders <span class="tok-kw">RETURN</span> o._key        <span class="tok-com">-- ["o3"]: Bob's order</span></pre></div>
+<p>Ann and her two orders went in one write batch, index entries included: either all of it is stored or none of it. A cascade follows the children's own keys in turn, so a tree declared on one collection (<code>parent</code> referring to the same collection) is removed from the node down.</p>
+<p>A transaction is checked at commit, as a whole. A child may be staged before its parent, and a parent may be deleted with its children in any order; a commit that would leave an order without its customer is refused and writes nothing.</p>
+</section>
+
+<section id="race"><h2>When writes race</h2>
+<p>The case that matters is the one from the first section: an order inserted for a customer while that customer is deleted. Each database has one lock for this. A write to a collection that takes part in a key holds it shared; a delete in a referenced collection holds it alone. So a customer cannot disappear between an order's check and its write, and a cascade is the only writer of the collections it walks.</p>
+<p>A test runs that race on purpose: four threads insert orders for a customer, by single inserts and by batches, while the customer is deleted, forty times for each rule. Under <code>restrict</code> the delete is always refused and every order is there. Under <code>cascade</code> the customer is always gone and no order for it is left, whichever side won. With the lock removed, that second count is not zero.</p>
+</section>
+
+<section id="cost"><h2>What it costs</h2>
+<p>A collection with no key, and that no key refers to, does not take the lock or read anything more than before: the cost is one check of a cached flag per write.</p>
+<p>With a key, each write that sets the reference reads the parent once. We inserted 200,000 orders for one customer with a single SDBQL statement, three times, into a collection with an index on the field and into one with the key (which has the same index):</p>
+<table>
+  <thead><tr><th>200,000 inserts, one statement</th><th>Run 1</th><th>Run 2</th><th>Run 3</th></tr></thead>
+  <tbody>
+    <tr><td>Index on the field</td><td>836 ms</td><td>851 ms</td><td>847 ms</td></tr>
+    <tr><td>Foreign key</td><td>1,106 ms</td><td>1,091 ms</td><td>1,161 ms</td></tr>
+  </tbody>
+</table>
+<p>About 1.3 microseconds more per document, a third on top of an insert that does little else. This is one workstation with the server in its small <code>--dev</code> profile, not the machine our published benchmarks run on, so take the ratio and not the numbers. It has not been run under concurrent load yet, where the shared lock is the thing to watch.</p>
+<p>The other cost is on deletes. A delete in a referenced collection waits for the writes in progress on the linked collections of its database, and holds the others back while it runs. A workload that deletes parents all day will feel it; one that mostly inserts and updates will not.</p>
+</section>
+
+<section id="limits"><h2>Where it stops</h2>
+<ul>
+<li><strong>One node.</strong> A key cannot be declared on a sharded collection or on a node whose replication log is in use. A cascade is written inside storage and is not in that log, so a replica would keep the children.</li>
+<li><strong>The reference is a <code>_key</code>.</strong> An edge's <code>_from</code> and <code>_to</code> hold an <code>_id</code> and cannot carry a key yet, so a deleted vertex still leaves its edges.</li>
+<li><strong>Dumps do not carry keys.</strong> After <code>solidb-restore</code>, declare them again; that also checks the restored data.</li>
+<li><strong>The clients do not know about it yet.</strong> The endpoints are HTTP only, and the Soli ORM's <code>belongs_to</code> still does its own work instead of declaring a key.</li>
+</ul>
+<p>Each of these is a card on our board. The reference is in <a href="/docs/foreign-keys">the foreign keys guide</a>.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

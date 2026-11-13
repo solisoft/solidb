@@ -491,6 +491,48 @@ Rules that keep it sound:
   threads to sleep, workers stay busy and, at tokio's default, read arriving
   requests only every 61 tasks.
 
+### Foreign keys
+
+A child collection declares that a top-level field holds the `_key` of a
+document of a parent collection of its database, or null
+(`storage/foreign_keys.rs`, `storage/collection/references.rs`; stored on the
+child under `_stats:foreign_keys`; endpoints in
+`server/handlers/foreign_keys.rs`). A write that sets the reference checks the
+parent (`Collection::check_references`); a delete in a referenced collection
+finds the children through the index on the field and is refused, deletes
+them or nulls their field (`on_delete`) in the same batch, by going through
+the commit path (`Collection::delete_referenced` → `group_commit::prepare` →
+`foreign_keys::check_operations`, which is also what checks a transaction's
+commit as a whole).
+
+Rules that keep it sound:
+
+- **The gate, one per database, before any key lock.** Every write to a
+  collection that takes part in a key holds it shared
+  (`Collection::enter_gate`, taken in `with_key_locked` and at the top of
+  each batch path); a delete in a referenced collection holds it exclusively
+  and takes no key lock of its own. A new write path that calls `lock_keys`
+  directly must call `enter_gate` first, and a new delete path must branch on
+  `Collection::referenced()` as `delete`, `delete_batch` and the TTL reaper do.
+- A document write that reaches storage without `check_references` (on the
+  decoded value, or on the indexed view, which holds the field as long as the
+  key's index exists) is unchecked. `raw_write_ready` refuses the raw path
+  when the view would not hold the field.
+- What a collection has to do with foreign keys is cached per handle and per
+  database against an epoch (`foreign_keys::bump_epoch`): anything that adds
+  or removes a key, or drops a collection or database that takes part in one,
+  must move it.
+- A cascade reaches the other collections through the engine's own handle
+  caches (`foreign_keys::resolve`), never a handle built aside: counts,
+  change events and vector indexes live on the cached one.
+- Cascades are not in the replication log. Declaring a key is refused while
+  the log is active, and on sharded collections; lifting that means logging
+  the cascaded writes.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_FK_MAX_CASCADE` | 100000 | Documents one delete may cascade into (deleted or nulled) before it is refused. |
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a

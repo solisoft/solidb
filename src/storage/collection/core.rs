@@ -179,6 +179,7 @@ impl Collection {
             vector_indexes: Arc::new(DashMap::new()),
             schema_validator: Arc::new(RwLock::new(None)),
             schema_hash: Arc::new(RwLock::new(None)),
+            fk_links: Arc::default(),
         }
     }
 
@@ -457,6 +458,13 @@ impl Collection {
         &self,
         config: &crate::sharding::coordinator::CollectionShardConfig,
     ) -> DbResult<()> {
+        // A foreign key is checked against this node's documents only.
+        if self.fk().is_some() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{}' takes part in a foreign key and cannot be sharded",
+                self.name
+            )));
+        }
         let cf = self
             .ks
             .handle(&self.db)

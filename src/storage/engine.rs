@@ -210,7 +210,7 @@ impl StorageEngine {
         let db = super::kv::open(&path, &[META_CF, super::keyspace::SHARED_CF])
             .map_err(|e| DbError::InternalError(format!("Failed to open the database: {}", e)))?;
 
-        Ok(Self {
+        let engine = Self {
             db: Arc::new(db),
             cf_lock: Arc::new(RwLock::new(())),
             path,
@@ -221,7 +221,15 @@ impl StorageEngine {
             pending_cf_drops: PendingCfDrops::new(),
             liveness: Arc::new(()),
             committer: Arc::default(),
-        })
+        };
+        // A delete that cascades reaches other collections by their name.
+        super::foreign_keys::register_engine(
+            &engine.db,
+            &engine.databases,
+            &engine.collections,
+            &engine.pending_cf_drops,
+        );
+        Ok(engine)
     }
 
     /// Create a new storage engine with cluster configuration
@@ -540,6 +548,8 @@ impl StorageEngine {
 
         // Remove from cache
         self.databases.remove(name);
+        // Its foreign keys went with it.
+        super::foreign_keys::forget_database(&self.db, name);
 
         // Purge stale Collection handles for this database. A cached handle
         // resolves its CF by name at use time, so once the background dropper
@@ -826,6 +836,15 @@ impl StorageEngine {
 
     /// Delete a collection
     pub fn delete_collection(&self, name: &str) -> DbResult<()> {
+        let linked = super::foreign_keys::before_drop(&self.db, name)?;
+        let result = self.delete_collection_unlinked(name);
+        if linked {
+            super::foreign_keys::bump_epoch();
+        }
+        result
+    }
+
+    fn delete_collection_unlinked(&self, name: &str) -> DbResult<()> {
         if let Some(ks) = super::collection_registry::get(&self.db, name).and_then(|r| r.ks) {
             {
                 let _catalog = super::collection_registry::catalog_lock();
@@ -1170,85 +1189,9 @@ impl StorageEngine {
         operations: Vec<crate::transaction::Operation>,
         reads: &[(String, Arc<super::keyspace::ReadTracker>)],
     ) -> DbResult<super::group_commit::PreparedCommit> {
-        // Group by collection, keeping each collection's operations in order.
-        // The operations are moved, not copied: they hold the documents.
-        let mut order: Vec<String> = Vec::new();
-        let mut ops_by_collection: HashMap<String, Vec<crate::transaction::Operation>> =
-            HashMap::new();
-        for op in operations {
-            let known = order
-                .iter()
-                .find(|name| name.split_once(':') == Some((op.database(), op.collection())));
-            match known {
-                Some(name) => ops_by_collection
-                    .get_mut(name)
-                    .expect("every name in `order` has a group")
-                    .push(op),
-                None => {
-                    let name = format!("{}:{}", op.database(), op.collection());
-                    order.push(name.clone());
-                    ops_by_collection.insert(name, vec![op]);
-                }
-            }
-        }
-
-        // Collections are locked in name order: a commit is the only writer
-        // that holds write stripes of several collections at once, and a
-        // fixed order keeps two commits from deadlocking on them. The
-        // collections only read are locked too, in the same order.
-        let read_by: HashMap<&str, &Arc<super::keyspace::ReadTracker>> = reads
-            .iter()
-            .map(|(name, tracker)| (name.as_str(), tracker))
-            .collect();
-        for (name, _) in reads {
-            if !ops_by_collection.contains_key(name) {
-                order.push(name.clone());
-            }
-        }
-        order.sort();
-
-        let collections = order
-            .iter()
-            .map(|name| self.system_collection(name))
-            .collect::<DbResult<Vec<_>>>()?;
-
-        // Commit gates, before any key lock: shared for a collection this
-        // commit writes, exclusive for one it read by range, held until the
-        // written collections' generations have moved (`finish`), so a
-        // commit that checks a generation sees every commit before it.
-        let mut prepared = super::group_commit::PreparedCommit::default();
-        for (name, collection) in order.iter().zip(&collections) {
-            let state = collection.ks.state();
-            if read_by.get(name.as_str()).is_some_and(|t| t.is_ranged()) {
-                prepared.gates.push(state.hold_commit_gate(true));
-            } else if ops_by_collection.contains_key(name) {
-                prepared.gates.push(state.hold_commit_gate(false));
-            }
-        }
-
-        for (coll_name, collection) in order.iter().zip(collections) {
-            let ops = ops_by_collection.remove(coll_name).unwrap_or_default();
-            let tracker = read_by.get(coll_name.as_str());
-            let read_keys: Vec<(String, Option<Box<str>>)> = tracker
-                .map(|t| {
-                    t.points()
-                        .into_iter()
-                        .map(|(key, rev)| (String::from_utf8_lossy(&key).into_owned(), rev))
-                        .collect()
-                })
-                .unwrap_or_default();
-            prepared
-                .guards
-                .extend(collection.lock_for_transaction_reading(&ops, &read_keys));
-            if let Some(tracker) = tracker {
-                collection.validate_reads(tracker, &read_keys)?;
-            }
-            if !ops.is_empty() {
-                let plan = collection.stage_transaction_operations(ops, &mut prepared.batch)?;
-                prepared.staged.push((collection, plan));
-            }
-        }
-        Ok(prepared)
+        super::group_commit::prepare(&self.db, operations, reads, &|name| {
+            self.system_collection(name)
+        })
     }
 
     /// Whether commits can be handed to the group committer: the engine
@@ -1380,6 +1323,7 @@ impl Drop for StorageEngine {
         self.databases.clear();
 
         if last {
+            super::foreign_keys::forget_engine(&self.db);
             // Before the flush and before this handle's `Arc<DB>` goes away:
             // a background dropper still inside `drop_cf` races the static
             // destructors that free RocksDB's global option-type registry, and

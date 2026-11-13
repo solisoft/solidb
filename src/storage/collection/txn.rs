@@ -273,7 +273,7 @@ impl Collection {
     /// over the old ones (the system attributes excepted), a new revision
     /// and update time. A change that is not an object replaces the
     /// fields, as `Document::update` does, through a `Document`.
-    fn updated_value(collection: &str, key: &str, old: &Value, changes: Value) -> Value {
+    pub(crate) fn updated_value(collection: &str, key: &str, old: &Value, changes: Value) -> Value {
         match (old, changes) {
             (Value::Object(old_fields), Value::Object(changes)) => {
                 let mut fields = old_fields.clone();

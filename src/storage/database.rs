@@ -238,6 +238,19 @@ impl Database {
     pub fn delete_collection(&self, collection_name: &str) -> DbResult<()> {
         let cf_name = self.collection_cf_name(collection_name);
 
+        // A collection other collections refer to stays; one that takes
+        // part in a foreign key takes its constraints with it.
+        let linked = super::foreign_keys::before_drop(&self.db, &cf_name)?;
+        let result = self.delete_collection_unlinked(collection_name);
+        if linked {
+            super::foreign_keys::bump_epoch();
+        }
+        result
+    }
+
+    fn delete_collection_unlinked(&self, collection_name: &str) -> DbResult<()> {
+        let cf_name = self.collection_cf_name(collection_name);
+
         // Shared layout: the record and a range delete, nothing else.
         if let Some(ks) = super::collection_registry::get(&self.db, &cf_name).and_then(|r| r.ks) {
             {
