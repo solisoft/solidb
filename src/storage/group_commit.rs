@@ -46,6 +46,10 @@ pub(crate) struct PreparedCommit {
     /// Foreign-key gates (`storage::foreign_keys`), taken first and
     /// released last.
     pub(crate) fk_gates: Vec<super::foreign_keys::HeldGate>,
+    /// The writes the commit's deletes cascaded into, and who is told of
+    /// them once they are stored.
+    pub(crate) cascaded: Vec<super::foreign_keys::Cascaded>,
+    pub(crate) observer: Option<super::foreign_keys::CascadeObserver>,
 }
 
 /// Lock, check and stage the operations of one atomic write: everything a
@@ -64,6 +68,30 @@ pub(crate) fn prepare(
     // The operations are moved, not copied: they hold the documents.
     let checked = super::foreign_keys::check_operations(db, operations, resolve)?;
     let operations = checked.operations;
+    // What the deletes cascaded into, for whoever replicates: told once the
+    // batch is written.
+    let observer = (checked.cascaded_from < operations.len())
+        .then(|| super::foreign_keys::cascade_observer(db))
+        .flatten();
+    let cascaded = match &observer {
+        Some(_) => operations[checked.cascaded_from..]
+            .iter()
+            .filter_map(|op| {
+                let document = match op {
+                    Operation::Update { new_data, .. } => Some(new_data.clone()),
+                    Operation::Delete { .. } => None,
+                    _ => return None,
+                };
+                Some(super::foreign_keys::Cascaded {
+                    database: op.database().to_string(),
+                    collection: op.collection().to_string(),
+                    key: op.key().to_string(),
+                    document,
+                })
+            })
+            .collect(),
+        None => Vec::new(),
+    };
     let mut order: Vec<String> = Vec::new();
     let mut ops_by_collection: HashMap<String, Vec<Operation>> = HashMap::new();
     for op in operations {
@@ -109,6 +137,8 @@ pub(crate) fn prepare(
     // commit that checks a generation sees every commit before it.
     let mut prepared = PreparedCommit {
         fk_gates: checked.gates,
+        cascaded,
+        observer,
         ..Default::default()
     };
     for (name, collection) in order.iter().zip(&collections) {
@@ -152,6 +182,13 @@ impl PreparedCommit {
         drop(self.guards);
         for (collection, plan) in self.staged {
             collection.finish_transaction_operations(plan);
+        }
+        // Before the gates open: a later write to these documents is
+        // logged after this one.
+        if let Some(observer) = self.observer {
+            if !self.cascaded.is_empty() {
+                observer(self.cascaded);
+            }
         }
         drop(self.gates);
         drop(self.fk_gates);

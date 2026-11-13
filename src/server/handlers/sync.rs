@@ -511,7 +511,18 @@ pub async fn pull_changes(
         .collect();
 
     // Convert LogEntry -> SyncChange
-    let changes: Vec<SyncChange> = filtered.iter().map(log_entry_to_sync_change).collect();
+    // A foreign key's definition is the server's business: an offline
+    // client would store it as a document of the collection.
+    let changes: Vec<SyncChange> = filtered
+        .iter()
+        .filter(|entry| {
+            !matches!(
+                entry.operation,
+                Operation::CreateForeignKey | Operation::DropForeignKey
+            )
+        })
+        .map(log_entry_to_sync_change)
+        .collect();
 
     // Build server vector from the latest entries
     let mut server_vector = VersionVector::new();

@@ -493,7 +493,7 @@ impl ClusterManager {
                                 }
 
                                 let doc_count = docs_to_apply.len();
-                                let _ = collection.upsert_batch(docs_to_apply);
+                                let _ = crate::storage::foreign_keys::unchecked(|| collection.upsert_batch(docs_to_apply));
                                 tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
                             }
                         }
@@ -590,19 +590,25 @@ impl ClusterManager {
                     let collection = db.get_collection(&entry.collection)?;
                     if let Some(data) = &entry.document_data {
                         let doc_value: serde_json::Value = serde_json::from_slice(data)?;
-                        collection.insert_or_replace(doc_value)?;
+                        crate::storage::foreign_keys::unchecked(|| {
+                            collection.insert_or_replace(doc_value)
+                        })?;
                     }
                 }
                 Operation::Delete => {
                     let db = storage.get_database(&entry.database)?;
                     let collection = db.get_collection(&entry.collection)?;
                     // Ignore error if doc doesn't exist (idempotency)
-                    let _ = collection.delete(&entry.document_key);
+                    let _ = crate::storage::foreign_keys::unchecked(|| {
+                        collection.delete(&entry.document_key)
+                    });
                 }
                 Operation::DeleteCollection => {
                     let db = storage.get_database(&entry.database)?;
                     // Ignore error if collection doesn't exist (idempotency)
-                    let _ = db.delete_collection(&entry.collection);
+                    let _ = crate::storage::foreign_keys::unchecked(|| {
+                        db.delete_collection(&entry.collection)
+                    });
                 }
                 Operation::TruncateCollection => {
                     let db = storage.get_database(&entry.database)?;
@@ -620,13 +626,15 @@ impl ClusterManager {
                                     let physical_name =
                                         format!("{}_s{}", entry.collection, shard_id);
                                     if let Ok(shard_coll) = db.get_collection(&physical_name) {
-                                        let _ = shard_coll.truncate();
+                                        let _ = crate::storage::foreign_keys::unchecked(|| {
+                                            shard_coll.truncate()
+                                        });
                                     }
                                 }
                             }
                         }
 
-                        let _ = collection.truncate();
+                        let _ = crate::storage::foreign_keys::unchecked(|| collection.truncate());
                     }
                 }
                 Operation::CreateDatabase => {
@@ -654,6 +662,40 @@ impl ClusterManager {
                                         e
                                     );
                                 }
+                            }
+                        }
+                    }
+                }
+                Operation::CreateForeignKey => {
+                    if let Some(data) = &entry.document_data {
+                        let key: crate::storage::foreign_keys::ForeignKey =
+                            serde_json::from_slice(data)?;
+                        if let Ok(db) = storage.get_database(&entry.database) {
+                            if let Ok(coll) = db.get_collection(&entry.collection) {
+                                if let Err(e) = coll.apply_foreign_key(&key) {
+                                    tracing::warn!(
+                                        "Failed to apply replicated foreign key '{}' on {}.{}: {}",
+                                        key.name,
+                                        entry.database,
+                                        entry.collection,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Operation::DropForeignKey => {
+                    if let Ok(db) = storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                            if let Err(e) = coll.apply_foreign_key_drop(&entry.document_key) {
+                                tracing::warn!(
+                                    "Failed to apply replicated foreign key drop '{}' on {}.{}: {}",
+                                    entry.document_key,
+                                    entry.database,
+                                    entry.collection,
+                                    e
+                                );
                             }
                         }
                     }

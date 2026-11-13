@@ -754,7 +754,9 @@ impl SyncWorker {
                                     Vec::new()
                                 };
 
-                            if let Err(e) = coll.upsert_batch(batch_data) {
+                            if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
+                                coll.upsert_batch(batch_data)
+                            }) {
                                 warn!(
                                     "apply_batch: upsert failed for {}.{}: {}",
                                     database, collection, e
@@ -792,7 +794,9 @@ impl SyncWorker {
                                     crate::server::auth::note_replicated_api_key_delete(key);
                                 }
                             }
-                            let _ = coll.delete_batch(keys_to_delete);
+                            let _ = crate::storage::foreign_keys::unchecked(|| {
+                                coll.delete_batch(keys_to_delete)
+                            });
                         }
                     }
                 }
@@ -870,9 +874,9 @@ impl SyncWorker {
                                     None
                                 };
 
-                            if let Err(e) =
+                            if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
                                 coll.upsert_batch(vec![(entry.document_key.clone(), doc)])
-                            {
+                            }) {
                                 warn!(
                                     "apply_entry: upsert failed for {}: {}",
                                     entry.document_key, e
@@ -887,7 +891,9 @@ impl SyncWorker {
             Operation::Delete => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
-                        let _ = coll.delete(&entry.document_key);
+                        let _ = crate::storage::foreign_keys::unchecked(|| {
+                            coll.delete(&entry.document_key)
+                        });
                     }
                 }
                 // Evict replicated _api_keys deletes from the in-memory auth
@@ -963,7 +969,9 @@ impl SyncWorker {
             }
             Operation::DeleteCollection => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    let _ = db.delete_collection(&entry.collection);
+                    let _ = crate::storage::foreign_keys::unchecked(|| {
+                        db.delete_collection(&entry.collection)
+                    });
                 }
             }
             Operation::TruncateCollection => {
@@ -976,13 +984,15 @@ impl SyncWorker {
                                     let physical_name =
                                         format!("{}_s{}", entry.collection, shard_id);
                                     if let Ok(shard_coll) = db.system_collection(&physical_name) {
-                                        let _ = shard_coll.truncate();
+                                        let _ = crate::storage::foreign_keys::unchecked(|| {
+                                            shard_coll.truncate()
+                                        });
                                     }
                                 }
                             }
                         }
                         // Truncate the logical collection
-                        let _ = coll.truncate();
+                        let _ = crate::storage::foreign_keys::unchecked(|| coll.truncate());
                     }
                 }
             }
@@ -1013,6 +1023,36 @@ impl SyncWorker {
                                     e
                                 );
                             }
+                        }
+                    }
+                }
+            }
+            Operation::CreateForeignKey => {
+                if let Some(ref data) = entry.document_data {
+                    let key: crate::storage::foreign_keys::ForeignKey =
+                        serde_json::from_slice(data).map_err(|e| {
+                            TransportError::DecodeError(format!("Invalid foreign key: {}", e))
+                        })?;
+                    if let Ok(db) = self.storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.system_collection(&entry.collection) {
+                            if let Err(e) = coll.apply_foreign_key(&key) {
+                                warn!(
+                                    "apply_entry: failed to declare foreign key '{}' on {}.{}: {}",
+                                    key.name, entry.database, entry.collection, e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Operation::DropForeignKey => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    if let Ok(coll) = db.system_collection(&entry.collection) {
+                        if let Err(e) = coll.apply_foreign_key_drop(&entry.document_key) {
+                            warn!(
+                                "apply_entry: failed to drop foreign key '{}' on {}.{}: {}",
+                                entry.document_key, entry.database, entry.collection, e
+                            );
                         }
                     }
                 }
@@ -1137,7 +1177,7 @@ impl SyncWorker {
                         &entry.database,
                         db.db_arc(),
                     ) {
-                        if let Err(e) = col.truncate() {
+                        if let Err(e) = crate::storage::foreign_keys::unchecked(|| col.truncate()) {
                             warn!(
                                 "apply_entry: columnar truncate failed for {}: {}",
                                 entry.collection, e
@@ -1229,7 +1269,9 @@ impl SyncWorker {
                     if !keyed.is_empty() && !is_node_local(&collection) {
                         if let Ok(db) = self.storage.get_database(&database) {
                             if let Ok(coll) = db.system_collection(&collection) {
-                                if let Err(e) = coll.upsert_batch(keyed) {
+                                if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
+                                    coll.upsert_batch(keyed)
+                                }) {
                                     warn!(
                                         "Full sync: upsert into {}.{} failed: {}",
                                         database, collection, e

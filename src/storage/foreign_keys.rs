@@ -213,9 +213,66 @@ fn build(db: &Arc<DB>, db_name: &str, epoch: u64) -> DbLinks {
     }
 }
 
+thread_local! {
+    /// How many [`unchecked`] calls this thread is inside.
+    static UNCHECKED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Run `apply` with foreign keys neither checked nor followed on this
+/// thread: for a write that another node already checked and that arrives
+/// here by replication. Entries can arrive out of order (a child before
+/// its parent), and a cascade arrives as its own entries; checking or
+/// cascading again would make this node refuse or repeat what the origin
+/// did. `apply` must not hand the work to another thread.
+pub fn unchecked<T>(apply: impl FnOnce() -> T) -> T {
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            UNCHECKED.with(|n| n.set(n.get().saturating_sub(1)));
+        }
+    }
+    UNCHECKED.with(|n| n.set(n.get() + 1));
+    let _leave = Leave;
+    apply()
+}
+
+pub(crate) fn is_unchecked() -> bool {
+    UNCHECKED.with(|n| n.get() > 0)
+}
+
+/// A write a delete cascaded into: the child's document as it now is, or
+/// `None` when it was deleted.
+#[derive(Debug, Clone)]
+pub struct Cascaded {
+    pub database: String,
+    pub collection: String,
+    pub key: String,
+    pub document: Option<Value>,
+}
+
+pub(crate) type CascadeObserver = Arc<dyn Fn(Vec<Cascaded>) + Send + Sync>;
+
+static OBSERVERS: Lazy<DashMap<usize, CascadeObserver>> = Lazy::new(DashMap::new);
+
+/// Have `observer` told of every write a delete cascades into on `db`,
+/// once it is stored: how they reach the replication log, which is fed
+/// above storage and sees only the delete that was asked for.
+pub(crate) fn observe_cascades(db: &Arc<DB>, observer: CascadeObserver) {
+    OBSERVERS.insert(Arc::as_ptr(db) as usize, observer);
+}
+
+pub(crate) fn cascade_observer(db: &Arc<DB>) -> Option<CascadeObserver> {
+    OBSERVERS
+        .get(&(Arc::as_ptr(db) as usize))
+        .map(|o| Arc::clone(&o))
+}
+
 /// What the collection `full_name` (`db:coll`) has to do with foreign keys;
 /// `None`, for nearly every collection, when nothing.
 pub(crate) fn links_of(db: &Arc<DB>, full_name: &str) -> Option<Arc<Links>> {
+    if is_unchecked() {
+        return None;
+    }
     let (db_name, _) = split(full_name);
     let id = db_id(db, db_name);
     let now = epoch();
@@ -235,6 +292,11 @@ pub(crate) fn links_of(db: &Arc<DB>, full_name: &str) -> Option<Arc<Links>> {
 /// in which case the caller moves the epoch once it is gone
 /// ([`bump_epoch`]).
 pub(crate) fn before_drop(db: &Arc<DB>, full_name: &str) -> DbResult<bool> {
+    // A replicated drop is applied whatever refers to the collection here,
+    // but what was read of it still has to be forgotten.
+    if is_unchecked() {
+        return Ok(true);
+    }
     let Some(links) = links_of(db, full_name) else {
         return Ok(false);
     };
@@ -395,6 +457,7 @@ pub(crate) fn register_engine(
 pub(crate) fn forget_engine(db: &Arc<DB>) {
     let id = Arc::as_ptr(db) as usize;
     RESOLVERS.remove(&id);
+    OBSERVERS.remove(&id);
     LINKS.retain(|(owner, _), _| *owner != id);
 }
 
@@ -529,6 +592,8 @@ fn max_cascade() -> usize {
 pub(crate) struct Checked {
     /// The operations, followed by those their deletes cascade into.
     pub operations: Vec<Operation>,
+    /// Where the cascaded ones start.
+    pub cascaded_from: usize,
     pub gates: Vec<HeldGate>,
 }
 
@@ -584,10 +649,12 @@ pub(crate) fn check_operations(
     }
     if databases.is_empty() {
         return Ok(Checked {
+            cascaded_from: operations.len(),
             operations,
             gates: Vec::new(),
         });
     }
+    let cascaded_from = operations.len();
 
     databases.sort_by(|a, b| a.0.cmp(&b.0));
     let mut gates = Vec::new();
@@ -745,5 +812,9 @@ pub(crate) fn check_operations(
         }
     }
 
-    Ok(Checked { operations, gates })
+    Ok(Checked {
+        operations,
+        cascaded_from,
+        gates,
+    })
 }

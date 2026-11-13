@@ -45,6 +45,11 @@ pub enum Operation {
     /// Payload is a JSON `IndexSpec` (create) or `IndexRef` (drop).
     CreateIndex,
     DropIndex,
+    /// Foreign key definitions (`storage::foreign_keys`). Payload is the
+    /// JSON `ForeignKey` (create) or `{"name": …}` (drop). The writes a
+    /// delete cascades into travel as ordinary `Update` / `Delete` entries.
+    CreateForeignKey,
+    DropForeignKey,
 }
 
 /// A single entry in the sync log

@@ -4,6 +4,8 @@ use super::system::AppState;
 use crate::error::DbError;
 use crate::storage::collection::references::{ForeignKeySpec, Orphans, ReferencedBy};
 use crate::storage::foreign_keys::ForeignKey;
+use crate::sync::log::LogEntry;
+use crate::sync::protocol::Operation;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -16,6 +18,21 @@ pub struct ForeignKeysResponse {
     pub collection: String,
     pub foreign_keys: Vec<ForeignKey>,
     pub referenced_by: Vec<ReferencedBy>,
+}
+
+fn log_definition(
+    state: &AppState,
+    database: &str,
+    collection: &str,
+    operation: Operation,
+    name: &str,
+    data: Option<Vec<u8>>,
+) {
+    if let Some(ref log) = state.replication_log {
+        let _ = log.append(LogEntry::new_op(
+            database, collection, operation, name, data,
+        ));
+    }
 }
 
 async fn blocking<T: Send + 'static>(
@@ -48,24 +65,21 @@ pub async fn create_foreign_key(
     Path((db_name, coll_name)): Path<(String, String)>,
     Json(req): Json<ForeignKeySpec>,
 ) -> Result<(StatusCode, Json<ForeignKey>), DbError> {
-    // A cascade is written by storage and never reaches the replication
-    // log: whoever reads it (a peer, an offline-sync client) would keep
-    // the children. The log is active exactly when it has had a reader.
-    if state
-        .replication_log
-        .as_ref()
-        .is_some_and(|log| log.is_active())
-    {
-        return Err(DbError::OperationNotSupported(
-            "Foreign keys are not supported on a node that replicates (its replication log is active)"
-                .to_string(),
-        ));
-    }
     let collection = state
         .storage
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
     let key = blocking(move || collection.add_foreign_key(req)).await?;
+    // Peers store the definition as declared here; the writes its deletes
+    // cascade into reach them as entries of their own (`observe_cascades`).
+    log_definition(
+        &state,
+        &db_name,
+        &coll_name,
+        Operation::CreateForeignKey,
+        &key.name,
+        serde_json::to_vec(&key).ok(),
+    );
     Ok((StatusCode::CREATED, Json(key)))
 }
 
@@ -78,7 +92,16 @@ pub async fn delete_foreign_key(
         .storage
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
-    blocking(move || collection.drop_foreign_key(&name)).await?;
+    let dropped = name.clone();
+    blocking(move || collection.drop_foreign_key(&dropped)).await?;
+    log_definition(
+        &state,
+        &db_name,
+        &coll_name,
+        Operation::DropForeignKey,
+        &name,
+        None,
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 

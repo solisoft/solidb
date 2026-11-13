@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 use solidb::scripting::ScriptStats;
 use solidb::server::routes::create_router;
 use solidb::storage::StorageEngine;
+use solidb::sync::log::SyncLog;
+use solidb::sync::protocol::Operation;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -16,13 +18,23 @@ use tower::ServiceExt;
 mod common;
 
 fn create_test_app() -> (axum::Router, TempDir, String) {
+    let (router, tmp_dir, token, _) = create_app(false);
+    (router, tmp_dir, token)
+}
+
+/// The app, with an active replication log when `replicating`.
+fn create_app(replicating: bool) -> (axum::Router, TempDir, String, Option<Arc<SyncLog>>) {
     let tmp_dir = TempDir::new().unwrap();
-    let engine = StorageEngine::new(tmp_dir.path().to_str().unwrap()).unwrap();
+    let engine = StorageEngine::new(tmp_dir.path().join("data").to_str().unwrap()).unwrap();
     engine.initialize().unwrap();
+    let log = replicating.then(|| {
+        let dir = tmp_dir.path().join("log");
+        Arc::new(SyncLog::new("n1".to_string(), dir.to_str().unwrap(), 64).unwrap())
+    });
     let router = create_router(
         engine.clone(),
         None,
-        None,
+        log.clone(),
         None,
         None,
         Arc::new(ScriptStats::default()),
@@ -31,7 +43,7 @@ fn create_test_app() -> (axum::Router, TempDir, String) {
         0,
     );
     let token = common::seed_user_token(&engine, "test_admin", &["admin"]);
-    (router, tmp_dir, token)
+    (router, tmp_dir, token, log)
 }
 
 async fn call(
@@ -219,4 +231,126 @@ async fn foreign_keys_over_http() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, listed) = call(&app, t, "GET", keys, None).await;
     assert_eq!(listed["foreign_keys"], json!([]));
+}
+
+/// On a node that replicates, the log holds the key's definition and every
+/// write a delete cascades into, after the delete that caused them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cascade_is_in_the_replication_log() {
+    let (app, _tmp, token, log) = create_app(true);
+    let log = log.unwrap();
+    let t = token.as_str();
+    call(
+        &app,
+        t,
+        "POST",
+        "/_api/database",
+        Some(json!({"name": "shop"})),
+    )
+    .await;
+    for name in ["customers", "orders", "notes"] {
+        call(
+            &app,
+            t,
+            "POST",
+            "/_api/database/shop/collection",
+            Some(json!({ "name": name })),
+        )
+        .await;
+    }
+    let docs = "/_api/database/shop/document";
+    call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/customers"),
+        Some(json!({"_key": "ann"})),
+    )
+    .await;
+    for (collection, field, on_delete) in [
+        ("orders", "customer", "cascade"),
+        ("notes", "about", "set_null"),
+    ] {
+        let (status, body) = call(
+            &app,
+            t,
+            "POST",
+            &format!("/_api/database/shop/collection/{collection}/foreign-keys"),
+            Some(json!({"field": field, "references": "customers", "on_delete": on_delete})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+    call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/orders"),
+        Some(json!({"_key": "o1", "customer": "ann"})),
+    )
+    .await;
+    call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/notes"),
+        Some(json!({"_key": "n1", "about": "ann"})),
+    )
+    .await;
+
+    let before = log.current_sequence();
+    let (status, body) = call(&app, t, "DELETE", &format!("{docs}/customers/ann"), None).await;
+    assert!(status.is_success(), "{body}");
+
+    let all = log.get_entries_after(0, 1000);
+    let definitions: Vec<_> = all
+        .iter()
+        .filter(|e| e.operation == Operation::CreateForeignKey)
+        .map(|e| (e.collection.as_str(), e.key.as_str()))
+        .collect();
+    assert_eq!(
+        definitions,
+        [("orders", "fk_customer"), ("notes", "fk_about")]
+    );
+
+    let caused: Vec<_> = log
+        .get_entries_after(before, 1000)
+        .into_iter()
+        .filter(|e| e.database == "shop")
+        .collect();
+    let mut seen: Vec<_> = caused
+        .iter()
+        .map(|e| (e.collection.clone(), e.key.clone(), e.operation))
+        .collect();
+    seen.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        seen,
+        [
+            (
+                "customers".to_string(),
+                "ann".to_string(),
+                Operation::Delete
+            ),
+            ("notes".to_string(), "n1".to_string(), Operation::Update),
+            ("orders".to_string(), "o1".to_string(), Operation::Delete),
+        ]
+    );
+    let note = caused.iter().find(|e| e.collection == "notes").unwrap();
+    let stored: Value = serde_json::from_slice(note.data.as_ref().unwrap()).unwrap();
+    assert_eq!(stored["about"], json!(null));
+    assert_eq!(stored["_key"], json!("n1"));
+
+    let (status, _) = call(
+        &app,
+        t,
+        "DELETE",
+        "/_api/database/shop/collection/orders/foreign-keys/fk_customer",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(log
+        .get_entries_after(0, 1000)
+        .iter()
+        .any(|e| e.operation == Operation::DropForeignKey && e.key == "fk_customer"));
 }

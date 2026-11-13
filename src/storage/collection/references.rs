@@ -65,6 +65,10 @@ impl Collection {
     /// What this collection has to do with foreign keys: `None` when
     /// nothing, which costs one atomic load and an uncontended read lock.
     pub(crate) fn fk(&self) -> Option<Arc<Links>> {
+        // A replicated write: see `foreign_keys::unchecked`.
+        if foreign_keys::is_unchecked() {
+            return None;
+        }
         let now = foreign_keys::epoch();
         {
             let cached = self.fk_links.read();
@@ -413,6 +417,35 @@ impl Collection {
             return Err(error);
         }
         Ok(key)
+    }
+
+    /// Store a constraint declared on another node, as it was declared
+    /// there: its index is created if missing, and the documents are not
+    /// checked (they may not all have arrived). Idempotent.
+    pub fn apply_foreign_key(&self, key: &ForeignKey) -> DbResult<()> {
+        let gate = foreign_keys::gate_of(&self.db, self.database_name());
+        let _gate = gate.enter(true)?;
+        let mut keys = self.foreign_keys();
+        keys.retain(|k| k.name != key.name && k.field != key.field);
+        if self.get_single_field_index_for_field(&key.field).is_none() {
+            self.create_index_with(
+                key.index.clone(),
+                vec![key.field.clone()],
+                IndexType::Persistent,
+                false,
+                true,
+            )?;
+        }
+        keys.push(key.clone());
+        self.store_foreign_keys(&keys)
+    }
+
+    /// Remove a constraint dropped on another node. Idempotent.
+    pub fn apply_foreign_key_drop(&self, name: &str) -> DbResult<()> {
+        match self.drop_foreign_key(name) {
+            Err(DbError::BadRequest(_)) => Ok(()),
+            other => other,
+        }
     }
 
     /// Remove the constraint `name`. Its index stays.

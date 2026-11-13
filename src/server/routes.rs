@@ -131,6 +131,36 @@ pub fn create_router(
     blob_rebalance_worker: Option<Arc<crate::sharding::BlobRebalanceWorker>>,
     _api_port: u16,
 ) -> Router {
+    // What a delete cascades into through a foreign key is written by
+    // storage, below the handlers that feed the replication log: have it
+    // logged as the writes it is, after the delete that caused it.
+    if let Some(log) = replication_log.clone() {
+        storage.observe_cascades(move |writes| {
+            use crate::sync::log::LogEntry;
+            use crate::sync::protocol::Operation;
+            let entries = writes
+                .into_iter()
+                .map(|write| match write.document {
+                    Some(document) => LogEntry::new_op(
+                        write.database,
+                        write.collection,
+                        Operation::Update,
+                        write.key,
+                        serde_json::to_vec(&document).ok(),
+                    ),
+                    None => LogEntry::new_op(
+                        write.database,
+                        write.collection,
+                        Operation::Delete,
+                        write.key,
+                        None,
+                    ),
+                })
+                .collect();
+            log.append_batch(entries);
+        });
+    }
+
     // Initialize Auth (create default admin if needed)
     tracing::info!("Initializing authentication...");
 

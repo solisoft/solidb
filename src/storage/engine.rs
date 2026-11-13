@@ -1194,6 +1194,16 @@ impl StorageEngine {
         })
     }
 
+    /// Have `observer` told of every write a delete cascades into through a
+    /// foreign key, once it is stored (`storage::foreign_keys`). The server
+    /// uses it to put those writes in the replication log.
+    pub fn observe_cascades(
+        &self,
+        observer: impl Fn(Vec<super::foreign_keys::Cascaded>) + Send + Sync + 'static,
+    ) {
+        super::foreign_keys::observe_cascades(&self.db, Arc::new(observer));
+    }
+
     /// Whether commits can be handed to the group committer: the engine
     /// must be able to write several commits' batches as one.
     pub fn groups_commits(&self) -> bool {

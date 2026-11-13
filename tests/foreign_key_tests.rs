@@ -672,3 +672,109 @@ fn a_field_can_refer_by_id() {
     assert_eq!(notes.get("n1").unwrap().data["about"], json!(null));
     assert_eq!(notes.get("n2").unwrap().data["about"], json!(null));
 }
+
+#[test]
+fn what_a_delete_cascades_into_is_reported() {
+    use std::sync::Mutex;
+    let s = shop(OnDelete::Cascade);
+    let db = s.engine.get_database("app").unwrap();
+    db.create_collection("notes".to_string(), None).unwrap();
+    let notes = db.get_collection("notes").unwrap();
+    notes
+        .add_foreign_key(ForeignKeySpec::new("about", "customers", OnDelete::SetNull))
+        .unwrap();
+    s.orders
+        .insert(json!({"_key": "o1", "customer": "alice"}))
+        .unwrap();
+    notes
+        .insert(json!({"_key": "n1", "about": "alice"}))
+        .unwrap();
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    s.engine.observe_cascades(move |writes| {
+        sink.lock().unwrap().extend(writes);
+    });
+
+    // Nothing cascades: nothing is reported.
+    s.customers.delete("bob").unwrap();
+    assert!(seen.lock().unwrap().is_empty());
+
+    s.customers.delete("alice").unwrap();
+    let mut writes: Vec<_> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|w| (w.collection.clone(), w.key.clone(), w.document.clone()))
+        .collect();
+    writes.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(writes.len(), 2);
+    // The note as it is stored now, the order as deleted. The customer's own
+    // delete is the caller's to log.
+    assert_eq!(
+        (writes[0].0.as_str(), writes[0].1.as_str()),
+        ("notes", "n1")
+    );
+    let note = writes[0].2.as_ref().unwrap();
+    assert_eq!(note["about"], json!(null));
+    assert_eq!(note["_rev"], json!(notes.get("n1").unwrap().revision()));
+    assert_eq!(
+        (writes[1].0.as_str(), writes[1].1.as_str(), &writes[1].2),
+        ("orders", "o1", &None)
+    );
+}
+
+#[test]
+fn a_replicated_write_is_neither_checked_nor_followed() {
+    use solidb::storage::foreign_keys::unchecked;
+    let s = shop(OnDelete::Cascade);
+    s.orders
+        .insert(json!({"_key": "o1", "customer": "alice"}))
+        .unwrap();
+
+    // A child whose parent has not arrived yet, a parent whose children's
+    // deletes arrive as entries of their own.
+    unchecked(|| {
+        s.orders
+            .upsert_batch(vec![("o2".to_string(), json!({"customer": "later"}))])
+            .unwrap();
+        s.orders
+            .insert_or_replace(json!({"_key": "o3", "customer": "later"}))
+            .unwrap();
+        s.customers.delete("alice").unwrap();
+    });
+    assert!(s.orders.get("o1").is_ok());
+    assert_eq!(s.orders.count(), 3);
+
+    // Outside, the key is enforced as before.
+    assert!(is_violation(
+        &s.orders.insert(json!({"_key": "o4", "customer": "later"}))
+    ));
+    s.customers.delete("bob").unwrap();
+}
+
+#[test]
+fn a_key_declared_elsewhere_is_stored_as_declared() {
+    let s = shop(OnDelete::Restrict);
+    let key = s.orders.foreign_keys().remove(0);
+    let db = s.engine.get_database("app").unwrap();
+    db.create_collection("copies".to_string(), None).unwrap();
+    let copies = db.get_collection("copies").unwrap();
+    // Documents that may be ahead of their parents are not a reason to
+    // refuse a definition another node accepted.
+    copies
+        .insert(json!({"_key": "c1", "customer": "not-here-yet"}))
+        .unwrap();
+
+    copies.apply_foreign_key(&key).unwrap();
+    copies.apply_foreign_key(&key).unwrap();
+    assert_eq!(copies.foreign_keys(), std::slice::from_ref(&key));
+    assert!(copies.get_index_for_field("customer").is_some());
+    assert!(is_violation(
+        &copies.insert(json!({"_key": "c2", "customer": "nobody"}))
+    ));
+
+    copies.apply_foreign_key_drop(&key.name).unwrap();
+    copies.apply_foreign_key_drop(&key.name).unwrap();
+    assert!(copies.foreign_keys().is_empty());
+}
