@@ -75,10 +75,10 @@ class BlogController < Controller
         "display_date": "November 13, 2026",
         "summary": "SoliDB had no foreign keys. A collection can now declare one: a reference to a missing "
         + "document is refused on every write path, and deleting a parent is refused, cascades or clears "
-        + "the field, in one atomic write. How it holds when writes race, what an insert pays for it, "
-        + "and where it stops.",
-        "tags": ["Correctness", "Storage"],
-        "read_minutes": 7
+        + "the field, in one atomic write, edges included. How it holds when writes race, what an insert "
+        + "pays for it (5 to 7%, where PostgreSQL pays 12 to 26% on the same benchmark), and where it stops.",
+        "tags": ["Correctness", "Storage", "Benchmarks"],
+        "read_minutes": 9
       },
       {
         "slug": "sdbql-and-sql-side-by-side",

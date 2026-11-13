@@ -37,7 +37,7 @@
               <li>the parent collection cannot be dropped, nor truncated while the child holds documents.</li>
             </ul>
             <p class="text-gray-300 leading-relaxed">
-              The constraint is enforced by storage, so it holds for every writer: the document API, SDBQL, the native driver, Lua scripts, imports and transactions. A collection with no foreign key, and that no key refers to, pays nothing for the feature.
+              The constraint is enforced by storage, so it holds for every writer: the document API, SDBQL, the native driver, Lua scripts, imports and transactions. The field holds the parent's <code class="text-indigo-300">_key</code>, or its <code class="text-indigo-300">_id</code>, which is how an edge's <code class="text-indigo-300">_from</code> and <code class="text-indigo-300">_to</code> are covered (<a href="#edges" class="text-indigo-400 hover:text-indigo-300">below</a>). A collection with no foreign key, and that no key refers to, pays nothing for the feature.
             </p>
           </div>
         </div>
@@ -66,6 +66,7 @@
                   <tr><td class="py-2 pr-4"><code class="text-indigo-300">field</code></td><td class="py-2">A top-level field of the child that is not a system attribute. Its value is the parent's <code class="text-indigo-300">_key</code> (a string), or <code class="text-indigo-300">null</code>.</td></tr>
                   <tr><td class="py-2 pr-4"><code class="text-indigo-300">references</code></td><td class="py-2">The parent collection, in the same database. It may be the child itself (a tree).</td></tr>
                   <tr><td class="py-2 pr-4"><code class="text-indigo-300">on_delete</code></td><td class="py-2"><code class="text-indigo-300">restrict</code> (the default), <code class="text-indigo-300">cascade</code> or <code class="text-indigo-300">set_null</code>.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">by</code></td><td class="py-2"><code class="text-indigo-300">key</code> (the default) or <code class="text-indigo-300">id</code>: whether the field holds the parent's <code class="text-indigo-300">_key</code> or its <code class="text-indigo-300">_id</code>.</td></tr>
                   <tr><td class="py-2 pr-4"><code class="text-indigo-300">name</code></td><td class="py-2">Optional; <code class="text-indigo-300">fk_&lt;field&gt;</code> by default. One key per field.</td></tr>
                 </tbody>
               </table>
@@ -84,6 +85,35 @@
             </div>
             <p class="text-sm text-gray-400">
               <code class="text-indigo-300">GET .../collection/{name}/foreign-keys</code> lists a collection's keys (<code class="text-indigo-300">foreign_keys</code>) and the keys of other collections that refer to it (<code class="text-indigo-300">referenced_by</code>). <code class="text-indigo-300">DELETE .../foreign-keys/{name}</code> removes a key and leaves its index.
+            </p>
+            <p class="text-sm text-gray-400">
+              The native driver has the same four operations (<code class="text-indigo-300">list_foreign_keys</code>, <code class="text-indigo-300">create_foreign_key</code>, <code class="text-indigo-300">delete_foreign_key</code>, <code class="text-indigo-300">check_foreign_key</code>), which the Rust client exposes under those names. The admin console shows and edits a collection's keys in its index panel.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="edges" class="scroll-mt-24">
+        <div class="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-xl border border-emerald-500/20 overflow-hidden">
+          <div class="p-5 border-b border-emerald-500/20 bg-emerald-500/5">
+            <h3 class="text-lg font-bold text-emerald-300">Edges, and references by <code>_id</code></h3>
+          </div>
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-400">
+              With <code class="text-indigo-300">"by": "id"</code> the field holds the parent's <code class="text-indigo-300">_id</code>, with or without its database: <code class="text-indigo-300">customers/ann</code> and <code class="text-indigo-300">shop:customers/ann</code> name the same document. A value that names another collection or another database is refused.
+            </p>
+            <p class="text-sm text-gray-400">
+              That is the form of an edge's ends, and the default for them: on an edge collection, <code class="text-indigo-300">_from</code> and <code class="text-indigo-300">_to</code> can each carry a key, served by the indexes every edge collection has.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X POST .../collection/follows/foreign-keys \
+  -d '{"field": "_from", "references": "customers", "on_delete": "cascade"}'
+
+{"name": "fk_from", "field": "_from", "by": "id", "references": "customers",
+ "on_delete": "cascade", "index": "_edge_from_idx"}</code></pre>
+            </div>
+            <p class="text-sm text-gray-400">
+              An edge whose end names a vertex that is not there is then refused, and deleting a vertex deletes its edges (<code class="text-indigo-300">cascade</code>) or is refused while it has some (<code class="text-indigo-300">restrict</code>). <code class="text-indigo-300">set_null</code> is not offered for an edge's ends: an edge without one is not an edge. A key names one collection, so an edge collection that links vertices of several collections cannot declare one on that end.
             </p>
           </div>
         </div>
@@ -130,6 +160,25 @@
         </div>
       </section>
 
+      <section id="replication" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Replication, dumps and restores</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              <strong class="text-white">Replication.</strong> A key's definition is replicated like an index's. The node that receives a write checks it; the other nodes apply it as it was written, without checking it again, because entries can arrive out of order (a child before its parent). A node that joins a cluster receives the keys with the collections, in its full sync. The documents a delete cascades into are replicated as writes of their own, after the delete, and reach <a href="/docs/offline-sync" class="text-indigo-400 hover:text-indigo-300">offline-sync</a> clients the same way. Two nodes that accept conflicting writes at the same moment (one inserts a child, the other deletes its parent) can still end with an orphan: the check endpoint finds them.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              <strong class="text-white">Dump and restore.</strong> <code class="text-indigo-300">solidb-dump</code> writes each key with its collection. <code class="text-indigo-300">solidb-restore</code> declares the keys once every document is in, so the order of the collections in a dump does not matter; a key the restored data breaks is reported as a failed item and left out. With <code class="text-indigo-300">--drop</code>, the keys that refer to a dropped collection are set aside and declared again at the end.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              <strong class="text-white">Imports.</strong> An import into a collection that has a key is checked document by document: load the parents first.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section id="limits" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <div class="p-8 border-b border-white/5 bg-white/5">
@@ -137,10 +186,9 @@
           </div>
           <div class="p-8 space-y-4">
             <ul class="list-disc pl-6 space-y-2 text-gray-300">
-              <li><strong class="text-white">One node.</strong> A key cannot be declared on a node whose replication log is active, that is, one that has had a cluster peer or an <a href="/docs/offline-sync" class="text-indigo-400 hover:text-indigo-300">offline-sync</a> client (<code class="text-indigo-300">501</code>), nor on a sharded collection, and a collection that takes part in a key cannot be sharded. A cascade is written by storage and is not in the replication log: a reader that appears after the key was declared does not receive the children's deletes.</li>
-              <li><strong class="text-white">Document and edge collections</strong> of one database; no system collection. The reference is the parent's <code class="text-indigo-300">_key</code>, not its <code class="text-indigo-300">_id</code>: an edge's <code class="text-indigo-300">_from</code> and <code class="text-indigo-300">_to</code> cannot carry a key yet.</li>
+              <li><strong class="text-white">No sharded collections.</strong> A key cannot be declared on a sharded collection, and a collection that takes part in a key cannot be sharded: a reference is checked against the documents of one node.</li>
+              <li><strong class="text-white">Document and edge collections</strong> of one database; no system collection. A key names one parent collection.</li>
               <li><strong class="text-white">Deletes in a referenced collection are exclusive.</strong> While one runs, writes to the collections of that database that take part in a foreign key wait. Inserts and updates run concurrently as before.</li>
-              <li><strong class="text-white">Dumps.</strong> <code class="text-indigo-300">solidb-dump</code> does not carry the keys: declare them again after a restore, which also checks the restored data.</li>
               <li><strong class="text-white">Declare on quiet collections.</strong> A write to the child that was already running when the key was declared is not checked; run the check endpoint afterwards if writers were active.</li>
             </ul>
           </div>

@@ -525,13 +525,51 @@ Rules that keep it sound:
 - A cascade reaches the other collections through the engine's own handle
   caches (`foreign_keys::resolve`), never a handle built aside: counts,
   change events and vector indexes live on the cached one.
-- Cascades are not in the replication log. Declaring a key is refused while
-  the log is active, and on sharded collections; lifting that means logging
-  the cascaded writes.
+- The field holds the parent's `_key`, or with `by: "id"` its `_id` in
+  either form (`coll/key`, `db:coll/key`) — the default for an edge's
+  `_from` / `_to`. `foreign_keys::reference` is the one place that reads a
+  reference out of a document, and `referring_values` the one that says
+  which index values name a parent: a new form goes in both.
+- **Replication.** Storage reports what a delete cascaded into
+  (`StorageEngine::observe_cascades`; `create_router` appends those writes
+  to the replication log, which is otherwise fed above storage). A key's
+  definition travels as `CreateForeignKey` / `DropForeignKey`
+  (`Collection::apply_foreign_key`). Every write a replication path applies
+  must run inside `foreign_keys::unchecked`, which makes the collection
+  behave as if it had no key: entries arrive out of order, and a cascade
+  arrives as its own entries. A new apply path that forgets it will refuse
+  or repeat what the origin did.
+- A full sync sends each collection's foreign keys and indexes
+  (`SyncMessage::FullSyncDefinitions`, `Collection::index_specs`): a
+  definition made while the replication log was deferred is in no log.
+- Sharded collections are refused (`num_shards > 0`; a stored configuration
+  with no shard, which setting a collection's properties leaves behind, is
+  not sharding).
+- `solidb-dump` writes `foreign_key` records and `solidb-restore` declares
+  them after the data, releasing the keys around a `--drop`.
 
 | Variable | Default | Effect |
 |---|---|---|
 | `SOLIDB_FK_MAX_CASCADE` | 100000 | Documents one delete may cascade into (deleted or nulled) before it is refused. |
+
+### What a joining node replays after its full sync
+
+A node that joins asks one peer for a full sync, then pulls every peer's
+log from sequence 0. The full sync ends with `SyncMessage::FullSyncOrigins`:
+how far the serving node had applied each origin's log, its own included,
+taken before it read the first document. The joining node keeps it as a
+floor per origin (`SyncState::raise_snapshot_floor`, persisted) and does not
+apply a *document* write (insert, update, delete) at or below it
+(`is_duplicate_document`): those are in the documents it was sent. Without
+it, an insert from one peer's log brought back a document another peer had
+deleted before the snapshot (card #844).
+
+Only document writes are skipped. Definitions, blob chunks and columnar rows
+are not in a full sync's documents and are still replayed from the logs, so
+a new operation that the full sync does carry belongs in that check, and one
+it does not carry must stay out of it. `FullSyncDefinitions` and
+`FullSyncOrigins` are appended to `SyncMessage` (bincode identifies variants
+by position): an older requester logs an unexpected message and carries on.
 
 ### Three tiers of protected collections
 

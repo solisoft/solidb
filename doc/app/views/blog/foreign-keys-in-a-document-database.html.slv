@@ -4,7 +4,7 @@
   <h1><%= post["title"] %></h1>
   <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
   <p class="post-lede">Two days ago we wrote that SoliDB has no foreign keys, and that nothing stops an order from naming a customer that is gone. It was the one line of that comparison with SQL where the answer was a plain &ldquo;No&rdquo;. A collection can now declare one. This post shows what it does, how it stays true when writes race, what it costs, and where it stops.</p>
-  <p class="post-note">The feature is in the main branch and not in a release yet: it will be in the one after 2.9.5. Every result on this page was run on November 13, 2026, on a throwaway server built from that branch.</p>
+  <p class="post-note">The feature is not in a release yet: it will be in the one after 2.9.5. Every result on this page was run on November 13, 2026, on servers built from its branch; the benchmark's raw results are in the repository, under <code>benchmarks/compare/results/2026-11-13-fk</code>.</p>
 </header>
 
 <div class="post-body wrap-narrow">
@@ -17,6 +17,7 @@
     <li><a href="#delete">Deleting a parent</a></li>
     <li><a href="#race">When writes race</a></li>
     <li><a href="#cost">What it costs</a></li>
+    <li><a href="#edges">Edges</a></li>
     <li><a href="#limits">Where it stops</a></li>
   </ol>
 </nav>
@@ -66,26 +67,42 @@
 
 <section id="cost"><h2>What it costs</h2>
 <p>A collection with no key, and that no key refers to, does not take the lock or read anything more than before: the cost is one check of a cached flag per write.</p>
-<p>With a key, each write that sets the reference reads the parent once. We inserted 200,000 orders for one customer with a single SDBQL statement, three times, into a collection with an index on the field and into one with the key (which has the same index):</p>
+<p>With a key, each write that sets the reference reads the parent once. We measured it with <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb">the harness of the comparison post</a>, on the same machine and limits: a million orders that each name one of 100,000 customers, loaded and then written by 1 and by 32 clients, with and without a foreign key from the order to its customer. PostgreSQL 18.6 got the same treatment, on real columns, with <code>references customers</code>. Both run without an fsync per commit, as in that post. Each figure is the median of three runs of 20 seconds.</p>
 <table>
-  <thead><tr><th>200,000 inserts, one statement</th><th>Run 1</th><th>Run 2</th><th>Run 3</th></tr></thead>
+  <thead><tr><th>Operations per second</th><th>SoliDB</th><th>SoliDB, with the key</th><th>PostgreSQL</th><th>PostgreSQL, with the key</th></tr></thead>
   <tbody>
-    <tr><td>Index on the field</td><td>836 ms</td><td>851 ms</td><td>847 ms</td></tr>
-    <tr><td>Foreign key</td><td>1,106 ms</td><td>1,091 ms</td><td>1,161 ms</td></tr>
+    <tr><td>Load, 8 connections</td><td>468,173</td><td>437,413 (&minus;7%)</td><td>297,445</td><td>223,249 (&minus;25%)</td></tr>
+    <tr><td>Insert, 1 client</td><td>41,402</td><td>39,402 (&minus;5%)</td><td>33,001</td><td>29,087 (&minus;12%)</td></tr>
+    <tr><td>Insert, 32 clients</td><td>159,927</td><td>150,174 (&minus;6%)</td><td>141,266</td><td>104,942 (&minus;26%)</td></tr>
+    <tr><td>Update of another field, 1 client</td><td>39,671</td><td>39,254</td><td>25,489</td><td>25,050</td></tr>
+    <tr><td>Update of another field, 32 clients</td><td>177,374</td><td>181,767</td><td>103,409</td><td>91,273 (&minus;12%)</td></tr>
   </tbody>
 </table>
-<p>About 1.3 microseconds more per document, a third on top of an insert that does little else. This is one workstation with the server in its small <code>--dev</code> profile, not the machine our published benchmarks run on, so take the ratio and not the numbers. It has not been run under concurrent load yet, where the shared lock is the thing to watch.</p>
-<p>The other cost is on deletes. A delete in a referenced collection waits for the writes in progress on the linked collections of its database, and holds the others back while it runs. A workload that deletes parents all day will feel it; one that mostly inserts and updates will not.</p>
+<p>The key costs SoliDB 5 to 7% on the writes that set the reference, and nothing measurable on an update that leaves it alone. The three runs of an insert at 32 clients spread from 125,000 to 172,000 per second with or without the key, so the 6% there is inside the noise of that series; the 5% at one client is not, its runs differ by 1%. PostgreSQL pays 12 to 26%. Its check takes a row lock on the customer and runs as a trigger per row; ours is one read of the customer under a lock shared by the whole database.</p>
+<p>That shared lock is the other side. A delete in a referenced collection takes it alone: it waits for the writes in progress on the linked collections of its database and holds the others back while it runs, where PostgreSQL locks only the rows involved. We have not measured a workload that deletes parents while it inserts children; one that does so all day will feel it, one that mostly inserts and updates will not.</p>
+</section>
+
+<section id="edges"><h2>Edges</h2>
+<p>A graph has the same problem with a different shape. An edge's <code>_from</code> and <code>_to</code> hold the <code>_id</code> of a vertex, and nothing checked that the vertex existed, or removed the edge when it went. A key can refer by <code>_id</code>, in both of its forms (<code>customers/ann</code> and <code>shop:customers/ann</code>), and that is the default for an edge's two ends:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> http</div><pre>POST /_api/database/shop/collection/follows/foreign-keys
+{"field": "_from", "references": "customers", "on_delete": "cascade"}
+
+{"name": "fk_from", "field": "_from", "by": "id", "references": "customers",
+ "on_delete": "cascade", "index": "_edge_from_idx"}</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">INSERT</span> {_from: <span class="tok-str">"customers/ann"</span>, _to: <span class="tok-str">"customers/zed"</span>} <span class="tok-kw">INTO</span> follows
+
+409  Foreign key violation: '_to' in follows refers to 'zed',
+     which is not a document of 'customers'</pre></div>
+<p>With <code>cascade</code> on both ends, deleting a customer deletes the edges that touch it, in the same write. The key uses the two indexes every edge collection already has.</p>
 </section>
 
 <section id="limits"><h2>Where it stops</h2>
 <ul>
-<li><strong>One node.</strong> A key cannot be declared on a sharded collection or on a node whose replication log is in use. A cascade is written inside storage and is not in that log, so a replica would keep the children.</li>
-<li><strong>The reference is a <code>_key</code>.</strong> An edge's <code>_from</code> and <code>_to</code> hold an <code>_id</code> and cannot carry a key yet, so a deleted vertex still leaves its edges.</li>
-<li><strong>Dumps do not carry keys.</strong> After <code>solidb-restore</code>, declare them again; that also checks the restored data.</li>
-<li><strong>The clients do not know about it yet.</strong> The endpoints are HTTP only, and the Soli ORM's <code>belongs_to</code> still does its own work instead of declaring a key.</li>
+<li><strong>Not on sharded collections.</strong> A reference is checked against the documents of one node. On a node that replicates, the node that takes a write checks it and the others apply it as written; what a delete cascades into is replicated as writes of its own. Two nodes that accept conflicting writes at the same moment can still leave an orphan, which the check endpoint finds.</li>
+<li><strong>A key names one collection.</strong> An edge collection that links vertices of several collections cannot declare one on that end.</li>
+<li><strong>Most clients do not know about it yet.</strong> The HTTP endpoints, the driver's commands, the Rust client and the admin console do. The other client libraries have no method for it, and the Soli ORM's <code>belongs_to</code> still does its own work instead of declaring a key.</li>
 </ul>
-<p>Each of these is a card on our board. The reference is in <a href="/docs/foreign-keys">the foreign keys guide</a>.</p>
+<p><code>solidb-dump</code> writes the keys and <code>solidb-restore</code> declares them after the data, so a dump restores in any order. The reference is in <a href="/docs/foreign-keys">the foreign keys guide</a>.</p>
 </section>
 </div>
 <footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
