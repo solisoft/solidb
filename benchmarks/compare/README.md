@@ -31,6 +31,20 @@ A second harness, the bank (`bank.sh`, [below](#transactions-the-bank-banksh)), 
 - `surreal-durable`: `sync=every`, SurrealDB's default.
 - SoliDB on RocksDB has no per-write fsync mode, so it has no durable line.
 
+**Foreign keys.** `solidb-solistore-fk` and `postgres-typed-fk` declare that an order's `customer_id` refers to a customer (SoliDB: `create_foreign_key`, served by `idx_customer_id`; PostgreSQL: `FOREIGN KEY (customer_id) REFERENCES customers (key) ON DELETE RESTRICT`) and run only the writes: `load`, `insert`, `update`. They are not in `all`. The line to compare each with is the same configuration without `-fk`, restricted to the same phases: `PHASES=load,insert,update ./run.sh solidb-solistore postgres-typed`. `update` changes an order's status, not its customer, so it shows what a key costs a write that does not touch the reference.
+
+`results/2026-11-13-fk/` holds that comparison: SoliDB on a build of the `feat/foreign-keys` branch (2.9.5 plus foreign keys, `--features engine-solistore`, the manifest's release profile), PostgreSQL 18.6, the four configurations one after the other on rocky-build2 with nothing else running. Medians of three runs:
+
+| Operations per second | `solidb-solistore` | `-fk` | `postgres-typed` | `-fk` |
+|---|---|---|---|---|
+| load, 8 connections | 468,173 | 437,413 | 297,445 | 223,249 |
+| insert, c=1 | 41,402 | 39,402 | 33,001 | 29,087 |
+| insert, c=32 | 159,927 | 150,174 | 141,266 | 104,942 |
+| update, c=1 | 39,671 | 39,254 | 25,489 | 25,050 |
+| update, c=32 | 177,374 | 181,767 | 103,409 | 91,273 |
+
+The runs of `insert` at c=32 spread widely on both engines (SoliDB: 131,537 to 172,579 without the key, 124,856 to 169,197 with), falling from the first run to the third; read that line as "no difference shown". Not measured: parent deletes running beside child inserts, which is where SoliDB's per-database gate would show.
+
 **Configuration beyond defaults:**
 - **PostgreSQL:** `shared_buffers=4GB`, `effective_cache_size=12GB`, `max_connections=200`, `--shm-size 1g`.
 - **ArangoDB:** told the container's memory and cores (`ARANGODB_OVERRIDE_DETECTED_*`). Without that, it sizes its caches from the host's.

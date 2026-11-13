@@ -96,6 +96,11 @@ const TYPED: Sql = Sql {
     ],
 };
 
+/// `--fk`: an order's customer must exist. `ON DELETE RESTRICT` is what
+/// SoliDB's default (`restrict`) does.
+const FOREIGN_KEY: &str = "ALTER TABLE orders ADD CONSTRAINT fk_customer \
+     FOREIGN KEY (customer_id) REFERENCES customers (key) ON DELETE RESTRICT";
+
 fn sql(s: &Settings) -> &'static Sql {
     if s.typed {
         &TYPED
@@ -162,6 +167,12 @@ impl Engine for Postgres {
             .await?;
         for stmt in sql(&self.s).schema {
             c.batch_execute(stmt).await?;
+        }
+        if self.s.fk {
+            if !self.s.typed {
+                return err("--fk needs --typed: a jsonb field cannot carry a foreign key");
+            }
+            c.batch_execute(FOREIGN_KEY).await?;
         }
         Ok(())
     }
@@ -347,6 +358,9 @@ impl Engine for Postgres {
         ];
         for stmt in q.schema {
             v.push(("schema", stmt.to_string()));
+        }
+        if s.fk {
+            v.push(("schema", FOREIGN_KEY.to_string()));
         }
         v
     }

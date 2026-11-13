@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! solidb-compare --engine solidb|postgres|mongo|arango|surreal --addr HOST:PORT
-//!     [--password P] [--label NAME] [--typed] [--durable]
+//!     [--password P] [--label NAME] [--typed] [--durable] [--fk]
 //!     [--docs 1000000] [--customers 100000] [--concurrency 1,32]
 //!     [--warm 5] [--secs 20] [--runs 3] [--phases load,get,...]
 //!     [--db-cgroup /sys/fs/cgroup/...] [--after-load CMD] [--after-all CMD]
@@ -69,7 +69,7 @@ fn parse_args() -> Args {
     let mut i = 0;
     while i < argv.len() {
         let a = argv[i].trim_start_matches("--").to_string();
-        if matches!(a.as_str(), "typed" | "durable" | "resume") {
+        if matches!(a.as_str(), "typed" | "durable" | "resume" | "fk") {
             flags.push(a);
             i += 1;
         } else {
@@ -91,6 +91,7 @@ fn parse_args() -> Args {
             password: one("password").unwrap_or_else(|| "bench".into()),
             durable: flags.iter().any(|f| f == "durable"),
             typed: flags.iter().any(|f| f == "typed"),
+            fk: flags.iter().any(|f| f == "fk"),
         },
         engine,
         docs: num("docs", 1_000_000),
@@ -450,7 +451,7 @@ async fn run<E: Engine>(a: &Args) -> Res<Value> {
             "engine": a.engine,
             "label": a.label,
             "server_version": eng.version().await?,
-            "settings": {"durable": a.settings.durable, "typed": a.settings.typed},
+            "settings": {"durable": a.settings.durable, "typed": a.settings.typed, "fk": a.settings.fk},
             "docs": a.docs,
             "customers": a.customers,
             "concurrency": a.concurrency,

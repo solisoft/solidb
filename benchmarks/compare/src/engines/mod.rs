@@ -29,6 +29,9 @@ pub struct Settings {
     pub durable: bool,
     /// postgres only: real columns instead of one jsonb column.
     pub typed: bool,
+    /// Declare that an order's `customer_id` refers to a customer: a foreign
+    /// key, on the engines that have one (SoliDB, PostgreSQL with `typed`).
+    pub fk: bool,
 }
 
 #[derive(Clone, Copy)]

@@ -1,0 +1,347 @@
+{
+  "engine": "solidb",
+  "label": "solidb-solistore-fk",
+  "server_version": "see meta.server_version",
+  "settings": {
+    "durable": false,
+    "typed": false,
+    "fk": true
+  },
+  "docs": 1000000,
+  "customers": 100000,
+  "concurrency": [
+    1,
+    32
+  ],
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 3,
+  "queries": [
+    {
+      "scenario": "get",
+      "query": "driver Get {database, collection: \"orders\", key}"
+    },
+    {
+      "scenario": "update",
+      "query": "driver Update {collection: \"orders\", key, document: {status}, merge: true}"
+    },
+    {
+      "scenario": "insert",
+      "query": "driver Insert {collection: \"orders\", key, document}"
+    },
+    {
+      "scenario": "load",
+      "query": "driver BulkInsert {collection, documents: [1,000 documents]}"
+    },
+    {
+      "scenario": "by_customer",
+      "query": "FOR o IN orders FILTER o.customer_id == @c RETURN o"
+    },
+    {
+      "scenario": "recent",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 RETURN o"
+    },
+    {
+      "scenario": "join",
+      "query": "FOR o IN orders FILTER o.created_at >= @lo AND o.created_at < @hi SORT o.created_at DESC LIMIT 20 LET c = DOCUMENT(CONCAT(\"customers/\", o.customer_id)) RETURN {order: o._key, amount: o.amount, name: c.name, tier: c.tier}"
+    },
+    {
+      "scenario": "aggregate",
+      "query": "FOR o IN orders COLLECT status = o.status AGGREGATE n = COUNT(), total = SUM(o.amount) RETURN {status, n, total}"
+    },
+    {
+      "scenario": "indexes",
+      "query": "persistent indexes on orders: customer_id, created_at, status"
+    }
+  ],
+  "meta": {
+    "image": "localhost/solidb-bench:fk",
+    "image_digest": "sha256:3a213a590235c6a09d8449fc2b662d288c688aa0c56339aa95f94499bcc122c7",
+    "server_version": "solidb 2.9.5",
+    "db_memory": "16g",
+    "host_memory": "125 GB",
+    "container": "sudo podman run -d --name bench-db --network host --cpuset-cpus 0-3,16-19 --memory 16g --memory-swap 16g -e SOLIDB_ADMIN_PASSWORD=bench -e SOLIDB_PORT=6800 -v /home/rocky/bench/data/solidb-solistore-fk:/data:Z,U -e SOLIDB_ENGINE=solistore localhost/solidb-bench:fk",
+    "host_kernel": "6.12.0-211.56.1.el10_2.0.1.x86_64",
+    "client_cpus": "8-15,24-31",
+    "host_cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "db_cpus": "0-3,16-19"
+  },
+  "load": [
+    {
+      "phase": "customers",
+      "result": {
+        "docs": 100000,
+        "loaders": 8,
+        "secs": 0.059248974,
+        "docs_per_sec": 1687793.0
+      }
+    },
+    {
+      "phase": "orders_1",
+      "result": {
+        "docs": 100000,
+        "loaders": 1,
+        "secs": 0.614841735,
+        "docs_per_sec": 162643.0
+      }
+    },
+    {
+      "phase": "orders_8",
+      "result": {
+        "docs": 900000,
+        "loaders": 8,
+        "secs": 2.057552649,
+        "docs_per_sec": 437413.0
+      }
+    }
+  ],
+  "series": [
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 792274,
+      "secs": 20.000768689,
+      "ops_per_sec": 39612.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.38598516487247997,
+      "db_cpu_cores": 0.7222901891738387,
+      "load_avg_before": 11.35,
+      "p50_us": 24,
+      "p90_us": 26,
+      "p99_us": 31,
+      "p999_us": 39,
+      "max_us": 26150
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 788069,
+      "secs": 20.000752323,
+      "ops_per_sec": 39402.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.38198563117120005,
+      "db_cpu_cores": 0.8426481528206863,
+      "load_avg_before": 8.49,
+      "p50_us": 24,
+      "p90_us": 27,
+      "p99_us": 32,
+      "p999_us": 40,
+      "max_us": 3000
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 782676,
+      "secs": 20.00093462,
+      "ops_per_sec": 39132.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.3789822897786163,
+      "db_cpu_cores": 0.8627116346226024,
+      "load_avg_before": 6.51,
+      "p50_us": 24,
+      "p90_us": 27,
+      "p99_us": 33,
+      "p999_us": 41,
+      "max_us": 2513
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 3384448,
+      "secs": 20.003027344,
+      "ops_per_sec": 169197.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 2.5051208068778017,
+      "db_cpu_cores": 6.359864425129589,
+      "load_avg_before": 5.34,
+      "p50_us": 128,
+      "p90_us": 386,
+      "p99_us": 966,
+      "p999_us": 1429,
+      "max_us": 6703
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 3003885,
+      "secs": 20.002754892,
+      "ops_per_sec": 150174.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 2.220694111377906,
+      "db_cpu_cores": 6.240220393338008,
+      "load_avg_before": 6.72,
+      "p50_us": 134,
+      "p90_us": 494,
+      "p99_us": 1076,
+      "p999_us": 1570,
+      "max_us": 42819
+    },
+    {
+      "scenario": "insert",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 2497409,
+      "secs": 20.002243701,
+      "ops_per_sec": 124856.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.8427932661452984,
+      "db_cpu_cores": 5.878037422077902,
+      "load_avg_before": 8.05,
+      "p50_us": 155,
+      "p90_us": 631,
+      "p99_us": 1232,
+      "p999_us": 1763,
+      "max_us": 43540
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 1,
+      "ops": 778456,
+      "secs": 20.000789898,
+      "ops_per_sec": 38921.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.25299000818492584,
+      "db_cpu_cores": 1.5218765936361225,
+      "load_avg_before": 7.87,
+      "p50_us": 25,
+      "p90_us": 29,
+      "p99_us": 36,
+      "p999_us": 46,
+      "max_us": 3030
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 2,
+      "ops": 788486,
+      "secs": 20.00061573,
+      "ops_per_sec": 39423.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.2549921496841835,
+      "db_cpu_cores": 1.0224029737908447,
+      "load_avg_before": 6.32,
+      "p50_us": 24,
+      "p90_us": 27,
+      "p99_us": 33,
+      "p999_us": 55,
+      "max_us": 3013
+    },
+    {
+      "scenario": "update",
+      "concurrency": 1,
+      "run": 3,
+      "ops": 785106,
+      "secs": 20.000703906,
+      "ops_per_sec": 39254.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 0.2544910431113906,
+      "db_cpu_cores": 1.055206461692019,
+      "load_avg_before": 4.67,
+      "p50_us": 25,
+      "p90_us": 28,
+      "p99_us": 34,
+      "p999_us": 52,
+      "max_us": 2038
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 1,
+      "ops": 3675340,
+      "secs": 20.003387802,
+      "ops_per_sec": 183736.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.436756627651167,
+      "db_cpu_cores": 7.0282068413403245,
+      "load_avg_before": 3.91,
+      "p50_us": 142,
+      "p90_us": 319,
+      "p99_us": 645,
+      "p999_us": 1211,
+      "max_us": 6024
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 2,
+      "ops": 3513824,
+      "secs": 20.002219916,
+      "ops_per_sec": 175672.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.3843463433701404,
+      "db_cpu_cores": 6.932232151346575,
+      "load_avg_before": 5.92,
+      "p50_us": 145,
+      "p90_us": 338,
+      "p99_us": 763,
+      "p999_us": 1293,
+      "max_us": 7695
+    },
+    {
+      "scenario": "update",
+      "concurrency": 32,
+      "run": 3,
+      "ops": 3635726,
+      "secs": 20.00214217,
+      "ops_per_sec": 181767.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "client_cpu_cores": 1.4318466370544773,
+      "db_cpu_cores": 7.108984817299697,
+      "load_avg_before": 6.46,
+      "p50_us": 145,
+      "p90_us": 325,
+      "p99_us": 623,
+      "p999_us": 1158,
+      "max_us": 5990
+    }
+  ],
+  "aborted": [],
+  "after_load": {
+    "disk": "462639148",
+    "memory": {
+      "anon_bytes": 213819392,
+      "file_bytes": 457265152,
+      "current_bytes": 674643968,
+      "peak_bytes": 1027776512
+    }
+  },
+  "after_all": {
+    "disk": "6398903460",
+    "memory": {
+      "anon_bytes": 7989751808,
+      "file_bytes": 6389362688,
+      "current_bytes": 14408970240,
+      "peak_bytes": 15112617984
+    }
+  }
+}

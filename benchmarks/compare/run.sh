@@ -97,19 +97,19 @@ run_one() {
   local base=($DOCKER run -d --name "$NAME" --network host --cpuset-cpus "$DB_CPUS"
     --memory "$DB_MEM" --memory-swap "$DB_MEM")
   case $cfg in
-    solidb | solidb-solistore | solidb-solistore-durable)
+    solidb | solidb-solistore | solidb-solistore-durable | solidb-solistore-fk)
       engine=solidb port=6800 image=$SOLIDB_IMAGE
       run=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$port -v "$data:/data:Z,U")
       [[ $cfg == solidb-solistore* ]] && run+=(-e SOLIDB_ENGINE=solistore)
       [[ $cfg == *-durable ]] && run+=(-e SOLIDB_DURABILITY=full)
       run+=("$image")
       ;;
-    postgres | postgres-typed | postgres-durable)
+    postgres | postgres-typed | postgres-durable | postgres-typed-fk)
       engine=postgres port=5432 image=$POSTGRES_IMAGE
       run=("${base[@]}" --shm-size 1g -e POSTGRES_PASSWORD=$PASSWORD -v "$data:/var/lib/postgresql:Z"
         "$image" -c shared_buffers=4GB -c effective_cache_size=12GB -c max_connections=200)
       [[ $cfg != *-durable ]] && run+=(-c synchronous_commit=off)
-      [[ $cfg == postgres-typed ]] && extra+=(--typed)
+      [[ $cfg == postgres-typed* ]] && extra+=(--typed)
       ;;
     mongo | mongo-durable)
       engine=mongo port=27017 image=$MONGO_IMAGE
@@ -135,6 +135,11 @@ run_one() {
       ;;
   esac
   [[ $cfg == *-durable ]] && extra+=(--durable) && phases=(--phases load,insert,update)
+  # A foreign key from orders.customer_id to customers: only the writes meet
+  # it. PHASES=load,insert,update on the configuration without -fk gives the
+  # line to compare with.
+  [[ $cfg == *-fk ]] && extra+=(--fk) && phases=(--phases load,insert,update)
+  [[ -n ${PHASES:-} ]] && phases=(--phases "$PHASES")
 
   $DOCKER rm -f "$NAME" >/dev/null 2>&1 || true
   echo "== $cfg: ${run[*]}"

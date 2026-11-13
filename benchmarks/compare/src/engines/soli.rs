@@ -92,6 +92,11 @@ impl Engine for Soli {
             )
             .await?;
         }
+        if self.s.fk {
+            // Served by idx_customer_id, as PostgreSQL's is by its index.
+            c.create_foreign_key(DB, "orders", "customer_id", "customers", None)
+                .await?;
+        }
         Ok(())
     }
 
