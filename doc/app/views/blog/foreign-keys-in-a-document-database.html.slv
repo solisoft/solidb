@@ -4,7 +4,7 @@
   <h1><%= post["title"] %></h1>
   <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
   <p class="post-lede">Two days ago we wrote that SoliDB has no foreign keys, and that nothing stops an order from naming a customer that is gone. It was the one line of that comparison with SQL where the answer was a plain &ldquo;No&rdquo;. A collection can now declare one. This post shows what it does, how it stays true when writes race, what it costs, and where it stops.</p>
-  <p class="post-note">The feature is not in a release yet: it will be in the one after 2.9.5. Every result on this page was run on November 13, 2026, on servers built from its branch; the benchmark's raw results are in the repository, under <code>benchmarks/compare/results/2026-11-13-fk</code>.</p>
+  <p class="post-note">Foreign keys are in SoliDB 2.10.0. Every result on this page was run on November 13, 2026, on servers built from the branch that became that release; the benchmark's raw results are in the repository, under <code>benchmarks/compare/results/2026-11-13-fk</code>.</p>
 </header>
 
 <div class="post-body wrap-narrow">

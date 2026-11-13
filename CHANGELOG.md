@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+## [2.10.0](https://github.com/solisoft/solidb/compare/v2.9.5...v2.10.0) (2026-11-13)
+
+Foreign keys, and a fix for nodes that join a cluster.
+
+### Added
+
+* **Foreign keys.** A collection can declare that a field holds the `_key`
+  of a document of another collection of its database, or null:
+  `POST /_api/database/{db}/collection/{name}/foreign-keys` with
+  `{"field", "references", "on_delete": "restrict" | "cascade" | "set_null"}`.
+  A write that names a parent that is not there is refused with a `409` on
+  every path (document API, SDBQL, the driver and its raw writes, Lua,
+  imports, a transaction's commit, checked as a whole). Deleting a parent is
+  refused, deletes its children or sets their field to null, in the same
+  atomic write (card #833).
+* **References by `_id`, and on edges** (`"by": "id"`, the default for an
+  edge's `_from` and `_to`): a deleted vertex no longer leaves its edges
+  (card #836).
+* `POST …/foreign-keys/check` lists the documents a key would be refused
+  for; `GET` lists a collection's keys and those that refer to it.
+* Driver commands `list_foreign_keys`, `create_foreign_key`,
+  `delete_foreign_key`, `check_foreign_key`, the Rust client's methods, and
+  a panel in the admin console (card #838).
+* `solidb-dump` writes foreign keys and `solidb-restore` declares them
+  after the data, also with `--drop` (card #837).
+* On a cluster, a key's definition and the writes a delete cascades into
+  are replicated (card #835). Not available on sharded collections.
+
+### Fixed
+
+* **A node that joins a cluster no longer brings back deleted documents.**
+  After its full sync it replayed every peer's log from the start, so a
+  document inserted on one node and deleted on another reappeared on it.
+  The full sync now says how far each node's log is in the copy, and those
+  document writes are not applied again (card #844).
+* A full sync carries each collection's index definitions and foreign keys.
+  A joining node only received those made while the replication log was
+  active.
+* Deleting an index that serves a foreign key answers the conflict, over
+  HTTP and over the driver, instead of "not found".
+
+### Performance
+
+With a foreign key from an order to its customer, on the comparison harness
+(a million orders, rocky-build2, medians of three runs): load 437,413
+documents per second against 468,173 without, inserts 39,402 per second
+against 41,402 at one client and 150,174 against 159,927 at 32; updates of
+another field unchanged. PostgreSQL 18.6 with `references`: 223,249 against
+297,445, 29,087 against 33,001, 104,942 against 141,266. A collection that
+takes part in no key pays nothing.
+
 ## [2.9.5](https://github.com/solisoft/solidb/compare/v2.9.4...v2.9.5) (2026-11-12)
 
 SDBQL: four behaviours that surprised while writing queries by hand. Two

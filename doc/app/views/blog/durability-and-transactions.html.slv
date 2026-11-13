@@ -30,7 +30,7 @@
 <p>That gives the four letters, with one qualification each:</p>
 <ul>
 <li><strong>Atomic.</strong> One batch, applied whole or not at all, across collections. A crash in the middle of a commit leaves the batch or nothing: the crash tests below count half-applied transfers, and found none.</li>
-<li><strong>Consistent.</strong> Unique indexes are checked at commit, including two writes of one value inside the same transaction, and a write that would break one fails the commit. SoliDB had no foreign keys when this was written; it has since (<a href="/docs/foreign-keys">checked at commit as well</a>). The rest of consistency is the application&rsquo;s, as in any database.</li>
+<li><strong>Consistent.</strong> Unique indexes are checked at commit, including two writes of one value inside the same transaction, and a write that would break one fails the commit. SoliDB had no foreign keys when this was written; it has since 2.10.0 (<a href="/docs/foreign-keys">checked at commit as well</a>). The rest of consistency is the application&rsquo;s, as in any database.</li>
 <li><strong>Isolated</strong>, but less than the names of the levels say. A transaction never reads another&rsquo;s uncommitted writes, and since 2.9.1 it cannot overwrite a write it did not see. It is not serializable: <a href="#isolation">below</a> is a write skew that commits.</li>
 <li><strong>Durable.</strong> The commit is fsynced before it is acknowledged, at every isolation level except <code>read_uncommitted</code>. That is the only thing the isolation level changes today.</li>
 </ul>
