@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::error::{DbError, DbResult};
-use crate::storage::foreign_keys::{self, ForeignKey, HeldGate, Links, OnDelete};
+use crate::storage::foreign_keys::{self, ForeignKey, HeldGate, Links, OnDelete, ReferenceBy};
 use crate::transaction::Operation;
 use std::collections::HashMap;
 
@@ -16,6 +16,46 @@ pub struct Orphans {
     pub count: usize,
     /// The first of them: `{ "_key": …, "<field>": … }`.
     pub sample: Vec<Value>,
+}
+
+/// A constraint to declare: see [`Collection::add_foreign_key`].
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ForeignKeySpec {
+    /// The child's field that holds the reference.
+    pub field: String,
+    /// The parent collection, in the same database.
+    pub references: String,
+    /// `restrict` when absent.
+    #[serde(default)]
+    pub on_delete: OnDelete,
+    /// Whether the field holds the parent's `_key` or its `_id`. When
+    /// absent: `id` for an edge's `_from` / `_to`, else `key`.
+    pub by: Option<ReferenceBy>,
+    /// `fk_<field>` when absent.
+    pub name: Option<String>,
+}
+
+impl ForeignKeySpec {
+    pub fn new(field: &str, references: &str, on_delete: OnDelete) -> Self {
+        ForeignKeySpec {
+            field: field.to_string(),
+            references: references.to_string(),
+            on_delete,
+            ..Default::default()
+        }
+    }
+
+    fn is_edge_end(&self) -> bool {
+        self.field == "_from" || self.field == "_to"
+    }
+
+    fn by(&self) -> ReferenceBy {
+        self.by.unwrap_or(if self.is_edge_end() {
+            ReferenceBy::Id
+        } else {
+            ReferenceBy::Key
+        })
+    }
 }
 
 /// Orphans listed in an answer or an error.
@@ -81,9 +121,7 @@ impl Collection {
             let Some(parent_key) = foreign_keys::reference(&link.key, &self.name, new)? else {
                 continue;
             };
-            let kept = old.is_some_and(|old| {
-                old.get(&link.key.field).and_then(Value::as_str) == Some(parent_key)
-            });
+            let kept = old.is_some_and(|old| old.get(&link.key.field) == new.get(&link.key.field));
             if kept {
                 continue;
             }
@@ -97,19 +135,29 @@ impl Collection {
         Ok(())
     }
 
-    /// The keys of the documents whose `field` is `parent_key`.
-    pub(crate) fn keys_referencing(&self, field: &str, parent_key: &str) -> DbResult<Vec<String>> {
-        let value = Value::String(parent_key.to_string());
-        if let Some((keys, _)) = self.index_eq_doc_keys(field, &value, 0, usize::MAX, |_| Ok(()))? {
-            return Ok(keys
-                .into_iter()
-                .filter_map(|k| String::from_utf8(k[DOC_PREFIX.len()..].to_vec()).ok())
-                .collect());
+    /// The keys of the documents whose `field` is one of `values`.
+    pub(crate) fn keys_referencing(&self, field: &str, values: &[String]) -> DbResult<Vec<String>> {
+        let mut keys = Vec::new();
+        let mut indexed = true;
+        for value in values {
+            let value = Value::String(value.clone());
+            match self.index_eq_doc_keys(field, &value, 0, usize::MAX, |_| Ok(()))? {
+                Some((found, _)) => keys.extend(
+                    found
+                        .into_iter()
+                        .filter_map(|k| String::from_utf8(k[DOC_PREFIX.len()..].to_vec()).ok()),
+                ),
+                None => indexed = false,
+            }
+        }
+        if indexed {
+            return Ok(keys);
         }
         // The constraint's index is gone: read the documents.
-        let mut keys = Vec::new();
+        keys.clear();
         self.for_each_value(None, |doc| {
-            if doc.get(field).and_then(Value::as_str) == Some(parent_key) {
+            let held = doc.get(field).and_then(Value::as_str);
+            if held.is_some_and(|held| values.iter().any(|v| v == held)) {
                 if let Some(key) = doc.get("_key").and_then(Value::as_str) {
                     keys.push(key.to_string());
                 }
@@ -235,20 +283,38 @@ impl Collection {
     /// (a collection of the same database) or null. Creates an index on
     /// `field` unless one serves it. Refused, and nothing is kept, when
     /// documents already stored refer to a parent that is not there.
-    pub fn add_foreign_key(
-        &self,
-        name: Option<String>,
-        field: &str,
-        references: &str,
-        on_delete: OnDelete,
-    ) -> DbResult<ForeignKey> {
-        if field.is_empty() || field.contains('.') || field.starts_with('_') {
+    pub fn add_foreign_key(&self, spec: ForeignKeySpec) -> DbResult<ForeignKey> {
+        let by = spec.by();
+        let (field, references, on_delete) = (
+            spec.field.as_str(),
+            spec.references.as_str(),
+            spec.on_delete,
+        );
+        if spec.is_edge_end() {
+            // An edge's ends hold an `_id`, and an edge without one of
+            // them is not an edge.
+            if self.get_type() != "edge" || by != ReferenceBy::Id {
+                return Err(DbError::BadRequest(
+                    "'_from' and '_to' take a foreign key on an edge collection only, by _id"
+                        .to_string(),
+                ));
+            }
+            if on_delete == OnDelete::SetNull {
+                return Err(DbError::BadRequest(
+                    "An edge's '_from' and '_to' cannot be set to null: use restrict or cascade"
+                        .to_string(),
+                ));
+            }
+        } else if field.is_empty() || field.contains('.') || field.starts_with('_') {
             return Err(DbError::BadRequest(
                 "A foreign key's field is a top-level field that is not a system attribute"
                     .to_string(),
             ));
         }
-        let name = name.unwrap_or_else(|| format!("fk_{}", field));
+        let name = spec
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("fk_{}", field.trim_start_matches('_')));
         if name.is_empty() {
             return Err(DbError::BadRequest(
                 "A foreign key's name cannot be empty".to_string(),
@@ -293,7 +359,7 @@ impl Collection {
                 (index.name, false)
             }
             None => {
-                let index = format!("fk_{}", field);
+                let index = format!("fk_{}", field.trim_start_matches('_'));
                 self.create_index_with(
                     index.clone(),
                     vec![field.to_string()],
@@ -307,6 +373,7 @@ impl Collection {
 
         let key = ForeignKey {
             name,
+            by,
             field: field.to_string(),
             references: references.to_string(),
             on_delete,
@@ -316,7 +383,7 @@ impl Collection {
         after.push(key.clone());
         self.store_foreign_keys(&after)?;
 
-        let refused = match self.foreign_key_orphans(field, references) {
+        let refused = match self.foreign_key_orphans(&spec) {
             Ok(orphans) if orphans.count == 0 => None,
             Ok(orphans) => {
                 let keys: Vec<&str> = orphans
@@ -370,9 +437,10 @@ impl Collection {
             .map(|link| link.key.clone())
     }
 
-    /// The documents whose `field` names a document that is not in
-    /// `references`: what declaring that constraint would be refused for.
-    pub fn foreign_key_orphans(&self, field: &str, references: &str) -> DbResult<Orphans> {
+    /// The documents whose field names a document that is not in the
+    /// parent collection: what declaring `spec` would be refused for.
+    pub fn foreign_key_orphans(&self, spec: &ForeignKeySpec) -> DbResult<Orphans> {
+        let (field, references) = (spec.field.as_str(), spec.references.as_str());
         let parent_name = format!("{}:{}", self.database_name(), references);
         let parent_ks =
             crate::storage::collection_registry::keyspace_of(&self.db, &parent_name, |_| false)
@@ -380,6 +448,14 @@ impl Collection {
         let parent_cf = parent_ks
             .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(references.to_string()))?;
+        let probe = ForeignKey {
+            name: String::new(),
+            field: field.to_string(),
+            by: spec.by(),
+            references: references.to_string(),
+            on_delete: spec.on_delete,
+            index: String::new(),
+        };
 
         let mut known: HashMap<String, bool> = HashMap::new();
         let mut orphans = Orphans {
@@ -387,13 +463,11 @@ impl Collection {
             sample: Vec::new(),
         };
         self.for_each_value(None, |doc| {
-            let value = match doc.get(field) {
-                None | Some(Value::Null) => return Ok(()),
-                Some(value) => value,
-            };
-            let there = match value.as_str() {
-                None => false,
-                Some(parent_key) => match known.get(parent_key) {
+            let there = match foreign_keys::reference(&probe, &self.name, &doc) {
+                Ok(None) => return Ok(()),
+                // Not something that can name a parent at all.
+                Err(_) => false,
+                Ok(Some(parent_key)) => match known.get(parent_key) {
                     Some(there) => *there,
                     None => {
                         let there = self
@@ -421,7 +495,10 @@ impl Collection {
                         "_key".to_string(),
                         doc.get("_key").cloned().unwrap_or(Value::Null),
                     );
-                    row.insert(field.to_string(), value.clone());
+                    row.insert(
+                        field.to_string(),
+                        doc.get(field).cloned().unwrap_or(Value::Null),
+                    );
                     orphans.sample.push(Value::Object(row));
                 }
             }

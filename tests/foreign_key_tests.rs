@@ -4,6 +4,7 @@
 
 use serde_json::json;
 use solidb::error::DbError;
+use solidb::storage::collection::references::ForeignKeySpec;
 use solidb::storage::foreign_keys::OnDelete;
 use solidb::storage::{Collection, StorageEngine};
 use solidb::transaction::IsolationLevel;
@@ -32,7 +33,7 @@ fn shop(on_delete: OnDelete) -> Shop {
     customers.insert(json!({"_key": "alice"})).unwrap();
     customers.insert(json!({"_key": "bob"})).unwrap();
     orders
-        .add_foreign_key(None, "customer", "customers", on_delete)
+        .add_foreign_key(ForeignKeySpec::new("customer", "customers", on_delete))
         .unwrap();
     Shop {
         engine,
@@ -208,7 +209,7 @@ fn a_cascade_walks_a_tree_in_one_collection() {
     db.create_collection("nodes".to_string(), None).unwrap();
     let nodes = db.get_collection("nodes").unwrap();
     nodes
-        .add_foreign_key(None, "parent", "nodes", OnDelete::Cascade)
+        .add_foreign_key(ForeignKeySpec::new("parent", "nodes", OnDelete::Cascade))
         .unwrap();
 
     // A document may refer to itself, and to another of its batch.
@@ -255,11 +256,21 @@ fn declaring_a_key_refuses_orphans_and_keeps_nothing() {
         .insert(json!({"_key": "o2", "customer": "ghost"}))
         .unwrap();
 
-    let orphans = orders.foreign_key_orphans("customer", "customers").unwrap();
+    let orphans = orders
+        .foreign_key_orphans(&ForeignKeySpec::new(
+            "customer",
+            "customers",
+            OnDelete::Restrict,
+        ))
+        .unwrap();
     assert_eq!(orphans.count, 1);
     assert_eq!(orphans.sample, [json!({"_key": "o2", "customer": "ghost"})]);
 
-    let refused = orders.add_foreign_key(None, "customer", "customers", OnDelete::Restrict);
+    let refused = orders.add_foreign_key(ForeignKeySpec::new(
+        "customer",
+        "customers",
+        OnDelete::Restrict,
+    ));
     assert!(is_violation(&refused), "{:?}", refused);
     assert!(orders.foreign_keys().is_empty());
     assert!(orders.get_all_indexes().is_empty());
@@ -271,7 +282,11 @@ fn declaring_a_key_refuses_orphans_and_keeps_nothing() {
 
     orders.delete("o2").unwrap();
     let key = orders
-        .add_foreign_key(None, "customer", "customers", OnDelete::Restrict)
+        .add_foreign_key(ForeignKeySpec::new(
+            "customer",
+            "customers",
+            OnDelete::Restrict,
+        ))
         .unwrap();
     assert_eq!(key.name, "fk_customer");
     assert_eq!(key.index, "fk_customer");
@@ -279,14 +294,18 @@ fn declaring_a_key_refuses_orphans_and_keeps_nothing() {
 
     // One key per field, one per name; the parent must exist.
     assert!(orders
-        .add_foreign_key(None, "customer", "customers", OnDelete::Cascade)
+        .add_foreign_key(ForeignKeySpec::new(
+            "customer",
+            "customers",
+            OnDelete::Cascade
+        ))
         .is_err());
     assert!(matches!(
-        orders.add_foreign_key(None, "shop", "shops", OnDelete::Restrict),
+        orders.add_foreign_key(ForeignKeySpec::new("shop", "shops", OnDelete::Restrict)),
         Err(DbError::CollectionNotFound(_))
     ));
     assert!(orders
-        .add_foreign_key(None, "a.b", "customers", OnDelete::Restrict)
+        .add_foreign_key(ForeignKeySpec::new("a.b", "customers", OnDelete::Restrict))
         .is_err());
 }
 
@@ -511,7 +530,11 @@ fn a_parent_cannot_go_between_a_childs_check_and_its_write() {
         }
         let orphans = s
             .orders
-            .foreign_key_orphans("customer", "customers")
+            .foreign_key_orphans(&ForeignKeySpec::new(
+                "customer",
+                "customers",
+                OnDelete::Restrict,
+            ))
             .unwrap();
         assert_eq!(orphans.count, 0, "{:?}", orphans.sample);
     }
@@ -547,4 +570,105 @@ fn an_expired_parent_follows_on_delete() {
             }
         }
     }
+}
+
+#[test]
+fn an_edge_cannot_outlive_its_vertices() {
+    let s = shop(OnDelete::Restrict);
+    let db = s.engine.get_database("app").unwrap();
+    db.create_collection("follows".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let follows = db.get_collection("follows").unwrap();
+    s.customers.insert(json!({"_key": "carol"})).unwrap();
+
+    // An end that is already dangling refuses the key.
+    follows
+        .insert(json!({"_key": "bad", "_from": "customers/alice", "_to": "customers/ghost"}))
+        .unwrap();
+    let to = ForeignKeySpec::new("_to", "customers", OnDelete::Cascade);
+    assert_eq!(follows.foreign_key_orphans(&to).unwrap().count, 1);
+    assert!(is_violation(&follows.add_foreign_key(to.clone())));
+    follows.delete("bad").unwrap();
+
+    let from = follows
+        .add_foreign_key(ForeignKeySpec::new("_from", "customers", OnDelete::Cascade))
+        .unwrap();
+    // By `_id`, on the index an edge collection already has.
+    assert_eq!(
+        serde_json::to_value(&from).unwrap(),
+        json!({"name": "fk_from", "field": "_from", "by": "id", "references": "customers",
+               "on_delete": "cascade", "index": "_edge_from_idx"})
+    );
+    follows
+        .add_foreign_key(ForeignKeySpec::new("_to", "customers", OnDelete::Restrict))
+        .unwrap();
+    // An edge without an end is not an edge; an end is not a `_key`.
+    assert!(follows
+        .add_foreign_key(ForeignKeySpec::new("_to", "customers", OnDelete::SetNull))
+        .is_err());
+    assert!(s
+        .orders
+        .add_foreign_key(ForeignKeySpec::new(
+            "_from",
+            "customers",
+            OnDelete::Restrict
+        ))
+        .is_err());
+
+    // Both forms of an `_id` name the vertex.
+    follows
+        .insert(json!({"_key": "a-b", "_from": "customers/alice", "_to": "app:customers/bob"}))
+        .unwrap();
+    follows
+        .insert(json!({"_key": "b-c", "_from": "app:customers/bob", "_to": "customers/carol"}))
+        .unwrap();
+    for (from, to) in [
+        ("customers/alice", "customers/ghost"),
+        ("customers/ghost", "customers/alice"),
+        ("orders/alice", "customers/alice"),
+        ("other:customers/alice", "customers/alice"),
+        ("alice", "customers/alice"),
+    ] {
+        let refused = follows.insert(json!({"_from": from, "_to": to}));
+        assert!(is_violation(&refused), "{from} -> {to}: {:?}", refused);
+    }
+    assert!(is_violation(
+        &follows.update("a-b", json!({"_to": "customers/ghost"}))
+    ));
+
+    // `_to` restricts: bob is followed by alice. `_from` cascades: carol
+    // follows nobody and is followed by bob, so she stays too.
+    assert!(is_violation(&s.customers.delete("bob")));
+    assert!(is_violation(&s.customers.delete("carol")));
+    // Alice only follows: her edge goes with her.
+    s.customers.delete("alice").unwrap();
+    assert!(follows.get("a-b").is_err());
+    assert!(follows.get("b-c").is_ok());
+    // Now nobody follows bob; deleting him takes `b-c`, in either form.
+    s.customers.delete("bob").unwrap();
+    assert_eq!(follows.count(), 0);
+    s.customers.delete("carol").unwrap();
+}
+
+#[test]
+fn a_field_can_refer_by_id() {
+    let s = shop(OnDelete::Restrict);
+    let db = s.engine.get_database("app").unwrap();
+    db.create_collection("notes".to_string(), None).unwrap();
+    let notes = db.get_collection("notes").unwrap();
+    let mut spec = ForeignKeySpec::new("about", "customers", OnDelete::SetNull);
+    spec.by = Some(solidb::storage::foreign_keys::ReferenceBy::Id);
+    notes.add_foreign_key(spec).unwrap();
+
+    notes
+        .insert(json!({"_key": "n1", "about": "customers/alice"}))
+        .unwrap();
+    notes
+        .insert(json!({"_key": "n2", "about": "app:customers/alice"}))
+        .unwrap();
+    assert!(is_violation(&notes.insert(json!({"about": "alice"}))));
+
+    s.customers.delete("alice").unwrap();
+    assert_eq!(notes.get("n1").unwrap().data["about"], json!(null));
+    assert_eq!(notes.get("n2").unwrap().data["about"], json!(null));
 }

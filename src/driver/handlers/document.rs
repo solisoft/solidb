@@ -727,12 +727,11 @@ mod tests {
             .insert(json!({"_key": "open"}))
             .unwrap();
         let coll = db.get_collection("c").unwrap();
-        coll.add_foreign_key(
-            None,
+        coll.add_foreign_key(crate::storage::collection::references::ForeignKeySpec::new(
             "status",
             "states",
             crate::storage::foreign_keys::OnDelete::Restrict,
-        )
+        ))
         .unwrap();
         // Served by the index that was there.
         assert_eq!(coll.foreign_keys()[0].index, "by_status");

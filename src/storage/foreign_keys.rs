@@ -58,12 +58,33 @@ pub enum OnDelete {
     SetNull,
 }
 
+/// What the child's field holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceBy {
+    /// The parent's `_key`.
+    #[default]
+    Key,
+    /// The parent's `_id`, with or without its database: `customers/ann`
+    /// or `shop:customers/ann`. What an edge's `_from` and `_to` hold.
+    Id,
+}
+
+impl ReferenceBy {
+    fn is_key(&self) -> bool {
+        *self == ReferenceBy::Key
+    }
+}
+
 /// One constraint, as stored on the child collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForeignKey {
     pub name: String,
-    /// The child's field that holds the parent's `_key` (top level).
+    /// The child's field that holds the reference (top level).
     pub field: String,
+    /// Whether the field holds the parent's `_key` or its `_id`.
+    #[serde(default, skip_serializing_if = "ReferenceBy::is_key")]
+    pub by: ReferenceBy,
     /// The parent collection, in the child's database.
     pub references: String,
     #[serde(default)]
@@ -417,20 +438,58 @@ pub(crate) fn violation(message: String) -> DbError {
     DbError::ConflictError(format!("Foreign key violation: {}", message))
 }
 
+/// The values a child's field may hold to refer to the parent document
+/// `parent_key`: what the index on the field is searched for.
+pub(crate) fn referring_values(key: &ForeignKey, parent: &str, parent_key: &str) -> Vec<String> {
+    match key.by {
+        ReferenceBy::Key => vec![parent_key.to_string()],
+        ReferenceBy::Id => {
+            let (database, collection) = split(parent);
+            vec![
+                format!("{}/{}", collection, parent_key),
+                format!("{}:{}/{}", database, collection, parent_key),
+            ]
+        }
+    }
+}
+
 /// The parent key a document refers to through `field`: `None` for null or
-/// an absent field, an error for anything that is not a string.
+/// an absent field, an error for anything that cannot name a document of
+/// the parent collection.
 pub(crate) fn reference<'a>(
     key: &ForeignKey,
     child: &str,
     doc: &'a Value,
 ) -> DbResult<Option<&'a str>> {
-    match doc.get(&key.field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(parent)) => Ok(Some(parent)),
-        Some(_) => Err(violation(format!(
-            "'{}' in {} must be the _key of a document of '{}' (a string) or null",
+    let value = match doc.get(&key.field) {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::String(value)) => value.as_str(),
+        Some(_) => {
+            return Err(violation(format!(
+                "'{}' in {} must be the {} of a document of '{}' (a string) or null",
+                key.field,
+                split(child).1,
+                if key.by.is_key() { "_key" } else { "_id" },
+                key.references
+            )))
+        }
+    };
+    if key.by.is_key() {
+        return Ok(Some(value));
+    }
+    // `coll/key` or `db:coll/key`, of the parent collection in this database.
+    let (database, _) = split(child);
+    let local = match value.split_once(':') {
+        Some((db, rest)) if !db.contains('/') => (db == database).then_some(rest),
+        _ => Some(value),
+    };
+    match local.and_then(|id| id.split_once('/')) {
+        Some((collection, parent_key)) if collection == key.references => Ok(Some(parent_key)),
+        _ => Err(violation(format!(
+            "'{}' in {} is '{}', which is not the _id of a document of '{}'",
             key.field,
             split(child).1,
+            value,
             key.references
         ))),
     }
@@ -575,7 +634,8 @@ pub(crate) fn check_operations(
         };
         for referrer in &parent_links.referrers {
             let child = resolve(&referrer.child)?;
-            for child_key in child.keys_referencing(&referrer.key.field, &parent_key)? {
+            let values = referring_values(&referrer.key, &parent, &parent_key);
+            for child_key in child.keys_referencing(&referrer.key.field, &values)? {
                 let touched = view
                     .get(&referrer.child)
                     .and_then(|keys| keys.get(&child_key))
@@ -674,7 +734,7 @@ pub(crate) fn check_operations(
                     Some(there) => there,
                     None => {
                         let unchanged = matches!(op, Operation::Update { old_data, .. }
-                            if old_data.get(&link.key.field).and_then(Value::as_str) == Some(parent_key));
+                            if old_data.get(&link.key.field) == value.get(&link.key.field));
                         unchanged || parent_is_stored(db, link, parent_key)?
                     }
                 };

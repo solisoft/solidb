@@ -2,33 +2,14 @@
 
 use super::system::AppState;
 use crate::error::DbError;
-use crate::storage::collection::references::{Orphans, ReferencedBy};
-use crate::storage::foreign_keys::{ForeignKey, OnDelete};
+use crate::storage::collection::references::{ForeignKeySpec, Orphans, ReferencedBy};
+use crate::storage::foreign_keys::ForeignKey;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize)]
-pub struct CreateForeignKeyRequest {
-    /// The field of this collection that holds the parent's `_key`.
-    pub field: String,
-    /// The parent collection, in the same database.
-    pub references: String,
-    /// `restrict` (the default), `cascade` or `set_null`.
-    #[serde(default)]
-    pub on_delete: OnDelete,
-    /// Defaults to `fk_<field>`.
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CheckForeignKeyRequest {
-    pub field: String,
-    pub references: String,
-}
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct ForeignKeysResponse {
@@ -65,7 +46,7 @@ pub async fn list_foreign_keys(
 pub async fn create_foreign_key(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
-    Json(req): Json<CreateForeignKeyRequest>,
+    Json(req): Json<ForeignKeySpec>,
 ) -> Result<(StatusCode, Json<ForeignKey>), DbError> {
     // A cascade is written by storage and never reaches the replication
     // log: whoever reads it (a peer, an offline-sync client) would keep
@@ -84,10 +65,7 @@ pub async fn create_foreign_key(
         .storage
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
-    let key = blocking(move || {
-        collection.add_foreign_key(req.name, &req.field, &req.references, req.on_delete)
-    })
-    .await?;
+    let key = blocking(move || collection.add_foreign_key(req)).await?;
     Ok((StatusCode::CREATED, Json(key)))
 }
 
@@ -108,13 +86,12 @@ pub async fn delete_foreign_key(
 pub async fn check_foreign_key(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
-    Json(req): Json<CheckForeignKeyRequest>,
+    Json(req): Json<ForeignKeySpec>,
 ) -> Result<Json<Orphans>, DbError> {
     let collection = state
         .storage
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
-    let orphans =
-        blocking(move || collection.foreign_key_orphans(&req.field, &req.references)).await?;
+    let orphans = blocking(move || collection.foreign_key_orphans(&req)).await?;
     Ok(Json(orphans))
 }
