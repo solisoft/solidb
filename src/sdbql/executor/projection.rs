@@ -13,7 +13,9 @@
 //! operators, window functions, COLLECT, joins, mutations), gives up and the
 //! scan returns whole documents as before.
 
-use crate::sdbql::ast::{BodyClause, Expression, ForClause, Query, TemplateStringPart};
+use crate::sdbql::ast::{
+    BodyClause, Expression, ForClause, GraphTraversalClause, Query, TemplateStringPart,
+};
 
 /// The collection `FOR` whose documents `query` only reads through top-level
 /// field accesses, and those fields (sorted, deduplicated). `None` when the
@@ -83,6 +85,85 @@ pub(crate) fn scan_projection(query: &Query) -> Option<(&ForClause, Vec<String>)
     fields.sort_unstable();
     fields.dedup();
     Some((for_clause, fields))
+}
+
+/// The graph traversal that opens `query`'s body, when the query reads its
+/// vertices only through top-level field accesses, and those fields (sorted,
+/// deduplicated; none when it reads nothing of them). `None` when the query
+/// needs whole vertices or the analysis cannot tell.
+///
+/// The vertex variable goes out of scope at a `COLLECT` without `INTO`, so
+/// the walk stops there; with a path variable the path holds the vertices
+/// themselves.
+pub(crate) fn traversal_projection(query: &Query) -> Option<(&GraphTraversalClause, Vec<String>)> {
+    if !query.set_operations.is_empty()
+        || !query.join_clauses.is_empty()
+        || query.with_clause.is_some()
+        || query.window_clause.is_some()
+        || query.create_stream_clause.is_some()
+        || query.create_materialized_view_clause.is_some()
+        || query.refresh_materialized_view_clause.is_some()
+    {
+        return None;
+    }
+    let (first, rest) = query.body_clauses.split_first()?;
+    let BodyClause::GraphTraversal(traversal) = first else {
+        return None;
+    };
+    if traversal.path_var.is_some() {
+        return None;
+    }
+    let var = traversal.vertex_var.as_str();
+    if var.starts_with('@') || traversal.edge_var.as_deref() == Some(var) {
+        return None;
+    }
+    let mut fields = Vec::new();
+    if let Some(prune) = &traversal.prune {
+        collect(prune, var, &mut fields)?;
+    }
+    let done = |mut fields: Vec<String>| {
+        fields.sort_unstable();
+        fields.dedup();
+        Some((traversal, fields))
+    };
+    for clause in rest {
+        match clause {
+            BodyClause::Filter(f) => collect(&f.expression, var, &mut fields)?,
+            BodyClause::Let(l) if l.variable != var => collect(&l.expression, var, &mut fields)?,
+            BodyClause::Collect(c) if c.into_var.is_none() => {
+                for (_, expr) in &c.group_vars {
+                    collect(expr, var, &mut fields)?;
+                }
+                for aggregate in &c.aggregates {
+                    if let Some(argument) = &aggregate.argument {
+                        collect(argument, var, &mut fields)?;
+                    }
+                }
+                // Nothing after it can read the vertex.
+                return done(fields);
+            }
+            _ => return None,
+        }
+    }
+    if let Some(sort) = &query.sort_clause {
+        for (expr, _) in &sort.fields {
+            collect(expr, var, &mut fields)?;
+        }
+    }
+    if let Some(limit) = &query.limit_clause {
+        collect(&limit.offset, var, &mut fields)?;
+        if let Some(count) = &limit.count {
+            collect(count, var, &mut fields)?;
+        }
+    }
+    for l in &query.post_limit_lets {
+        if l.variable == var {
+            return None;
+        }
+        collect(&l.expression, var, &mut fields)?;
+    }
+    collect(&query.return_clause.as_ref()?.expression, var, &mut fields)?;
+    done(fields)
 }
 
 /// Record the fields of `var` read by `expr`; `None` if `expr` uses `var` in

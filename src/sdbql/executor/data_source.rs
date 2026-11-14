@@ -12,7 +12,7 @@ use std::sync::Arc;
 use super::types::Context;
 use super::{to_bool, QueryExecutor};
 use crate::error::{DbError, DbResult};
-use crate::sdbql::ast::ForClause;
+use crate::sdbql::ast::{ForClause, GraphTraversalClause};
 use crate::storage::http_client::get_blocking_http_client;
 
 /// A collection's row policy compiled for one principal (see
@@ -189,6 +189,32 @@ impl<'a> QueryExecutor<'a> {
             for_clause as *const ForClause as usize,
             (for_clause.collection.clone(), fields.into()),
         );
+    }
+
+    /// Remember that the vertices of `traversal` are read only through
+    /// `fields`.
+    pub(super) fn record_traversal_projection(
+        &self,
+        traversal: &GraphTraversalClause,
+        fields: Vec<String>,
+    ) {
+        self.caches.scan_projections.lock().insert(
+            traversal as *const GraphTraversalClause as usize,
+            (traversal.edge_collection.clone(), fields.into()),
+        );
+    }
+
+    /// The fields recorded for `traversal`'s vertices, if any.
+    pub(super) fn traversal_projection_for(
+        &self,
+        traversal: &GraphTraversalClause,
+    ) -> Option<std::sync::Arc<[String]>> {
+        self.caches
+            .scan_projections
+            .lock()
+            .get(&(traversal as *const GraphTraversalClause as usize))
+            .filter(|(collection, _)| collection == &traversal.edge_collection)
+            .map(|(_, fields)| fields.clone())
     }
 
     /// The fields recorded for `for_clause`'s scan, if any; the hash probe

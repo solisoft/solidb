@@ -1448,6 +1448,9 @@ impl<'a> QueryExecutor<'a> {
                             && opts.unique_vertices != UniqueVertices::Global);
                     let keeps_ids = opts.unique_vertices == UniqueVertices::Path;
                     let wants_edge = gt.edge_var.is_some() || keeps_edges;
+                    // The fields of a vertex the query reads, when it reads
+                    // nothing else of it: the rest is not decoded.
+                    let vertex_fields = self.traversal_projection_for(gt);
                     // One handle per vertex collection, not one lookup per vertex.
                     let mut vertex_colls: std::collections::HashMap<
                         String,
@@ -1484,7 +1487,11 @@ impl<'a> QueryExecutor<'a> {
                             let mut depth = 0;
                             loop {
                                 if depth >= gt.min_depth && depth <= gt.max_depth {
-                                    let docs = self.level_vertices(&level, &mut vertex_colls);
+                                    let docs = self.level_vertices(
+                                        &level,
+                                        &mut vertex_colls,
+                                        vertex_fields.as_deref(),
+                                    );
                                     for ((id, edge), doc) in level.iter().zip(docs) {
                                         let (Some(v), Some((coll_name, _))) =
                                             (doc, id.split_once('/'))
@@ -2044,11 +2051,13 @@ fn vertex_id<'v>(value: &'v Value, which: &str) -> DbResult<&'v str> {
 impl QueryExecutor<'_> {
     /// The documents of a traversal level's vertices, in the level's order:
     /// one batched read per vertex collection. `None` where the id names no
-    /// collection the executor may read, or no stored document.
+    /// collection the executor may read, or no stored document. With
+    /// `fields`, only those are decoded.
     fn level_vertices(
         &self,
         level: &[(String, Option<Value>)],
         colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
+        fields: Option<&[String]>,
     ) -> Vec<Option<Value>> {
         let mut docs: Vec<Option<Value>> = vec![None; level.len()];
         let mut by_coll: std::collections::HashMap<&str, Vec<(usize, &str)>> =
@@ -2066,7 +2075,14 @@ impl QueryExecutor<'_> {
                 continue;
             };
             let keys: Vec<&str> = wanted.iter().map(|(_, key)| *key).collect();
-            let Ok(found) = coll.get_values(&keys) else {
+            // A row policy reads the whole document.
+            let found = match fields {
+                Some(fields) if !self.row_policy_applies(name) => {
+                    coll.get_values_projected(&keys, fields)
+                }
+                _ => coll.get_values(&keys),
+            };
+            let Ok(found) = found else {
                 continue;
             };
             for ((at, _), doc) in wanted.iter().zip(found) {

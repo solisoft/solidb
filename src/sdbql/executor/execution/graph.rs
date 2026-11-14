@@ -45,6 +45,11 @@ pub(crate) struct EdgeExpander<'e> {
     /// entries, without the edge documents.
     out_pairs: bool,
     in_pairs: bool,
+    /// Whether some edge names its `_from` / `_to` with the database
+    /// (`"db:coll/key"`): only then is a vertex looked up under both forms
+    /// in the two-field indexes.
+    from_with_db: bool,
+    to_with_db: bool,
     /// `"<database>:"`, what a document's `_id` starts with and an edge's
     /// `_from` / `_to` usually do not (see [`local_id`]).
     db_prefix: String,
@@ -169,6 +174,12 @@ impl<'e> EdgeExpander<'e> {
             edge,
             direction,
             adjacency,
+            from_with_db: out_pairs
+                && !db_prefix.is_empty()
+                && edge.index_pairs_start_with("_from", "_to", &db_prefix),
+            to_with_db: in_pairs
+                && !db_prefix.is_empty()
+                && edge.index_pairs_start_with("_to", "_from", &db_prefix),
             out_pairs,
             in_pairs,
             db_prefix,
@@ -316,7 +327,12 @@ impl<'e> EdgeExpander<'e> {
     fn pairs(&self, field: &str, current_id: &str) -> Option<Vec<(String, String)>> {
         let other = if field == "_from" { "_to" } else { "_from" };
         let mut pairs = self.edge.index_pairs(field, other, current_id)?;
-        if !self.db_prefix.is_empty() {
+        let with_db = if field == "_from" {
+            self.from_with_db
+        } else {
+            self.to_with_db
+        };
+        if with_db {
             let with_db = format!("{}{}", self.db_prefix, current_id);
             pairs.extend(
                 self.edge

@@ -188,6 +188,11 @@ impl<'a> QueryExecutor<'a> {
         {
             self.record_scan_projection(for_clause, fields);
         }
+        if let Some((traversal, fields)) =
+            crate::sdbql::executor::projection::traversal_projection(query)
+        {
+            self.record_traversal_projection(traversal, fields);
+        }
 
         // `SORT DISTANCE(…) LIMIT n` served from a geo index. Windows need
         // every row, so they rule it out like the other fast paths.

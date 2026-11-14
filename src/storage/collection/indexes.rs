@@ -1623,6 +1623,33 @@ impl Collection {
             .map(|index| index.name.clone())
     }
 
+    /// Whether the index on `[first_field, second_field]` holds an entry
+    /// whose first field is a string starting with `start`.
+    pub fn index_pairs_start_with(
+        &self,
+        first_field: &str,
+        second_field: &str,
+        start: &str,
+    ) -> bool {
+        let (Some(name), Some(cf)) = (
+            self.pair_index_name(first_field, second_field),
+            self.ks.handle(&self.db),
+        ) else {
+            return false;
+        };
+        // `idx:<name>:` then the hex of `04 <start…>`: the string's first bytes.
+        let mut prefix = Self::idx_entry_key(&name, &[], "");
+        prefix.pop();
+        let mut encoded = vec![0x04];
+        encoded.extend_from_slice(start.as_bytes());
+        prefix.extend_from_slice(hex::encode(encoded).as_bytes());
+        self.db
+            .prefix_iterator_ks(&cf, &prefix)
+            .flatten()
+            .next()
+            .is_some_and(|(key, _)| key.starts_with(&prefix))
+    }
+
     /// The entries of the index on `[first_field, second_field]` whose first
     /// field is the string `first`: each one's second field, when it is a
     /// string, and its document key, in the index's order (by second field).
