@@ -108,7 +108,7 @@
 <li><strong>The questions are small.</strong> Neighbourhoods, a filter, a shortest path. No analytics over the whole graph, no pattern with several branches, no write. Graph databases are built for more than this, and Cypher expresses patterns that SDBQL does not.</li>
 <li><strong>The queries are ours.</strong> Each is the form its own documentation suggests, and the two Memgraph figures above show what a different form may be worth.</li>
 <li><strong>Eight clients on four cores</strong> is as far as the harness went.</li>
-<li><strong>The figures are those of the build, not of the published image.</strong> They were measured on the code that became 2.10.4, built on the benchmark machine; the published image has not been measured yet.</li>
+<li><strong>The tables are those of the build that became 2.10.4</strong>, compiled on the benchmark machine before the release. The published 2.10.4 image was measured afterwards on the same machine, read-only: it leads the same twelve series, by 11% (three hops at one client) to 4.3 times, and loads in 22 seconds. Its results are beside the others.</li>
 </ul>
 </section>
 
