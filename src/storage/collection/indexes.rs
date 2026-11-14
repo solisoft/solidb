@@ -1603,6 +1603,69 @@ impl Collection {
         Some(docs)
     }
 
+    /// Whether an index holds exactly `[first, second]`, in that order.
+    pub fn has_pair_index(&self, first: &str, second: &str) -> bool {
+        self.pair_index_name(first, second).is_some()
+    }
+
+    fn pair_index_name(&self, first: &str, second: &str) -> Option<String> {
+        self.index_meta()?
+            .indexes
+            .iter()
+            .find(|index| {
+                index.index_type != IndexType::Trigram
+                    && !index.sparse
+                    && index.fields.len() == 2
+                    && index.fields[0] == first
+                    && index.fields[1] == second
+            })
+            .map(|index| index.name.clone())
+    }
+
+    /// The entries of the index on `[first_field, second_field]` whose first
+    /// field is the string `first`: each one's second field, when it is a
+    /// string, and its document key, in the index's order (by second field).
+    /// Read from the index entries alone: no document is fetched. `None`
+    /// when there is no such index.
+    ///
+    /// An edge collection indexed on `[_from, _to]` answers "the vertices
+    /// this one points to" this way.
+    pub fn index_pairs(
+        &self,
+        first_field: &str,
+        second_field: &str,
+        first: &str,
+    ) -> Option<Vec<(String, String)>> {
+        let name = self.pair_index_name(first_field, second_field)?;
+        let cf = self.ks.handle(&self.db)?;
+        // `idx:<name>:<hex(first)>_<hex(second)>:<key>` (`idx_entry_key`).
+        let mut prefix = Self::idx_entry_key(&name, &[Value::String(first.to_string())], "");
+        *prefix.last_mut()? = b'_';
+        let mut pairs = Vec::new();
+        for (key, doc_key) in self.db.prefix_iterator_ks(&cf, &prefix).flatten() {
+            let Some(rest) = key.strip_prefix(prefix.as_slice()) else {
+                break;
+            };
+            let Some(end) = rest.iter().position(|b| *b == b':') else {
+                continue;
+            };
+            // A string is `04 <utf-8> 00` (`codec::encode_key`).
+            let Ok(encoded) = hex::decode(&rest[..end]) else {
+                continue;
+            };
+            let [0x04, text @ .., 0x00] = encoded.as_slice() else {
+                continue;
+            };
+            let (Ok(second), Ok(doc_key)) =
+                (std::str::from_utf8(text), std::str::from_utf8(&doc_key))
+            else {
+                continue;
+            };
+            pairs.push((second.to_string(), doc_key.to_string()));
+        }
+        Some(pairs)
+    }
+
     /// [`Self::index_lookup_eq`] with only `fields` of each document decoded
     /// (the others are stepped over in the stored bytes), as values: for a
     /// caller that reads one or two fields of many documents, such as the

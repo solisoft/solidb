@@ -40,6 +40,11 @@ pub(crate) struct EdgeExpander<'e> {
     edge: &'e Collection,
     direction: EdgeDirection,
     adjacency: Option<HashMap<String, Vec<Document>>>,
+    /// Whether the collection has an index on `[_from, _to]` /
+    /// `[_to, _from]`: a vertex's neighbours are then read from the index
+    /// entries, without the edge documents.
+    out_pairs: bool,
+    in_pairs: bool,
     /// `"<database>:"`, what a document's `_id` starts with and an edge's
     /// `_from` / `_to` usually do not (see [`local_id`]).
     db_prefix: String,
@@ -80,27 +85,39 @@ impl<'e> EdgeExpander<'e> {
         let want_from = matches!(direction, EdgeDirection::Outbound | EdgeDirection::Any);
         let want_to = matches!(direction, EdgeDirection::Inbound | EdgeDirection::Any);
 
-        let mut has_from_index = edge.index_lookup_eq("_from", &probe).is_some();
-        let mut has_to_index = edge.index_lookup_eq("_to", &probe).is_some();
+        let mut out_pairs = edge.has_pair_index("_from", "_to");
+        let mut in_pairs = edge.has_pair_index("_to", "_from");
+        let mut has_from_index = out_pairs || edge.index_lookup_eq("_from", &probe).is_some();
+        let mut has_to_index = in_pairs || edge.index_lookup_eq("_to", &probe).is_some();
 
+        // An edge collection the walk needs an index on gets it here when it
+        // has none (one created before edge collections were indexed at
+        // creation): on each end, and on both ends in each order, whose
+        // entries say where an edge leads without its document.
         if auto_index && edge.get_type() == "edge" {
-            if want_from && !has_from_index {
+            let create = |name: &str, fields: &[&str]| {
                 let _ = edge.create_index(
-                    "_edge_from_idx".to_string(),
-                    vec!["_from".to_string()],
+                    name.to_string(),
+                    fields.iter().map(|f| f.to_string()).collect(),
                     crate::storage::IndexType::Persistent,
                     false,
                 );
+            };
+            if want_from && !has_from_index {
+                create("_edge_from_idx", &["_from"]);
                 has_from_index = edge.index_lookup_eq("_from", &probe).is_some();
             }
             if want_to && !has_to_index {
-                let _ = edge.create_index(
-                    "_edge_to_idx".to_string(),
-                    vec!["_to".to_string()],
-                    crate::storage::IndexType::Persistent,
-                    false,
-                );
+                create("_edge_to_idx", &["_to"]);
                 has_to_index = edge.index_lookup_eq("_to", &probe).is_some();
+            }
+            if want_from && !out_pairs {
+                create("_edge_out_idx", &["_from", "_to"]);
+                out_pairs = edge.has_pair_index("_from", "_to");
+            }
+            if want_to && !in_pairs {
+                create("_edge_in_idx", &["_to", "_from"]);
+                in_pairs = edge.has_pair_index("_to", "_from");
             }
         }
 
@@ -152,6 +169,8 @@ impl<'e> EdgeExpander<'e> {
             edge,
             direction,
             adjacency,
+            out_pairs,
+            in_pairs,
             db_prefix,
         })
     }
@@ -171,6 +190,17 @@ impl<'e> EdgeExpander<'e> {
     /// Edges whose `field` is `current_id`, written with or without the
     /// database. `None` when the field has no index.
     fn indexed_edges(&self, field: &str, current_id: &str) -> Option<Vec<Document>> {
+        if (field == "_from" && self.out_pairs) || (field == "_to" && self.in_pairs) {
+            // The documents the two-field index names, in key order as a
+            // single-field index would give them.
+            let mut keys: Vec<String> = self
+                .pairs(field, current_id)?
+                .into_iter()
+                .map(|(_, key)| key)
+                .collect();
+            keys.sort_unstable();
+            return Some(self.edge.get_many(&keys));
+        }
         let mut edges = self
             .edge
             .index_lookup_eq(field, &Value::String(current_id.to_string()))?;
@@ -193,11 +223,48 @@ impl<'e> EdgeExpander<'e> {
         if self.adjacency.is_some() {
             return None;
         }
+        let current = self.local(current_id);
+        let from_pairs = |field: &str| -> Option<Vec<(String, String)>> {
+            let mut pairs = self.pairs(field, current)?;
+            // Key order: what a single-field index gives.
+            pairs.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+            Some(pairs)
+        };
+        let local = |end: String| self.local(&end).to_string();
+        match self.direction {
+            EdgeDirection::Outbound if self.out_pairs => {
+                return Some(
+                    from_pairs("_from")?
+                        .into_iter()
+                        .map(|(to, _)| local(to))
+                        .collect(),
+                );
+            }
+            EdgeDirection::Inbound if self.in_pairs => {
+                return Some(
+                    from_pairs("_to")?
+                        .into_iter()
+                        .map(|(from, _)| local(from))
+                        .collect(),
+                );
+            }
+            EdgeDirection::Any if self.out_pairs && self.in_pairs => {
+                let mut seen: HashSet<String> = HashSet::new();
+                let mut ends = Vec::new();
+                for (end, key) in from_pairs("_from")?.into_iter().chain(from_pairs("_to")?) {
+                    // A self-loop is in both lists.
+                    if seen.insert(key) {
+                        ends.push(local(end));
+                    }
+                }
+                return Some(ends);
+            }
+            _ => {}
+        }
         thread_local! {
             static ENDS: [String; 3] =
                 ["_key".to_string(), "_from".to_string(), "_to".to_string()];
         }
-        let current = self.local(current_id);
         let lookup = |field: &str| -> Option<Vec<Value>> {
             ENDS.with(|ends| {
                 let mut edges = self.edge.index_lookup_eq_projected(
@@ -242,6 +309,22 @@ impl<'e> EdgeExpander<'e> {
                 })
                 .collect(),
         )
+    }
+
+    /// `(far end, edge key)` of the edges whose `field` is `current_id`,
+    /// written with or without the database, from the two-field index.
+    fn pairs(&self, field: &str, current_id: &str) -> Option<Vec<(String, String)>> {
+        let other = if field == "_from" { "_to" } else { "_from" };
+        let mut pairs = self.edge.index_pairs(field, other, current_id)?;
+        if !self.db_prefix.is_empty() {
+            let with_db = format!("{}{}", self.db_prefix, current_id);
+            pairs.extend(
+                self.edge
+                    .index_pairs(field, other, &with_db)
+                    .unwrap_or_default(),
+            );
+        }
+        Some(pairs)
     }
 
     /// Edges incident to `current_id` in the configured direction.

@@ -230,6 +230,21 @@ impl Database {
                         );
                     }
                 }
+                // And on both ends, in each order: a traversal reads where
+                // an edge leads from these entries, without its document.
+                for (idx_name, fields) in [
+                    ("_edge_out_idx", ["_from", "_to"]),
+                    ("_edge_in_idx", ["_to", "_from"]),
+                ] {
+                    if !coll.has_pair_index(fields[0], fields[1]) {
+                        let _ = coll.create_index(
+                            idx_name.to_string(),
+                            fields.iter().map(|f| f.to_string()).collect(),
+                            crate::storage::IndexType::Persistent,
+                            false,
+                        );
+                    }
+                }
             }
         }
     }
