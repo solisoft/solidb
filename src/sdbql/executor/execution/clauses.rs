@@ -1462,7 +1462,14 @@ impl<'a> QueryExecutor<'a> {
                         )
                         && gt.prune.is_none()
                         && !keeps_path;
-                    let mut folded = match clauses.get(i + 1) {
+                    // The FILTERs right after it are checked on that row as
+                    // each one is found: a row they drop is never built.
+                    let gate: Vec<&Expression> = if level_wise {
+                        leading_filters(clauses, i + 1)
+                    } else {
+                        Vec::new()
+                    };
+                    let mut folded = match clauses.get(i + 1 + gate.len()) {
                         Some(BodyClause::Collect(collect))
                             if level_wise && collect.into_var.is_none() =>
                         {
@@ -1502,7 +1509,10 @@ impl<'a> QueryExecutor<'a> {
                         let by_path = opts.unique_vertices == UniqueVertices::Path;
                         if level_wise {
                             let reads_edge = gt.edge_var.is_some();
-                            let mut reused = folded.as_ref().map(|_| ctx.clone());
+                            let mut row = ctx.clone();
+                            // The vertex collection last emitted from, and
+                            // whether a row policy applies to it.
+                            let mut policed: Option<(String, bool)> = None;
                             // (vertex, the edge that led to it, its path)
                             type Id = std::sync::Arc<str>;
                             type Frame = (Id, Option<std::sync::Arc<Value>>, Vec<Id>);
@@ -1540,41 +1550,47 @@ impl<'a> QueryExecutor<'a> {
                                             continue;
                                         };
                                         // A vertex hidden by its row policy
-                                        // is not emitted (audit H2).
-                                        if !self.row_policy_permits(coll_name, &v, ctx) {
+                                        // is not emitted (audit H2). Whether
+                                        // its collection has one is looked
+                                        // up once per collection, not per
+                                        // vertex.
+                                        if policed
+                                            .as_ref()
+                                            .is_none_or(|(name, _)| name != coll_name)
+                                        {
+                                            policed = Some((
+                                                coll_name.to_string(),
+                                                self.row_policy_applies(coll_name),
+                                            ));
+                                        }
+                                        if policed.as_ref().is_some_and(|(_, applies)| *applies)
+                                            && !self.row_policy_permits(coll_name, &v, ctx)
+                                        {
                                             continue;
                                         }
                                         // The row shares the documents
                                         // with whatever else holds them.
-                                        if let (Some(fold), Some(row)) =
-                                            (folded.as_mut(), reused.as_mut())
+                                        row.set_shared(&gt.vertex_var, v);
+                                        if let Some(ref edge_var) = gt.edge_var {
+                                            row.set_shared(
+                                                edge_var,
+                                                edge.clone().unwrap_or_else(|| {
+                                                    std::sync::Arc::new(Value::Null)
+                                                }),
+                                            );
+                                        }
+                                        if !gate.iter().all(|filter| self.filter_row(filter, &row))
                                         {
-                                            row.set_shared(&gt.vertex_var, v);
-                                            if let Some(ref edge_var) = gt.edge_var {
-                                                row.set_shared(
-                                                    edge_var,
-                                                    edge.clone().unwrap_or_else(|| {
-                                                        std::sync::Arc::new(Value::Null)
-                                                    }),
-                                                );
-                                            }
-                                            fold.push_ref(self, row)?;
                                             continue;
                                         }
-                                        let mut new_ctx = ctx.clone();
-                                        new_ctx.insert_shared(gt.vertex_var.clone(), v);
-                                        if let Some(ref edge_var) = gt.edge_var {
-                                            match edge {
-                                                Some(edge) => new_ctx
-                                                    .insert_shared(edge_var.clone(), edge.clone()),
-                                                None => {
-                                                    new_ctx.insert(edge_var.clone(), Value::Null)
+                                        match folded.as_mut() {
+                                            Some(fold) => fold.push_ref(self, &row)?,
+                                            None => {
+                                                new_rows.push(row.clone());
+                                                if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
+                                                    self.check_budget(new_rows.len())?;
                                                 }
-                                            };
-                                        }
-                                        new_rows.push(new_ctx);
-                                        if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
-                                            self.check_budget(new_rows.len())?;
+                                            }
                                         }
                                     }
                                 }
@@ -1609,9 +1625,16 @@ impl<'a> QueryExecutor<'a> {
                                                 longer.push(to.clone());
                                                 next.push((to.clone(), edge, longer));
                                             } else {
-                                                if !seen.insert(to.clone()) {
+                                                // Looked up before it is
+                                                // cloned: most ends of a
+                                                // deep level are known,
+                                                // and a clone writes to
+                                                // memory every thread
+                                                // walking here shares.
+                                                if seen.contains(to) {
                                                     return None;
                                                 }
+                                                seen.insert(to.clone());
                                                 next.push((to.clone(), edge, Vec::new()));
                                             }
                                             Some(next.len() - 1)
@@ -1827,11 +1850,14 @@ impl<'a> QueryExecutor<'a> {
                         // The COLLECT that follows is done.
                         rows = fold.finish()?;
                         self.check_budget(rows.len())?;
-                        i += 2;
+                        i += 2 + gate.len();
                         continue;
                     }
                     rows = new_rows;
                     self.check_budget(rows.len())?;
+                    // The FILTERs checked above are done.
+                    i += 1 + gate.len();
+                    continue;
                 }
                 BodyClause::ShortestPath(sp) => {
                     let mut new_rows = Vec::new();
