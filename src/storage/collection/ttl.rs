@@ -221,6 +221,12 @@ impl Collection {
 
         if let Some(n) = field_value.as_u64() {
             Some(n)
+        } else if let Some(n) = field_value.as_f64() {
+            // Seconds with a fraction, or an integer a client wrote as a
+            // float (`Date.now() / 1000`, `FLOOR(DATE_NOW() / 1000)`): the
+            // second it falls in. Such a document used to be kept for ever,
+            // without a word. A negative number is no timestamp.
+            (n.is_finite() && n >= 0.0).then_some(n as u64)
         } else if let Some(s) = field_value.as_str() {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
                 Some(dt.timestamp() as u64)

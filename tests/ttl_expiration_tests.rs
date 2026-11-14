@@ -141,3 +141,39 @@ fn test_ttl_multiple_indexes() {
     assert_eq!(deleted_2, 1);
     assert!(col.get("A").is_err());
 }
+
+/// A timestamp written as a float expires like the integer it rounds down
+/// to; what cannot be a timestamp keeps its document.
+#[test]
+fn test_ttl_takes_a_float_timestamp() {
+    let (engine, _tmp) = create_test_env();
+    let col = engine.get_collection("events").unwrap();
+    col.create_ttl_index("ttl".to_string(), "ts".to_string(), 2)
+        .unwrap();
+    let now = current_ts() as f64;
+
+    for (key, ts) in [
+        ("whole", json!(now - 5.0)),
+        ("fraction", json!(now - 5.75)),
+        ("fresh", json!(now + 0.5)),
+        ("negative", json!(-5.0)),
+        ("negative_int", json!(-5)),
+        ("text", json!("not a date")),
+        ("flag", json!(true)),
+    ] {
+        col.insert(json!({"_key": key, "ts": ts})).unwrap();
+    }
+
+    assert_eq!(col.cleanup_all_expired_documents().unwrap(), 2);
+    for gone in ["whole", "fraction"] {
+        assert!(col.get(gone).is_err(), "{gone} should have expired");
+    }
+    for kept in ["fresh", "negative", "negative_int", "text", "flag"] {
+        assert!(col.get(kept).is_ok(), "{kept} should be kept");
+    }
+
+    // An update to a float in the past expires the document too.
+    col.update("fresh", json!({"ts": now - 10.0})).unwrap();
+    assert_eq!(col.cleanup_all_expired_documents().unwrap(), 1);
+    assert!(col.get("fresh").is_err());
+}

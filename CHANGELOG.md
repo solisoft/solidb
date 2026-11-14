@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+* **A TTL index takes a float timestamp.** A document whose TTL field held
+  seconds as a float (`1794500000.0`) never expired, silently. It expires
+  like the integer it truncates to (card #850).
+
 ## [2.10.0](https://github.com/solisoft/solidb/compare/v2.9.5...v2.10.0) (2026-11-13)
 
 Foreign keys, and a fix for nodes that join a cluster.
