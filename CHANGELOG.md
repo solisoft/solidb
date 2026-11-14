@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Graph traversals and shortest paths are several times faster.** On
+  20,000 vertices and 200,000 edges (solistore, one client, short runs; the
+  full benchmark is `benchmarks/compare/graph.sh`): the vertices within two
+  hops in 36 µs where 2.10.3 took 560, within three hops in 0.27 ms where
+  it took 7.3, a shortest path in 27 µs where it took 10.8 ms.
+  - An edge collection gets two more indexes, on `[_from, _to]` and on
+    `[_to, _from]` (at creation, or at the first traversal of a collection
+    that predates this). Their entries hold both ends of an edge, so a
+    vertex's neighbours are read without its edge documents. An edge write
+    maintains four index entries where it maintained two.
+  - A breadth-first traversal that binds no path goes level by level: the
+    edges of a whole level, then its vertices in one batched read. Only the
+    fields the query reads of the vertices and the edges are decoded.
+  - `SHORTEST_PATH` without a weight searches from both ends at once. It
+    returns a shortest path, not necessarily the one a search from the
+    start would have found first.
+  - The neighbourhoods, vertices and edges a traversal reads are kept
+    between queries, per collection, until the collection is next written:
+    `SOLIDB_GRAPH_CACHE_MB` megabytes per map at most (256 by default, `0`
+    turns it off). Any committed write to a collection drops what was kept
+    of it.
+
 ## [2.10.3](https://github.com/solisoft/solidb/compare/v2.10.2...v2.10.3) (2026-11-14)
 
 Path searches that read the edge index instead of the whole edge collection,

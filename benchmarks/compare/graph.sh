@@ -86,8 +86,11 @@ run_one() {
   case $cfg in
     solidb)
       engine=solidb port=6800 image=$SOLIDB_IMAGE
+      # What a traversal keeps between queries, per map (the server's
+      # default is 256): room for the whole graph, as Neo4j's page cache
+      # and Memgraph's memory limit are given below.
       run=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$port -e SOLIDB_ENGINE=solistore
-        -v "$data:/data:Z,U" "$image")
+        -e SOLIDB_GRAPH_CACHE_MB="${SOLIDB_GRAPH_CACHE_MB:-2048}" -v "$data:/data:Z,U" "$image")
       ;;
     neo4j)
       engine=bolt port=7687 image=$NEO4J_IMAGE settle=15

@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Graph traversals and shortest paths are several times faster</strong> &mdash; on 20,000 vertices and 200,000 edges (solistore, one client, short runs): the vertices within two hops in 36&nbsp;µs where 2.10.3 took 560, within three hops in 0.27&nbsp;ms where it took 7.3, a shortest path in 27&nbsp;µs where it took 10.8&nbsp;ms. An edge collection gets two more indexes, on <code>[_from, _to]</code> and <code>[_to, _from]</code> (at creation, or at the first traversal of an older collection): their entries hold both ends of an edge, so a vertex's neighbours are read without its edge documents; an edge write maintains four index entries where it maintained two. A breadth-first traversal that binds no path goes level by level, with one batched read of each level's vertices, and decodes only the fields the query reads. <code>SHORTEST_PATH</code> without a weight searches from both ends at once and returns a shortest path, not necessarily the one a search from the start would have found first. What a traversal reads (neighbourhoods, vertices, edges) is kept between queries until the collection is next written, up to <code>SOLIDB_GRAPH_CACHE_MB</code> megabytes per map (256 by default, <code>0</code> turns it off).</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.10.3 -->
   <section id="v2-10-3" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -583,6 +583,45 @@ with `CreateCollection`) has to be in the full sync's own messages. `FullSyncDef
 `FullSyncOrigins` are appended to `SyncMessage` (bincode identifies variants
 by position): an older requester logs an unexpected message and carries on.
 
+### Graph traversals
+
+A traversal (`FOR v[, e[, p]] IN min..max OUTBOUND … edges`) and the path
+searches expand a vertex through `EdgeExpander`
+(`sdbql/executor/execution/graph.rs`).
+
+- **Edge indexes.** An edge collection carries four: on `_from`, on `_to`,
+  and on `[_from, _to]` and `[_to, _from]` (`Database::create_edge_indexes`;
+  `EdgeExpander::new` creates the missing ones of an older collection at
+  its first traversal). The two-field ones answer "where do this vertex's
+  edges lead" from their entries (`Collection::index_pairs`,
+  `EdgeExpander::far_ends` / `far_steps`): no edge document is read unless
+  the query reads the edge. That relies on the entry key of a two-field
+  index, `idx:<name>:<hex(first)>_<hex(second)>:<key>` (`idx_entry_key`),
+  and on a string being encoded `04 <utf-8> 00` (`codec::encode_key`): a
+  change to either has to be made in `index_pairs` too.
+- **Level by level.** A breadth-first traversal with no path variable and
+  no `PRUNE` (each vertex once, or once per path) collects the edges of a
+  whole level, then reads its vertices, and the edges it returns, in one
+  batch each (`read_kept`), decoding only the fields the query reads
+  (`projection::traversal_projection` / `traversal_edge_projection`). The
+  older frame-by-frame loop below it serves depth-first walks, `PRUNE` and
+  paths. Both must return the same rows in the same order.
+- **Kept between queries.** `graph::neighbourhoods` keeps, per collection
+  and for one write generation of it (`KsState::write_generation`, moved by
+  `Collection::invalidate_cached_queries`), the far ends of each expanded
+  vertex's edges and the documents read with each projection. A read
+  served from it calls `note_range_read`. It is only as right as the
+  generation: a write to a collection that does not reach
+  `invalidate_cached_queries` would leave a traversal reading what was
+  there before, as it would leave the query cache.
+- **One shortest path** without a weight is searched from both ends
+  (`EdgeExpander::shortest_unweighted`); the weighted and the several-paths
+  searches go through `paths.rs` and the `Neighbours` trait.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_GRAPH_CACHE_MB` | 256 | What one map of kept neighbourhoods or documents may hold; a full map stops taking entries. `0` turns the maps off. |
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a
