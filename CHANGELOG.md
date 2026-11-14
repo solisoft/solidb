@@ -4,6 +4,13 @@
 
 ### Added
 
+* **`UPSERT` by a unique index.** A search that names exactly the fields of
+  a unique hash or persistent index (`UPSERT {email: @e} …`) finds its
+  document through that index, where it inserted a new document every run.
+  `OLD` is bound in the UPDATE expression. An UPSERT whose document is
+  created or changed by another writer between its read and its write is
+  evaluated again under the document's lock, by key as by unique value: no
+  lost update (cards #845, and #799 for unsharded collections).
 * **`POST /_api/database/{db}/index/{collection}/check`**, and the driver's
   `check_indexes`: per index, the entries that are missing, those no
   document accounts for, and the unique values held by more than one

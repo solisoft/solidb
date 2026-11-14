@@ -16,7 +16,10 @@ use serde_json::{json, Value};
 use super::super::index_opt::{conjunction, leading_filters};
 use super::super::types::{Context, MutationStats};
 use super::super::{contains_window_functions, QueryExecutor};
-use super::mutations::{is_document_error, selector_key, RowWrite, ShardedTarget};
+use super::mutations::{
+    is_document_error, is_key_conflict, is_unique_violation, selector_key, RowWrite, ShardedTarget,
+    UPSERT_ATTEMPTS,
+};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
 use crate::sync::protocol::Operation;
@@ -1239,6 +1242,10 @@ impl<'a> QueryExecutor<'a> {
                         ..upsert_clause.options
                     };
 
+                    // A sharded collection's rows are written by the
+                    // coordinator: no revision to guard there (card #799).
+                    let sharded = collection.is_sharded();
+
                     let input = std::mem::take(&mut rows);
                     let mut kept = Vec::with_capacity(input.len());
                     for mut ctx in input {
@@ -1257,40 +1264,132 @@ impl<'a> QueryExecutor<'a> {
                             }
                             _ => None,
                         };
-                        let found_doc_key = candidate
-                            .filter(|k| collection.get(k).is_ok())
-                            .map(str::to_string);
+                        // A search that names the fields of a unique index
+                        // finds its document through that index.
+                        let by_value = match (&search_value, candidate, sharded) {
+                            (Value::Object(search), None, false) => {
+                                collection.unique_index_for(search)
+                            }
+                            _ => None,
+                        };
 
-                        let result = if let Some(key) = found_doc_key {
-                            let update_value =
-                                self.evaluate_expr_with_context(&upsert_clause.update, &ctx)?;
-                            self.write_update_row(
-                                &collection,
-                                &upsert_clause.collection,
-                                &key,
-                                update_value,
-                                upsert_clause.replace,
-                                &upsert_clause.options,
-                                upsert_clause.binds_old,
-                                super::mutations::RowGuard::None,
-                            )
-                            .and_then(|written| {
-                                written.ok_or_else(|| {
-                                    DbError::InternalError(
-                                        "an unguarded update reported a conflict".into(),
-                                    )
-                                })
-                            })
-                        } else {
-                            let insert_value =
-                                self.evaluate_expr_with_context(&upsert_clause.insert, &ctx)?;
-                            self.write_insert_row(
-                                &collection,
-                                &upsert_clause.collection,
-                                insert_value,
-                                &insert_options,
-                                false,
-                            )
+                        // Read, compute, write over the revision read: when
+                        // another writer got in between (the document moved,
+                        // or someone else just created it), look again. The
+                        // unique index, or the key, lets one document exist;
+                        // this makes the UPSERT land on it instead of failing
+                        // or losing an update computed from `OLD`.
+                        let mut attempts = 0;
+                        let result = loop {
+                            attempts += 1;
+                            let found = match &by_value {
+                                Some((index, values)) => {
+                                    collection.unique_value_holder(index, values)?
+                                }
+                                None => candidate.map(str::to_string),
+                            };
+                            let existing = match found {
+                                Some(key) if sharded => {
+                                    collection.get(&key).is_ok().then_some((key, None))
+                                }
+                                Some(key) => match collection.get(&key) {
+                                    Ok(doc) => Some((key, Some(doc))),
+                                    Err(DbError::DocumentNotFound(_)) => None,
+                                    Err(e) => break Err(e),
+                                },
+                                None => None,
+                            };
+
+                            // The key to lock if the guarded write below
+                            // finds the document moved.
+                            let locked_key = match &existing {
+                                Some((key, Some(_))) => Some(key.clone()),
+                                _ => None,
+                            };
+                            let attempt = if let Some((key, doc)) = existing {
+                                // `OLD` in the UPDATE expression is the
+                                // document found.
+                                let rev = doc.as_ref().map(|d| d.revision().to_string());
+                                if let Some(doc) = doc {
+                                    ctx.insert("OLD".to_string(), doc.to_value());
+                                }
+                                let update_value =
+                                    self.evaluate_expr_with_context(&upsert_clause.update, &ctx)?;
+                                let guard = match &rev {
+                                    Some(rev) => super::mutations::RowGuard::IfUnchanged(rev),
+                                    None => super::mutations::RowGuard::None,
+                                };
+                                self.write_update_row(
+                                    &collection,
+                                    &upsert_clause.collection,
+                                    &key,
+                                    update_value,
+                                    upsert_clause.replace,
+                                    &upsert_clause.options,
+                                    upsert_clause.binds_old,
+                                    guard,
+                                )
+                            } else {
+                                let insert_value =
+                                    self.evaluate_expr_with_context(&upsert_clause.insert, &ctx)?;
+                                self.write_insert_row(
+                                    &collection,
+                                    &upsert_clause.collection,
+                                    insert_value,
+                                    &insert_options,
+                                    false,
+                                )
+                                .map(Some)
+                            };
+
+                            // The document moved between the read and the
+                            // write. Looking again would lose to the same
+                            // writers as often as not: take the key's lock,
+                            // read, compute and write under it.
+                            let attempt = match (attempt, &locked_key) {
+                                (Ok(None), Some(key)) if self.tx_writer.is_none() => collection
+                                    .with_write_lock(key, || {
+                                        let doc = collection.get(key)?;
+                                        ctx.insert("OLD".to_string(), doc.to_value());
+                                        let update_value = self.evaluate_expr_with_context(
+                                            &upsert_clause.update,
+                                            &ctx,
+                                        )?;
+                                        self.write_update_row(
+                                            &collection,
+                                            &upsert_clause.collection,
+                                            key,
+                                            update_value,
+                                            upsert_clause.replace,
+                                            &upsert_clause.options,
+                                            upsert_clause.binds_old,
+                                            super::mutations::RowGuard::Locked,
+                                        )
+                                    }),
+                                (attempt, _) => attempt,
+                            };
+
+                            // Lost to another writer of the same document?
+                            let raced = match &attempt {
+                                Ok(None) => true,
+                                Err(DbError::DocumentNotFound(_)) => true,
+                                Err(e) => {
+                                    (by_value.is_some() && is_unique_violation(e))
+                                        || (candidate.is_some() && is_key_conflict(e))
+                                }
+                                Ok(Some(_)) => false,
+                            };
+                            if raced && self.tx_writer.is_none() && attempts < UPSERT_ATTEMPTS {
+                                continue;
+                            }
+                            break match attempt {
+                                Ok(Some(write)) => Ok(write),
+                                Ok(None) => Err(DbError::ConflictError(format!(
+                                    "UPSERT in {}: the document kept changing under it",
+                                    upsert_clause.collection
+                                ))),
+                                Err(e) => Err(e),
+                            };
                         };
 
                         match result {

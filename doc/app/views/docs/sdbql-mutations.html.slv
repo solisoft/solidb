@@ -228,7 +228,10 @@ FOR i IN nums
                   <code class="text-sm text-gray-300">UPSERT <span class="text-emerald-400">{ search }</span> INSERT <span class="text-emerald-400">{ insert }</span> UPDATE|REPLACE <span class="text-purple-400">{ update }</span> IN <span class="text-cyan-400">collection</span> [OPTIONS <span class="text-purple-400">{ ... }</span>]</code>
                 </div>
                 <p class="text-sm text-gray-400">
-                  With <code>REPLACE</code> the found document is replaced by the third expression rather than merged with it. <code>NEW</code> is the stored document either way; <code>OLD</code> is the document that was found, or <code>null</code> when the INSERT branch ran.
+                  With <code>REPLACE</code> the found document is replaced by the third expression rather than merged with it. <code>NEW</code> is the stored document either way; <code>OLD</code> is the document that was found, or <code>null</code> when the INSERT branch ran. <code>OLD</code> can be read in the UPDATE expression itself: <code>UPDATE { visits: OLD.visits + 1 }</code>.
+                </p>
+                <p class="text-sm text-gray-400">
+                  The search finds one document in one of two ways. By its key: <code>{ _key: &hellip; }</code>, <code>{ _id: &hellip; }</code> or a key string. Or by a <strong class="text-gray-300">unique index</strong>: when the search names exactly the fields of a unique hash or persistent index (<code>{ email: @e }</code>, or <code>{ tenant: @t, login: @l }</code> for an index on both), the document is looked up in that index. A search that matches neither a key nor a unique index finds nothing and the INSERT branch runs every time: an UPSERT never scans the collection.
                 </p>
 
                 <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4 flex items-start">
@@ -238,7 +241,7 @@ FOR i IN nums
                   <div>
                     <h4 class="text-amber-300 font-bold mb-1 text-sm">Atomicity</h4>
                     <p class="text-sm text-amber-200/70">
-                      In a transaction, UPSERT ensures that no other process inserts the document between the check and the insertion. The search condition should uniquely identify a single document (usually by <code>_key</code>).
+                      Outside a transaction, an UPSERT by key or by a unique index lands on one document whatever runs beside it: when another writer creates the document first, or changes it between the read and the write, the row is evaluated again on the current document, under its lock. Concurrent <code>UPDATE { n: OLD.n + 1 }</code> lose no increment. In a transaction the lookup reads committed data, and a conflict is reported at the write or at commit instead. On a sharded collection there is no such guard.
                     </p>
                   </div>
                 </div>
@@ -247,9 +250,17 @@ FOR i IN nums
                   <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Example</h4>
                   <pre><code class="language-sql text-sm">UPSERT { _key: "user123" }
 INSERT { _key: "user123", name: "Alice", visits: 1 }
-UPDATE { visits: 1 } --Merges if exists
+UPDATE { visits: OLD.visits + 1 }
 IN users
-RETURN NEW</code></pre>
+RETURN NEW
+
+-- create the user with this email, or count one more visit:
+-- needs a unique index on email
+UPSERT { email: @email }
+INSERT { email: @email, visits: 1 }
+UPDATE { visits: OLD.visits + 1 }
+IN users
+RETURN { key: NEW._key, visits: NEW.visits, created: OLD == null }</code></pre>
                 </div>
               </div>
             </div>

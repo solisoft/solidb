@@ -79,6 +79,47 @@ impl Collection {
         }
     }
 
+    /// The unique index whose fields are exactly the keys of `search`, with
+    /// the values in the index's order: what lets `UPSERT {email: @e}` find
+    /// its document. `None` when no unique hash or persistent index has
+    /// those fields, or when every value is null (a unique index does not
+    /// constrain a missing value).
+    pub(crate) fn unique_index_for(
+        &self,
+        search: &serde_json::Map<String, Value>,
+    ) -> Option<(Index, Vec<Value>)> {
+        let meta = self.index_meta()?;
+        let index = meta.indexes.iter().find(|index| {
+            index.unique
+                && matches!(index.index_type, IndexType::Hash | IndexType::Persistent)
+                && index.fields.len() == search.len()
+                && index.fields.iter().all(|field| search.contains_key(field))
+        })?;
+        let values: Vec<Value> = index
+            .fields
+            .iter()
+            .map(|field| search[field].clone())
+            .collect();
+        (!values.iter().all(Value::is_null)).then(|| (index.clone(), values))
+    }
+
+    /// The key of the document that holds `values` in the unique `index`,
+    /// read from the index alone.
+    pub(crate) fn unique_value_holder(
+        &self,
+        index: &Index,
+        values: &[Value],
+    ) -> DbResult<Option<String>> {
+        let cf = self.live_cf()?;
+        let prefix = Self::idx_entry_key(&index.name, values, "");
+        let mut holder = None;
+        self.for_each_index_entry(&cf, &prefix, |doc_key| {
+            holder = Some(String::from_utf8_lossy(doc_key).into_owned());
+            Ok(false)
+        })?;
+        Ok(holder)
+    }
+
     /// Every index declared on the collection, of every family, as the
     /// specs [`Self::apply_index_spec`] takes: what a full sync sends.
     pub fn index_specs(&self) -> Vec<crate::storage::index::IndexSpec> {

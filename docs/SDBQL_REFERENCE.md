@@ -42,7 +42,7 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `INSERT` | Inserts new documents | `INSERT {name: "Alice"} INTO users` |
 | `UPDATE` | Updates existing documents | `UPDATE user WITH {active: true} IN users` |
 | `DELETE` | Removes documents | `DELETE user IN users` |
-| `UPSERT` | Updates or Inserts | `UPSERT {id: 1} INSERT {id: 1, val: 0} UPDATE {val: OLD.val + 1} IN counts` |
+| `UPSERT` | Updates or Inserts. The search is a `_key` / `_id`, or the fields of a unique index (after 2.10.0) | `UPSERT {_key: "a"} INSERT {_key: "a", val: 0} UPDATE {val: OLD.val + 1} IN counts` |
 
 ### Where `LET` may go
 

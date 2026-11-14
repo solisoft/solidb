@@ -78,6 +78,20 @@ pub(super) fn is_document_error(err: &DbError) -> bool {
     )
 }
 
+/// Times an UPSERT looks again when another writer of the same document got
+/// in between its read and its write.
+pub(super) const UPSERT_ATTEMPTS: usize = 16;
+
+/// An insert refused because another document holds its unique value.
+pub(super) fn is_unique_violation(err: &DbError) -> bool {
+    matches!(err, DbError::InvalidDocument(m) if m.starts_with("Unique constraint violated"))
+}
+
+/// An insert refused because its `_key` is taken.
+pub(super) fn is_key_conflict(err: &DbError) -> bool {
+    matches!(err, DbError::ConflictError(m) if m.contains("already exists"))
+}
+
 /// The `_key` a mutation selector names: a key string, or a document with a
 /// string `_key`. Errors are `InvalidDocument`, which `ignoreErrors` skips.
 pub(super) fn selector_key(value: &Value, statement: &str) -> DbResult<String> {
