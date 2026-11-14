@@ -1168,6 +1168,35 @@ fn path_searches_agree_through_the_index_and_through_a_scan() {
                         .unwrap_or_else(|err| panic!("{q}: {err}"))
                 };
                 let (indexed, scanned) = (run("links"), run("links_plain"));
+                if search.starts_with("SHORTEST_PATH") && !search.contains("weight") {
+                    // Searched from both ends through the index: a shortest
+                    // path, not necessarily the one a search from the start
+                    // finds first. Same length, and a real path.
+                    assert_eq!(
+                        indexed.len(),
+                        scanned.len(),
+                        "{search} {dir} s{from} -> s{to}"
+                    );
+                    for (a, b) in indexed.iter().zip(&scanned) {
+                        assert_eq!(a["w"], b["w"], "{search} {dir} s{from} -> s{to}");
+                        let (vs, es) = (a["vs"].as_array().unwrap(), a["es"].as_array().unwrap());
+                        assert_eq!(vs.len(), es.len() + 1);
+                        assert_eq!(vs[0], json!(format!("spots/s{from}")));
+                        assert_eq!(vs[vs.len() - 1], json!(format!("spots/s{to}")));
+                        for (step, key) in es.iter().enumerate() {
+                            let edge = edges.iter().find(|e| e["_key"] == *key).unwrap();
+                            let ends = [&edge["_from"], &edge["_to"]];
+                            assert!(
+                                ends.contains(&&vs[step]) && ends.contains(&&vs[step + 1]),
+                                "{search} {dir}: edge {key} does not join {} and {}",
+                                vs[step],
+                                vs[step + 1]
+                            );
+                        }
+                    }
+                    found += indexed.len();
+                    continue;
+                }
                 assert_eq!(indexed, scanned, "{search} {dir} s{from} -> s{to}");
                 found += indexed.len();
             }

@@ -1730,6 +1730,24 @@ impl<'a> QueryExecutor<'a> {
                             self.max_intermediate_rows(),
                         )?),
                     };
+                    // The same edges walked the other way, for the search
+                    // from the end vertex.
+                    let backward = match (&expander, &sp.mode, &sp.weight) {
+                        (Some(_), crate::sdbql::ast::PathFindMode::Shortest, None) => {
+                            let reverse = match sp.direction {
+                                EdgeDirection::Outbound => EdgeDirection::Inbound,
+                                EdgeDirection::Inbound => EdgeDirection::Outbound,
+                                EdgeDirection::Any => EdgeDirection::Any,
+                            };
+                            Some(super::graph::EdgeExpander::new(
+                                &edge_collection,
+                                reverse,
+                                true,
+                                self.max_intermediate_rows(),
+                            )?)
+                        }
+                        _ => None,
+                    };
                     let in_memory = scanned
                         .as_deref()
                         .map(|edges| super::paths::Scanned::new(edges, &sp.direction));
@@ -1746,8 +1764,21 @@ impl<'a> QueryExecutor<'a> {
                         let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
                         let end_id = self.local_vertex_id(vertex_id(&end_value, "End")?);
 
-                        let found = super::paths::find_paths(sp, graph, &start_id, &end_id)
-                            .map_err(DbError::ExecutionError)?;
+                        // One shortest path by hops is searched from both
+                        // ends, reading only where the edges lead.
+                        let both_ends = match (&expander, &backward) {
+                            (Some(forward), Some(backward)) => {
+                                super::graph::EdgeExpander::shortest_unweighted(
+                                    forward, backward, &start_id, &end_id,
+                                )
+                            }
+                            _ => None,
+                        };
+                        let found = match both_ends {
+                            Some(path) => path.into_iter().collect(),
+                            None => super::paths::find_paths(sp, graph, &start_id, &end_id)
+                                .map_err(DbError::ExecutionError)?,
+                        };
                         for path in found {
                             let last_id = path.vertices.last().cloned().unwrap_or_default();
                             let last_edge = path.edges.last().cloned().unwrap_or(Value::Null);

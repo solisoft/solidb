@@ -435,6 +435,116 @@ impl<'e> EdgeExpander<'e> {
     }
 }
 
+impl EdgeExpander<'_> {
+    /// One shortest path from `start` to `end` by number of edges, searched
+    /// from both ends at once: `forward` follows the edges from `start`,
+    /// `backward` (the opposite direction over the same collection) from
+    /// `end`, the smaller frontier first, until they meet. Only the ends of
+    /// the edges are read while searching; the edges of the path found are
+    /// fetched at the end.
+    ///
+    /// `None` when either side cannot answer from an index (the caller then
+    /// searches the ordinary way), `Some(None)` when there is no path.
+    pub(crate) fn shortest_unweighted(
+        forward: &Self,
+        backward: &Self,
+        start: &str,
+        end: &str,
+    ) -> Option<Option<super::paths::FoundPath>> {
+        use super::paths::FoundPath;
+        let (start, end) = (forward.local(start), forward.local(end));
+        if start == end {
+            return Some(Some(FoundPath {
+                vertices: vec![start.to_string()],
+                edges: Vec::new(),
+                weight: 0.0,
+            }));
+        }
+        // Each side: the vertex each reached vertex was reached from, and
+        // at how many edges from that side's end.
+        type Reached = HashMap<String, (Option<String>, usize)>;
+        let mut from_start: Reached = HashMap::from([(start.to_string(), (None, 0))]);
+        let mut from_end: Reached = HashMap::from([(end.to_string(), (None, 0))]);
+        let mut front_start = vec![start.to_string()];
+        let mut front_end = vec![end.to_string()];
+        let (mut depth_start, mut depth_end) = (0usize, 0usize);
+        // The meeting vertex and the length of the path through it.
+        let mut meet: Option<(String, usize)> = None;
+        while meet.is_none() && !front_start.is_empty() && !front_end.is_empty() {
+            let grow_start = front_start.len() <= front_end.len();
+            let (side, front, seen, other, depth) = if grow_start {
+                (
+                    forward,
+                    &mut front_start,
+                    &mut from_start,
+                    &from_end,
+                    &mut depth_start,
+                )
+            } else {
+                (
+                    backward,
+                    &mut front_end,
+                    &mut from_end,
+                    &from_start,
+                    &mut depth_end,
+                )
+            };
+            *depth += 1;
+            let mut next = Vec::new();
+            // The whole level is expanded before a meeting point is kept:
+            // of the vertices of this level the other side has reached, the
+            // one nearest to the other side's end (the first, among equals).
+            for at in front.iter() {
+                for to in side.far_ends(at)? {
+                    if seen.contains_key(&to) {
+                        continue;
+                    }
+                    seen.insert(to.clone(), (Some(at.clone()), *depth));
+                    if let Some((_, other_depth)) = other.get(&to) {
+                        let length = *depth + other_depth;
+                        if meet.as_ref().is_none_or(|(_, best)| length < *best) {
+                            meet = Some((to.clone(), length));
+                        }
+                    }
+                    next.push(to);
+                }
+            }
+            *front = next;
+        }
+        let Some((meet, _)) = meet else {
+            return Some(None);
+        };
+        // start … meet, then meet … end.
+        let mut vertices = vec![meet.clone()];
+        let mut at = &meet;
+        while let Some((Some(previous), _)) = from_start.get(at) {
+            vertices.push(previous.clone());
+            at = previous;
+        }
+        vertices.reverse();
+        let mut at = &meet;
+        while let Some((Some(following), _)) = from_end.get(at) {
+            vertices.push(following.clone());
+            at = following;
+        }
+        // The edge of each step: the first, in key order, that leads there.
+        let mut edges = Vec::with_capacity(vertices.len() - 1);
+        for step in vertices.windows(2) {
+            let mut candidates = forward.edges_for(&step[0]);
+            candidates.sort_by(|a, b| a.key.cmp(&b.key));
+            let edge = candidates.into_iter().find(|edge| {
+                forward.next_id_from_doc(edge, &step[0]).as_deref() == Some(step[1].as_str())
+            })?;
+            edges.push(edge.to_value());
+        }
+        Some(Some(FoundPath {
+            weight: edges.len() as f64,
+            vertices,
+            edges,
+        }))
+    }
+}
+
 /// A path search reads a vertex's edges where a traversal does: from the
 /// `_from` / `_to` index, the part of the graph it visits and no more.
 impl super::paths::Neighbours for EdgeExpander<'_> {
