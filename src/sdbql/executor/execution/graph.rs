@@ -45,23 +45,29 @@ pub(crate) struct Reached {
 /// seen through the query cache. Filled as vertices are expanded; a graph
 /// that is read much more than it is written is then walked without
 /// touching storage, as the databases that keep their graph in memory do.
-mod neighbourhoods {
+pub(crate) mod neighbourhoods {
     use crate::storage::keyspace::KsState;
     use dashmap::DashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    pub(super) type Ends = Arc<[Box<str>]>;
+    pub(crate) type Ends = Arc<[Box<str>]>;
+    pub(crate) type Neighbourhoods = Kept<Ends>;
+    /// The documents of a collection as one projection of a traversal reads
+    /// them, kept the same way.
+    pub(crate) type Vertices = Kept<Arc<serde_json::Value>>;
 
-    pub(super) struct Neighbourhoods {
+    /// Values read from a collection, by key, valid for one write
+    /// generation of it.
+    pub(crate) struct Kept<V> {
         state: Arc<KsState>,
         generation: u64,
-        ends: DashMap<Box<str>, Ends>,
+        values: DashMap<Box<str>, V>,
         bytes: AtomicUsize,
     }
 
-    /// `SOLIDB_GRAPH_CACHE_MB`: what the cached neighbourhoods of one edge
-    /// collection and direction may hold (default 256, `0` turns it off).
+    /// `SOLIDB_GRAPH_CACHE_MB`: what one such map may hold (default 256,
+    /// `0` turns them off).
     fn budget() -> usize {
         static BUDGET: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| {
             std::env::var("SOLIDB_GRAPH_CACHE_MB")
@@ -73,55 +79,76 @@ mod neighbourhoods {
         *BUDGET
     }
 
+    type Registry<V> = once_cell::sync::Lazy<DashMap<(usize, u64), Arc<Kept<V>>>>;
     /// Keyed by the collection's shared write state (its address, which the
-    /// entry keeps alive) and the direction.
-    static CACHE: once_cell::sync::Lazy<DashMap<(usize, u8), Arc<Neighbourhoods>>> =
-        once_cell::sync::Lazy::new(DashMap::new);
+    /// entry keeps alive) and what is kept: the direction, or the fields.
+    static ENDS: Registry<Ends> = once_cell::sync::Lazy::new(DashMap::new);
+    static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
 
-    /// The map for this collection and direction at its current generation,
-    /// or `None` when the cache is off.
-    pub(super) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
+    fn open<V>(
+        registry: &DashMap<(usize, u64), Arc<Kept<V>>>,
+        state: &Arc<KsState>,
+        kind: u64,
+    ) -> Option<Arc<Kept<V>>> {
         if budget() == 0 || state.is_dead() {
             return None;
         }
-        let key = (Arc::as_ptr(state) as usize, direction);
+        let key = (Arc::as_ptr(state) as usize, kind);
         let generation = state.write_generation();
-        if let Some(found) = CACHE.get(&key) {
+        if let Some(found) = registry.get(&key) {
             if found.generation == generation {
                 return Some(found.clone());
             }
         }
         // A new generation, or a first use: start empty. Entries of dropped
         // collections go at the same time.
-        CACHE.retain(|_, cached| !cached.state.is_dead());
-        let fresh = Arc::new(Neighbourhoods {
+        registry.retain(|_, kept| !kept.state.is_dead());
+        let fresh = Arc::new(Kept {
             state: state.clone(),
             generation,
-            ends: DashMap::new(),
+            values: DashMap::new(),
             bytes: AtomicUsize::new(0),
         });
-        CACHE.insert(key, fresh.clone());
+        registry.insert(key, fresh.clone());
         Some(fresh)
     }
 
-    impl Neighbourhoods {
-        pub(super) fn get(&self, vertex: &str) -> Option<Ends> {
-            self.ends.get(vertex).map(|ends| ends.clone())
+    /// The neighbourhoods of this collection in `direction` at its current
+    /// generation, or `None` when the cache is off.
+    pub(crate) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
+        open(&ENDS, state, direction as u64)
+    }
+
+    /// The documents of this collection as read with `fields` (`None`: whole).
+    pub(crate) fn vertices(
+        state: &Arc<KsState>,
+        fields: Option<&[String]>,
+    ) -> Option<Arc<Vertices>> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        fields.hash(&mut hasher);
+        open(&VERTICES, state, hasher.finish())
+    }
+
+    impl<V: Clone> Kept<V> {
+        pub(crate) fn get(&self, key: &str) -> Option<V> {
+            self.values.get(key).map(|value| value.clone())
         }
 
-        /// Keep `ends` for `vertex`, unless the collection has been written
-        /// since this map was opened (what was just read may then be newer
-        /// than the map says) or the map is full.
-        pub(super) fn put(&self, vertex: &str, ends: &Ends) {
+        /// Keep `value` (of about `size` bytes) for `key`, unless the
+        /// collection has been written since this map was opened (what was
+        /// just read may then be newer than the map says) or the map is
+        /// full.
+        pub(crate) fn put(&self, key: &str, value: &V, size: usize) {
             if self.state.write_generation() != self.generation {
                 return;
             }
-            let size = 64 + vertex.len() + ends.iter().map(|e| e.len() + 16).sum::<usize>();
+            let size = size + key.len() + 64;
             if self.bytes.fetch_add(size, Ordering::Relaxed) + size > budget() {
                 self.bytes.fetch_sub(size, Ordering::Relaxed);
                 return;
             }
-            self.ends.insert(vertex.into(), ends.clone());
+            self.values.insert(key.into(), value.clone());
         }
     }
 }
@@ -351,7 +378,8 @@ impl<'e> EdgeExpander<'e> {
             .map(String::into_boxed_str)
             .collect();
         if let Some(cache) = &self.cached {
-            cache.put(current, &ends);
+            let size = ends.iter().map(|end| end.len() + 16).sum();
+            cache.put(current, &ends, size);
         }
         Some(ends)
     }

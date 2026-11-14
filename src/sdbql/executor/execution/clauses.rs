@@ -2098,18 +2098,41 @@ impl QueryExecutor<'_> {
             let Some(Some(coll)) = colls.get(name) else {
                 continue;
             };
-            let keys: Vec<&str> = wanted.iter().map(|(_, key)| *key).collect();
             // A row policy reads the whole document.
-            let found = match fields {
-                Some(fields) if !self.row_policy_applies(name) => {
-                    coll.get_values_projected(&keys, fields)
+            let fields = fields.filter(|_| !self.row_policy_applies(name));
+            // What earlier queries read of these vertices, while the
+            // collection has not been written since.
+            let kept = super::graph::neighbourhoods::vertices(coll.ks.state(), fields);
+            let mut missing: Vec<(usize, &str)> = Vec::new();
+            match &kept {
+                Some(kept) => {
+                    coll.note_range_read();
+                    for (at, key) in &wanted {
+                        match kept.get(key) {
+                            Some(doc) => docs[*at] = Some((*doc).clone()),
+                            None => missing.push((*at, key)),
+                        }
+                    }
                 }
-                _ => coll.get_values(&keys),
+                None => missing = wanted,
+            }
+            if missing.is_empty() {
+                continue;
+            }
+            let keys: Vec<&str> = missing.iter().map(|(_, key)| *key).collect();
+            let found = match fields {
+                Some(fields) => coll.get_values_projected(&keys, fields),
+                None => coll.get_values(&keys),
             };
             let Ok(found) = found else {
                 continue;
             };
-            for ((at, _), doc) in wanted.iter().zip(found) {
+            for ((at, key), doc) in missing.iter().zip(found) {
+                if let (Some(kept), Some(doc)) = (&kept, &doc) {
+                    // About what its JSON text would take.
+                    let size = 48 * doc.as_object().map_or(1, |o| o.len().max(1));
+                    kept.put(key, &std::sync::Arc::new(doc.clone()), size);
+                }
                 docs[*at] = doc;
             }
         }
