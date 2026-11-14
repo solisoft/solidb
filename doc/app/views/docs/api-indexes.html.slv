@@ -134,6 +134,39 @@
 
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/index/:collection/check</code>
+              </div>
+               <p class="text-sm text-gray-400">Compare the collection's hash, persistent, trigram, bloom and cuckoo indexes with its documents. Read-only (it needs Read permission): it reads every document and every index entry, so it is an operator's tool, not something to call per request. Writes running meanwhile can appear as findings. Geo, fulltext, TTL and vector indexes are listed under <code class="text-gray-300">not_checked</code>.</p>
+               <p class="text-sm text-gray-400 mt-2">Per index: <code class="text-gray-300">missing</code>, entries a document should have and has not (a read through the index misses it); <code class="text-gray-300">stale</code>, entries no document accounts for; <code class="text-gray-300">duplicates</code>, for a unique index, values held by more than one document. Each has a <code class="text-gray-300">count</code> and the first 20 cases. <code class="text-gray-300">PUT &hellip;/rebuild</code> repairs the first two; a duplicated unique value has to be settled by hand. On one node writes keep all three at zero; the check is for after a cluster incident, a migration or a restore, since a replicated write is applied without checking unique values again.</p>
+
+               <div class="mt-4 mb-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Response</h4>
+                 <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                   <div class="flex items-center gap-2 mb-2 border-b border-white/5 pb-2">
+                      <span class="text-emerald-400 font-bold">200 OK</span>
+                      <span class="text-gray-500 text-[10px] uppercase tracking-wider">application/json</span>
+                   </div>
+                   <pre>{
+  "documents": 53,
+  "consistent": false,
+  "indexes": [
+    {
+      "name": "by_email", "index_type": "Hash", "fields": ["email"], "unique": true,
+      "entries": 50,
+      "missing": { "count": 1, "sample": [{ "_key": "u7", "values": ["u7@example.com"] }] },
+      "stale": { "count": 1, "sample": [{ "_key": "ghost" }] },
+      "duplicates": { "count": 1, "sample": [{ "values": ["same@example.com"], "keys": ["twin1", "twin2"] }] }
+    }
+  ],
+  "not_checked": ["ttl"]
+}</pre>
+                 </div>
+               </div>
+            </div>
+
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
                 <code class="text-gray-300">/_api/database/:db/index/:collection/rebuild</code>
               </div>

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+* **`POST /_api/database/{db}/index/{collection}/check`**, and the driver's
+  `check_indexes`: per index, the entries that are missing, those no
+  document accounts for, and the unique values held by more than one
+  document. Read-only (card #849). `…/foreign-keys/check` now needs Read
+  instead of Write.
+
 ### Fixed
 
 * **A TTL index takes a float timestamp.** A document whose TTL field held

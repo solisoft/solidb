@@ -210,6 +210,21 @@ async fn foreign_keys_over_http() {
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
 
+    // The index check reads the same collection and finds nothing wrong.
+    let (status, report) = call(
+        &app,
+        t,
+        "POST",
+        "/_api/database/shop/index/orders/check",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(report["consistent"], json!(true), "{report}");
+    assert_eq!(report["documents"], json!(3));
+    assert_eq!(report["indexes"][0]["name"], json!("fk_customer"));
+    assert_eq!(report["indexes"][0]["entries"], json!(3));
+
     // The collection that is referred to cannot be dropped.
     let (status, _) = call(
         &app,

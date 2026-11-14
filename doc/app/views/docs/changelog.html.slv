@@ -16,6 +16,7 @@
     </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Check an index against its documents</strong> &mdash; <code>POST /_api/database/{db}/index/{collection}/check</code> (and the driver's <code>check_indexes</code>, in the Rust client too) reads a collection and its hash, persistent, trigram, bloom and cuckoo indexes and reports, per index, the entries that are missing, the entries no document accounts for, and the unique values held by more than one document. It changes nothing and needs Read; <code>&hellip;/foreign-keys/check</code> now needs Read too, where it needed Write. For after a cluster incident, a migration or a restore: on one node, writes keep all three at zero.</li>
         <li><strong class="text-white">A TTL index takes a float timestamp</strong> &mdash; a document whose TTL field held seconds as a float (<code>1794500000.0</code>, what <code>FLOOR(DATE_NOW() / 1000)</code> or JavaScript's <code>Date.now() / 1000</code> give) never expired, without an error. It now expires like the integer it truncates to. Milliseconds are still read as seconds; a negative number, another string or a boolean still keeps its document.</li>
       </ul>
     </div>

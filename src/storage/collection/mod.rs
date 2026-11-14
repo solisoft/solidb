@@ -26,6 +26,7 @@ pub mod crud;
 pub mod fulltext;
 pub mod geo;
 pub mod hybrid;
+pub mod index_check;
 pub mod index_meta;
 pub mod indexes;
 pub mod locks;

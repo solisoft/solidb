@@ -519,6 +519,10 @@ pub fn create_router(
             put(rebuild_indexes),
         )
         .route(
+            "/_api/database/{db}/index/{collection}/check",
+            post(check_indexes),
+        )
+        .route(
             "/_api/database/{db}/index/{collection}/{name}",
             delete(delete_index),
         )

@@ -61,6 +61,25 @@ impl SoliDBClient {
             .map_err(|e| DriverError::ProtocolError(format!("Invalid response: {}", e)))
     }
 
+    /// Compare the indexes of `collection` with its documents: per index,
+    /// the entries that are missing, those no document accounts for, and
+    /// the unique values held by more than one document. Reads the whole
+    /// collection; changes nothing.
+    pub async fn check_indexes(
+        &mut self,
+        database: &str,
+        collection: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::CheckIndexes {
+                database: database.to_string(),
+                collection: collection.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
     /// The foreign keys declared on `collection` (`foreign_keys`) and those
     /// of other collections that refer to it (`referenced_by`).
     pub async fn list_foreign_keys(

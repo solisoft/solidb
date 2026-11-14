@@ -100,6 +100,11 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// Compare a collection's indexes with its documents (read-only).
+    CheckIndexes {
+        database: String,
+        collection: String,
+    },
     /// The foreign keys declared on a collection, and those that refer to it.
     ListForeignKeys {
         database: String,

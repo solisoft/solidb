@@ -102,6 +102,11 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// Compare a collection's indexes with its documents (read-only).
+    CheckIndexes {
+        database: String,
+        collection: String,
+    },
     /// The foreign keys declared on a collection, and those that refer to it.
     ListForeignKeys {
         database: String,
@@ -571,6 +576,7 @@ impl Command {
             | DeleteIndex { database, .. }
             | ListIndexes { database, .. }
             | ListForeignKeys { database, .. }
+            | CheckIndexes { database, .. }
             | CreateForeignKey { database, .. }
             | DeleteForeignKey { database, .. }
             | CheckForeignKey { database, .. }
@@ -683,6 +689,7 @@ impl Command {
             | ListIndexes { .. }
             | ListForeignKeys { .. }
             | CheckForeignKey { .. }
+            | CheckIndexes { .. }
             | ListScripts { .. }
             | GetScript { .. }
             | GetScriptStats

@@ -526,6 +526,24 @@ impl DriverHandler {
                 collection,
             } => index::handle_list_indexes(self, database, collection),
 
+            Command::CheckIndexes {
+                database,
+                collection,
+            } => match self.get_collection(&database, &collection) {
+                // Off the runtime: it reads the whole collection.
+                Ok(coll) => match tokio::task::spawn_blocking(move || coll.check_indexes()).await {
+                    Ok(Ok(report)) => {
+                        Response::ok(serde_json::to_value(report).unwrap_or_default())
+                    }
+                    Ok(Err(e)) => Response::error(DriverError::DatabaseError(e.to_string())),
+                    Err(e) => Response::error(DriverError::DatabaseError(format!(
+                        "Task join error: {}",
+                        e
+                    ))),
+                },
+                Err(e) => Response::error(e),
+            },
+
             // ==================== Foreign Keys ====================
             Command::ListForeignKeys {
                 database,

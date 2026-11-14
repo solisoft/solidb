@@ -318,6 +318,21 @@ pub async fn rebuild_indexes(
     })))
 }
 
+/// Compare the collection's indexes with its documents: entries that are
+/// missing, entries no document accounts for, unique values held twice.
+/// Reads everything and changes nothing.
+pub async fn check_indexes(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<crate::storage::collection::index_check::IndexReport>, DbError> {
+    let database = state.storage.get_database(&db_name)?;
+    let collection = database.get_collection(&coll_name)?;
+    let report = tokio::task::spawn_blocking(move || collection.check_indexes())
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+    Ok(Json(report))
+}
+
 pub async fn delete_index(
     State(state): State<AppState>,
     Path((db_name, coll_name, index_name)): Path<(String, String, String)>,

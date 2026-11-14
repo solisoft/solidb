@@ -154,7 +154,7 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     }
 
     // Read-semantics POST/PUT endpoints
-    const READ_SUFFIXES: [&str; 9] = [
+    const READ_SUFFIXES: [&str; 10] = [
         "/cursor",
         "/explain",
         "/nl",
@@ -164,6 +164,8 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
         "/aggregate",
         "/sql",
         "/_verify",
+        // Index and foreign key checks: they read everything, write nothing.
+        "/check",
     ];
     if READ_SUFFIXES.iter().any(|s| path.ends_with(s)) {
         return PermissionAction::Read;
@@ -414,6 +416,19 @@ mod tests {
         assert_eq!(
             required_action(&delete, "/_api/database/{db}/scripts/{script_id}"),
             PermissionAction::Admin
+        );
+
+        // Checks read everything and write nothing
+        assert_eq!(
+            required_action(&post, "/_api/database/{db}/index/{collection}/check"),
+            PermissionAction::Read
+        );
+        assert_eq!(
+            required_action(
+                &post,
+                "/_api/database/{db}/collection/{name}/foreign-keys/check"
+            ),
+            PermissionAction::Read
         );
 
         // Deeper DELETE paths are plain writes, not drops

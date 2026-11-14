@@ -832,6 +832,11 @@ fn foreign_keys_over_a_real_connection() {
         c.delete(DB, "customers", "ann").await.unwrap();
         assert!(c.get(DB, "orders", "o2").await.is_err());
 
+        // The key's index, compared with the documents.
+        let report = c.check_indexes(DB, "orders").await.unwrap();
+        assert_eq!(report["consistent"], json!(true), "{report}");
+        assert_eq!(report["indexes"][0]["name"], json!("fk_customer"));
+
         c.delete_foreign_key(DB, "orders", "fk_customer")
             .await
             .unwrap();
