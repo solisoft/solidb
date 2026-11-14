@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.10.2](https://github.com/solisoft/solidb/compare/v2.10.1...v2.10.2) (2026-11-14)
+
+A transaction's queries see its own writes, and a transaction waiting for a
+lock is no longer overtaken until its wait runs out.
+
 ### Added
 
 - **A transaction's queries see its own writes.** A document read by key
