@@ -35,17 +35,17 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            SoliDB supports fully ACID-compliant transactions across multiple documents and collections. A commit is written as a single atomic RocksDB write batch covering every collection the transaction touched, so RocksDB's own write-ahead log provides durability in the event of a system crash. (The separate <code>transaction.wal</code> file is no longer written; one left by an older version is still replayed at startup.)
+            SoliDB transactions span multiple documents and collections. A commit is written as a single atomic write batch covering every collection the transaction touched, through the storage engine's write-ahead log, and is fsynced before it is acknowledged (except at Read Uncommitted). What that gives is stated below property by property, with what was tested and what was not: isolation depends on the level a transaction begins at, and durability was tested by killing the server, not yet by cutting its power. (The separate <code>transaction.wal</code> file is no longer written; one left by an older version is still replayed at startup.)
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
               <h4 class="text-amber-400 font-bold mb-2">Key Properties</h4>
               <ul class="space-y-2 text-sm text-gray-400">
-                <li><strong class="text-white">Atomic:</strong> All operations succeed or none do.</li>
-                <li><strong class="text-white">Consistent:</strong> Database moves from one valid state to another.</li>
-                <li><strong class="text-white">Isolated:</strong> Transactions are invisible to others until committed.</li>
-                <li><strong class="text-white">Durable:</strong> Committed changes are permanently saved.</li>
+                <li><strong class="text-white">Atomic:</strong> all of a transaction's writes are stored or none, across collections. After 100 <code>kill -9</code> during commits, on both engines, no transaction was found half applied.</li>
+                <li><strong class="text-white">Consistent:</strong> unique indexes and foreign keys are checked on the transaction as a whole at commit, which is refused if one fails.</li>
+                <li><strong class="text-white">Isolated:</strong> nothing a transaction wrote is visible to others before its commit. What it may read that others change depends on its level (below): Read Committed, the default, prevents lost updates but not write skew; Repeatable Read and Serializable check at commit what the transaction read.</li>
+                <li><strong class="text-white">Durable:</strong> a commit is fsynced before it is acknowledged, at every level but Read Uncommitted. No acknowledged transaction was lost in the <code>kill -9</code> runs. A power loss below the filesystem has not been tested.</li>
               </ul>
             </div>
             <div class="bg-gray-950/50 rounded-xl p-5 border border-white/5">
