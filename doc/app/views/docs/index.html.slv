@@ -66,7 +66,9 @@ groups = [
     { "slug": "observability", "icon": "fa-signal", "label": "Observability",
       "desc": "OpenTelemetry traces and Prometheus metrics." },
     { "slug": "security", "icon": "fa-lock", "label": "Security",
-      "desc": "JWT auth, API keys, RBAC, and encryption." }
+      "desc": "JWT auth, API keys, RBAC, and encryption." },
+    { "slug": "changelog", "icon": "fa-clock-rotate-left", "label": "Changelog",
+      "desc": "What changed in each release, newest first." }
   ] }
 ]
 

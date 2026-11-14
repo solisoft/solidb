@@ -51,6 +51,23 @@ describe("Docs pages") do
     expect(body.include?("engine-solistore")).to_equal(true)
   end
 
+  test("the changelog is one click from the docs and the blog, as from the home page") do
+    docs = res_body(get("/docs"))
+    expect(docs.include?("href=\"/docs/changelog\"")).to_equal(true)
+    expect(docs.include?("What changed in each release")).to_equal(true)
+
+    # The blog carries the home page's menu.
+    home = res_body(get("/"))
+    blog = res_body(get("/blog"))
+    post = res_body(get("/blog/foreign-keys-in-a-document-database"))
+    for label in ["Performance", "Clustering", "Limits", "Docs", "Blog", "Changelog"]
+      expect(home.include?(">" + label + "</a>")).to_equal(true)
+      expect(blog.include?(">" + label + "</a>")).to_equal(true)
+      expect(post.include?(">" + label + "</a>")).to_equal(true)
+    end
+    expect(blog.include?("href=\"/#perf\"")).to_equal(true)
+  end
+
   test("foreign keys has a page, linked from the sidebar") do
     response = get("/docs/foreign-keys")
     expect(res_status(response)).to_equal(200)

@@ -68,6 +68,7 @@
         <%- partial("shared/version_pill", {}) %>
         <a class="docs-nav-link" href="/">Home</a>
         <a class="docs-nav-link" href="/blog">Blog</a>
+        <a class="docs-nav-link" href="/docs/changelog">Changelog</a>
         <a class="btn btn-ghost btn-sm" href="https://github.com/solisoft/solidb">
           <i class="fab fa-github"></i> GitHub
         </a>

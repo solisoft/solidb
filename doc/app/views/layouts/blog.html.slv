@@ -53,10 +53,14 @@
       SoliDB
     </a>
 
+    <%# The home page's menu: its section links point back at it. %>
     <nav class="nav-links" aria-label="Primary">
-      <a href="/">Home</a>
+      <a href="/#perf">Performance</a>
+      <a href="/#cluster">Clustering</a>
+      <a href="/#limits">Limits</a>
       <a href="/docs">Docs</a>
       <a href="/blog" aria-current="page">Blog</a>
+      <a href="/docs/changelog">Changelog</a>
     </nav>
 
     <div class="nav-right">
