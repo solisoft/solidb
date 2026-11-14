@@ -1489,7 +1489,7 @@ impl<'a> QueryExecutor<'a> {
                         {
                             let reads_edge = gt.edge_var.is_some();
                             // (vertex, the edge that led to it, its path)
-                            type Frame = (String, Option<Value>, Vec<String>);
+                            type Frame = (String, Option<std::sync::Arc<Value>>, Vec<String>);
                             let mut level: Vec<Frame> = vec![(
                                 start_id.clone(),
                                 None,
@@ -1520,13 +1520,18 @@ impl<'a> QueryExecutor<'a> {
                                         if !self.row_policy_permits(coll_name, &v, ctx) {
                                             continue;
                                         }
+                                        // The row shares the documents
+                                        // with whatever else holds them.
                                         let mut new_ctx = ctx.clone();
-                                        new_ctx.insert(gt.vertex_var.clone(), v);
+                                        new_ctx.insert_shared(gt.vertex_var.clone(), v);
                                         if let Some(ref edge_var) = gt.edge_var {
-                                            new_ctx.insert(
-                                                edge_var.clone(),
-                                                edge.clone().unwrap_or(Value::Null),
-                                            );
+                                            match edge {
+                                                Some(edge) => new_ctx
+                                                    .insert_shared(edge_var.clone(), edge.clone()),
+                                                None => {
+                                                    new_ctx.insert(edge_var.clone(), Value::Null)
+                                                }
+                                            };
                                         }
                                         new_rows.push(new_ctx);
                                         if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
@@ -1555,23 +1560,24 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                     // Where in `next` the frame for `to`
                                     // went, when `to` is walked.
-                                    let mut admit = |to: &str, edge: Option<Value>| {
-                                        if by_path {
-                                            if trail.iter().any(|seen| seen == to) {
-                                                return None;
+                                    let mut admit =
+                                        |to: &str, edge: Option<std::sync::Arc<Value>>| {
+                                            if by_path {
+                                                if trail.iter().any(|seen| seen == to) {
+                                                    return None;
+                                                }
+                                                let mut longer = trail.clone();
+                                                longer.push(to.to_string());
+                                                next.push((to.to_string(), edge, longer));
+                                            } else {
+                                                if visited.contains(to) {
+                                                    return None;
+                                                }
+                                                visited.insert(to.to_string());
+                                                next.push((to.to_string(), edge, Vec::new()));
                                             }
-                                            let mut longer = trail.clone();
-                                            longer.push(to.to_string());
-                                            next.push((to.to_string(), edge, longer));
-                                        } else {
-                                            if visited.contains(to) {
-                                                return None;
-                                            }
-                                            visited.insert(to.to_string());
-                                            next.push((to.to_string(), edge, Vec::new()));
-                                        }
-                                        Some(next.len() - 1)
-                                    };
+                                            Some(next.len() - 1)
+                                        };
                                     if edge_docs {
                                         if let Some(steps) = expander.far_steps(id) {
                                             for (to, key) in steps.iter() {
@@ -1595,7 +1601,11 @@ impl<'a> QueryExecutor<'a> {
                                         else {
                                             continue;
                                         };
-                                        admit(&to, edge_docs.then(|| edge_doc.to_value()));
+                                        admit(
+                                            &to,
+                                            edge_docs
+                                                .then(|| std::sync::Arc::new(edge_doc.to_value())),
+                                        );
                                     }
                                 }
                                 if !edges_to_read.is_empty() {
@@ -1603,7 +1613,8 @@ impl<'a> QueryExecutor<'a> {
                                         .iter()
                                         .map(|(at, key)| (*at, key.as_ref()))
                                         .collect();
-                                    let mut edges: Vec<Option<Value>> = vec![None; next.len()];
+                                    let mut edges: Vec<Option<std::sync::Arc<Value>>> =
+                                        vec![None; next.len()];
                                     self.read_kept(
                                         expander.edges(),
                                         keys,
@@ -2122,8 +2133,8 @@ impl QueryExecutor<'_> {
         level: &[&str],
         colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
         fields: Option<&[String]>,
-    ) -> Vec<Option<Value>> {
-        let mut docs: Vec<Option<Value>> = vec![None; level.len()];
+    ) -> Vec<Option<std::sync::Arc<Value>>> {
+        let mut docs: Vec<Option<std::sync::Arc<Value>>> = vec![None; level.len()];
         let mut by_coll: std::collections::HashMap<&str, Vec<(usize, &str)>> =
             std::collections::HashMap::new();
         for (at, id) in level.iter().enumerate() {
@@ -2154,7 +2165,7 @@ impl QueryExecutor<'_> {
         coll: &crate::storage::Collection,
         wanted: Vec<(usize, &str)>,
         fields: Option<&[String]>,
-        docs: &mut [Option<Value>],
+        docs: &mut [Option<std::sync::Arc<Value>>],
     ) {
         let kept = super::graph::neighbourhoods::vertices(coll.ks.state(), fields);
         let mut missing: Vec<(usize, &str)> = Vec::new();
@@ -2165,7 +2176,7 @@ impl QueryExecutor<'_> {
                 coll.note_range_read();
                 for (at, key) in &wanted {
                     match kept.get(key) {
-                        Some(doc) => docs[*at] = Some((*doc).clone()),
+                        Some(doc) => docs[*at] = Some(doc),
                         None => missing.push((*at, key)),
                     }
                 }
@@ -2184,12 +2195,15 @@ impl QueryExecutor<'_> {
             return;
         };
         for ((at, key), doc) in missing.iter().zip(found) {
-            if let (Some(kept), Some(doc)) = (&kept, &doc) {
+            let Some(doc) = doc.map(std::sync::Arc::new) else {
+                continue;
+            };
+            if let Some(kept) = &kept {
                 // About what its JSON text would take.
                 let size = 48 * doc.as_object().map_or(1, |o| o.len().max(1));
-                kept.put(key, &std::sync::Arc::new(doc.clone()), size);
+                kept.put(key, &doc, size);
             }
-            docs[*at] = doc;
+            docs[*at] = Some(doc);
         }
     }
 

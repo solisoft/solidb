@@ -64,7 +64,7 @@ pub(crate) mod neighbourhoods {
     pub(crate) struct Kept<V> {
         state: Arc<KsState>,
         generation: u64,
-        values: DashMap<Box<str>, V>,
+        values: DashMap<Box<str>, V, foldhash::fast::RandomState>,
         bytes: AtomicUsize,
     }
 
@@ -110,7 +110,7 @@ pub(crate) mod neighbourhoods {
         let fresh = Arc::new(Kept {
             state: state.clone(),
             generation,
-            values: DashMap::new(),
+            values: DashMap::with_hasher(foldhash::fast::RandomState::default()),
             bytes: AtomicUsize::new(0),
         });
         registry.insert(key, fresh.clone());
