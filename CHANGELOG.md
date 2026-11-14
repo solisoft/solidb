@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.10.1](https://github.com/solisoft/solidb/compare/v2.10.0...v2.10.1) (2026-11-14)
+
+A statement's writes are all or nothing, UPSERT by a unique index, an index
+check, and two fixes for nodes that join a cluster and for TTL indexes. One
+change can fail a statement that used to succeed: see "Changed".
+
 ### Changed
 
 * **A statement writes all of its rows or none.** Outside a transaction a
