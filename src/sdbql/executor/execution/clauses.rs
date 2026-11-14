@@ -649,8 +649,10 @@ impl<'a> QueryExecutor<'a> {
                         continue;
                     }
 
-                    // For bulk inserts (>100 docs), use batch mode for maximum performance
-                    let bulk_mode = rows.len() > 100;
+                    // A statement that inserts several documents writes them
+                    // as one storage batch: all of them or none (card #846).
+                    // Row by row, an error on the third left the first two.
+                    let bulk_mode = rows.len() > 1;
 
                     tracing::debug!("INSERT: {} documents, bulk_mode={}", rows.len(), bulk_mode);
 
@@ -875,18 +877,17 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
-                    // Non-sharded UPDATE: Use automatic batching for large updates (>100 rows).
+                    // Non-sharded UPDATE.
                     // `update_batch` neither reports per-row results nor keeps
                     // row order, so anything that needs them (NEW, OLD,
                     // REPLACE, OPTIONS) goes row by row.
-                    let bulk_mode = rows.len() > 100 && !custom && !update_clause.binds_new;
+                    // From two rows up it is one storage batch: all of the
+                    // statement's updates or none (card #846).
+                    let bulk_mode = rows.len() > 1 && !custom && !update_clause.binds_new;
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use update_batch() like INSERT uses insert_batch()
-                        tracing::debug!(
-                            "UPDATE: Bulk mode for {} rows (threshold: 100)",
-                            rows.len()
-                        );
+                        tracing::debug!("UPDATE: batch of {} rows", rows.len());
 
                         // Evaluate all updates first
                         let eval_start = std::time::Instant::now();
@@ -1144,14 +1145,12 @@ impl<'a> QueryExecutor<'a> {
                     }
 
                     // Non-sharded REMOVE: Use automatic batching for large removes (>100 rows)
-                    let bulk_mode = rows.len() > 100 && !custom;
+                    // One storage batch from two rows up (card #846).
+                    let bulk_mode = rows.len() > 1 && !custom;
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use delete_batch() like INSERT uses insert_batch()
-                        tracing::debug!(
-                            "REMOVE: Bulk mode for {} rows (threshold: 100)",
-                            rows.len()
-                        );
+                        tracing::debug!("REMOVE: batch of {} rows", rows.len());
 
                         // Evaluate all keys first
                         let eval_start = std::time::Instant::now();
@@ -1185,7 +1184,7 @@ impl<'a> QueryExecutor<'a> {
 
                         // Batch delete all documents at once (one storage batch)
                         let delete_start = std::time::Instant::now();
-                        let deleted_count = collection.delete_batch(keys.clone())?;
+                        let deleted_count = collection.delete_batch_strict(keys.clone())?;
                         let delete_time = delete_start.elapsed();
                         stats.documents_removed += deleted_count;
                         tracing::debug!(

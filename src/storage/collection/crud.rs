@@ -1149,12 +1149,22 @@ impl Collection {
 
     /// Batch delete documents with atomic document + index removal
     pub fn delete_batch(&self, keys: Vec<String>) -> DbResult<usize> {
+        self.delete_batch_checked(keys, false)
+    }
+
+    /// [`Self::delete_batch`] for a statement that names its documents: a
+    /// key that is not stored fails the batch, and nothing is deleted.
+    pub fn delete_batch_strict(&self, keys: Vec<String>) -> DbResult<usize> {
+        self.delete_batch_checked(keys, true)
+    }
+
+    fn delete_batch_checked(&self, keys: Vec<String>, must_exist: bool) -> DbResult<usize> {
         if keys.is_empty() {
             return Ok(0);
         }
 
         if let Some(links) = self.referenced() {
-            return self.delete_referenced(&links, keys, Vec::new(), false);
+            return self.delete_referenced(&links, keys, Vec::new(), must_exist);
         }
         let _gate = self.enter_gate(false)?;
         let _key_guard = self.lock_keys(keys.iter().map(String::as_str));
@@ -1170,10 +1180,14 @@ impl Collection {
                 continue;
             }
             // Get document first (needed for index cleanup and change events)
-            if let Ok(Some(bytes)) = db.get_ks(&cf, Self::doc_key(&key)) {
-                if let Ok(doc) = deserialize_doc(&bytes) {
-                    docs.push((key, doc.to_value()));
+            match db.get_ks(&cf, Self::doc_key(&key)) {
+                Ok(Some(bytes)) => {
+                    if let Ok(doc) = deserialize_doc(&bytes) {
+                        docs.push((key, doc.to_value()));
+                    }
                 }
+                _ if must_exist => return Err(DbError::DocumentNotFound(key)),
+                _ => {}
             }
         }
 
@@ -1230,6 +1244,14 @@ impl Collection {
 
         for (position, &(key, changes, expected_rev)) in updates.iter().enumerate() {
             let existing = positions.get(key).copied();
+            // A second row for a document the batch already updates, computed
+            // like the first from the version on disk: the caller looks at
+            // it again once the batch is in, on what the first row wrote.
+            // Merged here, three rows of `n: d.n + 1` all wrote the same n.
+            if expected_rev.is_some() && existing.is_some() {
+                moved.push(position);
+                continue;
+            }
             // A guard compares with the revision on disk, before this batch.
             if let Some(rev) = expected_rev {
                 let on_disk = match existing {
@@ -1240,17 +1262,19 @@ impl Collection {
                         .map(str::to_string),
                     None => self.get(key).ok().map(|d| d.revision().to_string()),
                 };
-                if on_disk.as_deref().is_some_and(|current| current != rev) {
+                // Changed, or gone, since the caller read it: for the caller
+                // to look at again.
+                if on_disk.as_deref() != Some(rev) {
                     moved.push(position);
                     continue;
                 }
             }
+            // The batch is one write: a row that cannot be written fails it
+            // whole. Such rows used to be skipped with a line in the log,
+            // which is not what the same statement did with fewer rows.
             let mut doc = match existing {
                 Some(i) => pending[i].2.clone(),
-                None => match self.get(key) {
-                    Ok(old_doc) => old_doc,
-                    Err(_) => continue,
-                },
+                None => self.get(key)?,
             };
             let old_value = if existing.is_none() {
                 Some(doc.to_value())
@@ -1263,18 +1287,14 @@ impl Collection {
 
             // Validate edge documents after update
             if is_edge {
-                if let Err(e) = self.validate_edge_document(&new_value) {
-                    tracing::warn!("Failed to validate edge for {}: {}", key, e);
-                    continue;
-                }
+                self.validate_edge_document(&new_value)?;
             }
 
             // Validate against JSON schema if defined
             if let Some(ref validator) = schema_validator {
-                if let Err(e) = validator.validate(&new_value) {
-                    tracing::warn!("Schema validation failed for {}: {}", key, e);
-                    continue;
-                }
+                validator.validate(&new_value).map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
             }
 
             match (existing, old_value) {

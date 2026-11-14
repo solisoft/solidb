@@ -387,6 +387,15 @@ RETURN { key: NEW._key, visits: NEW.visits, created: OLD == null }</code></pre>
   IN users OPTIONS { keepNull: false, mergeObjects: true }</code></pre>
                   </div>
                 </div>
+                <div class="bg-gray-800/40 border border-white/10 rounded-lg p-4">
+                  <h4 class="text-gray-200 font-bold mb-1 text-sm">All of a statement, or none of it</h4>
+                  <p class="text-sm text-gray-400">
+                    A plain <code>INSERT</code>, <code>UPDATE</code> or <code>REMOVE</code> that follows a <code>FOR</code> writes its documents as one batch: if one row cannot be written (a key that exists, a unique value that is taken, a document that breaks the schema or a foreign key, a key that names no document) the statement fails and none of its rows is stored. A crash in the middle leaves nothing either.
+                  </p>
+                  <p class="text-sm text-gray-400 mt-2">
+                    Written row by row, so that an error can leave earlier rows stored: a statement with <code>OPTIONS</code> (<code>ignoreErrors</code> decides per row, on purpose), <code>REPLACE</code>, <code>UPDATE &hellip; RETURN NEW</code>, <code>UPDATE</code> or <code>REMOVE</code> with <code>RETURN OLD</code>, <code>UPSERT</code>, and any write to a sharded collection. Put those in a <a href="/docs/transactions" class="text-indigo-400 hover:text-indigo-300">transaction</a> to get all or nothing. An <code>UPDATE</code> row whose document changed while the query ran is evaluated again and written on its own, after the batch.
+                  </p>
+                </div>
                 <div class="bg-amber-900/10 border border-amber-500/30 rounded-lg p-4">
                   <p class="text-sm text-amber-200/70">
                     REPLACE, <code>keepNull: false</code> and <code>mergeObjects: true</code> read the document and write the result, so a concurrent write to the same document between the two can be lost; a plain UPDATE merges atomically. These forms, and <code>RETURN OLD</code>, are not yet available on sharded collections.

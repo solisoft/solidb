@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+* **A statement writes all of its rows or none.** Outside a transaction a
+  plain `FOR … INSERT`, `UPDATE` or `REMOVE` of 2 to 100 rows wrote one
+  document at a time; it is now one batch, as above 100 rows (card #846).
+  Above 100 rows, an `UPDATE` row that broke the schema or named a missing
+  document was skipped with a log line, and a `REMOVE` of a missing key was
+  ignored: both now fail the statement, as they did below 100. Several rows
+  updating one document build on each other at any size. Statements with
+  `OPTIONS`, `REPLACE`, `UPDATE … RETURN NEW`, `RETURN OLD` on an update or
+  a remove, `UPSERT`, and sharded collections stay row by row.
+
 ### Added
 
 * **`UPSERT` by a unique index.** A search that names exactly the fields of
