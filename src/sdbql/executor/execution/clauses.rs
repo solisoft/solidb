@@ -1472,27 +1472,43 @@ impl<'a> QueryExecutor<'a> {
                             std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
 
-                        // A breadth-first walk that keeps each vertex once
-                        // and no path goes level by level: the edges of a
-                        // whole level, then its vertices in one read per
-                        // collection, where the loop below reads a vertex,
-                        // then its edges, one at a time.
+                        // A breadth-first walk that binds no path goes level
+                        // by level: the edges of a whole level, then its
+                        // vertices in one read per collection, where the
+                        // loop below reads a vertex, then its edges, one at
+                        // a time. Each vertex once (the default), or once
+                        // per path: a frame then carries the vertices of its
+                        // path, which also keeps an edge from being walked
+                        // twice on it.
+                        let by_path = opts.unique_vertices == UniqueVertices::Path;
                         if !dfs
-                            && opts.unique_vertices == UniqueVertices::Global
+                            && (opts.unique_vertices == UniqueVertices::Global || by_path)
                             && gt.prune.is_none()
                             && !keeps_path
                         {
-                            let mut level: Vec<(String, Option<Value>)> =
-                                vec![(start_id.clone(), None)];
+                            let reads_edge = gt.edge_var.is_some();
+                            // (vertex, the edge that led to it, its path)
+                            type Frame = (String, Option<Value>, Vec<String>);
+                            let mut level: Vec<Frame> = vec![(
+                                start_id.clone(),
+                                None,
+                                if by_path {
+                                    vec![start_id.clone()]
+                                } else {
+                                    Vec::new()
+                                },
+                            )];
                             let mut depth = 0;
                             loop {
                                 if depth >= gt.min_depth && depth <= gt.max_depth {
+                                    let ids: Vec<&str> =
+                                        level.iter().map(|(id, _, _)| id.as_str()).collect();
                                     let docs = self.level_vertices(
-                                        &level,
+                                        &ids,
                                         &mut vertex_colls,
                                         vertex_fields.as_deref(),
                                     );
-                                    for ((id, edge), doc) in level.iter().zip(docs) {
+                                    for ((id, edge, _), doc) in level.iter().zip(docs) {
                                         let (Some(v), Some((coll_name, _))) =
                                             (doc, id.split_once('/'))
                                         else {
@@ -1520,21 +1536,33 @@ impl<'a> QueryExecutor<'a> {
                                 if depth >= gt.max_depth {
                                     break;
                                 }
-                                let mut next: Vec<(String, Option<Value>)> = Vec::new();
-                                for (at, (id, _)) in level.iter().enumerate() {
+                                // The next level's edges are read as
+                                // documents only if its rows are returned
+                                // and the query reads them; otherwise only
+                                // where they lead.
+                                let edge_docs = reads_edge && depth + 1 >= gt.min_depth;
+                                let mut next: Vec<Frame> = Vec::new();
+                                for (at, (id, _, trail)) in level.iter().enumerate() {
                                     if (at + 1).is_multiple_of(BUDGET_CHECK_INTERVAL) {
                                         self.check_budget(
                                             new_rows.len().saturating_add(next.len()),
                                         )?;
                                     }
-                                    // The query reads nothing of the
-                                    // edges: only their far ends.
-                                    if !wants_edge {
+                                    let mut admit = |to: String, edge: Option<Value>| {
+                                        if by_path {
+                                            if !trail.contains(&to) {
+                                                let mut longer = trail.clone();
+                                                longer.push(to.clone());
+                                                next.push((to, edge, longer));
+                                            }
+                                        } else if visited.insert(to.clone()) {
+                                            next.push((to, edge, Vec::new()));
+                                        }
+                                    };
+                                    if !edge_docs {
                                         if let Some(ends) = expander.far_ends(id) {
                                             for to in ends {
-                                                if visited.insert(to.clone()) {
-                                                    next.push((to, None));
-                                                }
+                                                admit(to, None);
                                             }
                                             continue;
                                         }
@@ -1544,12 +1572,7 @@ impl<'a> QueryExecutor<'a> {
                                         else {
                                             continue;
                                         };
-                                        if visited.insert(to.clone()) {
-                                            next.push((
-                                                to,
-                                                wants_edge.then(|| edge_doc.to_value()),
-                                            ));
-                                        }
+                                        admit(to, edge_docs.then(|| edge_doc.to_value()));
                                     }
                                 }
                                 if next.is_empty() {
@@ -2055,14 +2078,14 @@ impl QueryExecutor<'_> {
     /// `fields`, only those are decoded.
     fn level_vertices(
         &self,
-        level: &[(String, Option<Value>)],
+        level: &[&str],
         colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
         fields: Option<&[String]>,
     ) -> Vec<Option<Value>> {
         let mut docs: Vec<Option<Value>> = vec![None; level.len()];
         let mut by_coll: std::collections::HashMap<&str, Vec<(usize, &str)>> =
             std::collections::HashMap::new();
-        for (at, (id, _)) in level.iter().enumerate() {
+        for (at, id) in level.iter().enumerate() {
             if let Some((coll, key)) = id.split_once('/') {
                 by_coll.entry(coll).or_default().push((at, key));
             }
