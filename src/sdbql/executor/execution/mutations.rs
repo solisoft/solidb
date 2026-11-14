@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 
 use super::super::QueryExecutor;
 use crate::error::{DbError, DbResult};
-use crate::sdbql::ast::{MutationOptions, OverwriteMode};
+use crate::sdbql::ast::{Expression, MutationOptions, OverwriteMode};
 use crate::storage::{Collection, Guarded};
 use crate::sync::protocol::Operation;
 
@@ -77,6 +77,32 @@ pub(super) fn is_document_error(err: &DbError) -> bool {
             | DbError::SchemaValidationError(_)
     )
 }
+
+/// Whether a row's expression may read stored data, and so what an earlier
+/// row of the same statement wrote: a subquery, or a function that is not
+/// pure and is not merely the clock, a random number or a new identifier.
+/// Such a statement is written row by row (up to [`BATCH_ALWAYS`] rows), so
+/// that `FOR i IN 1..3 INSERT {n: LENGTH(FOR d IN log RETURN 1)} INTO log`
+/// still counts 0, 1, 2: evaluated ahead of one batch, every row read 0.
+pub(super) fn reads_stored_data(expr: &Expression) -> bool {
+    crate::sdbql::ast::expression_any(expr, &mut |e| match e {
+        Expression::Subquery(_) => true,
+        Expression::FunctionCall { name, args } => {
+            let upper = name.to_ascii_uppercase();
+            let reads_nothing = ["DATE_", "RAND", "UUID", "ULID", "NANOID"]
+                .iter()
+                .any(|prefix| upper.starts_with(prefix));
+            !reads_nothing
+                && !crate::sdbql::executor::const_fold::is_pure_function(name, args.len())
+        }
+        _ => false,
+    })
+}
+
+/// Rows from which a statement is one batch whatever it reads, as it has
+/// long been: evaluating a hundred thousand rows one write at a time is not
+/// an option, and such a statement never saw its own writes.
+pub(super) const BATCH_ALWAYS: usize = 100;
 
 /// Times an UPSERT looks again when another writer of the same document got
 /// in between its read and its write.

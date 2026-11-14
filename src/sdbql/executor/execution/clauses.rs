@@ -17,8 +17,8 @@ use super::super::index_opt::{conjunction, leading_filters};
 use super::super::types::{Context, MutationStats};
 use super::super::{contains_window_functions, QueryExecutor};
 use super::mutations::{
-    is_document_error, is_key_conflict, is_unique_violation, selector_key, RowWrite, ShardedTarget,
-    UPSERT_ATTEMPTS,
+    is_document_error, is_key_conflict, is_unique_violation, reads_stored_data, selector_key,
+    RowWrite, ShardedTarget, BATCH_ALWAYS, UPSERT_ATTEMPTS,
 };
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -652,7 +652,9 @@ impl<'a> QueryExecutor<'a> {
                     // A statement that inserts several documents writes them
                     // as one storage batch: all of them or none (card #846).
                     // Row by row, an error on the third left the first two.
-                    let bulk_mode = rows.len() > 1;
+                    // Unless its rows may read each other's writes.
+                    let bulk_mode = rows.len() > BATCH_ALWAYS
+                        || (rows.len() > 1 && !reads_stored_data(&insert_clause.document));
 
                     tracing::debug!("INSERT: {} documents, bulk_mode={}", rows.len(), bulk_mode);
 
@@ -883,7 +885,12 @@ impl<'a> QueryExecutor<'a> {
                     // REPLACE, OPTIONS) goes row by row.
                     // From two rows up it is one storage batch: all of the
                     // statement's updates or none (card #846).
-                    let bulk_mode = rows.len() > 1 && !custom && !update_clause.binds_new;
+                    let bulk_mode = !custom
+                        && !update_clause.binds_new
+                        && (rows.len() > BATCH_ALWAYS
+                            || (rows.len() > 1
+                                && !reads_stored_data(&update_clause.selector)
+                                && !reads_stored_data(&update_clause.changes)));
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use update_batch() like INSERT uses insert_batch()
@@ -1146,7 +1153,9 @@ impl<'a> QueryExecutor<'a> {
 
                     // Non-sharded REMOVE: Use automatic batching for large removes (>100 rows)
                     // One storage batch from two rows up (card #846).
-                    let bulk_mode = rows.len() > 1 && !custom;
+                    let bulk_mode = !custom
+                        && (rows.len() > BATCH_ALWAYS
+                            || (rows.len() > 1 && !reads_stored_data(&remove_clause.selector)));
 
                     if bulk_mode {
                         // AUTOMATIC BATCH MODE - use delete_batch() like INSERT uses insert_batch()

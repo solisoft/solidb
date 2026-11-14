@@ -18,7 +18,9 @@ change can fail a statement that used to succeed: see "Changed".
   ignored: both now fail the statement, as they did below 100. Several rows
   updating one document build on each other at any size. Statements with
   `OPTIONS`, `REPLACE`, `UPDATE … RETURN NEW`, `RETURN OLD` on an update or
-  a remove, `UPSERT`, and sharded collections stay row by row.
+  a remove, `UPSERT`, and sharded collections stay row by row; so does, up
+  to 100 rows, a statement whose written value reads stored data (a
+  subquery, `DOCUMENT()`): each row still sees the rows before it.
 
 ### Added
 

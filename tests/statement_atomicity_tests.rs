@@ -275,3 +275,47 @@ fn ignore_errors_still_skips_the_rows_that_fail() {
     .unwrap();
     assert_eq!(keys(&engine), [json!("a"), json!("b"), json!("taken")]);
 }
+
+/// A statement whose rows read stored data is still written row by row, so
+/// that a row sees what the rows before it wrote; so is one that only reads
+/// the clock or draws an identifier, which nothing stops from being a batch.
+#[test]
+fn rows_that_read_the_collection_see_the_rows_before_them() {
+    let (engine, _tmp) = setup();
+    let seen = run(
+        &engine,
+        "FOR i IN 1..3 INSERT {n: LENGTH(FOR d IN items RETURN 1)} INTO items RETURN NEW.n",
+        json!({}),
+    )
+    .unwrap();
+    assert_eq!(seen, [json!(0), json!(1), json!(2)]);
+
+    run(
+        &engine,
+        "INSERT {_key: 'first', n: 100} INTO items",
+        json!({}),
+    )
+    .unwrap();
+    let chained = run(
+        &engine,
+        "FOR k IN ['a', 'b'] INSERT {_key: k, n: DOCUMENT('items/first').n + 1} INTO items RETURN NEW.n",
+        json!({}),
+    )
+    .unwrap();
+    assert_eq!(chained, [json!(101), json!(101)]);
+
+    // The clock and a new identifier read nothing: one batch, all or none.
+    let failed = run(
+        &engine,
+        "FOR k IN ['x', 'y', 'first'] INSERT {_key: k, at: DATE_NOW(), id: UUID()} INTO items",
+        json!({}),
+    );
+    assert!(failed.unwrap_err().contains("already exists"));
+    let stored = run(
+        &engine,
+        "FOR i IN items FILTER i._key IN ['x', 'y'] RETURN 1",
+        json!({}),
+    )
+    .unwrap();
+    assert!(stored.is_empty());
+}
