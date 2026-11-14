@@ -1477,6 +1477,26 @@ impl<'a> QueryExecutor<'a> {
                         }
                         _ => None,
                     };
+                    // Each vertex's neighbours with their documents, kept
+                    // between queries: for a caller no row policy applies to
+                    // (the documents are kept as the projection reads them)
+                    // and outside a transaction that checks its reads.
+                    let around = if level_wise
+                        && self.principal.as_ref().is_none_or(|p| p.can_admin)
+                        && self
+                            .tx_writer
+                            .as_ref()
+                            .and_then(|tw| tw.reads.as_ref())
+                            .is_none()
+                    {
+                        super::graph::neighbourhoods::around(
+                            expander.edges().ks.state(),
+                            expander.direction_code(),
+                            vertex_fields.as_deref(),
+                        )
+                    } else {
+                        None
+                    };
                     // One handle per vertex collection, not one lookup per vertex.
                     let mut vertex_colls: std::collections::HashMap<
                         String,
@@ -1533,17 +1553,34 @@ impl<'a> QueryExecutor<'a> {
                                     Vec::new()
                                 },
                             )];
+                            // The document of each frame of the level, when
+                            // it came with the neighbourhood that led there.
+                            type Known = Option<Option<std::sync::Arc<Value>>>;
+                            let mut known: Vec<Known> = vec![None];
                             let mut depth = 0;
                             loop {
                                 if depth >= gt.min_depth && depth <= gt.max_depth {
-                                    let ids: Vec<&str> =
-                                        level.iter().map(|(id, _, _)| id.as_ref()).collect();
-                                    let docs = self.level_vertices(
-                                        &ids,
-                                        &mut vertex_colls,
-                                        vertex_fields.as_deref(),
-                                    );
-                                    for ((id, edge, _), doc) in level.iter().zip(docs) {
+                                    let unknown: Vec<usize> = (0..level.len())
+                                        .filter(|at| known[*at].is_none())
+                                        .collect();
+                                    if !unknown.is_empty() {
+                                        let ids: Vec<&str> = unknown
+                                            .iter()
+                                            .map(|at| level[*at].0.as_ref())
+                                            .collect();
+                                        let docs = self.level_vertices(
+                                            &ids,
+                                            &mut vertex_colls,
+                                            vertex_fields.as_deref(),
+                                        );
+                                        for (at, doc) in unknown.into_iter().zip(docs) {
+                                            known[at] = Some(doc);
+                                        }
+                                    }
+                                    for ((id, edge, _), doc) in level
+                                        .iter()
+                                        .zip(known.iter().map(|doc| doc.clone().flatten()))
+                                    {
                                         let (Some(v), Some((coll_name, _))) =
                                             (doc, id.split_once('/'))
                                         else {
@@ -1603,6 +1640,8 @@ impl<'a> QueryExecutor<'a> {
                                 // where they lead.
                                 let edge_docs = reads_edge && depth + 1 >= gt.min_depth;
                                 let mut next: Vec<Frame> = Vec::with_capacity(level.len() * 4);
+                                let mut next_known: Vec<Known> =
+                                    Vec::with_capacity(level.len() * 4);
                                 if !by_path {
                                     seen.reserve(level.len() * 4);
                                 }
@@ -1619,7 +1658,9 @@ impl<'a> QueryExecutor<'a> {
                                     // Where in `next` the frame for `to`
                                     // went, when `to` is walked.
                                     let mut admit =
-                                        |to: &Id, edge: Option<std::sync::Arc<Value>>| {
+                                        |to: &Id,
+                                         edge: Option<std::sync::Arc<Value>>,
+                                         doc: Known| {
                                             if by_path {
                                                 if trail.contains(to) {
                                                     return None;
@@ -1627,6 +1668,7 @@ impl<'a> QueryExecutor<'a> {
                                                 let mut longer = trail.clone();
                                                 longer.push(to.clone());
                                                 next.push((to.clone(), edge, longer));
+                                                next_known.push(doc);
                                             } else {
                                                 // Looked up before it is
                                                 // cloned: most ends of a
@@ -1639,15 +1681,32 @@ impl<'a> QueryExecutor<'a> {
                                                 }
                                                 seen.insert(to.clone());
                                                 next.push((to.clone(), edge, Vec::new()));
+                                                next_known.push(doc);
                                             }
                                             Some(next.len() - 1)
                                         };
                                     if edge_docs {
                                         if let Some(steps) = expander.far_steps(id) {
                                             for (to, key) in steps.iter() {
-                                                if let Some(at) = admit(to, None) {
+                                                if let Some(at) = admit(to, None, None) {
                                                     edges_to_read.push((at, key.clone()));
                                                 }
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                    if !edge_docs && depth + 1 >= gt.min_depth {
+                                        if let Some(entry) = around.as_ref().and_then(|around| {
+                                            self.ends_with_vertices(
+                                                &expander,
+                                                around,
+                                                id,
+                                                &mut vertex_colls,
+                                                vertex_fields.as_deref(),
+                                            )
+                                        }) {
+                                            for (to, doc) in entry.ends.iter() {
+                                                admit(to, None, Some(doc.clone()));
                                             }
                                             continue;
                                         }
@@ -1655,7 +1714,7 @@ impl<'a> QueryExecutor<'a> {
                                     if !edge_docs {
                                         if let Some(ends) = expander.far_ends(id) {
                                             for to in ends.iter() {
-                                                admit(to, None);
+                                                admit(to, None, None);
                                             }
                                             continue;
                                         }
@@ -1669,6 +1728,7 @@ impl<'a> QueryExecutor<'a> {
                                             &Id::from(to.as_str()),
                                             edge_docs
                                                 .then(|| std::sync::Arc::new(edge_doc.to_value())),
+                                            None,
                                         );
                                     }
                                 }
@@ -1695,6 +1755,7 @@ impl<'a> QueryExecutor<'a> {
                                     break;
                                 }
                                 level = next;
+                                known = next_known;
                                 depth += 1;
                             }
                             continue;
@@ -2241,6 +2302,56 @@ impl QueryExecutor<'_> {
             self.read_kept(coll, wanted, fields, &mut docs);
         }
         docs
+    }
+
+    /// `id`'s neighbours with their documents as `fields` reads them, from
+    /// what is kept of them while neither the edges nor those documents'
+    /// collections have been written, else read and kept. `None` when the
+    /// edges are not read from an index.
+    fn ends_with_vertices(
+        &self,
+        expander: &super::graph::EdgeExpander<'_>,
+        around: &super::graph::neighbourhoods::Kept<
+            std::sync::Arc<super::graph::neighbourhoods::Around>,
+        >,
+        id: &str,
+        colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
+        fields: Option<&[String]>,
+    ) -> Option<std::sync::Arc<super::graph::neighbourhoods::Around>> {
+        let current = expander.local(id);
+        if let Some(found) = around.get(current).filter(|found| found.current()) {
+            return Some(found);
+        }
+        let ends = expander.far_ends(id)?;
+        // The generations are read before the documents: a write in between
+        // leaves an entry that is never used, not one that is stale.
+        let mut stamps: Vec<(std::sync::Arc<crate::storage::keyspace::KsState>, u64)> = Vec::new();
+        for end in ends.iter() {
+            let Some((name, _)) = end.split_once('/') else {
+                continue;
+            };
+            if !colls.contains_key(name) {
+                colls.insert(name.to_string(), self.get_collection(name).ok());
+            }
+            if let Some(Some(coll)) = colls.get(name) {
+                let state = coll.ks.state();
+                if !stamps
+                    .iter()
+                    .any(|(known, _)| std::sync::Arc::ptr_eq(known, state))
+                {
+                    stamps.push((state.clone(), state.write_generation()));
+                }
+            }
+        }
+        let ids: Vec<&str> = ends.iter().map(|end| end.as_ref()).collect();
+        let docs = self.level_vertices(&ids, colls, fields);
+        let size = ends.iter().map(|end| end.len() + 32).sum();
+        let entry = std::sync::Arc::new(super::graph::neighbourhoods::Around::new(
+            stamps,
+            ends.iter().cloned().zip(docs).collect(),
+        ));
+        around.put(current, &entry, size);
+        Some(entry)
     }
 
     /// Read the documents `wanted` (position in `docs`, key) of `coll` into

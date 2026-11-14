@@ -87,6 +87,49 @@ pub(crate) mod neighbourhoods {
     static ENDS: Registry<Ends> = once_cell::sync::Lazy::new(DashMap::new);
     static STEPS: Registry<Steps> = once_cell::sync::Lazy::new(DashMap::new);
     static FACTS: Registry<bool> = once_cell::sync::Lazy::new(DashMap::new);
+    static AROUND: Registry<Arc<Around>> = once_cell::sync::Lazy::new(DashMap::new);
+
+    /// A vertex's neighbours, each with its document as one projection
+    /// reads it: what a walk needs of a whole neighbourhood, in one piece.
+    /// The documents belong to other collections than the edges, so the
+    /// entry also records the write generation of each of them when it was
+    /// read, and is used only while none has moved.
+    pub(crate) struct Around {
+        stamps: Box<[(Arc<KsState>, u64)]>,
+        pub(crate) ends: Box<[(Arc<str>, Option<Arc<serde_json::Value>>)]>,
+    }
+
+    impl Around {
+        pub(crate) fn new(
+            stamps: Vec<(Arc<KsState>, u64)>,
+            ends: Vec<(Arc<str>, Option<Arc<serde_json::Value>>)>,
+        ) -> Self {
+            Self {
+                stamps: stamps.into(),
+                ends: ends.into(),
+            }
+        }
+
+        /// Whether the vertex collections have not been written since.
+        pub(crate) fn current(&self) -> bool {
+            self.stamps.iter().all(|(state, generation)| {
+                !state.is_dead() && state.write_generation() == *generation
+            })
+        }
+    }
+
+    /// The neighbourhoods-with-documents of this edge collection in
+    /// `direction`, for the vertex fields `fields`.
+    pub(crate) fn around(
+        state: &Arc<KsState>,
+        direction: u8,
+        fields: Option<&[String]>,
+    ) -> Option<Arc<Kept<Arc<Around>>>> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        fields.hash(&mut hasher);
+        open(&AROUND, state, (hasher.finish() << 8) | direction as u64)
+    }
     static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
 
     fn open<V>(
@@ -466,6 +509,15 @@ impl<'e> EdgeExpander<'e> {
             kept.put(current, &steps, size);
         }
         Some(steps)
+    }
+
+    /// The direction, as the kept maps number it.
+    pub(crate) fn direction_code(&self) -> u8 {
+        match self.direction {
+            EdgeDirection::Outbound => 0,
+            EdgeDirection::Inbound => 1,
+            EdgeDirection::Any => 2,
+        }
     }
 
     /// The collection the edges are in.
