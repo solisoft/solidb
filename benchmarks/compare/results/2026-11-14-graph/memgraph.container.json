@@ -1,0 +1,342 @@
+[
+     {
+          "Id": "425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e",
+          "Created": "2026-11-14T16:08:08.412333827Z",
+          "Path": "/usr/lib/memgraph/memgraph",
+          "Args": [
+               "--memory-limit=14000",
+               "--storage-snapshot-interval-sec=0",
+               "--storage-wal-enabled=false",
+               "--log-level=WARNING"
+          ],
+          "State": {
+               "OciVersion": "1.2.1",
+               "Status": "running",
+               "Running": true,
+               "Paused": false,
+               "Restarting": false,
+               "OOMKilled": false,
+               "Dead": false,
+               "Pid": 1987889,
+               "ConmonPid": 1987887,
+               "ExitCode": 0,
+               "Error": "",
+               "StartedAt": "2026-11-14T16:08:08.4458458Z",
+               "FinishedAt": "0001-01-01T00:00:00Z",
+               "CgroupPath": "/machine.slice/libpod-425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e.scope",
+               "CheckpointedAt": "0001-01-01T00:00:00Z",
+               "RestoredAt": "0001-01-01T00:00:00Z"
+          },
+          "Image": "f26585d548f5be007e59449af68164afbf58ac7cd1327f8c95e2a1aa8a06082c",
+          "ImageDigest": "sha256:a732421217951066e42f5749111bc3d0c7b51b12c756be04850d4dafa84cc05e",
+          "ImageName": "docker.io/memgraph/memgraph@sha256:a732421217951066e42f5749111bc3d0c7b51b12c756be04850d4dafa84cc05e",
+          "Rootfs": "",
+          "Pod": "",
+          "ResolvConfPath": "/run/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/resolv.conf",
+          "HostnamePath": "/run/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/hostname",
+          "HostsPath": "/run/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/hosts",
+          "StaticDir": "/var/lib/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata",
+          "OCIConfigPath": "/var/lib/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/config.json",
+          "OCIRuntime": "crun",
+          "ConmonPidFile": "/run/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/conmon.pid",
+          "PidFile": "/run/containers/storage/overlay-containers/425eaf857afa8ca88a6ed19680ecfbbd3f86957899021c589538f2d4e4911d9e/userdata/pidfile",
+          "Name": "bench-db",
+          "RestartCount": 0,
+          "Driver": "overlay",
+          "MountLabel": "",
+          "ProcessLabel": "",
+          "AppArmorProfile": "",
+          "EffectiveCaps": null,
+          "BoundingCaps": [
+               "CAP_CHOWN",
+               "CAP_DAC_OVERRIDE",
+               "CAP_FOWNER",
+               "CAP_FSETID",
+               "CAP_KILL",
+               "CAP_NET_BIND_SERVICE",
+               "CAP_SETFCAP",
+               "CAP_SETGID",
+               "CAP_SETPCAP",
+               "CAP_SETUID",
+               "CAP_SYS_CHROOT"
+          ],
+          "ExecIDs": [],
+          "GraphDriver": {
+               "Name": "overlay",
+               "Data": {
+                    "LowerDir": "/var/lib/containers/storage/overlay/938d1b2da0d147000e47a7414f6ea7bdd98454f4a0b7a18a68a403d81cc73818/diff:/var/lib/containers/storage/overlay/23a90e197e38e568ada8f4f389fb8081a0363165a4098bf31d91516118917368/diff:/var/lib/containers/storage/overlay/280457adadd52e88ce00567a13ea73cef5dd90761ea1aa14d662a763fbf6166e/diff:/var/lib/containers/storage/overlay/7bb99290936d0c1db5209cfea046ae55fe85c36766d1a9a01170125dcce37aa5/diff:/var/lib/containers/storage/overlay/d81fb2a7c6ee3be05fdefaa7fd223be219c1ab172083ec1b994c3ecda33ac0a8/diff",
+                    "MergedDir": "/var/lib/containers/storage/overlay/583f88dc3457de5103b4c43b4a1575165142de9d1e647a5620c6d8c79d1637bf/merged",
+                    "UpperDir": "/var/lib/containers/storage/overlay/583f88dc3457de5103b4c43b4a1575165142de9d1e647a5620c6d8c79d1637bf/diff",
+                    "WorkDir": "/var/lib/containers/storage/overlay/583f88dc3457de5103b4c43b4a1575165142de9d1e647a5620c6d8c79d1637bf/work"
+               }
+          },
+          "Mounts": [
+               {
+                    "Type": "volume",
+                    "Name": "a7f9b6e62bd4291d8d11ef5a14408e00caec7b2938098bcfc63e3ef6438925c2",
+                    "Source": "/var/lib/containers/storage/volumes/a7f9b6e62bd4291d8d11ef5a14408e00caec7b2938098bcfc63e3ef6438925c2/_data",
+                    "Destination": "/etc/memgraph",
+                    "Driver": "local",
+                    "Mode": "",
+                    "Options": [
+                         "nodev",
+                         "exec",
+                         "nosuid",
+                         "rbind"
+                    ],
+                    "RW": true,
+                    "Propagation": "rprivate"
+               },
+               {
+                    "Type": "volume",
+                    "Name": "45ae81a3b8a787b5d75241cc1e64452319e4830d44aea61bbe37dac0059ca4d9",
+                    "Source": "/var/lib/containers/storage/volumes/45ae81a3b8a787b5d75241cc1e64452319e4830d44aea61bbe37dac0059ca4d9/_data",
+                    "Destination": "/var/lib/memgraph",
+                    "Driver": "local",
+                    "Mode": "",
+                    "Options": [
+                         "nodev",
+                         "exec",
+                         "nosuid",
+                         "rbind"
+                    ],
+                    "RW": true,
+                    "Propagation": "rprivate"
+               },
+               {
+                    "Type": "volume",
+                    "Name": "1bad8c1c99e527b8bf1d14d7f5e38eb6bbab0fc942944073d47f3b02a64f23a2",
+                    "Source": "/var/lib/containers/storage/volumes/1bad8c1c99e527b8bf1d14d7f5e38eb6bbab0fc942944073d47f3b02a64f23a2/_data",
+                    "Destination": "/var/log/memgraph",
+                    "Driver": "local",
+                    "Mode": "",
+                    "Options": [
+                         "nodev",
+                         "exec",
+                         "nosuid",
+                         "rbind"
+                    ],
+                    "RW": true,
+                    "Propagation": "rprivate"
+               }
+          ],
+          "Dependencies": [],
+          "NetworkSettings": {
+               "EndpointID": "",
+               "Gateway": "",
+               "IPAddress": "",
+               "IPPrefixLen": 0,
+               "IPv6Gateway": "",
+               "GlobalIPv6Address": "",
+               "GlobalIPv6PrefixLen": 0,
+               "MacAddress": "",
+               "Bridge": "",
+               "SandboxID": "",
+               "HairpinMode": false,
+               "LinkLocalIPv6Address": "",
+               "LinkLocalIPv6PrefixLen": 0,
+               "Ports": {},
+               "SandboxKey": "",
+               "Networks": {
+                    "host": {
+                         "EndpointID": "",
+                         "Gateway": "",
+                         "IPAddress": "",
+                         "IPPrefixLen": 0,
+                         "IPv6Gateway": "",
+                         "GlobalIPv6Address": "",
+                         "GlobalIPv6PrefixLen": 0,
+                         "MacAddress": "",
+                         "NetworkID": "host",
+                         "DriverOpts": null,
+                         "IPAMConfig": null,
+                         "Links": null
+                    }
+               }
+          },
+          "Namespace": "",
+          "IsInfra": false,
+          "IsService": false,
+          "KubeExitCodePropagation": "invalid",
+          "lockNumber": 28,
+          "Config": {
+               "Hostname": "ns3445088.ip-213-32-26.eu",
+               "Domainname": "",
+               "User": "memgraph",
+               "AttachStdin": false,
+               "AttachStdout": false,
+               "AttachStderr": false,
+               "Tty": false,
+               "OpenStdin": false,
+               "StdinOnce": false,
+               "Env": [
+                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "container=podman",
+                    "MEMGRAPH_TELEMETRY_ID=DOCKER",
+                    "HOME=/home/memgraph",
+                    "HOSTNAME=ns3445088.ip-213-32-26.eu"
+               ],
+               "Cmd": [
+                    "--memory-limit=14000",
+                    "--storage-snapshot-interval-sec=0",
+                    "--storage-wal-enabled=false",
+                    "--log-level=WARNING"
+               ],
+               "Image": "docker.io/memgraph/memgraph@sha256:a732421217951066e42f5749111bc3d0c7b51b12c756be04850d4dafa84cc05e",
+               "Volumes": null,
+               "WorkingDir": "/usr/lib/memgraph",
+               "Entrypoint": [
+                    "/usr/lib/memgraph/memgraph"
+               ],
+               "OnBuild": null,
+               "Labels": {
+                    "org.opencontainers.image.version": "24.04"
+               },
+               "Annotations": {
+                    "io.container.manager": "libpod",
+                    "io.podman.annotations.cpuset": "0-3,16-19",
+                    "org.opencontainers.image.stopSignal": "15",
+                    "org.systemd.property.KillSignal": "15",
+                    "org.systemd.property.TimeoutStopUSec": "uint64 10000000"
+               },
+               "StopSignal": "SIGTERM",
+               "HealthcheckOnFailureAction": "none",
+               "HealthLogDestination": "local",
+               "HealthcheckMaxLogCount": 5,
+               "HealthcheckMaxLogSize": 500,
+               "CreateCommand": [
+                    "podman",
+                    "run",
+                    "-d",
+                    "--name",
+                    "bench-db",
+                    "--network",
+                    "host",
+                    "--cpuset-cpus",
+                    "0-3,16-19",
+                    "--memory",
+                    "16g",
+                    "--memory-swap",
+                    "16g",
+                    "docker.io/memgraph/memgraph@sha256:a732421217951066e42f5749111bc3d0c7b51b12c756be04850d4dafa84cc05e",
+                    "--memory-limit=14000",
+                    "--storage-snapshot-interval-sec=0",
+                    "--storage-wal-enabled=false",
+                    "--log-level=WARNING"
+               ],
+               "Umask": "0022",
+               "Timeout": 0,
+               "StopTimeout": 10,
+               "Passwd": true,
+               "sdNotifyMode": "container",
+               "ExposedPorts": {
+                    "7687/tcp": {}
+               }
+          },
+          "HostConfig": {
+               "Binds": [
+                    "a7f9b6e62bd4291d8d11ef5a14408e00caec7b2938098bcfc63e3ef6438925c2:/etc/memgraph:rprivate,rw,nodev,exec,nosuid,rbind",
+                    "45ae81a3b8a787b5d75241cc1e64452319e4830d44aea61bbe37dac0059ca4d9:/var/lib/memgraph:rprivate,rw,nodev,exec,nosuid,rbind",
+                    "1bad8c1c99e527b8bf1d14d7f5e38eb6bbab0fc942944073d47f3b02a64f23a2:/var/log/memgraph:rprivate,rw,nodev,exec,nosuid,rbind"
+               ],
+               "CgroupManager": "systemd",
+               "CgroupMode": "private",
+               "ContainerIDFile": "",
+               "LogConfig": {
+                    "Type": "journald",
+                    "Config": null,
+                    "Path": "",
+                    "Tag": "",
+                    "Size": "-1B"
+               },
+               "NetworkMode": "host",
+               "PortBindings": {},
+               "RestartPolicy": {
+                    "Name": "no",
+                    "MaximumRetryCount": 0
+               },
+               "AutoRemove": false,
+               "AutoRemoveImage": false,
+               "Annotations": {
+                    "io.container.manager": "libpod",
+                    "io.podman.annotations.cpuset": "0-3,16-19",
+                    "org.opencontainers.image.stopSignal": "15",
+                    "org.systemd.property.KillSignal": "15",
+                    "org.systemd.property.TimeoutStopUSec": "uint64 10000000"
+               },
+               "VolumeDriver": "",
+               "VolumesFrom": null,
+               "CapAdd": [],
+               "CapDrop": [],
+               "Dns": [],
+               "DnsOptions": [],
+               "DnsSearch": [],
+               "ExtraHosts": [],
+               "HostsFile": "",
+               "GroupAdd": [],
+               "IpcMode": "shareable",
+               "Cgroup": "",
+               "Cgroups": "default",
+               "Links": null,
+               "OomScoreAdj": 0,
+               "PidMode": "private",
+               "Privileged": false,
+               "PublishAllPorts": false,
+               "ReadonlyRootfs": false,
+               "SecurityOpt": [],
+               "Tmpfs": {},
+               "UTSMode": "private",
+               "UsernsMode": "",
+               "ShmSize": 65536000,
+               "Runtime": "oci",
+               "ConsoleSize": [
+                    0,
+                    0
+               ],
+               "Isolation": "",
+               "CpuShares": 0,
+               "Memory": 17179869184,
+               "NanoCpus": 0,
+               "CgroupParent": "",
+               "BlkioWeight": 0,
+               "BlkioWeightDevice": null,
+               "BlkioDeviceReadBps": null,
+               "BlkioDeviceWriteBps": null,
+               "BlkioDeviceReadIOps": null,
+               "BlkioDeviceWriteIOps": null,
+               "CpuPeriod": 0,
+               "CpuQuota": 0,
+               "CpuRealtimePeriod": 0,
+               "CpuRealtimeRuntime": 0,
+               "CpusetCpus": "0-3,16-19",
+               "CpusetMems": "",
+               "Devices": [],
+               "DiskQuota": 0,
+               "KernelMemory": 0,
+               "MemoryReservation": 0,
+               "MemorySwap": 17179869184,
+               "MemorySwappiness": -1,
+               "OomKillDisable": false,
+               "PidsLimit": 2048,
+               "Ulimits": [
+                    {
+                         "Name": "RLIMIT_NOFILE",
+                         "Soft": 1048576,
+                         "Hard": 1048576
+                    },
+                    {
+                         "Name": "RLIMIT_NPROC",
+                         "Soft": 1048576,
+                         "Hard": 1048576
+                    }
+               ],
+               "CpuCount": 0,
+               "CpuPercent": 0,
+               "IOMaximumIOps": 0,
+               "IOMaximumBandwidth": 0,
+               "CgroupConf": null
+          },
+          "UseImageHosts": false,
+          "UseImageHostname": false
+     }
+]

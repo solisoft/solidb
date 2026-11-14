@@ -1,0 +1,125 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Graph · Benchmarks</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">After the document benchmark we were asked the same question about graphs. So we loaded one graph, a million people and ten million edges, into SoliDB, Neo4j, Memgraph and ArangoDB, and asked each the same six questions. SoliDB 2.10.3 lost most of them, and could not finish a shortest path. This post gives the figures of the build that came out of that, what changed in it, and what the comparison does not show.</p>
+  <p class="post-note">Every figure on this page was measured on November 14, 2026 on one machine, each database alone in a container with 4 cores and 16 GB, the harness on other cores. SoliDB is a build of the <code>perf/traversal</code> branch, which is in no release yet. The harness, the settings and the raw results are in the repository, under <code>benchmarks/compare</code> (<code>graph.sh</code>, <code>results/2026-11-14-graph</code>).</p>
+</header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#what">What was measured</a></li>
+    <li><a href="#results">The results</a></li>
+    <li><a href="#before">Where 2.10.3 stood</a></li>
+    <li><a href="#changes">What changed in SoliDB</a></li>
+    <li><a href="#limits">What this does not show</a></li>
+    <li><a href="#run">Running it</a></li>
+  </ol>
+</nav>
+
+<section id="what"><h2>What was measured</h2>
+<p>The graph is generated: 1,000,000 people, each of whom knows up to 18 others, 9,985,098 edges in all. Four edges in five go to people with nearby numbers and one in five to a few people known by many, so that some people are known by very many. Each edge has a year and a weight. People also bought products: 1,499,179 purchases among 10,000 products. Everything is a function of the vertex numbers, so the harness holds its own copy of the graph and computes each answer itself.</p>
+<p>Each database is asked six questions, in its own query language and through its own client:</p>
+<table>
+  <thead><tr><th>Scenario</th><th>The question</th></tr></thead>
+  <tbody>
+    <tr><td><code>hop1</code>, <code>hop2</code>, <code>hop3</code></td><td>The distinct people within one, two or three hops of a person, other than that person: how many, and the sum of their numbers.</td></tr>
+    <tr><td><code>filtered</code></td><td>The distinct people two hops away through a second edge dating from a given year or later, who live in a given country.</td></tr>
+    <tr><td><code>fof_bought</code></td><td>The people within two hops who bought a given product.</td></tr>
+    <tr><td><code>shortest</code></td><td>The length of a shortest path between two people who are 2 to 4 hops apart.</td></tr>
+  </tbody>
+</table>
+<p>SoliDB receives SDBQL over its native driver, Neo4j and Memgraph receive Cypher over Bolt, ArangoDB receives AQL over HTTP. The queries are in the README, word for word. Every answer is compared with the harness's own, before the timing and during it. A scenario whose first answers are wrong would be skipped and reported; none was, and no timed request returned a wrong answer on any of the four.</p>
+<p>The versions are Neo4j Community 2026.10.2, Memgraph 3.14.0 and ArangoDB 3.12.4. PostgreSQL has an adapter too (joins and a recursive query), and it is not in this comparison: it is not a graph database, and the document benchmark already compares SoliDB with it.</p>
+</section>
+
+<section id="results"><h2>The results</h2>
+<p>Requests per second, median of three runs of 20 seconds, with the median latency in parentheses. One client first:</p>
+<table>
+  <thead><tr><th>One client</th><th>SoliDB</th><th>Memgraph</th><th>Neo4j</th><th>ArangoDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>hop1</code></td><td>61,604 (16&nbsp;µs)</td><td>19,134 (52&nbsp;µs)</td><td>11,289 (83&nbsp;µs)</td><td>10,477 (95&nbsp;µs)</td></tr>
+    <tr><td><code>hop2</code></td><td>28,236 (35&nbsp;µs)</td><td>12,066 (82&nbsp;µs)</td><td>6,837 (144&nbsp;µs)</td><td>2,527 (396&nbsp;µs)</td></tr>
+    <tr><td><code>hop3</code></td><td>2,924 (338&nbsp;µs)</td><td>2,674 (367&nbsp;µs)</td><td>1,621 (621&nbsp;µs)</td><td>313 (3.2&nbsp;ms)</td></tr>
+    <tr><td><code>filtered</code></td><td>14,052 (69&nbsp;µs)</td><td>12,686 (78&nbsp;µs)</td><td>6,940 (141&nbsp;µs)</td><td>1,656 (594&nbsp;µs)</td></tr>
+    <tr><td><code>fof_bought</code></td><td>6,653 (149&nbsp;µs)</td><td>244 (4.0&nbsp;ms)</td><td>2,844 (349&nbsp;µs)</td><td>428 (2.3&nbsp;ms)</td></tr>
+    <tr><td><code>shortest</code></td><td>22,078 (37&nbsp;µs)</td><td>0.6 (1.8&nbsp;s)</td><td>8,309 (104&nbsp;µs)</td><td>7,578 (112&nbsp;µs)</td></tr>
+  </tbody>
+</table>
+<figure class="post-figure"><svg viewBox="0 0 680 236" role="img" aria-labelledby="gr-hop2-t">
+<title id="gr-hop2-t">People within two hops, one client, requests per second: SoliDB 28,236, Memgraph 12,066, Neo4j 6,837, ArangoDB 2,527.</title>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">The people within two hops, one client (requests per second)</text>
+<line x1="170" y1="46" x2="170" y2="196" stroke="#29322f"/>
+<text x="20" y="72" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB</text>
+<rect x="170" y="56" width="440" height="24" rx="3" fill="#f5a623"/>
+<text x="620" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">28,236</text>
+<text x="20" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">Memgraph</text>
+<rect x="170" y="94" width="188" height="24" rx="3" fill="#6b746c"/>
+<text x="368" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">12,066</text>
+<text x="20" y="148" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">Neo4j</text>
+<rect x="170" y="132" width="107" height="24" rx="3" fill="#6b746c"/>
+<text x="287" y="149" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">6,837</text>
+<text x="20" y="186" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">ArangoDB</text>
+<rect x="170" y="170" width="39" height="24" rx="3" fill="#6b746c"/>
+<text x="219" y="187" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">2,527</text>
+<text x="20" y="222" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. 1,000,000 people, 9,985,098 edges, 4 cores each.</text>
+</svg><figcaption>Two hops from one person, about a hundred people to find. SoliDB answers from what earlier queries left in memory, which is the subject of the last section but one.</figcaption></figure>
+<p>And eight clients:</p>
+<table>
+  <thead><tr><th>Eight clients</th><th>SoliDB</th><th>Memgraph</th><th>Neo4j</th><th>ArangoDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>hop1</code></td><td>322,754</td><td>76,294</td><td>37,438</td><td>30,295</td></tr>
+    <tr><td><code>hop2</code></td><td>150,916</td><td>52,092</td><td>28,481</td><td>9,648</td></tr>
+    <tr><td><code>hop3</code></td><td>16,219</td><td>13,201</td><td>8,164</td><td>1,324</td></tr>
+    <tr><td><code>filtered</code></td><td>71,948</td><td>55,131</td><td>29,014</td><td>6,721</td></tr>
+    <tr><td><code>fof_bought</code></td><td>32,950</td><td>1,396</td><td>14,469</td><td>2,102</td></tr>
+    <tr><td><code>shortest</code></td><td>110,252</td><td>2.4</td><td>31,701</td><td>25,957</td></tr>
+  </tbody>
+</table>
+<p>SoliDB is ahead on the twelve series. The margin is narrow in one place: three hops at one client, 9% over Memgraph, and three earlier passes of the same series had SoliDB 3 to 5% behind, before the last change described below. On the others it is 11% (the filtered traversal at one client) to several times.</p>
+<p>Two of Memgraph's figures need a word. Its shortest path takes 1.8 seconds with the query we wrote for it (<code>*BFS</code>), which as far as we can tell explores from the start until it meets the target, among people known by very many; Neo4j's <code>shortestPath</code> and ArangoDB's <code>SHORTEST_PATH</code> search from both ends. And <code>fof_bought</code> is a pattern with a variable-length part followed by a purchase, which it appears to enumerate path by path. Someone who knows Memgraph better may write both differently; the harness is there to be corrected.</p>
+<p>Loading the graph, with its indexes, from eight connections: ArangoDB 27 seconds, SoliDB 46, Neo4j 50, Memgraph 101. ArangoDB loads faster than SoliDB, which now maintains four index entries per edge.</p>
+</section>
+
+<section id="before"><h2>Where 2.10.3 stood</h2>
+<p>The first passes ran on a small graph, 20,000 people and 200,000 edges, against the released 2.10.3. One hop was already ahead. Two hops took 560 µs where Neo4j took 121. Three hops took 7.3 ms where Neo4j and Memgraph took about 0.4. A shortest path took 10.8 ms where Neo4j took 0.08, and that was after a first fix: on 2.10.2, every shortest path on a graph of 100,000 edges ran into the query time limit.</p>
+<p>Reading the code said why. A shortest path loaded every edge of the collection into memory, then looked through all of them at each step of the search. A traversal read one vertex, then its edges, then the next vertex; each edge was fetched and decoded whole to learn where it led; and each step of the walk carried a copy of the documents of its whole path, whether or not the query asked for the path.</p>
+</section>
+
+<section id="changes"><h2>What changed in SoliDB</h2>
+<p>In the order the profiles asked for them:</p>
+<ul>
+<li><strong>Edges are found from an index that holds both ends.</strong> An edge collection now has, besides its indexes on <code>_from</code> and <code>_to</code>, one on <code>[_from, _to]</code> and one on <code>[_to, _from]</code>. An entry says where an edge leads, so expanding a vertex reads a range of the index and no edge document, unless the query reads the edge.</li>
+<li><strong>A breadth-first traversal goes level by level.</strong> The edges of a whole level are read, then its vertices in one batch, and only the fields the query reads are decoded. The filters that follow the traversal are checked as each vertex is found, and a <code>COLLECT</code> that follows is fed directly, without building the rows first.</li>
+<li><strong>A shortest path is searched from both ends</strong>, on where the edges lead; the edges of the path found are read at the end. It returns a shortest path, not necessarily the one a search from the start would have met first.</li>
+<li><strong>What a traversal reads is kept until the next write.</strong> The neighbours of each vertex walked, with the documents the query read of them, stay in memory, per collection, for as long as the collection is not written. Any committed write to a collection drops what was kept of it, in the same way and at the same moment as it drops the cached query results. The size is bounded (<code>SOLIDB_GRAPH_CACHE_MB</code>), and <code>0</code> turns it off.</li>
+</ul>
+<p>The first three are algorithmic and hold whatever the workload. On the small graph, with nothing kept between queries, they brought two hops from 560 to 130 µs and three hops from 7.3 to 1.1 ms. The fourth is what took SoliDB from there to the figures above.</p>
+</section>
+
+<section id="limits"><h2>What this does not show</h2>
+<ul>
+<li><strong>A read-only benchmark is the best case for what SoliDB keeps in memory.</strong> The harness loads the graph and then only reads it, cycling through 2,000 sets of parameters per scenario: after the warm-up, most of what a query needs was read by an earlier one. A graph that is written all the time would see SoliDB read its indexes at every query, at the figures of the paragraph above rather than those of the tables. We have not measured a mix of reads and writes. Memgraph is favoured the same way by keeping its whole graph in memory, and Neo4j by a page cache as large as the data; ArangoDB reads through RocksDB.</li>
+<li><strong>The container gave SoliDB room for it</strong>: 2 GB per kept map, where the server's default is 256 MB. At the default, a graph this size is only partly kept. The setting is in <code>graph.sh</code>, as Neo4j's heap and page cache are.</li>
+<li><strong>The questions are small.</strong> Neighbourhoods, a filter, a shortest path. No analytics over the whole graph, no pattern with several branches, no write. Graph databases are built for more than this, and Cypher expresses patterns that SDBQL does not.</li>
+<li><strong>The queries are ours.</strong> Each is the form its own documentation suggests, and the two Memgraph figures above show what a different form may be worth.</li>
+<li><strong>Eight clients on four cores</strong> is as far as the harness went.</li>
+<li><strong>This build is not released.</strong> The figures are those of a branch; they will be measured again on the release that carries it.</li>
+</ul>
+</section>
+
+<section id="run"><h2>Running it</h2>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>cd benchmarks/compare
+cargo build --release --bin solidb-graph
+./graph.sh all                       <span class="tok-com"># the four databases, one after another</span>
+./graph.sh solidb neo4j              <span class="tok-com"># only those</span>
+PEOPLE=20000 PRODUCTS=500 WARM=1 SECS=3 RUNS=1 ./graph.sh all   <span class="tok-com"># a smoke pass</span></pre></div>
+<p>The README of <code>benchmarks/compare</code> describes the data, the six scenarios with each engine's query, the settings and what is checked. If one of the queries is not the one you would have written for your database, that is the place to say so.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

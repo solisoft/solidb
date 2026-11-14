@@ -72,6 +72,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-against-neo4j-memgraph-arangodb-on-a-graph",
+        "title": "SoliDB against Neo4j, Memgraph and ArangoDB on a graph",
+        "date": "2026-11-14",
+        "display_date": "November 14, 2026",
+        "summary": "A million people, ten million edges, six questions, four databases on 4 cores each. "
+        + "SoliDB 2.10.3 lost most of them and could not finish a shortest path. The build that came "
+        + "out of it leads the twelve series, by 9% to several times: what changed, and why a "
+        + "read-only benchmark is its best case.",
+        "tags": ["Graph", "Performance", "Benchmarks"],
+        "read_minutes": 9
+      },
+      {
         "slug": "foreign-keys-in-a-document-database",
         "title": "Foreign keys in a document database",
         "date": "2026-11-13",

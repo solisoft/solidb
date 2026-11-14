@@ -4,7 +4,7 @@ The harness behind the blog post [SoliDB against PostgreSQL, MongoDB, ArangoDB a
 
 A second harness, the bank (`bank.sh`, [below](#transactions-the-bank-banksh)), measures transactions against PostgreSQL: durable transfers, lost money, and `kill -9`.
 
-A third harness, the graph (`graph.sh`, [below](#the-graph-graphsh)), asks traversal and shortest-path questions of SoliDB, Neo4j, Memgraph and ArangoDB. No full-scale result of it has been published.
+A third harness, the graph (`graph.sh`, [below](#the-graph-graphsh)), asks traversal and shortest-path questions of SoliDB, Neo4j, Memgraph and ArangoDB. Its first full-scale results, of 2026-11-14, are [below](#results-2026-11-14).
 
 ## What runs
 
@@ -575,9 +575,37 @@ The data directory is deleted after each configuration. A configuration that fai
 
 There is no report script for this harness yet; `report.py` and `bank_report.py` do not read these files.
 
-### Results
+### Results, 2026-11-14
 
-**No full-scale result has been published.** While the harness and SoliDB's traversal were being worked on, only smoke passes were run: 20,000 people, runs of a few seconds. They served to check that every engine loads the graph and gives the right answers. They were not run under the rules above (the default size, 20 s runs, three of them), so no throughput or latency figure from them appears here, and `results/` holds no graph directory.
+`results/2026-11-14-graph/`: the default size (1,000,000 people, 9,985,098 edges, 1,499,179 purchases among 10,000 products), three runs of 20 s per series after 5 s of warm-up, on rocky-build2 under the rules above. Neo4j Community 2026.10.2, Memgraph 3.14.0, ArangoDB 3.12.4-3. SoliDB is a build of the `perf/traversal` branch (image `localhost/solidb-perf:graph`, not published: no release carries it yet), run with `SOLIDB_GRAPH_CACHE_MB=2048`. Its files are those of its last pass, made after the three others; `first-pass/` holds its pass of the same run as the others, on an earlier commit of the branch.
+
+Requests per second, median of the three runs (p50 in parentheses). No request returned a wrong answer and no scenario was skipped, on any engine.
+
+| One client | SoliDB | Memgraph | Neo4j | ArangoDB |
+|---|---:|---:|---:|---:|
+| `hop1` | 61,604 (16 µs) | 19,134 (52 µs) | 11,289 (83 µs) | 10,477 (95 µs) |
+| `hop2` | 28,236 (35 µs) | 12,066 (82 µs) | 6,837 (144 µs) | 2,527 (396 µs) |
+| `hop3` | 2,924 (338 µs) | 2,674 (367 µs) | 1,621 (621 µs) | 313 (3.2 ms) |
+| `filtered` | 14,052 (69 µs) | 12,686 (78 µs) | 6,940 (141 µs) | 1,656 (594 µs) |
+| `fof_bought` | 6,653 (149 µs) | 244 (4.0 ms) | 2,844 (349 µs) | 428 (2.3 ms) |
+| `shortest` | 22,078 (37 µs) | 0.6 (1.8 s) | 8,309 (104 µs) | 7,578 (112 µs) |
+
+| Eight clients | SoliDB | Memgraph | Neo4j | ArangoDB |
+|---|---:|---:|---:|---:|
+| `hop1` | 322,754 (23 µs) | 76,294 (101 µs) | 37,438 (207 µs) | 30,295 (249 µs) |
+| `hop2` | 150,916 (50 µs) | 52,092 (147 µs) | 28,481 (272 µs) | 9,648 (809 µs) |
+| `hop3` | 16,219 (485 µs) | 13,201 (598 µs) | 8,164 (966 µs) | 1,324 (6.0 ms) |
+| `filtered` | 71,948 (106 µs) | 55,131 (140 µs) | 29,014 (267 µs) | 6,721 (1.2 ms) |
+| `fof_bought` | 32,950 (232 µs) | 1,396 (5.6 ms) | 14,469 (534 µs) | 2,102 (3.8 ms) |
+| `shortest` | 110,252 (57 µs) | 2.4 (3.3 s) | 31,701 (234 µs) | 25,957 (273 µs) |
+
+Load, eight connections, indexes included: ArangoDB 26.9 s, SoliDB 46.2 s, Neo4j 49.6 s, Memgraph 101.5 s.
+
+How to read them:
+- **SoliDB leads the twelve series, and loads slower than ArangoDB.** The narrowest lead is `hop3` at one client, 9% over Memgraph. Three earlier passes of that series on earlier commits of the branch had SoliDB 3 to 5% behind.
+- **SoliDB answers from memory here.** After the warm-up, most of what a query needs was read by an earlier one and kept (see "Known limits"): the benchmark only reads, over 2,000 sets of parameters per scenario. With nothing kept (smoke passes on 20,000 people, before the kept maps existed), the same branch took 130 µs for `hop2` and 1.1 ms for `hop3` at one client. A workload that writes the graph between reads has not been measured.
+- **Memgraph's `shortest` and `fof_bought`** are the queries of `engines/bolt.rs`, which may not be the ones a Memgraph user would write: `*BFS` from one end for the first, a variable-length pattern followed by a purchase for the second.
+- **Where the released version stood.** On smoke passes of 2.10.3 (20,000 people): `hop2` 560 µs, `hop3` 7.3 ms, `shortest` 10.8 ms at one client. On 2.10.2 a shortest path on 100,000 edges ran into the query time limit. Not measured at full scale.
 
 ### Licences
 
