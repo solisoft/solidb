@@ -1602,7 +1602,10 @@ impl<'a> QueryExecutor<'a> {
                                 // and the query reads them; otherwise only
                                 // where they lead.
                                 let edge_docs = reads_edge && depth + 1 >= gt.min_depth;
-                                let mut next: Vec<Frame> = Vec::new();
+                                let mut next: Vec<Frame> = Vec::with_capacity(level.len() * 4);
+                                if !by_path {
+                                    seen.reserve(level.len() * 4);
+                                }
                                 // Frames of `next` whose edge is still to
                                 // be read, with its key: one batch for the
                                 // level.
@@ -2206,11 +2209,24 @@ impl QueryExecutor<'_> {
         fields: Option<&[String]>,
     ) -> Vec<Option<std::sync::Arc<Value>>> {
         let mut docs: Vec<Option<std::sync::Arc<Value>>> = vec![None; level.len()];
-        let mut by_coll: std::collections::HashMap<&str, Vec<(usize, &str)>> =
-            std::collections::HashMap::new();
+        // Grouped by collection. A level is nearly always of one, or of a
+        // few in runs: the last group is tried first, then the others, with
+        // no hashing per vertex.
+        let mut by_coll: Vec<(&str, Vec<(usize, &str)>)> = Vec::new();
         for (at, id) in level.iter().enumerate() {
-            if let Some((coll, key)) = id.split_once('/') {
-                by_coll.entry(coll).or_default().push((at, key));
+            let Some((coll, key)) = id.split_once('/') else {
+                continue;
+            };
+            match by_coll.last_mut() {
+                Some((name, wanted)) if *name == coll => wanted.push((at, key)),
+                _ => match by_coll.iter_mut().find(|(name, _)| *name == coll) {
+                    Some((_, wanted)) => wanted.push((at, key)),
+                    None => {
+                        let mut wanted = Vec::with_capacity(level.len() - at);
+                        wanted.push((at, key));
+                        by_coll.push((coll, wanted));
+                    }
+                },
             }
         }
         for (name, wanted) in by_coll {
