@@ -1481,21 +1481,30 @@ impl<'a> QueryExecutor<'a> {
                     // between queries: for a caller no row policy applies to
                     // (the documents are kept as the projection reads them)
                     // and outside a transaction that checks its reads.
-                    let around = if level_wise
+                    let keeps_around = level_wise
                         && self.principal.as_ref().is_none_or(|p| p.can_admin)
                         && self
                             .tx_writer
                             .as_ref()
                             .and_then(|tw| tw.reads.as_ref())
-                            .is_none()
-                    {
+                            .is_none();
+                    let around_of = |edges: Option<Option<&[String]>>| {
+                        if !keeps_around {
+                            return None;
+                        }
                         super::graph::neighbourhoods::around(
                             expander.edges().ks.state(),
                             expander.direction_code(),
                             vertex_fields.as_deref(),
+                            edges,
                         )
-                    } else {
-                        None
+                    };
+                    let around = around_of(None);
+                    // The same with each neighbour's edge, for a query that
+                    // reads the edges.
+                    let around_edges = match gt.edge_var {
+                        Some(_) => around_of(Some(edge_fields.as_deref())),
+                        None => None,
                     };
                     // One handle per vertex collection, not one lookup per vertex.
                     let mut vertex_colls: std::collections::HashMap<
@@ -1686,6 +1695,23 @@ impl<'a> QueryExecutor<'a> {
                                             Some(next.len() - 1)
                                         };
                                     if edge_docs {
+                                        if let Some(entry) =
+                                            around_edges.as_ref().and_then(|around| {
+                                                self.ends_with_vertices(
+                                                    &expander,
+                                                    around,
+                                                    id,
+                                                    &mut vertex_colls,
+                                                    vertex_fields.as_deref(),
+                                                    Some(edge_fields.as_deref()),
+                                                )
+                                            })
+                                        {
+                                            for (to, doc, edge) in entry.ends.iter() {
+                                                admit(to, edge.clone(), Some(doc.clone()));
+                                            }
+                                            continue;
+                                        }
                                         if let Some(steps) = expander.far_steps(id) {
                                             for (to, key) in steps.iter() {
                                                 if let Some(at) = admit(to, None, None) {
@@ -1703,9 +1729,10 @@ impl<'a> QueryExecutor<'a> {
                                                 id,
                                                 &mut vertex_colls,
                                                 vertex_fields.as_deref(),
+                                                None,
                                             )
                                         }) {
-                                            for (to, doc) in entry.ends.iter() {
+                                            for (to, doc, _) in entry.ends.iter() {
                                                 admit(to, None, Some(doc.clone()));
                                             }
                                             continue;
@@ -2317,12 +2344,32 @@ impl QueryExecutor<'_> {
         id: &str,
         colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
         fields: Option<&[String]>,
+        edges: Option<Option<&[String]>>,
     ) -> Option<std::sync::Arc<super::graph::neighbourhoods::Around>> {
         let current = expander.local(id);
         if let Some(found) = around.get(current).filter(|found| found.current()) {
             return Some(found);
         }
-        let ends = expander.far_ends(id)?;
+        // With the edges: each neighbour's edge, read by the key the index
+        // names, in one batch.
+        let (ends, edge_docs): (Vec<std::sync::Arc<str>>, Vec<Option<std::sync::Arc<Value>>>) =
+            match edges {
+                Some(edge_fields) => {
+                    let steps = expander.far_steps(id)?;
+                    let keys: Vec<(usize, &str)> = steps
+                        .iter()
+                        .enumerate()
+                        .map(|(at, (_, key))| (at, key.as_ref()))
+                        .collect();
+                    let mut docs = vec![None; steps.len()];
+                    self.read_kept(expander.edges(), keys, edge_fields, &mut docs);
+                    (steps.iter().map(|(to, _)| to.clone()).collect(), docs)
+                }
+                None => {
+                    let ends = expander.far_ends(id)?;
+                    (ends.iter().cloned().collect(), vec![None; ends.len()])
+                }
+            };
         // The generations are read before the documents: a write in between
         // leaves an entry that is never used, not one that is stale.
         let mut stamps: Vec<(std::sync::Arc<crate::storage::keyspace::KsState>, u64)> = Vec::new();
@@ -2348,7 +2395,12 @@ impl QueryExecutor<'_> {
         let size = ends.iter().map(|end| end.len() + 32).sum();
         let entry = std::sync::Arc::new(super::graph::neighbourhoods::Around::new(
             stamps,
-            ends.iter().cloned().zip(docs).collect(),
+            ends.iter()
+                .cloned()
+                .zip(docs)
+                .zip(edge_docs)
+                .map(|((end, doc), edge)| (end, doc, edge))
+                .collect(),
         ));
         around.put(current, &entry, size);
         Some(entry)

@@ -94,16 +94,21 @@ pub(crate) mod neighbourhoods {
     /// The documents belong to other collections than the edges, so the
     /// entry also records the write generation of each of them when it was
     /// read, and is used only while none has moved.
+    pub(crate) type Step = (
+        Arc<str>,
+        Option<Arc<serde_json::Value>>,
+        Option<Arc<serde_json::Value>>,
+    );
+
     pub(crate) struct Around {
         stamps: Box<[(Arc<KsState>, u64)]>,
-        pub(crate) ends: Box<[(Arc<str>, Option<Arc<serde_json::Value>>)]>,
+        /// (neighbour, its document, the edge that leads there when the
+        /// entry was built for a query that reads the edges)
+        pub(crate) ends: Box<[Step]>,
     }
 
     impl Around {
-        pub(crate) fn new(
-            stamps: Vec<(Arc<KsState>, u64)>,
-            ends: Vec<(Arc<str>, Option<Arc<serde_json::Value>>)>,
-        ) -> Self {
+        pub(crate) fn new(stamps: Vec<(Arc<KsState>, u64)>, ends: Vec<Step>) -> Self {
             Self {
                 stamps: stamps.into(),
                 ends: ends.into(),
@@ -119,15 +124,18 @@ pub(crate) mod neighbourhoods {
     }
 
     /// The neighbourhoods-with-documents of this edge collection in
-    /// `direction`, for the vertex fields `fields`.
+    /// `direction`, for the vertex fields `fields` and, when the query
+    /// reads the edges, their fields `edges`.
     pub(crate) fn around(
         state: &Arc<KsState>,
         direction: u8,
         fields: Option<&[String]>,
+        edges: Option<Option<&[String]>>,
     ) -> Option<Arc<Kept<Arc<Around>>>> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         fields.hash(&mut hasher);
+        edges.hash(&mut hasher);
         open(&AROUND, state, (hasher.finish() << 8) | direction as u64)
     }
     static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
