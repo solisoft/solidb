@@ -24,6 +24,9 @@ const Q_FOF: &str = "LET buyers = (FOR b IN 1..1 INBOUND @product bought RETURN 
 const Q_SHORTEST: &str = "LET p = (FOR v IN OUTBOUND SHORTEST_PATH @from TO @to knows RETURN 1) \
      RETURN LENGTH(p) - 1";
 
+const Q_REWEIGH: &str = "FOR e IN knows FILTER e._from == @from AND e._to == @to \
+     UPDATE e WITH { weight: @weight } IN knows";
+
 pub struct Arango {
     conn: Conn,
     base: String,
@@ -213,6 +216,12 @@ impl Engine for Arango {
             .await?;
         // No path: zero vertices, so -1.
         Ok(rows.first().and_then(Value::as_i64).filter(|l| *l >= 0).map(|l| l as u64))
+    }
+
+    async fn reweigh(c: &mut Conn, from: u32, to: u32, weight: i64) -> Res<()> {
+        let vars = json!({"from": person(from), "to": person(to), "weight": weight});
+        c.cursor(Q_REWEIGH, vars).await?;
+        Ok(())
     }
 
     fn queries(_: &Settings) -> Vec<(&'static str, String)> {

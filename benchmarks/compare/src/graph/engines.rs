@@ -71,6 +71,15 @@ pub trait Engine: Sized + Send + Sync + 'static {
         to: u32,
     ) -> impl Future<Output = Res<Option<u64>>> + Send;
 
+    /// Set the weight of the edge from `from` to `to`: the write of the
+    /// mixed runs (`--writes`), which changes no scenario's answer.
+    fn reweigh(
+        c: &mut Self::Conn,
+        from: u32,
+        to: u32,
+        weight: i64,
+    ) -> impl Future<Output = Res<()>> + Send;
+
     /// The query text of each scenario, as sent.
     fn queries(s: &Settings) -> Vec<(&'static str, String)>;
 }

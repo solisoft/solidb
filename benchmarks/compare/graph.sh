@@ -33,6 +33,10 @@ NEO4J_PASSWORD=benchbench1 # Neo4j refuses a password under eight characters.
 ARGS=(--people "${PEOPLE:-1000000}" --products "${PRODUCTS:-10000}" --concurrency "${CONCURRENCY:-1,8}"
   --warm "${WARM:-5}" --secs "${SECS:-20}" --runs "${RUNS:-3}")
 [[ -n ${ONLY:-} ]] && ARGS+=(--only "$ONLY")
+# WRITES=n: one more connection updates the weight of n edges a second while
+# each series is timed. The answers do not change; what the databases keep
+# in memory of the graph does.
+[[ -n ${WRITES:-} ]] && ARGS+=(--writes "$WRITES")
 
 # Pinned by digest; the tag is for the reader.
 SOLIDB_IMAGE=${SOLIDB_IMAGE:-ghcr.io/solisoft/solidb:v2.10.3}

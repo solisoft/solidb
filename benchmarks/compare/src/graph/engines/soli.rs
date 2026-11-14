@@ -26,6 +26,9 @@ const Q_FOF: &str = "LET buyers = (FOR b IN INBOUND @product bought RETURN b.n) 
 const Q_SHORTEST: &str =
     "FOR v, e, p IN SHORTEST_PATH @from TO @to OUTBOUND knows RETURN LENGTH(p.edges)";
 
+const Q_REWEIGH: &str = "FOR e IN knows FILTER e._from == @from AND e._to == @to \
+     UPDATE e WITH { weight: @weight } IN knows";
+
 pub struct Soli {
     s: Settings,
 }
@@ -167,6 +170,12 @@ impl Engine for Soli {
     async fn shortest(c: &mut SoliDBClient, from: u32, to: u32) -> Res<Option<u64>> {
         let rows = query(c, Q_SHORTEST, vec![("from", person(from)), ("to", person(to))]).await?;
         Ok(rows.first().and_then(Value::as_u64))
+    }
+
+    async fn reweigh(c: &mut SoliDBClient, from: u32, to: u32, weight: i64) -> Res<()> {
+        let vars = vec![("from", person(from)), ("to", person(to)), ("weight", json!(weight))];
+        query(c, Q_REWEIGH, vars).await?;
+        Ok(())
     }
 
     fn queries(_: &Settings) -> Vec<(&'static str, String)> {

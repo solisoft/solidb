@@ -183,6 +183,16 @@ impl Engine for Bolt {
         }
     }
 
+    async fn reweigh(c: &mut Conn, from: u32, to: u32, weight: i64) -> Res<()> {
+        let q = query(
+            "MATCH (:Person {n: $from})-[e:KNOWS]->(:Person {n: $to}) SET e.weight = $weight",
+        )
+        .param("from", from as i64)
+        .param("to", to as i64)
+        .param("weight", weight);
+        Ok(c.graph.run(q).await?)
+    }
+
     fn queries(s: &Settings) -> Vec<(&'static str, String)> {
         let shortest = if s.flavor == "memgraph" {
             Q_SHORTEST_MEMGRAPH

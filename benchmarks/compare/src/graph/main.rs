@@ -33,6 +33,9 @@ struct Args {
     secs: u64,
     runs: usize,
     only: Option<Vec<String>>,
+    /// Edge updates per second sent by one more connection while a series
+    /// is timed (0: none, the read-only benchmark).
+    writes: u64,
     cgroup: Option<String>,
     out: Option<String>,
 }
@@ -52,6 +55,7 @@ fn parse_args() -> Args {
         secs: 20,
         runs: 3,
         only: None,
+        writes: 0,
         cgroup: None,
         out: None,
     };
@@ -72,6 +76,7 @@ fn parse_args() -> Args {
             "--secs" => a.secs = value().parse().expect("--secs"),
             "--runs" => a.runs = value().parse().expect("--runs"),
             "--only" => a.only = Some(value().split(',').map(str::to_string).collect()),
+            "--writes" => a.writes = value().parse().expect("--writes"),
             "--cgroup" => a.cgroup = Some(value()),
             "--out" => a.out = Some(value()),
             other => panic!("unknown argument {other}"),
@@ -169,12 +174,43 @@ async fn ask<E: Engine>(conn: &mut E::Conn, case: &Case) -> Res<Option<String>> 
     })
 }
 
+/// Update the weight of an edge `rate` times a second until `stop`: the
+/// edges change, the answers do not. Returns the connection, the updates
+/// made and the first error.
+async fn write_load<E: Engine>(
+    mut conn: E::Conn,
+    graph: Arc<Graph>,
+    rate: u64,
+    stop: Arc<AtomicBool>,
+) -> (E::Conn, u64, Option<String>) {
+    let every = Duration::from_nanos(1_000_000_000 / rate.max(1));
+    let (mut done, mut problem) = (0u64, None);
+    let mut next = Instant::now();
+    while !stop.load(Ordering::Relaxed) {
+        let from = (data::pick(0xED6E, done) % graph.people as u64) as u32;
+        let ends = &graph.knows[from as usize];
+        if let Some(to) = ends.get((data::pick(0xED6F, done) % ends.len().max(1) as u64) as usize) {
+            match E::reweigh(&mut conn, from, *to, 1 + (done % 9) as i64).await {
+                Ok(()) => {}
+                Err(e) => {
+                    problem.get_or_insert(e.to_string());
+                }
+            }
+        }
+        done += 1;
+        next += every;
+        tokio::time::sleep_until(next.into()).await;
+    }
+    (conn, done, problem)
+}
+
 async fn timed<E: Engine>(
     pool: &mut Vec<E::Conn>,
     n: usize,
     dur: Duration,
     cases: Arc<Vec<Case>>,
     cg: &Option<String>,
+    writes: Option<(Arc<Graph>, u64)>,
 ) -> Value {
     let stop = Arc::new(AtomicBool::new(false));
     let (errors, wrong) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
@@ -215,8 +251,22 @@ async fn timed<E: Engine>(
             (Some(conn), lat)
         }));
     }
+    // The writer takes the connection after the readers'.
+    let writer = match writes {
+        Some((graph, rate)) if rate > 0 && !pool.is_empty() => {
+            let conn = pool.remove(0);
+            Some(tokio::spawn(write_load::<E>(conn, graph, rate, stop.clone())))
+        }
+        _ => None,
+    };
     tokio::time::sleep(dur).await;
     stop.store(true, Ordering::Relaxed);
+    let mut written = json!(null);
+    if let Some(writer) = writer {
+        let (conn, done, problem) = writer.await.expect("writer");
+        pool.push(conn);
+        written = json!({"updates": done, "first_problem": problem});
+    }
     let mut lat = Vec::new();
     let mut back = Vec::new();
     for h in handles {
@@ -236,6 +286,7 @@ async fn timed<E: Engine>(
         "wrong": wrong.load(Ordering::Relaxed),
         "first_problem": *first.lock().unwrap(),
         "db_cpu_cores": db0.and_then(|d0| db_cpu(cg).map(|d1| (d1 - d0) / secs)),
+        "writes": written,
     });
     v.as_object_mut().unwrap().extend(percentiles(lat).as_object().unwrap().clone());
     v
@@ -293,7 +344,8 @@ async fn run<E: Engine>(a: &Args) -> Res<Value> {
 
     let engine = E::open(&a.settings).await?;
     engine.reset().await?;
-    let workers = a.concurrency.iter().copied().max().unwrap_or(1).max(LOADERS);
+    // One more than the readers need: the writer of the mixed runs.
+    let workers = a.concurrency.iter().copied().max().unwrap_or(1).max(LOADERS) + 1;
     let mut pool = Vec::with_capacity(workers);
     for _ in 0..workers {
         pool.push(engine.connect().await?);
@@ -352,9 +404,9 @@ async fn run<E: Engine>(a: &Args) -> Res<Value> {
             }
         }
         for &n in &a.concurrency {
-            timed::<E>(&mut pool, n, Duration::from_secs(a.warm), cases.clone(), &a.cgroup).await;
+            timed::<E>(&mut pool, n, Duration::from_secs(a.warm), cases.clone(), &a.cgroup, Some((graph.clone(), a.writes))).await;
             for run in 0..a.runs {
-                let mut v = timed::<E>(&mut pool, n, Duration::from_secs(a.secs), cases.clone(), &a.cgroup).await;
+                let mut v = timed::<E>(&mut pool, n, Duration::from_secs(a.secs), cases.clone(), &a.cgroup, Some((graph.clone(), a.writes))).await;
                 eprintln!(
                     "{scenario} c={n} run {run}: {}/s p50 {} µs p99 {} µs, {} wrong, {} errors",
                     v["ops_per_sec"], v["p50_us"], v["p99_us"], v["wrong"], v["errors"]
@@ -378,6 +430,7 @@ async fn run<E: Engine>(a: &Args) -> Res<Value> {
         "load": {"secs": load_secs, "vertices_secs": vertices_secs,
                  "edges_per_sec": ((graph.edges() + graph.purchases()) as f64 / (load_secs - vertices_secs)).round()},
         "warm_secs": a.warm, "measure_secs": a.secs, "runs": a.runs,
+        "writes_per_sec": a.writes,
         "queries": E::queries(&a.settings).into_iter()
             .map(|(scenario, query)| json!({"scenario": scenario, "query": query})).collect::<Vec<_>>(),
         "series": series,

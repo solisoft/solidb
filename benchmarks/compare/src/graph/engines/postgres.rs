@@ -193,6 +193,16 @@ impl Engine for Postgres {
         Ok(row.get::<_, Option<i64>>(0).map(|d| d as u64))
     }
 
+    async fn reweigh(c: &mut Conn, from: u32, to: u32, weight: i64) -> Res<()> {
+        c.client
+            .execute(
+                "UPDATE knows SET weight = $3 WHERE src = $1 AND dst = $2",
+                &[&(from as i32), &(to as i32), &(weight as i32)],
+            )
+            .await?;
+        Ok(())
+    }
+
     fn queries(_: &Settings) -> Vec<(&'static str, String)> {
         vec![
             ("hop1", Q_HOP1.into()),
