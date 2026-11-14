@@ -2112,3 +2112,109 @@ fn benchmark_full_scan_collect() {
 fn benchmark_full_scan_collect_1m() {
     bench_full_scan_collect(1_000_000);
 }
+
+/// Card #846: what a statement's writes would cost inside an implicit
+/// transaction (staged, then one batch), against writing each row as it
+/// comes, which is what a query outside a transaction does today.
+///
+/// `read_uncommitted` on purpose: its commit is not fsynced, like the
+/// writes it is compared with.
+#[test]
+#[ignore]
+fn benchmark_statement_in_implicit_transaction() {
+    use solidb::sdbql::executor::TxWriter;
+    use solidb::transaction::IsolationLevel;
+    use std::collections::HashMap;
+
+    let (engine, _tmp) = create_test_db();
+    engine.initialize_transactions().unwrap();
+    let db = engine.get_database("bench_db").unwrap();
+    for name in ["direct", "direct_for", "tx_for", "batch_direct", "batch_tx"] {
+        db.create_collection(name.to_string(), None).unwrap();
+        db.get_collection(name)
+            .unwrap()
+            .create_index(
+                "by_val".to_string(),
+                vec!["val".to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
+    let manager = engine.transaction_manager().unwrap();
+    let doc = |i: usize| json!({"val": i % 1000, "name": format!("item-{i}"), "padding": "x".repeat(100)});
+    let vars = |name: &str, value: serde_json::Value| -> HashMap<String, serde_json::Value> {
+        [(name.to_string(), value)].into()
+    };
+    let outside = |query: &str, vars: HashMap<String, serde_json::Value>| {
+        let ast = solidb::sdbql::parse(query).unwrap();
+        QueryExecutor::with_database_and_bind_vars(&engine, "bench_db".to_string(), vars)
+            .execute(&ast)
+            .unwrap();
+    };
+    let inside = |query: &str, vars: HashMap<String, serde_json::Value>| {
+        let ast = solidb::sdbql::parse(query).unwrap();
+        let id = manager.begin(IsolationLevel::ReadUncommitted).unwrap();
+        let writer = TxWriter::new(manager.get(id).unwrap(), &manager);
+        QueryExecutor::with_database_and_bind_vars(&engine, "bench_db".to_string(), vars)
+            .with_transaction(writer)
+            .execute(&ast)
+            .unwrap();
+        engine.commit_transaction(id).unwrap();
+    };
+    let per_op = |label: &str, statements: usize, rows: usize, run: &dyn Fn(usize)| {
+        // Warm up, then the median of five passes.
+        for i in 0..statements / 10 {
+            run(i);
+        }
+        let mut passes: Vec<f64> = (0..5)
+            .map(|_| {
+                let start = Instant::now();
+                for i in 0..statements {
+                    run(i);
+                }
+                start.elapsed().as_nanos() as f64 / (statements * rows) as f64 / 1000.0
+            })
+            .collect();
+        passes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        println!(
+            "{label:<46} {:>7.2} µs per row (passes {:.2}..{:.2})",
+            passes[2], passes[0], passes[4]
+        );
+    };
+
+    const N: usize = 20_000;
+    println!("\none row per statement, {N} statements:");
+    per_op("INSERT @d INTO c", N, 1, &|i| {
+        outside("INSERT @d INTO direct", vars("d", doc(i)))
+    });
+    per_op("FOR x IN [@d] INSERT x INTO c", N, 1, &|i| {
+        outside("FOR x IN [@d] INSERT x INTO direct_for", vars("d", doc(i)))
+    });
+    per_op("the same, in a transaction of its own", N, 1, &|i| {
+        inside("FOR x IN [@d] INSERT x INTO tx_for", vars("d", doc(i)))
+    });
+
+    for rows in [10usize, 1000] {
+        let statements = 20_000 / rows;
+        let docs = |i: usize| json!((0..rows).map(|r| doc(i * rows + r)).collect::<Vec<_>>());
+        println!("\n{rows} rows per statement, {statements} statements:");
+        per_op("FOR x IN @docs INSERT x INTO c", statements, rows, &|i| {
+            outside(
+                "FOR x IN @docs INSERT x INTO batch_direct",
+                vars("docs", docs(i)),
+            )
+        });
+        per_op(
+            "the same, in a transaction of its own",
+            statements,
+            rows,
+            &|i| {
+                inside(
+                    "FOR x IN @docs INSERT x INTO batch_tx",
+                    vars("docs", docs(i)),
+                )
+            },
+        );
+    }
+}
