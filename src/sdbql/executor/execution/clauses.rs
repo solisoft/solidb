@@ -1452,6 +1452,24 @@ impl<'a> QueryExecutor<'a> {
                     // nothing else of it: the rest is not decoded.
                     let vertex_fields = self.traversal_projection_for(gt);
                     let edge_fields = self.traversal_edge_projection_for(gt);
+                    // A level-by-level walk whose rows go straight into a
+                    // COLLECT folds each one as it is found, on one row it
+                    // reuses, instead of building them all first.
+                    let level_wise = opts.order != TraversalOrder::Dfs
+                        && matches!(
+                            opts.unique_vertices,
+                            UniqueVertices::Global | UniqueVertices::Path
+                        )
+                        && gt.prune.is_none()
+                        && !keeps_path;
+                    let mut folded = match clauses.get(i + 1) {
+                        Some(BodyClause::Collect(collect))
+                            if level_wise && collect.into_var.is_none() =>
+                        {
+                            Some(super::collect::CollectFold::new(collect))
+                        }
+                        _ => None,
+                    };
                     // One handle per vertex collection, not one lookup per vertex.
                     let mut vertex_colls: std::collections::HashMap<
                         String,
@@ -1482,19 +1500,25 @@ impl<'a> QueryExecutor<'a> {
                         // path, which also keeps an edge from being walked
                         // twice on it.
                         let by_path = opts.unique_vertices == UniqueVertices::Path;
-                        if !dfs
-                            && (opts.unique_vertices == UniqueVertices::Global || by_path)
-                            && gt.prune.is_none()
-                            && !keeps_path
-                        {
+                        if level_wise {
                             let reads_edge = gt.edge_var.is_some();
+                            let mut reused = folded.as_ref().map(|_| ctx.clone());
                             // (vertex, the edge that led to it, its path)
-                            type Frame = (String, Option<std::sync::Arc<Value>>, Vec<String>);
+                            type Id = std::sync::Arc<str>;
+                            type Frame = (Id, Option<std::sync::Arc<Value>>, Vec<Id>);
+                            // Ids are shared with what the expander keeps: no
+                            // copy per vertex.
+                            let start: Id = start_id.as_str().into();
+                            let mut seen: std::collections::HashSet<
+                                Id,
+                                foldhash::fast::RandomState,
+                            > = std::collections::HashSet::default();
+                            seen.insert(start.clone());
                             let mut level: Vec<Frame> = vec![(
-                                start_id.clone(),
+                                start.clone(),
                                 None,
                                 if by_path {
-                                    vec![start_id.clone()]
+                                    vec![start.clone()]
                                 } else {
                                     Vec::new()
                                 },
@@ -1503,7 +1527,7 @@ impl<'a> QueryExecutor<'a> {
                             loop {
                                 if depth >= gt.min_depth && depth <= gt.max_depth {
                                     let ids: Vec<&str> =
-                                        level.iter().map(|(id, _, _)| id.as_str()).collect();
+                                        level.iter().map(|(id, _, _)| id.as_ref()).collect();
                                     let docs = self.level_vertices(
                                         &ids,
                                         &mut vertex_colls,
@@ -1522,6 +1546,24 @@ impl<'a> QueryExecutor<'a> {
                                         }
                                         // The row shares the documents
                                         // with whatever else holds them.
+                                        if let (Some(fold), Some(row)) =
+                                            (folded.as_mut(), reused.as_mut())
+                                        {
+                                            row.insert_shared(gt.vertex_var.clone(), v);
+                                            if let Some(ref edge_var) = gt.edge_var {
+                                                match edge {
+                                                    Some(edge) => row.insert_shared(
+                                                        edge_var.clone(),
+                                                        edge.clone(),
+                                                    ),
+                                                    None => {
+                                                        row.insert(edge_var.clone(), Value::Null)
+                                                    }
+                                                };
+                                            }
+                                            fold.push_ref(self, row)?;
+                                            continue;
+                                        }
                                         let mut new_ctx = ctx.clone();
                                         new_ctx.insert_shared(gt.vertex_var.clone(), v);
                                         if let Some(ref edge_var) = gt.edge_var {
@@ -1561,20 +1603,19 @@ impl<'a> QueryExecutor<'a> {
                                     // Where in `next` the frame for `to`
                                     // went, when `to` is walked.
                                     let mut admit =
-                                        |to: &str, edge: Option<std::sync::Arc<Value>>| {
+                                        |to: &Id, edge: Option<std::sync::Arc<Value>>| {
                                             if by_path {
-                                                if trail.iter().any(|seen| seen == to) {
+                                                if trail.contains(to) {
                                                     return None;
                                                 }
                                                 let mut longer = trail.clone();
-                                                longer.push(to.to_string());
-                                                next.push((to.to_string(), edge, longer));
+                                                longer.push(to.clone());
+                                                next.push((to.clone(), edge, longer));
                                             } else {
-                                                if visited.contains(to) {
+                                                if !seen.insert(to.clone()) {
                                                     return None;
                                                 }
-                                                visited.insert(to.to_string());
-                                                next.push((to.to_string(), edge, Vec::new()));
+                                                next.push((to.clone(), edge, Vec::new()));
                                             }
                                             Some(next.len() - 1)
                                         };
@@ -1602,7 +1643,7 @@ impl<'a> QueryExecutor<'a> {
                                             continue;
                                         };
                                         admit(
-                                            &to,
+                                            &Id::from(to.as_str()),
                                             edge_docs
                                                 .then(|| std::sync::Arc::new(edge_doc.to_value())),
                                         );
@@ -1784,6 +1825,13 @@ impl<'a> QueryExecutor<'a> {
                                 queue.extend(children);
                             }
                         }
+                    }
+                    if let Some(fold) = folded {
+                        // The COLLECT that follows is done.
+                        rows = fold.finish()?;
+                        self.check_budget(rows.len())?;
+                        i += 2;
+                        continue;
                     }
                     rows = new_rows;
                     self.check_budget(rows.len())?;

@@ -51,10 +51,10 @@ pub(crate) mod neighbourhoods {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    pub(crate) type Ends = Arc<[Box<str>]>;
+    pub(crate) type Ends = Arc<[Arc<str>]>;
     pub(crate) type Neighbourhoods = Kept<Ends>;
     /// `(far end, edge key)` of each of a vertex's edges.
-    pub(crate) type Steps = Arc<[(Box<str>, Box<str>)]>;
+    pub(crate) type Steps = Arc<[(Arc<str>, Box<str>)]>;
     /// The documents of a collection as one projection of a traversal reads
     /// them, kept the same way.
     pub(crate) type Vertices = Kept<Arc<serde_json::Value>>;
@@ -401,7 +401,7 @@ impl<'e> EdgeExpander<'e> {
         let ends: neighbourhoods::Ends = self
             .read_far_ends(current)?
             .into_iter()
-            .map(String::into_boxed_str)
+            .map(Arc::<str>::from)
             .collect();
         if let Some(cache) = &self.cached {
             let size = ends.iter().map(|end| end.len() + 16).sum();
@@ -456,7 +456,7 @@ impl<'e> EdgeExpander<'e> {
         }
         let steps: neighbourhoods::Steps = pairs
             .into_iter()
-            .map(|(end, key)| (self.local(&end).into(), key.into_boxed_str()))
+            .map(|(end, key)| (Arc::<str>::from(self.local(&end)), key.into_boxed_str()))
             .collect();
         if let Some(kept) = &kept {
             let size = steps
