@@ -1,0 +1,766 @@
+{
+  "engine": "solidb",
+  "flavor": "neo4j",
+  "server_version": "see meta.server_version",
+  "people": 1000000,
+  "products": 10000,
+  "edges": 9985098,
+  "purchases": 1499179,
+  "load": {
+    "secs": 23.293798413,
+    "vertices_secs": 0.265524517,
+    "edges_per_sec": 498703.0
+  },
+  "warm_secs": 5,
+  "measure_secs": 20,
+  "runs": 3,
+  "writes_per_sec": 1000,
+  "queries": [
+    {
+      "scenario": "hop1",
+      "query": "FOR v IN 1..1 OUTBOUND @start knows COLLECT AGGREGATE c = COUNT(), s = SUM(v.n) RETURN [c, s]"
+    },
+    {
+      "scenario": "hop2",
+      "query": "FOR v IN 1..2 OUTBOUND @start knows COLLECT AGGREGATE c = COUNT(), s = SUM(v.n) RETURN [c, s]"
+    },
+    {
+      "scenario": "hop3",
+      "query": "FOR v IN 1..3 OUTBOUND @start knows COLLECT AGGREGATE c = COUNT(), s = SUM(v.n) RETURN [c, s]"
+    },
+    {
+      "scenario": "filtered",
+      "query": "LET ns = (FOR v, e IN 2..2 OUTBOUND @start knows OPTIONS { uniqueVertices: \"path\" } FILTER e.since >= @year AND v.country == @country RETURN DISTINCT v.n) RETURN [LENGTH(ns), SUM(ns)]"
+    },
+    {
+      "scenario": "fof_bought",
+      "query": "LET buyers = (FOR b IN INBOUND @product bought RETURN b.n) LET ns = (FOR v IN 1..2 OUTBOUND @start knows FILTER v.n IN buyers RETURN v.n) RETURN [LENGTH(ns), SUM(ns)]"
+    },
+    {
+      "scenario": "shortest",
+      "query": "FOR v, e, p IN SHORTEST_PATH @from TO @to OUTBOUND knows RETURN LENGTH(p.edges)"
+    }
+  ],
+  "series": [
+    {
+      "ops": 1114079,
+      "secs": 20.001610368,
+      "ops_per_sec": 55699.5,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.6400834931012682,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 17,
+      "p90_us": 20,
+      "p99_us": 25,
+      "max_us": 2979,
+      "scenario": "hop1",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 1192965,
+      "secs": 20.001993158,
+      "ops_per_sec": 59642.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.5867303276876771,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 16,
+      "p90_us": 18,
+      "p99_us": 21,
+      "max_us": 2290,
+      "scenario": "hop1",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 1195195,
+      "secs": 20.001592595,
+      "ops_per_sec": 59755.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.5820461018144244,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 16,
+      "p90_us": 17,
+      "p99_us": 21,
+      "max_us": 2045,
+      "scenario": "hop1",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 5658370,
+      "secs": 20.004385212,
+      "ops_per_sec": 282856.5,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 3.3617167579666183,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 24,
+      "p90_us": 35,
+      "p99_us": 98,
+      "max_us": 3778,
+      "scenario": "hop1",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 5305402,
+      "secs": 20.004280595,
+      "ops_per_sec": 265213.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 3.2834959841753797,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 24,
+      "p90_us": 39,
+      "p99_us": 103,
+      "max_us": 4224,
+      "scenario": "hop1",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 4790585,
+      "secs": 20.004369155,
+      "ops_per_sec": 239476.9,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 3.409866038337464,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 25,
+      "p90_us": 54,
+      "p99_us": 129,
+      "max_us": 4555,
+      "scenario": "hop1",
+      "concurrency": 8,
+      "run": 2
+    },
+    {
+      "ops": 529824,
+      "secs": 20.001720627,
+      "ops_per_sec": 26488.9,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.8555106992596042,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 37,
+      "p90_us": 52,
+      "p99_us": 63,
+      "max_us": 912,
+      "scenario": "hop2",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 527980,
+      "secs": 20.001685091,
+      "ops_per_sec": 26396.8,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.8567851619517316,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 37,
+      "p90_us": 52,
+      "p99_us": 63,
+      "max_us": 678,
+      "scenario": "hop2",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 527838,
+      "secs": 20.001744011,
+      "ops_per_sec": 26389.6,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.8561439437772231,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 37,
+      "p90_us": 52,
+      "p99_us": 62,
+      "max_us": 1140,
+      "scenario": "hop2",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 2579185,
+      "secs": 20.002624465,
+      "ops_per_sec": 128942.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 4.6148012307843915,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 54,
+      "p90_us": 94,
+      "p99_us": 223,
+      "max_us": 4028,
+      "scenario": "hop2",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 2580003,
+      "secs": 20.002774918,
+      "ops_per_sec": 128982.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 4.641832714742347,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 54,
+      "p90_us": 94,
+      "p99_us": 220,
+      "max_us": 2846,
+      "scenario": "hop2",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 2574601,
+      "secs": 20.002411344,
+      "ops_per_sec": 128714.5,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 4.644122671133084,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 54,
+      "p90_us": 94,
+      "p99_us": 222,
+      "max_us": 4016,
+      "scenario": "hop2",
+      "concurrency": 8,
+      "run": 2
+    },
+    {
+      "ops": 53176,
+      "secs": 20.002323962,
+      "ops_per_sec": 2658.5,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.052768320321439,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 372,
+      "p90_us": 623,
+      "p99_us": 766,
+      "max_us": 990,
+      "scenario": "hop3",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 52957,
+      "secs": 20.001779647,
+      "ops_per_sec": 2647.6,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.051984141978885,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 373,
+      "p90_us": 625,
+      "p99_us": 769,
+      "max_us": 1118,
+      "scenario": "hop3",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 52786,
+      "secs": 20.001499331,
+      "ops_per_sec": 2639.1,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.0559771870334094,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 375,
+      "p90_us": 626,
+      "p99_us": 772,
+      "max_us": 1122,
+      "scenario": "hop3",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 296957,
+      "secs": 20.001693386,
+      "ops_per_sec": 14846.6,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.892425873126021,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 522,
+      "p90_us": 900,
+      "p99_us": 1210,
+      "max_us": 3468,
+      "scenario": "hop3",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 297251,
+      "secs": 20.002170292,
+      "ops_per_sec": 14860.9,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.960683514212731,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 524,
+      "p90_us": 893,
+      "p99_us": 1182,
+      "max_us": 4224,
+      "scenario": "hop3",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 297708,
+      "secs": 20.001932215,
+      "ops_per_sec": 14884.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.988128071705892,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 523,
+      "p90_us": 892,
+      "p99_us": 1176,
+      "max_us": 3902,
+      "scenario": "hop3",
+      "concurrency": 8,
+      "run": 2
+    },
+    {
+      "ops": 265189,
+      "secs": 20.001780731,
+      "ops_per_sec": 13258.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.9880555269446735,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 74,
+      "p90_us": 106,
+      "p99_us": 127,
+      "max_us": 469,
+      "scenario": "filtered",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 264658,
+      "secs": 20.001294126,
+      "ops_per_sec": 13232.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.9882881515303779,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 74,
+      "p90_us": 107,
+      "p99_us": 127,
+      "max_us": 750,
+      "scenario": "filtered",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 264830,
+      "secs": 20.002194136,
+      "ops_per_sec": 13240.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.9885038044108245,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 74,
+      "p90_us": 107,
+      "p99_us": 127,
+      "max_us": 238,
+      "scenario": "filtered",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 1409269,
+      "secs": 20.002063531,
+      "ops_per_sec": 70456.2,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.858062585312766,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 108,
+      "p90_us": 164,
+      "p99_us": 228,
+      "max_us": 1384,
+      "scenario": "filtered",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 1416965,
+      "secs": 20.002443775,
+      "ops_per_sec": 70839.6,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.836185583778756,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 108,
+      "p90_us": 164,
+      "p99_us": 226,
+      "max_us": 711,
+      "scenario": "filtered",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 1421515,
+      "secs": 20.002510392,
+      "ops_per_sec": 71066.8,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.826411071212896,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 107,
+      "p90_us": 163,
+      "p99_us": 225,
+      "max_us": 982,
+      "scenario": "filtered",
+      "concurrency": 8,
+      "run": 2
+    },
+    {
+      "ops": 128070,
+      "secs": 20.001910494,
+      "ops_per_sec": 6402.9,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.047836205760799,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 155,
+      "p90_us": 200,
+      "p99_us": 227,
+      "max_us": 539,
+      "scenario": "fof_bought",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 127772,
+      "secs": 20.001494552,
+      "ops_per_sec": 6388.1,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.049084804410368,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 156,
+      "p90_us": 200,
+      "p99_us": 228,
+      "max_us": 852,
+      "scenario": "fof_bought",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 128005,
+      "secs": 20.001698124,
+      "ops_per_sec": 6399.7,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 1.047710692866371,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 155,
+      "p90_us": 200,
+      "p99_us": 227,
+      "max_us": 855,
+      "scenario": "fof_bought",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 675124,
+      "secs": 20.001464275,
+      "ops_per_sec": 33753.7,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.336863704444956,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 226,
+      "p90_us": 333,
+      "p99_us": 499,
+      "max_us": 2206,
+      "scenario": "fof_bought",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 673365,
+      "secs": 20.001536901,
+      "ops_per_sec": 33665.7,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.350822320741226,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 228,
+      "p90_us": 331,
+      "p99_us": 480,
+      "max_us": 1087,
+      "scenario": "fof_bought",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 689103,
+      "secs": 20.002384715,
+      "ops_per_sec": 34451.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 6.356785443919991,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 223,
+      "p90_us": 323,
+      "p99_us": 475,
+      "max_us": 1104,
+      "scenario": "fof_bought",
+      "concurrency": 8,
+      "run": 2
+    },
+    {
+      "ops": 343494,
+      "secs": 20.001837947,
+      "ops_per_sec": 17173.1,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.947662862294264,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 48,
+      "p90_us": 82,
+      "p99_us": 214,
+      "max_us": 7601,
+      "scenario": "shortest",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 337838,
+      "secs": 20.001933628,
+      "ops_per_sec": 16890.3,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.9530603067952479,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 48,
+      "p90_us": 86,
+      "p99_us": 223,
+      "max_us": 7736,
+      "scenario": "shortest",
+      "concurrency": 1,
+      "run": 1
+    },
+    {
+      "ops": 337386,
+      "secs": 20.002023606,
+      "ops_per_sec": 16867.6,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 0.9495928699085626,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 48,
+      "p90_us": 86,
+      "p99_us": 220,
+      "max_us": 7808,
+      "scenario": "shortest",
+      "concurrency": 1,
+      "run": 2
+    },
+    {
+      "ops": 1683917,
+      "secs": 20.00186585,
+      "ops_per_sec": 84188.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.177733856264221,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 72,
+      "p90_us": 156,
+      "p99_us": 379,
+      "max_us": 21074,
+      "scenario": "shortest",
+      "concurrency": 8,
+      "run": 0
+    },
+    {
+      "ops": 1657343,
+      "secs": 20.001737168,
+      "ops_per_sec": 82860.0,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.170168377446991,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 73,
+      "p90_us": 158,
+      "p99_us": 380,
+      "max_us": 19189,
+      "scenario": "shortest",
+      "concurrency": 8,
+      "run": 1
+    },
+    {
+      "ops": 1654002,
+      "secs": 20.002475836,
+      "ops_per_sec": 82689.9,
+      "errors": 0,
+      "wrong": 0,
+      "first_problem": null,
+      "db_cpu_cores": 5.190759076590554,
+      "writes": {
+        "updates": 20001,
+        "first_problem": null
+      },
+      "p50_us": 73,
+      "p90_us": 158,
+      "p99_us": 382,
+      "max_us": 20492,
+      "scenario": "shortest",
+      "concurrency": 8,
+      "run": 2
+    }
+  ]
+}

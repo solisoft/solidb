@@ -4,7 +4,7 @@
   <h1><%= post["title"] %></h1>
   <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
   <p class="post-lede">After the document benchmark we were asked the same question about graphs. So we loaded one graph, a million people and ten million edges, into SoliDB, Neo4j, Memgraph and ArangoDB, and asked each the same six questions. SoliDB 2.10.3 lost most of them, and could not finish a shortest path. This post gives the figures of the build that came out of that, what changed in it, and what the comparison does not show.</p>
-  <p class="post-note">Every figure on this page was measured on November 14, 2026 on one machine, each database alone in a container with 4 cores and 16 GB, the harness on other cores. SoliDB is a build of the <code>perf/traversal</code> branch, which is in no release yet. The harness, the settings and the raw results are in the repository, under <code>benchmarks/compare</code> (<code>graph.sh</code>, <code>results/2026-11-14-graph</code>).</p>
+  <p class="post-note">Every figure on this page was measured on November 14, 2026 on one machine, each database alone in a container with 4 cores and 16 GB, the harness on other cores. SoliDB is the build that became 2.10.4, measured before the release was cut. The harness, the settings and the raw results are in the repository, under <code>benchmarks/compare</code> (<code>graph.sh</code>, <code>results/2026-11-14-graph</code>).</p>
 </header>
 <div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
@@ -16,7 +16,7 @@
     <li><a href="#results">The results</a></li>
     <li><a href="#before">Where 2.10.3 stood</a></li>
     <li><a href="#changes">What changed in SoliDB</a></li>
-    <li><a href="#limits">What this does not show</a></li>
+    <li><a href="#limits">With writes, and what this does not show</a></li>
     <li><a href="#run">Running it</a></li>
   </ol>
 </nav>
@@ -96,19 +96,19 @@
 <li><strong>Edges are found from an index that holds both ends.</strong> An edge collection now has, besides its indexes on <code>_from</code> and <code>_to</code>, one on <code>[_from, _to]</code> and one on <code>[_to, _from]</code>. An entry says where an edge leads, so expanding a vertex reads a range of the index and no edge document, unless the query reads the edge.</li>
 <li><strong>A breadth-first traversal goes level by level.</strong> The edges of a whole level are read, then its vertices in one batch, and only the fields the query reads are decoded. The filters that follow the traversal are checked as each vertex is found, and a <code>COLLECT</code> that follows is fed directly, without building the rows first.</li>
 <li><strong>A shortest path is searched from both ends</strong>, on where the edges lead; the edges of the path found are read at the end. It returns a shortest path, not necessarily the one a search from the start would have met first.</li>
-<li><strong>What a traversal reads is kept until the next write.</strong> The neighbours of each vertex walked, with the documents the query read of them, stay in memory, per collection, for as long as the collection is not written. Any committed write to a collection drops what was kept of it, in the same way and at the same moment as it drops the cached query results. The size is bounded (<code>SOLIDB_GRAPH_CACHE_MB</code>), and <code>0</code> turns it off.</li>
+<li><strong>What a traversal reads is kept until the next write.</strong> The neighbours of each vertex walked, with the documents the query read of them, stay in memory, per collection, for as long as the collection is not written. A write to one document drops what was kept of that document and, for an edge, of the neighbourhoods of its two ends; a batch, a truncate or an index change drops everything kept of the collection. The size is bounded (<code>SOLIDB_GRAPH_CACHE_MB</code>), and <code>0</code> turns it off.</li>
 </ul>
 <p>The first three are algorithmic and hold whatever the workload. On the small graph, with nothing kept between queries, they brought two hops from 560 to 130 µs and three hops from 7.3 to 1.1 ms. The fourth is what took SoliDB from there to the figures above.</p>
 </section>
 
-<section id="limits"><h2>What this does not show</h2>
+<section id="limits"><h2>With writes, and what this does not show</h2>
 <ul>
-<li><strong>A read-only benchmark is the best case for what SoliDB keeps in memory.</strong> The harness loads the graph and then only reads it, cycling through 2,000 sets of parameters per scenario: after the warm-up, most of what a query needs was read by an earlier one. A graph that is written all the time would see SoliDB read its indexes at every query, at the figures of the paragraph above rather than those of the tables. We have not measured a mix of reads and writes. Memgraph is favoured the same way by keeping its whole graph in memory, and Neo4j by a page cache as large as the data; ArangoDB reads through RocksDB.</li>
+<li><strong>Reading is the best case for what SoliDB keeps in memory.</strong> The harness loads the graph and then reads it, cycling through 2,000 sets of parameters per scenario: after the warm-up, most of what a query needs was read by an earlier one. Memgraph is favoured the same way by keeping its whole graph in memory, and Neo4j by a page cache as large as the data; ArangoDB reads through RocksDB. So we ran it again with a writer: one more connection updating 1,000 edges a second while every series is timed. SoliDB still leads the twelve series, by less where it was close: three hops at one client by 4% over Memgraph (2,648 against 2,540 a second), the filtered traversal by 7%. It loses 3 to 10% of its own figures on most series and a quarter on the shortest path. That needed one more change: a single write forgets only what it touches of what is kept, where the first version dropped the whole collection's. What is not measured: more than 1,000 writes a second, edges added and removed rather than updated, and writes in batches, which still drop everything kept of the collection.</li>
 <li><strong>The container gave SoliDB room for it</strong>: 2 GB per kept map, where the server's default is 256 MB, and the 2 GB write buffer mentioned above. At the defaults, a graph this size is only partly kept and loads in 46 seconds. Both settings are in <code>graph.sh</code>, as Neo4j's heap and page cache are.</li>
 <li><strong>The questions are small.</strong> Neighbourhoods, a filter, a shortest path. No analytics over the whole graph, no pattern with several branches, no write. Graph databases are built for more than this, and Cypher expresses patterns that SDBQL does not.</li>
 <li><strong>The queries are ours.</strong> Each is the form its own documentation suggests, and the two Memgraph figures above show what a different form may be worth.</li>
 <li><strong>Eight clients on four cores</strong> is as far as the harness went.</li>
-<li><strong>This build is not released.</strong> The figures are those of a branch; they will be measured again on the release that carries it.</li>
+<li><strong>The figures are those of the build, not of the published image.</strong> They were measured on the code that became 2.10.4, built on the benchmark machine; the published image has not been measured yet.</li>
 </ul>
 </section>
 

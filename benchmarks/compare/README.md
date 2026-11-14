@@ -577,7 +577,7 @@ There is no report script for this harness yet; `report.py` and `bank_report.py`
 
 ### Results, 2026-11-14
 
-`results/2026-11-14-graph/`: the default size (1,000,000 people, 9,985,098 edges, 1,499,179 purchases among 10,000 products), three runs of 20 s per series after 5 s of warm-up, on rocky-build2 under the rules above. Neo4j Community 2026.10.2, Memgraph 3.14.0, ArangoDB 3.12.4-3. SoliDB is a build of the `perf/traversal` branch (image `localhost/solidb-perf:graph`, not published: no release carries it yet), run with `SOLIDB_GRAPH_CACHE_MB=2048` and `SOLIDB_WRITE_BUFFER_SIZE=2GB`. Its files are those of its last pass, made after the three others; `first-pass/` holds its pass of the same run as the others, on an earlier commit of the branch, and `write-buffer-64mb/` the pass of the final commit with the default write buffer.
+`results/2026-11-14-graph/`: the default size (1,000,000 people, 9,985,098 edges, 1,499,179 purchases among 10,000 products), three runs of 20 s per series after 5 s of warm-up, on rocky-build2 under the rules above. Neo4j Community 2026.10.2, Memgraph 3.14.0, ArangoDB 3.12.4-3. SoliDB is a build of the code that became 2.10.4 (image `localhost/solidb-perf:graph`, built on the machine from the `perf/traversal` branch before the release; the published image has not been measured), run with `SOLIDB_GRAPH_CACHE_MB=2048` and `SOLIDB_WRITE_BUFFER_SIZE=2GB`. Its files are those of its last pass, made after the three others; `first-pass/` holds its pass of the same run as the others, on an earlier commit of the branch, and `write-buffer-64mb/` the pass of the final commit with the default write buffer.
 
 Requests per second, median of the three runs (p50 in parentheses). No request returned a wrong answer and no scenario was skipped, on any engine.
 
@@ -603,9 +603,33 @@ Load, eight connections, indexes included: SoliDB 23.5 s, ArangoDB 26.9 s, Neo4j
 
 How to read them:
 - **SoliDB leads the twelve series and the load.** The narrowest leads are `hop3` at one client, 9% over Memgraph, and `filtered` at one client, 12%. The load leads only with the larger write buffer: at the default, ArangoDB loads in 27 s where SoliDB takes 46. Three earlier passes of that series on earlier commits of the branch had SoliDB 3 to 5% behind.
-- **SoliDB answers from memory here.** After the warm-up, most of what a query needs was read by an earlier one and kept (see "Known limits"): the benchmark only reads, over 2,000 sets of parameters per scenario. With nothing kept (smoke passes on 20,000 people, before the kept maps existed), the same branch took 130 µs for `hop2` and 1.1 ms for `hop3` at one client. A workload that writes the graph between reads has not been measured.
+- **SoliDB answers from memory here.** After the warm-up, most of what a query needs was read by an earlier one and kept (see "Known limits"): the benchmark only reads, over 2,000 sets of parameters per scenario. With nothing kept (smoke passes on 20,000 people, before the kept maps existed), the same branch took 130 µs for `hop2` and 1.1 ms for `hop3` at one client. With writes arriving while it reads, see the mixed run below.
 - **Memgraph's `shortest` and `fof_bought`** are the queries of `engines/bolt.rs`, which may not be the ones a Memgraph user would write: `*BFS` from one end for the first, a variable-length pattern followed by a purchase for the second.
 - **Where the released version stood.** On smoke passes of 2.10.3 (20,000 people): `hop2` 560 µs, `hop3` 7.3 ms, `shortest` 10.8 ms at one client. On 2.10.2 a shortest path on 100,000 edges ran into the query time limit. Not measured at full scale.
+
+### Results, 2026-11-14: with 1,000 edge updates a second
+
+`results/2026-11-14-graph/writes-1000/`: the same run with `WRITES=1000`. One more connection sets the weight of 1,000 edges a second (a random person's edge each time) while every series is timed. No scenario reads the weight, so the answers are still checked: none was wrong, and every engine kept up with the 1,000 updates. SoliDB is the same branch, a few commits later: a single write now forgets only what it touches of the kept neighbourhoods, where it used to empty them.
+
+| One client | SoliDB | Memgraph | Neo4j | ArangoDB |
+|---|---:|---:|---:|---:|
+| `hop1` | 59,642 (16 µs) | 17,152 (57 µs) | 11,054 (86 µs) | 8,659 (112 µs) |
+| `hop2` | 26,397 (37 µs) | 10,155 (97 µs) | 6,506 (153 µs) | 2,103 (476 µs) |
+| `hop3` | 2,648 (373 µs) | 2,540 (388 µs) | 1,482 (677 µs) | 280 (3.6 ms) |
+| `filtered` | 13,240 (74 µs) | 12,346 (80 µs) | 6,592 (150 µs) | 1,291 (761 µs) |
+| `fof_bought` | 6,400 (155 µs) | 227 (4.3 ms) | 2,459 (403 µs) | 396 (2.5 ms) |
+| `shortest` | 16,890 (48 µs) | 0.6 (1.8 s) | 7,524 (117 µs) | 6,238 (140 µs) |
+
+| Eight clients | SoliDB | Memgraph | Neo4j | ArangoDB |
+|---|---:|---:|---:|---:|
+| `hop1` | 265,213 (24 µs) | 69,676 (109 µs) | 38,668 (200 µs) | 28,509 (261 µs) |
+| `hop2` | 128,942 (54 µs) | 47,753 (160 µs) | 28,382 (272 µs) | 8,682 (902 µs) |
+| `hop3` | 14,861 (523 µs) | 12,314 (611 µs) | 7,735 (1.0 ms) | 1,171 (6.7 ms) |
+| `filtered` | 70,840 (108 µs) | 52,380 (147 µs) | 27,704 (279 µs) | 5,611 (1.4 ms) |
+| `fof_bought` | 33,754 (226 µs) | 1,260 (5.8 ms) | 13,376 (579 µs) | 1,927 (4.1 ms) |
+| `shortest` | 82,860 (73 µs) | 2.3 (3.3 s) | 30,507 (243 µs) | 24,428 (288 µs) |
+
+SoliDB still leads the twelve series, with narrower margins where they were narrow: `hop3` at one client by 4%, `filtered` at one client by 7%. Against its own read-only figures it loses 3 to 10% on most series, 18% on `hop1` at eight clients and 24 to 26% on `shortest`. What this run does not cover: more than 1,000 writes a second (on 20,000 people, 5,000 a second cost SoliDB 15 to 40%), inserts and deletes of edges rather than updates, writes in batches (a batch still empties the collection's kept maps), and writes to the vertices.
 
 ### Licences
 

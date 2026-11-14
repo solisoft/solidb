@@ -606,14 +606,22 @@ searches expand a vertex through `EdgeExpander`
   (`projection::traversal_projection` / `traversal_edge_projection`). The
   older frame-by-frame loop below it serves depth-first walks, `PRUNE` and
   paths. Both must return the same rows in the same order.
-- **Kept between queries.** `graph::neighbourhoods` keeps, per collection
-  and for one write generation of it (`KsState::write_generation`, moved by
-  `Collection::invalidate_cached_queries`), the far ends of each expanded
-  vertex's edges and the documents read with each projection. A read
-  served from it calls `note_range_read`. It is only as right as the
-  generation: a write to a collection that does not reach
-  `invalidate_cached_queries` would leave a traversal reading what was
-  there before, as it would leave the query cache.
+- **Kept between queries.** `storage/kept.rs` keeps, per collection, the far
+  ends of each expanded vertex's edges, the documents read with each
+  projection, and whole neighbourhoods with their documents. What keeps it
+  right: a single document write (`Collection::emit_change`) forgets that
+  document and, for an edge, the neighbourhoods of both its ends
+  (`kept::changed`); anything else that calls
+  `Collection::invalidate_cached_queries` (a batch, a truncate, an index
+  created or dropped) moves the collection's *coarse* generation
+  (`KsState::coarse_generation`), which empties its maps. A reader notes a
+  map's epoch before it reads storage and its entry is kept only if no
+  write forgot anything meanwhile (`Kept::put`). A read served from a map
+  calls `note_range_read`. A write that reaches neither function would
+  leave a traversal reading what was there before, as it would leave the
+  query cache; a new write path that announces documents one by one must
+  pass an event with the edge's ends (`data` / `old_data`), or `changed`
+  falls back to the coarse generation.
 - **One shortest path** without a weight is searched from both ends
   (`EdgeExpander::shortest_unweighted`); the weighted and the several-paths
   searches go through `paths.rs` and the `Neighbours` trait.

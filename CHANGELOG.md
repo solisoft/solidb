@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.10.4](https://github.com/solisoft/solidb/compare/v2.10.3...v2.10.4) (2026-11-14)
+
+Graph traversals and shortest paths several times faster, and a graph
+benchmark against Neo4j, Memgraph and ArangoDB (`benchmarks/compare/graph.sh`).
+An edge collection gets two more indexes, and an unweighted `SHORTEST_PATH`
+may return a different path of the same length: see "Changed".
+
 ### Changed
 
 - **Graph traversals and shortest paths are several times faster.** On
@@ -21,10 +28,11 @@
     returns a shortest path, not necessarily the one a search from the
     start would have found first.
   - The neighbourhoods, vertices and edges a traversal reads are kept
-    between queries, per collection, until the collection is next written:
+    between queries, per collection. A write to one document drops what
+    was kept of it and, for an edge, of the neighbourhoods of its two ends;
+    a batch, a truncate or an index change drops the collection's:
     `SOLIDB_GRAPH_CACHE_MB` megabytes per map at most (256 by default, `0`
-    turns it off). Any committed write to a collection drops what was kept
-    of it.
+    turns it off).
 
 ## [2.10.3](https://github.com/solisoft/solidb/compare/v2.10.2...v2.10.3) (2026-11-14)
 
