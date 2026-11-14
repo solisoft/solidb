@@ -19,6 +19,10 @@
 
 ### Fixed
 
+* **A node that joins a cluster no longer replays an old drop or truncate
+  over newer data.** One node's `DeleteCollection` or `TruncateCollection`
+  removed or emptied, on the joining node, a collection another node had
+  recreated or refilled before the full sync (card #853).
 * **A TTL index takes a float timestamp.** A document whose TTL field held
   seconds as a float (`1794500000.0`) never expired, silently. It expires
   like the integer it truncates to (card #850).

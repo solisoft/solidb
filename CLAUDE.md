@@ -559,15 +559,19 @@ log from sequence 0. The full sync ends with `SyncMessage::FullSyncOrigins`:
 how far the serving node had applied each origin's log, its own included,
 taken before it read the first document. The joining node keeps it as a
 floor per origin (`SyncState::raise_snapshot_floor`, persisted) and does not
-apply a *document* write (insert, update, delete) at or below it
-(`is_duplicate_document`): those are in the documents it was sent. Without
-it, an insert from one peer's log brought back a document another peer had
-deleted before the snapshot (card #844).
+apply, at or below it, an operation the snapshot reflects
+(`worker::in_full_sync`): document writes, and the creation, drop or
+truncate of a database, a collection, an index or a foreign key. Without it,
+an insert from one peer's log brought back a document another peer had
+deleted before the snapshot (card #844), and one peer's `DeleteCollection`
+or `TruncateCollection` emptied a collection another had recreated or
+refilled (card #853).
 
-Only document writes are skipped. Definitions, blob chunks and columnar rows
-are not in a full sync's documents and are still replayed from the logs, so
-a new operation that the full sync does carry belongs in that check, and one
-it does not carry must stay out of it. `FullSyncDefinitions` and
+Blob chunks and columnar rows are not in a full sync and are still replayed
+from the logs. A new operation that the full sync carries belongs in
+`in_full_sync`, and one it does not carry must stay out of it; whatever a
+skipped operation used to bring (a collection's shard configuration came
+with `CreateCollection`) has to be in the full sync's own messages. `FullSyncDefinitions` and
 `FullSyncOrigins` are appended to `SyncMessage` (bincode identifies variants
 by position): an older requester logs an unexpected message and carries on.
 

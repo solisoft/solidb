@@ -24,12 +24,13 @@ pub struct SyncState {
     /// Highest sequence received from each origin node (for deduplication)
     origin_sequences: RwLock<HashMap<String, u64>>,
 
-    /// For each origin, the sequence up to which its document writes were
-    /// already in the full sync this node started from
+    /// For each origin, the sequence up to which its writes were already in
+    /// the full sync this node started from
     /// (`SyncMessage::FullSyncOrigins`). Kept apart from `origin_sequences`:
-    /// only document writes are skipped below it, because what else a log
-    /// carries (definitions, blob chunks, columnar rows) is not in a full
-    /// sync's documents and still has to be replayed.
+    /// only what a full sync carries is skipped below it (documents,
+    /// collections, indexes, foreign keys: `worker::in_full_sync`). Blob
+    /// chunks and columnar rows are not in a full sync and still have to
+    /// be replayed.
     snapshot_floor: RwLock<HashMap<String, u64>>,
 
     /// Pull cursor per peer *address*: the last sequence of that peer's log we

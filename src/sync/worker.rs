@@ -828,13 +828,15 @@ impl SyncWorker {
         {
             return Ok(());
         }
-        // A document write the full sync this node started from already held.
-        if matches!(
-            entry.operation,
-            Operation::Insert | Operation::Update | Operation::Delete
-        ) && self
-            .state
-            .is_duplicate_document(&entry.origin_node, entry.origin_sequence)
+        // Something the full sync this node started from already reflects:
+        // documents, and what is created, dropped, truncated or declared.
+        // Replaying one node's `DeleteCollection` or `TruncateCollection`
+        // emptied a collection another node had recreated or refilled
+        // before the snapshot (card #853).
+        if in_full_sync(entry.operation)
+            && self
+                .state
+                .is_duplicate_document(&entry.origin_node, entry.origin_sequence)
         {
             return Ok(());
         }
@@ -1237,10 +1239,24 @@ impl SyncWorker {
                     database,
                     name,
                     collection_type,
-                    ..
+                    shard_config,
                 } => {
                     if let Ok(db) = self.storage.get_database(&database) {
                         let _ = db.create_collection(name.clone(), collection_type.clone());
+                        // The `CreateCollection` entries that used to bring
+                        // the shard configuration are no longer replayed
+                        // below the snapshot.
+                        if let (Some(config), Ok(coll)) =
+                            (shard_config, db.system_collection(&name))
+                        {
+                            let _ = coll.set_shard_config(
+                                &crate::sharding::coordinator::CollectionShardConfig {
+                                    num_shards: config.num_shards,
+                                    shard_key: config.shard_key,
+                                    replication_factor: config.replication_factor,
+                                },
+                            );
+                        }
                         // The collection may already exist from an earlier sync
                         // with the type unset; make the type stick either way.
                         if let (Some(ref ctype), Ok(coll)) =
@@ -2031,6 +2047,29 @@ fn collect_local_stats(system: &mut sysinfo::System, storage: &StorageEngine) ->
     }
 }
 
+/// Whether a full sync's snapshot reflects operations of this kind: the
+/// documents, and the databases, collections, indexes and foreign keys
+/// that exist. Below the floor a full sync left
+/// (`SyncState::raise_snapshot_floor`) these are not applied again. Blob
+/// chunks and columnar rows are not in a full sync and are still replayed.
+fn in_full_sync(operation: Operation) -> bool {
+    matches!(
+        operation,
+        Operation::Insert
+            | Operation::Update
+            | Operation::Delete
+            | Operation::CreateDatabase
+            | Operation::DeleteDatabase
+            | Operation::CreateCollection
+            | Operation::DeleteCollection
+            | Operation::TruncateCollection
+            | Operation::CreateIndex
+            | Operation::DropIndex
+            | Operation::CreateForeignKey
+            | Operation::DropForeignKey
+    )
+}
+
 /// Create a command channel for the sync worker
 pub fn create_command_channel() -> (mpsc::Sender<SyncCommand>, mpsc::Receiver<SyncCommand>) {
     mpsc::channel(100)
@@ -2041,6 +2080,33 @@ mod tests {
     use super::*;
     use crate::sync::log::{LogEntry, SyncLog};
     use serde_json::json;
+
+    /// Below the snapshot's floor, what the snapshot reflects is skipped
+    /// and what it does not carry is still replayed.
+    #[test]
+    fn what_a_full_sync_reflects() {
+        for skipped in [
+            Operation::Insert,
+            Operation::Delete,
+            Operation::DeleteCollection,
+            Operation::TruncateCollection,
+            Operation::DeleteDatabase,
+            Operation::CreateCollection,
+            Operation::DropIndex,
+            Operation::DropForeignKey,
+        ] {
+            assert!(in_full_sync(skipped), "{skipped:?}");
+        }
+        for replayed in [
+            Operation::PutBlobChunk,
+            Operation::DeleteBlob,
+            Operation::ColumnarInsert,
+            Operation::ColumnarTruncate,
+            Operation::ColumnarDropCollection,
+        ] {
+            assert!(!in_full_sync(replayed), "{replayed:?}");
+        }
+    }
 
     /// What a full sync sends besides the documents: each collection's
     /// indexes and foreign keys, and how far the serving node had applied
