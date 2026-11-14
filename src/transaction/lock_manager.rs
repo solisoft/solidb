@@ -46,10 +46,30 @@ struct LockState {
     /// waking every sleeper for every release had all of them take the
     /// state mutex in turn to find, nearly always, a key that was not
     /// theirs.
-    waiters: HashMap<LockKey, VecDeque<Arc<Condvar>>>,
+    waiters: HashMap<LockKey, VecDeque<Waiter>>,
+}
+
+/// A transaction asleep on a key: how to wake it, and since when it waits.
+struct Waiter {
+    woken: Arc<Condvar>,
+    since: Instant,
 }
 
 impl LockState {
+    /// Whether a transaction that arrives now must queue for `key` even if
+    /// it could take it: the one that has waited longest has waited `past`
+    /// or more. A release wakes that one, but whoever asks before it runs
+    /// takes the key, and under a steady stream of arrivals it could lose
+    /// every time until its wait ran out. Overtaking is still allowed
+    /// before `past`: handing every release to a sleeping thread leaves the
+    /// key idle until that thread is scheduled.
+    fn longest_wait_is_past(&self, key: &LockKey, past: Duration) -> bool {
+        self.waiters
+            .get(key)
+            .and_then(VecDeque::front)
+            .is_some_and(|first| first.since.elapsed() >= past)
+    }
+
     /// The transactions holding `key`, in either mode.
     fn holders<'a>(&'a self, key: &LockKey) -> impl Iterator<Item = TransactionId> + 'a {
         self.exclusive_locks
@@ -62,7 +82,7 @@ impl LockState {
     /// Wake the transaction that has waited longest for `key`.
     fn wake_next(&self, key: &LockKey) {
         if let Some(first) = self.waiters.get(key).and_then(VecDeque::front) {
-            first.notify_one();
+            first.woken.notify_one();
         }
     }
 
@@ -71,7 +91,7 @@ impl LockState {
     /// woke, and the key may be free (or shareable).
     fn leave(&mut self, key: &LockKey, me: &Arc<Condvar>, holds_exclusive: bool) {
         if let Some(queue) = self.waiters.get_mut(key) {
-            queue.retain(|w| !Arc::ptr_eq(w, me));
+            queue.retain(|w| !Arc::ptr_eq(&w.woken, me));
             if queue.is_empty() {
                 self.waiters.remove(key);
             }
@@ -86,6 +106,11 @@ impl LockState {
 /// refused, unless `SOLIDB_TX_LOCK_WAIT_MS` says otherwise (`0`: never
 /// wait, the behaviour up to 2.9.3).
 const DEFAULT_LOCK_WAIT: Duration = Duration::from_millis(500);
+
+/// The fraction of the wait after which the transaction that has waited
+/// longest for a key is no longer overtaken by those that arrive
+/// ([`LockState::longest_wait_is_past`]): a quarter, 125 ms by default.
+const OVERTAKING_ENDS: u32 = 4;
 
 /// Whether the calling thread may wait for a lock.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -236,10 +261,28 @@ impl LockManager {
         // This transaction's place in the key's queue, once it has slept.
         let mut me: Option<Arc<Condvar>> = None;
         loop {
-            let blocked = match kind {
-                LockType::Shared => Self::take_shared(&mut state, tx_id, &lock_key),
-                LockType::Exclusive => {
-                    Self::take_exclusive(&mut state, tx_id, &lock_key, reader_conflict)
+            // A newcomer that can wait lets a long waiter go first. One
+            // that holds the key already does not: the waiters wait for it.
+            let yields = me.is_none()
+                && may_wait
+                && !self.wait.is_zero()
+                && state.longest_wait_is_past(&lock_key, self.wait / OVERTAKING_ENDS)
+                && !state.holders(&lock_key).any(|h| h == tx_id)
+                && self.may_wait();
+            let blocked = if yields {
+                Err(Blocked {
+                    holders: state.holders(&lock_key).collect(),
+                    conflict: format!(
+                        "Write conflict: Key {}/{}/{} has transactions waiting for it",
+                        lock_key.database, lock_key.collection, lock_key.key
+                    ),
+                })
+            } else {
+                match kind {
+                    LockType::Shared => Self::take_shared(&mut state, tx_id, &lock_key),
+                    LockType::Exclusive => {
+                        Self::take_exclusive(&mut state, tx_id, &lock_key, reader_conflict)
+                    }
                 }
             };
             let blocked = match blocked {
@@ -287,7 +330,10 @@ impl LockManager {
                     .waiters
                     .entry(lock_key.clone())
                     .or_default()
-                    .push_back(woken.clone());
+                    .push_back(Waiter {
+                        woken: woken.clone(),
+                        since: now,
+                    });
                 woken
             });
             state = Self::wait_for_release(woken, state, until - now);
@@ -716,6 +762,74 @@ mod tests {
         let state = manager.state();
         assert!(state.waiters.is_empty() && state.waits_for.is_empty());
         assert!(state.exclusive_locks.is_empty() && state.shared_locks.is_empty());
+    }
+
+    /// A transaction that has waited long enough is not overtaken: one that
+    /// arrives when the key is free queues behind it, where before it took
+    /// the key, and a stream of arrivals could starve the waiter until its
+    /// wait ran out.
+    #[test]
+    fn a_long_waiter_is_not_overtaken() {
+        use std::sync::Arc;
+        let manager = Arc::new(LockManager::waiting(Duration::from_millis(400)));
+        let (holder, waiter, late) = (
+            TransactionId::from_u64(1),
+            TransactionId::from_u64(2),
+            TransactionId::from_u64(3),
+        );
+        let key = LockKey::new("db", "col", "k");
+        manager.acquire_exclusive(holder, "db", "col", "k").unwrap();
+        let waiting = {
+            let manager = manager.clone();
+            std::thread::spawn(move || manager.acquire_exclusive(waiter, "db", "col", "k"))
+        };
+        // Past a quarter of the wait.
+        std::thread::sleep(Duration::from_millis(150));
+
+        // Free the key and ask for it at once, without letting the waiter
+        // run in between: the state mutex is held across both.
+        let asks = {
+            let manager = manager.clone();
+            let mut state = manager.state();
+            let gate = state.exclusive_locks.remove(&key);
+            assert_eq!(gate, Some(holder));
+            state.tx_locks.remove(&holder);
+            let asks = {
+                let manager = manager.clone();
+                std::thread::spawn(move || manager.acquire_exclusive(late, "db", "col", "k"))
+            };
+            // The late one is blocked on the mutex, then queues.
+            std::thread::sleep(Duration::from_millis(30));
+            state.wake_next(&key);
+            drop(state);
+            asks
+        };
+        waiting.join().unwrap().expect("the waiter gets the key");
+        assert_eq!(manager.state().exclusive_locks.get(&key), Some(&waiter));
+        manager.release_locks(waiter);
+        asks.join().unwrap().expect("then the late one");
+        manager.release_locks(late);
+        let state = manager.state();
+        assert!(state.waiters.is_empty() && state.waits_for.is_empty());
+
+        // Before that, an arrival takes a free key although someone waits.
+        drop(state);
+        manager.acquire_exclusive(holder, "db", "col", "k").unwrap();
+        let waiting = {
+            let manager = manager.clone();
+            std::thread::spawn(move || manager.acquire_exclusive(waiter, "db", "col", "k"))
+        };
+        std::thread::sleep(Duration::from_millis(30));
+        {
+            let mut state = manager.state();
+            state.exclusive_locks.remove(&key);
+            state.tx_locks.remove(&holder);
+            assert!(LockManager::take_exclusive(&mut state, late, &key, "").is_ok());
+            assert!(!state.longest_wait_is_past(&key, manager.wait / OVERTAKING_ENDS));
+            state.exclusive_locks.remove(&key);
+            state.wake_next(&key);
+        }
+        waiting.join().unwrap().unwrap();
     }
 
     /// Transfers among ten keys from thirty-two threads. Taking the two

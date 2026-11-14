@@ -92,6 +92,19 @@ defmodule SoliDB.AIClient do
   end
 
   @doc """
+  The JSON sent for `body`: an empty string when there is none.
+  """
+  def encode_body(nil), do: ""
+  def encode_body(body), do: Jason.encode!(body)
+
+  @doc """
+  The decoded JSON of a response body, as `:httpc` returns it (a charlist)
+  or as a binary: an empty map when the body is empty.
+  """
+  def decode_body(body) when body in [[], ""], do: %{}
+  def decode_body(body), do: Jason.decode!(to_string(body))
+
+  @doc """
   Makes an HTTP request to the API.
   """
   def request(client, method, path, params \\ %{}, body \\ nil) do
@@ -103,7 +116,7 @@ defmodule SoliDB.AIClient do
       {"Content-Type", "application/json"}
     ]
 
-    body_data = if body, do: Jason.encode!(body), else: ""
+    body_data = encode_body(body)
 
     case :httpc.request(
       method,
@@ -112,7 +125,7 @@ defmodule SoliDB.AIClient do
       []
     ) do
       {:ok, {{_, status, _}, _, response_body}} ->
-        response = if response_body == '', do: %{}, else: Jason.decode!(to_string(response_body))
+        response = decode_body(response_body)
         if status >= 400 do
           {:error, "API error (#{status}): #{response["error"] || to_string(response_body)}"}
         else

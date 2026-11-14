@@ -437,26 +437,47 @@ async fn hammer(
     rounds: usize,
     query: fn(usize) -> &'static str,
 ) -> usize {
+    hammer_reporting(app, level, workers, rounds, query).await.0
+}
+
+/// [`hammer`], with the first refusal it met (which step, status and body):
+/// a test that expects none says why there was one.
+async fn hammer_reporting(
+    app: &Arc<App>,
+    level: &'static str,
+    workers: usize,
+    rounds: usize,
+    query: fn(usize) -> &'static str,
+) -> (usize, Option<String>) {
     let mut tasks = Vec::new();
     for worker in 0..workers {
         let app = Arc::clone(app);
         tasks.push(tokio::spawn(async move {
-            let mut committed = 0;
+            let (mut committed, mut refusal) = (0, None);
             for _ in 0..rounds {
                 let tx = app.begin(level).await;
-                let (status, _) = app.query(&tx, query(worker)).await;
-                if status == StatusCode::OK && app.commit(&tx).await == StatusCode::OK {
+                let (status, out) = app.query(&tx, query(worker)).await;
+                if status != StatusCode::OK {
+                    refusal.get_or_insert(format!("query: {status} {out}"));
+                    continue;
+                }
+                let status = app.commit(&tx).await;
+                if status == StatusCode::OK {
                     committed += 1;
+                } else {
+                    refusal.get_or_insert(format!("commit: {status}"));
                 }
             }
-            committed
+            (committed, refusal)
         }));
     }
-    let mut committed = 0;
+    let (mut committed, mut refusal) = (0, None);
     for task in tasks {
-        committed += task.await.unwrap();
+        let (count, refused) = task.await.unwrap();
+        committed += count;
+        refusal = refusal.or(refused);
     }
-    committed
+    (committed, refusal)
 }
 
 /// Concurrent transactions that each count a collection (a range read) and
@@ -610,12 +631,12 @@ async fn a_row_that_no_longer_passes_its_filter_is_not_written() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn concurrent_increments_all_commit_and_none_is_lost() {
     let app = Arc::new(App::new().await);
-    let committed = hammer(&app, "read_committed", 8, 40, |_| {
+    let (committed, refusal) = hammer_reporting(&app, "read_committed", 8, 40, |_| {
         "FOR d IN doctors FILTER d._key == 'bob' \
          UPDATE d WITH {shifts: d.shifts + 1} IN doctors RETURN 1"
     })
     .await;
-    assert_eq!(committed, 8 * 40, "a transaction was refused");
+    assert_eq!(committed, 8 * 40, "a transaction was refused: {refusal:?}");
     let (_, out) = app.cursor("RETURN DOCUMENT('doctors/bob').shifts").await;
     assert_eq!(out["result"], json!([committed]));
 }

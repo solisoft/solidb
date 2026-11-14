@@ -5,7 +5,7 @@
 //!
 //! # HTTP Example (Default)
 //!
-//! ```rust
+//! ```rust,no_run
 //! use solidb_client::{SoliDBClientBuilder, HttpClient};
 //!
 //! #[tokio::main]
@@ -23,11 +23,11 @@
 //!
 //! # Offline Sync Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use solidb_client::{SoliDBClientBuilder, SyncManager, SyncConfig, LocalStore};
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 //!     // Create client and sync manager
 //!     let client = SoliDBClientBuilder::new("http://localhost:6745")
 //!         .build_http()

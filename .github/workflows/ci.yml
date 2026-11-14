@@ -83,6 +83,13 @@ jobs:
         # nothing to run: every doc fence in src/ is json, lua or text.
         run: cargo test --profile ci --lib --bins --tests
 
+      # The root command tests the `solidb` package only. The client crate
+      # and sdbql-core are workspace members with tests of their own, and the
+      # client's doc examples are Rust (compiled, not run: they need a
+      # server): three of them had gone stale unseen (card #789).
+      - name: Run the client and sdbql-core tests
+        run: cargo test --profile ci -p solidb-client -p sdbql-core
+
   # The same suite on the solistore engine: every data directory a test
   # creates is opened as solistore (SOLIDB_ENGINE), so a storage change has
   # to hold on both engines. Tests that build a 1.x RocksDB directory by hand

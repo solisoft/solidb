@@ -10,11 +10,11 @@
 //!
 //! # Example
 //!
-//! ```rust
-//! use solidb_client::{SoliDBClientBuilder, SyncManager, SyncConfig};
+//! ```rust,no_run
+//! use solidb_client::{LocalStore, SoliDBClientBuilder, SyncConfig, SyncManager};
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 //!     // Create HTTP client
 //!     let client = SoliDBClientBuilder::new("http://localhost:6745")
 //!         .auth("mydb", "admin", "password")

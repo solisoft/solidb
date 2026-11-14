@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A transaction that waits for a document lock is no longer overtaken until
+  its wait runs out.** A release woke the transaction that had waited longest,
+  but one that asked before it ran took the lock; under a steady stream of
+  writers to one document a waiter could lose every time and be refused with
+  "waited 500 ms" although the lock had been free many times over. Once a
+  transaction has waited a quarter of `SOLIDB_TX_LOCK_WAIT_MS` (125 ms by
+  default), those that arrive queue behind it.
+- **The Elixir client declares Jason**, which `SoliDB.AIClient` calls: every
+  request with a body raised `UndefinedFunctionError` unless the application
+  depended on Jason itself.
+- The Rust client's documentation examples compile again, and CI now runs the
+  tests of `solidb-client` and `sdbql-core`.
+
 ## [2.10.1](https://github.com/solisoft/solidb/compare/v2.10.0...v2.10.1) (2026-11-14)
 
 A statement's writes are all or nothing, UPSERT by a unique index, an index

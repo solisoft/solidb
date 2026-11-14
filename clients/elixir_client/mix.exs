@@ -13,7 +13,9 @@ defmodule SoliDB.MixProject do
 
   defp deps do
     [
-      {:msgpax, "~> 2.3"}
+      {:msgpax, "~> 2.3"},
+      # SoliDB.AIClient speaks JSON over HTTP.
+      {:jason, "~> 1.4"}
     ]
   end
 end
