@@ -1254,3 +1254,80 @@ fn prune_deletes_what_is_older_and_stops_there() {
     assert_eq!(points.prune_older_than(recent + 1_000).unwrap(), 200);
     assert_eq!(points.count(), 1);
 }
+
+/// What a traversal keeps between queries (neighbourhoods, vertices, edges)
+/// is dropped by any write to the collection it came from: an edge added or
+/// removed, a vertex or an edge updated, are seen by the next query, in
+/// every shape of traversal and in a shortest path.
+#[test]
+fn a_traversal_sees_every_write_made_since_the_last_one() {
+    let (e, _t) = engine();
+    e.create_collection("towns".to_string(), None).unwrap();
+    e.create_collection("lanes".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let towns = e.get_collection("towns").unwrap();
+    for k in ["a", "b", "c", "d"] {
+        towns.insert(json!({"_key": k, "size": 1})).unwrap();
+    }
+    let lanes = e.get_collection("lanes").unwrap();
+    for (key, from, to) in [("ab", "a", "b"), ("bc", "b", "c")] {
+        lanes
+            .insert(json!({"_key": key, "_from": format!("towns/{from}"),
+                           "_to": format!("towns/{to}"), "toll": 1}))
+            .unwrap();
+    }
+    let run = |q: &str| {
+        QueryExecutor::new(&e)
+            .execute(&parse(q).unwrap_or_else(|err| panic!("{q}: {err}")))
+            .unwrap_or_else(|err| panic!("{q}: {err}"))
+    };
+    let reach = r#"FOR v IN 1..3 OUTBOUND "towns/a" lanes SORT v._key RETURN v._key"#;
+    let sizes = r#"FOR v IN 1..3 OUTBOUND "towns/a" lanes SORT v._key RETURN v.size"#;
+    let tolls = r#"FOR v, e IN 1..3 OUTBOUND "towns/a" lanes SORT v._key RETURN e.toll"#;
+    let paths = r#"FOR v, e IN 1..3 OUTBOUND "towns/a" lanes OPTIONS { uniqueVertices: "path" }
+                   SORT v._key, e._key RETURN [v._key, e._key]"#;
+    let hops = r#"FOR v, e, p IN SHORTEST_PATH "towns/a" TO "towns/d" OUTBOUND lanes
+                  RETURN LENGTH(p.edges)"#;
+    // Twice: the second answer comes from what the first kept.
+    for _ in 0..2 {
+        assert_eq!(run(reach), vec![json!("b"), json!("c")]);
+        assert_eq!(run(sizes), vec![json!(1), json!(1)]);
+        assert_eq!(run(tolls), vec![json!(1), json!(1)]);
+        assert_eq!(run(paths), vec![json!(["b", "ab"]), json!(["c", "bc"])]);
+        assert_eq!(run(hops), Vec::<Value>::new());
+    }
+
+    // An edge added.
+    lanes
+        .insert(json!({"_key": "cd", "_from": "towns/c", "_to": "towns/d", "toll": 5}))
+        .unwrap();
+    assert_eq!(run(reach), vec![json!("b"), json!("c"), json!("d")]);
+    assert_eq!(run(tolls), vec![json!(1), json!(1), json!(5)]);
+    assert_eq!(run(hops), vec![json!(3)]);
+
+    // A vertex and an edge updated.
+    towns.update("c", json!({"size": 9})).unwrap();
+    lanes.update("bc", json!({"toll": 7})).unwrap();
+    assert_eq!(run(sizes), vec![json!(1), json!(9), json!(1)]);
+    assert_eq!(run(tolls), vec![json!(1), json!(7), json!(5)]);
+
+    // A shorter way in, through SDBQL this time, then an edge removed.
+    run(r#"INSERT {_key: "ad", _from: "towns/a", _to: "towns/d", toll: 2} INTO lanes"#);
+    assert_eq!(run(hops), vec![json!(1)]);
+    assert_eq!(
+        run(paths),
+        vec![
+            json!(["b", "ab"]),
+            json!(["c", "bc"]),
+            json!(["d", "ad"]),
+            json!(["d", "cd"])
+        ]
+    );
+    lanes.delete("ab").unwrap();
+    assert_eq!(run(reach), vec![json!("d")]);
+    assert_eq!(run(paths), vec![json!(["d", "ad"])]);
+
+    // A vertex removed is no longer returned, though its edge is still there.
+    towns.delete("d").unwrap();
+    assert_eq!(run(reach), Vec::<Value>::new());
+}
