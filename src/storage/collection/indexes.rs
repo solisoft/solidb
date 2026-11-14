@@ -1613,8 +1613,9 @@ impl Collection {
             .indexes
             .iter()
             .find(|index| {
+                // Sparse or not: an entry that is there is a document
+                // whose two fields are what the entry says.
                 index.index_type != IndexType::Trigram
-                    && !index.sparse
                     && index.fields.len() == 2
                     && index.fields[0] == first
                     && index.fields[1] == second
