@@ -1,6 +1,6 @@
 //! SoliDB through its native driver, SDBQL with bind variables, query cache
 //! off. People and products are documents keyed by their number; `knows`
-//! and `bought` are edge collections with an index on each end.
+//! and `bought` are edge collections, indexed by the server at creation.
 
 use super::{err, Engine, Knows, Person, Res, Settings, Tally};
 use serde_json::{json, Value};
@@ -87,12 +87,9 @@ impl Engine for Soli {
             c.create_collection(DB, t, None).await?;
         }
         for t in ["knows", "bought"] {
+            // An edge collection is created with its indexes: on each end,
+            // and on both ends in each order.
             c.create_collection(DB, t, Some("edge")).await?;
-            // Indexes exist before the load, as in a running application.
-            for end in ["_from", "_to"] {
-                c.create_index(DB, t, &format!("idx{end}"), vec![end.to_string()], false, false)
-                    .await?;
-            }
         }
         Ok(())
     }

@@ -86,6 +86,7 @@ pub(crate) mod neighbourhoods {
     /// entry keeps alive) and what is kept: the direction, or the fields.
     static ENDS: Registry<Ends> = once_cell::sync::Lazy::new(DashMap::new);
     static STEPS: Registry<Steps> = once_cell::sync::Lazy::new(DashMap::new);
+    static FACTS: Registry<bool> = once_cell::sync::Lazy::new(DashMap::new);
     static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
 
     fn open<V>(
@@ -120,6 +121,19 @@ pub(crate) mod neighbourhoods {
     /// generation, or `None` when the cache is off.
     pub(crate) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
         open(&ENDS, state, direction as u64)
+    }
+
+    /// A yes-or-no fact about the collection's content (`which` tells them
+    /// apart), computed once per write generation.
+    pub(crate) fn fact(state: &Arc<KsState>, which: u64, compute: impl FnOnce() -> bool) -> bool {
+        let Some(kept) = open(&FACTS, state, which) else {
+            return compute();
+        };
+        kept.get("").unwrap_or_else(|| {
+            let fact = compute();
+            kept.put("", &fact, 1);
+            fact
+        })
     }
 
     /// The same with the key of each edge.
@@ -318,10 +332,14 @@ impl<'e> EdgeExpander<'e> {
             adjacency,
             from_with_db: out_pairs
                 && !db_prefix.is_empty()
-                && edge.index_pairs_start_with("_from", "_to", &db_prefix),
+                && neighbourhoods::fact(edge.ks.state(), 0, || {
+                    edge.index_pairs_start_with("_from", "_to", &db_prefix)
+                }),
             to_with_db: in_pairs
                 && !db_prefix.is_empty()
-                && edge.index_pairs_start_with("_to", "_from", &db_prefix),
+                && neighbourhoods::fact(edge.ks.state(), 1, || {
+                    edge.index_pairs_start_with("_to", "_from", &db_prefix)
+                }),
             out_pairs,
             in_pairs,
             db_prefix,
@@ -770,6 +788,12 @@ impl EdgeExpander<'_> {
         // The edge of each step: the first, in key order, that leads there.
         let mut edges = Vec::with_capacity(vertices.len() - 1);
         for step in vertices.windows(2) {
+            // From the index when it names the edges' keys: one document.
+            if let Some(steps) = forward.far_steps(&step[0]) {
+                let (_, key) = steps.iter().find(|(to, _)| **to == *step[1])?;
+                edges.push(forward.edge.get(key).ok()?.to_value());
+                continue;
+            }
             let mut candidates = forward.edges_for(&step[0]);
             candidates.sort_by(|a, b| a.key.cmp(&b.key));
             let edge = candidates.into_iter().find(|edge| {

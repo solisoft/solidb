@@ -4,6 +4,8 @@ The harness behind the blog post [SoliDB against PostgreSQL, MongoDB, ArangoDB a
 
 A second harness, the bank (`bank.sh`, [below](#transactions-the-bank-banksh)), measures transactions against PostgreSQL: durable transfers, lost money, and `kill -9`.
 
+A third harness, the graph (`graph.sh`, [below](#the-graph-graphsh)), asks traversal and shortest-path questions of SoliDB, Neo4j, Memgraph and ArangoDB. No full-scale result of it has been published.
+
 ## What runs
 
 | Configuration | Image | Client |
@@ -383,6 +385,230 @@ python3 bank_report.py ~/bench/results/<date>/bank
 ```
 
 `bank.sh solidb-2.9.2` measures the 2.9.2 image over HTTP and over the driver; `ONLY_MODES="driver run"` limits a configuration to those modes; `SOLIDB_MAIN=<image> bank.sh solidb-main` does the same for an unreleased build. For profiling, `BANK_STEPS=1` prints the mean time of each step of a driver transfer, and `--audit-ms 0` turns the auditor off. `bank.sh solidb-2.9.0` measures the 2.9.0 image. That version's transactional query reads only `bind_vars` (`bindVars` was ignored until 2.9.1), so the harness sends `bind_vars`, which both versions read.
+
+## The graph (`graph.sh`)
+
+A third harness asks graph questions: who is within one, two or three hops of a person, who among them matches a filter or bought a product, and how long the shortest path between two people is. It loads the same generated graph into each database, asks the same six questions in each database's own query language, and checks every answer against its own copy of the graph. The harness is `src/graph/` (`solidb-graph`), run by `graph.sh`.
+
+### What runs
+
+| Configuration | Image | Client | Query language |
+|---|---|---|---|
+| `solidb` | `ghcr.io/solisoft/solidb:v2.10.3`, `SOLIDB_ENGINE=solistore` | `solidb-client`, native MessagePack driver, query cache off | SDBQL traversals and `SHORTEST_PATH` |
+| `neo4j` | `neo4j`, Community | `neo4rs` 0.8, Bolt | Cypher |
+| `memgraph` | `memgraph/memgraph`, Community, `latest` on 2026-11-14 | `neo4rs` 0.8, Bolt | Cypher |
+| `arango` | `arangodb/arangodb` 3.12.4-3 | HTTP API through `reqwest`, `/_api/cursor` | AQL traversals |
+| `postgres` (by name only, not in `all`) | `postgres` 18.6 | `tokio-postgres`, prepared statements | SQL: joins, and a recursive CTE for the shortest path |
+
+**PostgreSQL is not in `./graph.sh all`.** It has an adapter (`src/graph/engines/postgres.rs`), but it is not a graph database, and it was left out of the comparison on 2026-11-14. `./graph.sh postgres` still runs it.
+
+**The rules are those of the document benchmark:**
+- the same machine, rocky-build2, with one database running at a time;
+- each database in a container limited to `--cpuset-cpus 0-3,16-19` and `--memory 16g` (`--memory-swap` the same, so no swap), the harness on `8-15,24-31` through `taskset`;
+- each database through its own protocol and client, as in the table;
+- the container's `inspect` output kept beside the result. The `docker run` command is printed to the terminal; unlike `run.sh`, `graph.sh` does not write it to a file.
+
+**Pinning.** The Neo4j, Memgraph, ArangoDB and PostgreSQL images are pinned by digest in `graph.sh`; the versions in the table are the comments beside those digests. The SoliDB image is named by tag (`v2.10.3`), not by digest, unlike in `run.sh`. The Neo4j version behind its digest is not written in `graph.sh`; the result's `server_version` holds it. `Cargo.lock` as committed has no entry for `neo4rs`: the manifest asks for `0.8`, and the exact version is the one the first build resolves.
+
+### The data
+
+`src/graph/data.rs`. Everything is a function of the vertex numbers through a fixed hash, so two runs with the same sizes load the same graph, and the harness can hold all of it in memory.
+
+| | Default | What |
+|---|---|---|
+| People | 1,000,000 (`PEOPLE`) | numbered from 0; each has `n`, a `country` among 20, an `age` from 18 to 77 |
+| Products | 10,000 (`PRODUCTS`) | numbered from 0; each has `n` |
+| `knows` | about ten per person | directed, person to person, with `since` (a year, 2000 to 2024) and `weight` (1 to 9) |
+| `bought` | at most three per person | person to product, no attribute |
+
+- **Degree.** Each person draws 2 to 18 targets, uniformly, so ten on average. A draw that falls on the person, or twice on the same target, is dropped: there is no self-loop and no parallel edge, and the out-degree is at most the number drawn.
+- **Locality.** Four draws in five go to one of the 2,000 people whose numbers follow the person's own (wrapping at the end).
+- **Hubs.** One draw in five goes to person `people × u³`, `u` uniform in [0, 1): low numbers are known by many, and the in-degree is skewed toward them.
+- **Purchases.** Each person draws 0 to 3 products, uniformly among all, duplicates dropped.
+- **Exact counts.** The number of edges and of purchases after the duplicates are dropped is printed at the start of a run and written to the result (`edges`, `purchases`). It is not quoted here for the default size, which has not been run.
+
+`weight` and `age` are loaded and read by no scenario.
+
+**The load.** People, then products, then `knows`, then `bought`, from eight connections in batches of 2,000 rows, one request per batch. The indexes a lookup by number needs exist before the load; so do the edge indexes, in every engine that has them (see [Settings and indexes](#settings-and-indexes)).
+
+### The six scenarios
+
+Every scenario but `shortest` returns one row, `(count, sum of n)`, over a set of **distinct** people that never includes the start. `shortest` returns a number of edges.
+
+| Scenario | What it asks |
+|---|---|
+| `hop1` | The people the start knows. |
+| `hop2` | The people within two hops of the start, following `knows` forward: at one hop or at two. |
+| `hop3` | The same within three hops. |
+| `filtered` | The people exactly two edges away whose second edge has `since >= @year` and who live in `@country`. A person who is also a direct neighbour counts. The year is drawn from 2005 to 2019, the country among the 20. |
+| `fof_bought` | The people within two hops who bought a given product. For half of the parameter sets the product is one that somebody within two hops bought, when there is one; for the others it is drawn among all products, and the answer is often empty. |
+| `shortest` | The number of edges on a shortest path, by hops, from one person to another, following `knows` forward. The target is chosen exactly 2, 3 or 4 hops away, in turn, so a path always exists. |
+
+**Parameters.** For each scenario the harness prepares 2,000 parameter sets, deterministically, with the answer the graph gives for each. Every worker cycles through the same 2,000, starting at a different offset.
+
+**Timing.** Each scenario runs at concurrency 1 and 8 (`CONCURRENCY`): 5 s of warm-up, then 3 measured runs of 20 s (`WARM`, `SECS`, `RUNS`). A request is timed from the call into the client to the decoded answer. All six scenarios are reads; nothing is written after the load.
+
+**The query each database receives.** Copied from the adapters; the same text is written to the result under `queries`. SoliDB and ArangoDB receive a person as `"people/<n>"` and a product as `"products/<n>"`; the others receive the number.
+
+`hop1`, `hop2`, `hop3` — `{d}` is 1, 2 or 3, written into the text:
+
+| Engine | Query |
+|---|---|
+| SoliDB | `FOR v IN 1..{d} OUTBOUND @start knows COLLECT AGGREGATE c = COUNT(), s = SUM(v.n) RETURN [c, s]` |
+| Neo4j, Memgraph | `MATCH (a:Person {n: $n})-[:KNOWS*1..{d}]->(b) WHERE b <> a WITH DISTINCT b RETURN count(b) AS c, coalesce(sum(b.n), 0) AS s` |
+| ArangoDB | `FOR v IN 1..{d} OUTBOUND @start knows OPTIONS { uniqueVertices: "global", order: "bfs" } COLLECT AGGREGATE c = COUNT(1), s = SUM(v.n) RETURN [c, s]` |
+| PostgreSQL, `hop1` | `SELECT count(*), coalesce(sum(dst), 0)::bigint FROM knows WHERE src = $1` |
+| PostgreSQL, `hop2` | `WITH h1 AS (SELECT dst FROM knows WHERE src = $1), h2 AS (SELECT k.dst FROM knows k JOIN h1 ON k.src = h1.dst) SELECT count(*), coalesce(sum(n), 0)::bigint FROM (SELECT dst AS n FROM h1 UNION SELECT dst FROM h2) u WHERE n <> $1` |
+| PostgreSQL, `hop3` | `WITH h1 AS (SELECT dst FROM knows WHERE src = $1), h2 AS (SELECT DISTINCT k.dst FROM knows k JOIN h1 ON k.src = h1.dst), h3 AS (SELECT k.dst FROM knows k JOIN h2 ON k.src = h2.dst) SELECT count(*), coalesce(sum(n), 0)::bigint FROM (SELECT dst AS n FROM h1 UNION SELECT dst FROM h2 UNION SELECT dst FROM h3) u WHERE n <> $1` |
+
+`filtered`:
+
+| Engine | Query |
+|---|---|
+| SoliDB | `LET ns = (FOR v, e IN 2..2 OUTBOUND @start knows OPTIONS { uniqueVertices: "path" } FILTER e.since >= @year AND v.country == @country RETURN DISTINCT v.n) RETURN [LENGTH(ns), SUM(ns)]` |
+| Neo4j, Memgraph | `MATCH (a:Person {n: $n})-[:KNOWS]->(m)-[e:KNOWS]->(b) WHERE e.since >= $year AND b.country = $country AND b <> a WITH DISTINCT b RETURN count(b) AS c, coalesce(sum(b.n), 0) AS s` |
+| ArangoDB | the same text as SoliDB |
+| PostgreSQL | `SELECT count(*), coalesce(sum(n), 0)::bigint FROM ( SELECT DISTINCT p.n FROM knows a JOIN knows b ON b.src = a.dst JOIN people p ON p.n = b.dst WHERE a.src = $1 AND b.since >= $2 AND p.country = $3 AND b.dst <> $1) u` |
+
+`fof_bought`:
+
+| Engine | Query |
+|---|---|
+| SoliDB | `LET buyers = (FOR b IN INBOUND @product bought RETURN b.n) LET ns = (FOR v IN 1..2 OUTBOUND @start knows FILTER v.n IN buyers RETURN v.n) RETURN [LENGTH(ns), SUM(ns)]` |
+| Neo4j, Memgraph | `MATCH (a:Person {n: $n})-[:KNOWS*1..2]->(b)-[:BOUGHT]->(:Product {n: $product}) WHERE b <> a WITH DISTINCT b RETURN count(b) AS c, coalesce(sum(b.n), 0) AS s` |
+| ArangoDB | `LET buyers = (FOR b IN 1..1 INBOUND @product bought RETURN b.n) LET ns = (FOR v IN 1..2 OUTBOUND @start knows OPTIONS { uniqueVertices: "global", order: "bfs" } FILTER v.n IN buyers RETURN v.n) RETURN [LENGTH(ns), SUM(ns)]` |
+| PostgreSQL | `WITH h1 AS (SELECT dst FROM knows WHERE src = $1), h2 AS (SELECT k.dst FROM knows k JOIN h1 ON k.src = h1.dst) SELECT count(*), coalesce(sum(u.n), 0)::bigint FROM (SELECT dst AS n FROM h1 UNION SELECT dst FROM h2) u JOIN bought b ON b.person = u.n AND b.product = $2 WHERE u.n <> $1` |
+
+`shortest`:
+
+| Engine | Query |
+|---|---|
+| SoliDB | `FOR v, e, p IN SHORTEST_PATH @from TO @to OUTBOUND knows RETURN LENGTH(p.edges)` |
+| Neo4j | `MATCH (a:Person {n: $from}), (b:Person {n: $to}) MATCH p = shortestPath((a)-[:KNOWS*..15]->(b)) RETURN length(p) AS l` |
+| Memgraph | `MATCH p = (a:Person {n: $from})-[:KNOWS *BFS ..15]->(b:Person {n: $to}) RETURN size(relationships(p)) AS l` |
+| ArangoDB | `LET p = (FOR v IN OUTBOUND SHORTEST_PATH @from TO @to knows RETURN 1) RETURN LENGTH(p) - 1` |
+| PostgreSQL | `WITH RECURSIVE r(id, d) AS ( SELECT $1::int, 0 UNION SELECT k.dst, r.d + 1 FROM r JOIN knows k ON k.src = r.id WHERE r.d < 6) SELECT min(d)::bigint FROM r WHERE id = $2` |
+
+SoliDB's `hop` and `fof_bought` queries pass no `OPTIONS`: an SDBQL traversal is breadth-first with global vertex uniqueness by default (`TraversalOptions` in `src/sdbql/ast.rs`), which ArangoDB is asked for explicitly.
+
+### What is checked
+
+The harness holds its own copy of the graph and computes the answer to every prepared request itself (`within`, `filtered`, `fof_bought` and `someone_at` in `data.rs`). What it compares is `(count, sum of the people's numbers)`, or the path length.
+
+- **Before timing.** The first 50 parameter sets of a scenario are asked once. A wrong answer or an error skips the scenario: the result holds `{"scenario": …, "skipped": "wrong answer: …"}` (or `"error: …"`) with the first mismatch, and no timing.
+- **During timing.** Every answer of every run is compared the same way. Each run reports `wrong` and `errors`, and `first_problem` holds the first of either.
+- **What that does not cover.** A wrong answer during a timed run is counted in `wrong`, and its latency still enters `ops_per_sec` and the percentiles: a run with `wrong` above zero is to be read as wrong, not as a throughput. An error is not counted as an operation, and is followed by a 10 ms pause. A request with no answer within 120 s counts as an error and ends its worker for that run.
+- **A sum can hide a wrong set** only if another set of the same size has the same sum; the check is `(count, sum)`, not the list of people.
+
+### Settings and indexes
+
+What `graph.sh` passes beyond the limits above:
+
+| Configuration | Settings |
+|---|---|
+| `solidb` | `SOLIDB_ENGINE=solistore`; everything else at its defaults, so `SOLIDB_DURABILITY` is `eventual` |
+| `neo4j` | heap 4 GB, initial and maximum (`NEO4J_server_memory_heap_initial__size`, `_max__size`); page cache 8 GB (`NEO4J_server_memory_pagecache_size`). The two share the container's 16 GB. |
+| `memgraph` | `--memory-limit=14000`, `--storage-snapshot-interval-sec=0`, `--storage-wal-enabled=false`, `--log-level=WARNING`; no volume |
+| `arango` | `ARANGODB_OVERRIDE_DETECTED_TOTAL_MEMORY=16G`, `ARANGODB_OVERRIDE_DETECTED_NUMBER_OF_CORES=8` (the eight CPUs of the set). Without them it sizes itself from the host. |
+| `postgres` | `shared_buffers=4GB`, `effective_cache_size=12GB`, `max_connections=200`, `synchronous_commit=off`, `--shm-size 1g`; `ANALYZE` after the load |
+
+How each engine finds a start vertex and its edges:
+
+| Engine | Start vertex | Edges |
+|---|---|---|
+| SoliDB | the document key, `people/<n>` | the indexes of the edge collection, below |
+| Neo4j | `CREATE INDEX person_n … FOR (p:Person) ON (p.n)`, and the same on `Product`, awaited with `db.awaitIndexes` | the adapter creates no index on relationships |
+| Memgraph | `CREATE INDEX ON :Person(n)`, `CREATE INDEX ON :Product(n)` | the adapter creates no index on relationships |
+| ArangoDB | the document key | the edge index an edge collection (`type: 3`) carries from its creation |
+| PostgreSQL | `people (n)` primary key | `knows`: primary key `(src, dst)` and an index on `(dst)`; `bought`: primary key `(person, product)` and an index on `(product)` |
+
+**SoliDB's edge indexes.** `Database::create_edge_indexes` (`src/storage/database.rs`), called when an edge collection is created, gives it four persistent indexes: `_edge_from_idx` on `_from`, `_edge_to_idx` on `_to`, `_edge_out_idx` on `[_from, _to]` and `_edge_in_idx` on `[_to, _from]`. The entries of the two-field indexes say where an edge leads, so a traversal can read a vertex's neighbours from them without the edge documents. Three things to know:
+
+- **The two-field indexes are not in 2.10.3.** That release creates only `_edge_from_idx` and `_edge_to_idx`. The two-field indexes, and the cache described under [Known limits](#known-limits-and-fairness), are on the `perf/traversal` branch, in no tagged release on 2026-11-14. The default image of `graph.sh` therefore runs without either; measuring them means building an image from that branch and passing it as `SOLIDB_IMAGE`.
+- **The adapter adds two more.** `engines/soli.rs` also creates `idx_from` on `_from` and `idx_to` on `_to` on both edge collections. `create_index` refuses a name already taken, not a field already indexed, so as the code reads the collection carries a second single-field index on each end, and SoliDB's load maintains all of them. This was read in the code, not observed on a running server.
+- **The server version is not in SoliDB's result.** The adapter's `version` returns the placeholder `see meta.server_version`, and `graph.sh` passes no `meta` to this harness. The image is in `solidb.container.json`.
+
+### Running it
+
+Linux with Docker or rootful podman, as for `run.sh`; adjust `DB_CPUS` and `CLIENT_CPUS` to the machine.
+
+```sh
+cargo build --release --bin solidb-graph
+DOCKER="sudo podman" ./graph.sh all                 # solidb, neo4j, memgraph, arango, one after another
+DOCKER="sudo podman" ./graph.sh solidb neo4j        # only those
+DOCKER="sudo podman" ./graph.sh postgres            # PostgreSQL, by name
+PEOPLE=20000 PRODUCTS=500 WARM=1 SECS=3 RUNS=1 ./graph.sh all   # a smoke pass
+ONLY=hop3,shortest ./graph.sh solidb                # some scenarios only
+```
+
+| Variable | Default | What |
+|---|---|---|
+| `PEOPLE`, `PRODUCTS` | 1000000, 10000 | size of the graph |
+| `CONCURRENCY` | `1,8` | connections per series |
+| `WARM`, `SECS`, `RUNS` | 5, 20, 3 | warm-up, length of a measured run, number of runs |
+| `ONLY` | all six | scenarios, comma-separated |
+| `SOLIDB_IMAGE` | `ghcr.io/solisoft/solidb:v2.10.3` | the SoliDB image |
+| `DB_CPUS`, `CLIENT_CPUS`, `DB_MEM` | `0-3,16-19`, `8-15,24-31`, `16g` | the container's limits and the harness's CPUs |
+| `OUT` | `~/bench/results/graph-<date>` | where the results go (`BENCH_ROOT` moves `~/bench`) |
+
+How long `./graph.sh all` takes at the default size is not established: it has not been run.
+
+**What is written**, per configuration, in `OUT`:
+
+| File | Holds |
+|---|---|
+| `<config>.json` | the result, below |
+| `<config>.log` | the harness's output: the size of the graph, the load time, one line per run |
+| `<config>.container.json` | `docker inspect` of the container, taken before the load |
+| `<config>.server.log` | the database's log |
+| `<config>.disk_bytes` | size of the data directory after the run. Memgraph has no volume, so its figure is that of an empty directory. |
+
+The data directory is deleted after each configuration. A configuration that fails is named at the end and makes `graph.sh` exit non-zero; the others still run.
+
+**The JSON:**
+- `engine`, `flavor`, `server_version`;
+- `people`, `products`, `edges`, `purchases`;
+- `load`: `secs`, `vertices_secs`, `edges_per_sec` (edges and purchases over the time after the vertices);
+- `warm_secs`, `measure_secs`, `runs`;
+- `queries`: the text of each scenario's query, as sent;
+- `series`: one entry per scenario, concurrency and run, with `ops`, `secs`, `ops_per_sec`, `p50_us`, `p90_us`, `p99_us`, `max_us`, `errors`, `wrong`, `first_problem` and `db_cpu_cores` (CPU the container's cgroup used, per second of the run); or the `skipped` entry of a scenario that failed its check.
+
+There is no report script for this harness yet; `report.py` and `bank_report.py` do not read these files.
+
+### Results
+
+**No full-scale result has been published.** While the harness and SoliDB's traversal were being worked on, only smoke passes were run: 20,000 people, runs of a few seconds. They served to check that every engine loads the graph and gives the right answers. They were not run under the rules above (the default size, 20 s runs, three of them), so no throughput or latency figure from them appears here, and `results/` holds no graph directory.
+
+### Licences
+
+The licence texts were read on 2026-11-14, to check that publishing benchmark results is allowed. None of those read restricts it.
+
+| Software | Licence |
+|---|---|
+| Neo4j Community | GPLv3 |
+| Memgraph Community | BSL 1.1 |
+| ArangoDB | BSL 1.1. Its community licence PDF could not be read, so that document is not covered by the statement above. |
+| PostgreSQL, the client crates | permissive (the PostgreSQL licence, Apache 2.0, MIT) |
+| SoliDB | the O'Saasy licence (`LICENCE.md`); its Rust client is MIT |
+
+### Known limits and fairness
+
+- **Cypher enumerates paths; SoliDB and ArangoDB do not.** `[:KNOWS*1..3]` matches every path of one to three relationships that repeats no relationship, and `DISTINCT b` reduces them to people afterwards. SoliDB and ArangoDB walk breadth-first with global vertex uniqueness and reach each person once. The answers are the same; the work asked for is not, and it grows with the depth and around the hubs. This is the query a Cypher user would write for the question. Whether Neo4j's or Memgraph's planner avoids the enumeration was not examined, and no procedure-based alternative (APOC, Memgraph's own BFS expansion for the hop scenarios) was tried.
+- **`fof_bought` is not the same plan everywhere.** SoliDB and ArangoDB first collect the product's buyers, then filter the traversal with `v.n IN buyers`; Cypher extends each path by a `BOUGHT` relationship; PostgreSQL joins. Each is the direct way to write it in that language.
+- **Memgraph runs in memory, with snapshots and the WAL off.** Nothing it loads reaches the disk. The other three store the graph on disk and read it through a cache sized within the same 16 GB.
+- **The shortest-path query differs between Neo4j and Memgraph.** Neo4j gets `shortestPath` with `*..15`; Memgraph gets its `*BFS` expansion with the same bound. They are different operators. ArangoDB's and SoliDB's `SHORTEST_PATH` are given no bound. PostgreSQL's recursive CTE stops at depth 6 and returns the least depth; the targets are at most four hops away, so the bounds do not change an answer.
+- **SoliDB keeps what a traversal reads, and a read-only benchmark favours that.** On the `perf/traversal` branch (module `neighbourhoods` in `src/sdbql/executor/execution/graph.rs`), SoliDB keeps between queries, per collection:
+  - where each expanded vertex's edges lead, one map per edge collection and direction (and a second kind that also holds each edge's key);
+  - the vertex documents a traversal read, one map per set of fields read.
+
+  A map is valid for one write generation of its collection: any committed write to that collection makes the whole map stale, and the next query starts an empty one. Maps are filled as queries expand vertices, not built ahead. Each map holds at most `SOLIDB_GRAPH_CACHE_MB` (default 256; `0` turns the cache off) by its own estimate of entry sizes; past that, new entries are not kept and nothing is evicted. The limit is per map, not for the whole server.
+
+  This benchmark writes nothing after the load, and its 2,000 parameter sets repeat, so once the maps hold those neighbourhoods and vertices SoliDB can answer from them without reading storage. That is the position an in-memory graph database is in, and the result says nothing about SoliDB on a graph that is written while it is read. No write-mixed scenario exists in this harness, and no run with `SOLIDB_GRAPH_CACHE_MB=0` has been made; `graph.sh` does not pass that variable through, so such a run needs the `docker run` line edited.
+- **The other engines' caches are warmed by the same repetition.** Every engine sees the same 2,000 requests again and again, and whatever it caches stays warm. How much each gains was not measured.
+- **Concurrency stops at 8.** The document benchmark goes to 32; this one runs 1 and 8 by default.
+- **Durability plays no part.** Nothing is written during the timed runs. The load is timed and reported, but the engines load under different guarantees (SoliDB's background fsync, Memgraph with no log, PostgreSQL with `synchronous_commit=off`, the others at their defaults), so `load` is not a like-for-like figure.
+- **One client library for two servers.** Neo4j and Memgraph are both driven through the `neo4rs` crate. No other Bolt driver was tried.
+- **One size.** The default is a million people with about ten `knows` edges each. Whether that fits each engine's cache within 16 GB was not checked, and nothing here measures a graph known to be larger than the cache.
 
 ## SoliDB 2.7.2, and why its image was rebuilt
 
