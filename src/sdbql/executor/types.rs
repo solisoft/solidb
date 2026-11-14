@@ -70,6 +70,19 @@ impl Context {
         self.vars.insert(name, value).map(unshare)
     }
 
+    /// Bind `name` to `value` in a row that is reused from one result to
+    /// the next: the binding it replaces is dropped where it is (not handed
+    /// back, which would copy a value something else still holds), and the
+    /// name is allocated only the first time.
+    pub fn set_shared(&mut self, name: &str, value: Arc<Value>) {
+        match self.vars.get_mut(name) {
+            Some(slot) => *slot = value,
+            None => {
+                self.vars.insert(name.to_string(), value);
+            }
+        }
+    }
+
     pub fn remove(&mut self, name: &str) -> Option<Value> {
         self.vars.remove(name).map(unshare)
     }

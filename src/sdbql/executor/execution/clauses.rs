@@ -1549,17 +1549,14 @@ impl<'a> QueryExecutor<'a> {
                                         if let (Some(fold), Some(row)) =
                                             (folded.as_mut(), reused.as_mut())
                                         {
-                                            row.insert_shared(gt.vertex_var.clone(), v);
+                                            row.set_shared(&gt.vertex_var, v);
                                             if let Some(ref edge_var) = gt.edge_var {
-                                                match edge {
-                                                    Some(edge) => row.insert_shared(
-                                                        edge_var.clone(),
-                                                        edge.clone(),
-                                                    ),
-                                                    None => {
-                                                        row.insert(edge_var.clone(), Value::Null)
-                                                    }
-                                                };
+                                                row.set_shared(
+                                                    edge_var,
+                                                    edge.clone().unwrap_or_else(|| {
+                                                        std::sync::Arc::new(Value::Null)
+                                                    }),
+                                                );
                                             }
                                             fold.push_ref(self, row)?;
                                             continue;
