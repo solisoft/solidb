@@ -1436,6 +1436,24 @@ impl<'a> QueryExecutor<'a> {
                         self.max_intermediate_rows(),
                     )?;
 
+                    // What a frame has to carry. The walk so far (documents
+                    // of every vertex and edge on it) was copied into each
+                    // child whether or not the query bound `p`, and every
+                    // edge was converted to JSON before its far end was
+                    // known to be new.
+                    let opts = gt.options;
+                    let keeps_path = gt.path_var.is_some();
+                    let keeps_edges = keeps_path
+                        || (opts.unique_edges == UniqueEdges::Path
+                            && opts.unique_vertices != UniqueVertices::Global);
+                    let keeps_ids = opts.unique_vertices == UniqueVertices::Path;
+                    let wants_edge = gt.edge_var.is_some() || keeps_edges;
+                    // One handle per vertex collection, not one lookup per vertex.
+                    let mut vertex_colls: std::collections::HashMap<
+                        String,
+                        Option<crate::storage::Collection>,
+                    > = std::collections::HashMap::new();
+
                     for ctx in &rows {
                         // Evaluate start vertex
                         let start_value = self.evaluate_expr_with_context(&gt.start_vertex, ctx)?;
@@ -1444,7 +1462,6 @@ impl<'a> QueryExecutor<'a> {
                             .to_string();
 
                         // BFS (queue) or DFS (stack) per OPTIONS { order }.
-                        let opts = gt.options;
                         let dfs = opts.order == TraversalOrder::Dfs;
                         let mut visited: std::collections::HashSet<String> =
                             std::collections::HashSet::new();
@@ -1480,9 +1497,15 @@ impl<'a> QueryExecutor<'a> {
                             }
                             let mut vertex_val: Option<Value> = None;
                             if let Some((coll_name, key)) = current_id.split_once('/') {
-                                if let Ok(vertex_coll) = self.get_collection(coll_name) {
-                                    if let Ok(vertex_doc) = vertex_coll.get(key) {
-                                        let v = vertex_doc.to_value();
+                                if !vertex_colls.contains_key(coll_name) {
+                                    vertex_colls.insert(
+                                        coll_name.to_string(),
+                                        self.get_collection(coll_name).ok(),
+                                    );
+                                }
+                                if let Some(Some(vertex_coll)) = vertex_colls.get(coll_name) {
+                                    // Straight to the API value, as a scan's rows are.
+                                    if let Ok(v) = vertex_coll.get_value(key) {
                                         // A vertex hidden by its row policy
                                         // is not emitted (audit H2).
                                         if self.row_policy_permits(coll_name, &v, ctx) {
@@ -1542,8 +1565,8 @@ impl<'a> QueryExecutor<'a> {
                             let current_id_str = current_id.clone();
                             let mut children: Vec<TraversalFrame> = Vec::new();
                             for edge_doc in expander.edges_for(&current_id_str) {
-                                let edge_val = edge_doc.to_value();
-                                let Some(next) = expander.next_id(&edge_val, &current_id_str)
+                                let Some(next) =
+                                    expander.next_id_from_doc(&edge_doc, &current_id_str)
                                 else {
                                     continue;
                                 };
@@ -1555,25 +1578,36 @@ impl<'a> QueryExecutor<'a> {
                                 if !admissible {
                                     continue;
                                 }
+                                // Only an edge that is walked is converted.
+                                let edge_val = wants_edge.then(|| edge_doc.to_value());
                                 if opts.unique_edges == UniqueEdges::Path
                                     && opts.unique_vertices != UniqueVertices::Global
                                 {
-                                    let edge_id = edge_val.get("_id");
+                                    let edge_id = edge_val.as_ref().and_then(|e| e.get("_id"));
                                     if edge_id.is_some()
                                         && edges_path.iter().any(|e| e.get("_id") == edge_id)
                                     {
                                         continue;
                                     }
                                 }
-                                let mut nv = verts.clone();
-                                if let Some(v) = vertex_val.clone() {
-                                    nv.push(v);
+                                let mut nv = Vec::new();
+                                if keeps_path {
+                                    nv = verts.clone();
+                                    if let Some(v) = vertex_val.clone() {
+                                        nv.push(v);
+                                    }
                                 }
-                                let mut ne = edges_path.clone();
-                                ne.push(edge_val.clone());
-                                let mut np = path_ids.clone();
-                                np.push(next.clone());
-                                children.push((next, depth + 1, Some(edge_val), nv, ne, np));
+                                let mut ne = Vec::new();
+                                if keeps_edges {
+                                    ne = edges_path.clone();
+                                    ne.extend(edge_val.clone());
+                                }
+                                let mut np = Vec::new();
+                                if keeps_ids {
+                                    np = path_ids.clone();
+                                    np.push(next.clone());
+                                }
+                                children.push((next, depth + 1, edge_val, nv, ne, np));
                             }
                             if dfs {
                                 // Reverse so the first edge is walked first.

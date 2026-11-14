@@ -237,20 +237,12 @@ impl<'e> EdgeExpander<'e> {
         }
     }
 
-    /// The vertex on the far side of `edge_val` relative to `current_id`.
-    pub(crate) fn next_id(&self, edge_val: &Value, current_id: &str) -> Option<String> {
-        self.resolve_next(
-            edge_val.get("_from").and_then(|v| v.as_str()),
-            edge_val.get("_to").and_then(|v| v.as_str()),
-            current_id,
-        )
-    }
-
-    /// Same, straight off the stored document. `Document::get` clones a single
+    /// The vertex on the far side of an edge, relative to `current_id`,
+    /// straight off the stored document. `Document::get` clones a single
     /// field, where `to_value()` would rebuild the whole JSON object plus five
     /// metadata fields — wasteful in the BFS inner loop, which only ever reads
     /// `_from` and `_to`.
-    fn next_id_from_doc(&self, edge_doc: &Document, current_id: &str) -> Option<String> {
+    pub(crate) fn next_id_from_doc(&self, edge_doc: &Document, current_id: &str) -> Option<String> {
         let from = edge_doc.get("_from");
         let to = edge_doc.get("_to");
         self.resolve_next(
