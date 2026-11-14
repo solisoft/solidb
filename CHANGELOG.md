@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.10.3](https://github.com/solisoft/solidb/compare/v2.10.2...v2.10.3) (2026-11-14)
+
+Path searches that read the edge index instead of the whole edge collection,
+and a timeseries prune that stops at its cut-off.
+
 ### Fixed
 
 - **`SHORTEST_PATH` no longer reads the whole edge collection.** It,
