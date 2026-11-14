@@ -28,12 +28,102 @@ use crate::sdbql::ast::EdgeDirection;
 use crate::storage::{Collection, Document};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 /// A vertex reached by BFS expansion, with its minimum hop distance from the
 /// seed. Seeds themselves are not emitted.
 pub(crate) struct Reached {
     pub id: String,
     pub depth: usize,
+}
+
+/// Where each vertex's edges lead, kept between queries: one map per edge
+/// collection and direction, valid for one write generation of the
+/// collection. Any committed write to it (a generation move, what
+/// transactions already compare) makes the whole map stale, so a reader
+/// never sees a neighbourhood older than the last write it could have
+/// seen through the query cache. Filled as vertices are expanded; a graph
+/// that is read much more than it is written is then walked without
+/// touching storage, as the databases that keep their graph in memory do.
+mod neighbourhoods {
+    use crate::storage::keyspace::KsState;
+    use dashmap::DashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    pub(super) type Ends = Arc<[Box<str>]>;
+
+    pub(super) struct Neighbourhoods {
+        state: Arc<KsState>,
+        generation: u64,
+        ends: DashMap<Box<str>, Ends>,
+        bytes: AtomicUsize,
+    }
+
+    /// `SOLIDB_GRAPH_CACHE_MB`: what the cached neighbourhoods of one edge
+    /// collection and direction may hold (default 256, `0` turns it off).
+    fn budget() -> usize {
+        static BUDGET: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| {
+            std::env::var("SOLIDB_GRAPH_CACHE_MB")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(256)
+                << 20
+        });
+        *BUDGET
+    }
+
+    /// Keyed by the collection's shared write state (its address, which the
+    /// entry keeps alive) and the direction.
+    static CACHE: once_cell::sync::Lazy<DashMap<(usize, u8), Arc<Neighbourhoods>>> =
+        once_cell::sync::Lazy::new(DashMap::new);
+
+    /// The map for this collection and direction at its current generation,
+    /// or `None` when the cache is off.
+    pub(super) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
+        if budget() == 0 || state.is_dead() {
+            return None;
+        }
+        let key = (Arc::as_ptr(state) as usize, direction);
+        let generation = state.write_generation();
+        if let Some(found) = CACHE.get(&key) {
+            if found.generation == generation {
+                return Some(found.clone());
+            }
+        }
+        // A new generation, or a first use: start empty. Entries of dropped
+        // collections go at the same time.
+        CACHE.retain(|_, cached| !cached.state.is_dead());
+        let fresh = Arc::new(Neighbourhoods {
+            state: state.clone(),
+            generation,
+            ends: DashMap::new(),
+            bytes: AtomicUsize::new(0),
+        });
+        CACHE.insert(key, fresh.clone());
+        Some(fresh)
+    }
+
+    impl Neighbourhoods {
+        pub(super) fn get(&self, vertex: &str) -> Option<Ends> {
+            self.ends.get(vertex).map(|ends| ends.clone())
+        }
+
+        /// Keep `ends` for `vertex`, unless the collection has been written
+        /// since this map was opened (what was just read may then be newer
+        /// than the map says) or the map is full.
+        pub(super) fn put(&self, vertex: &str, ends: &Ends) {
+            if self.state.write_generation() != self.generation {
+                return;
+            }
+            let size = 64 + vertex.len() + ends.iter().map(|e| e.len() + 16).sum::<usize>();
+            if self.bytes.fetch_add(size, Ordering::Relaxed) + size > budget() {
+                self.bytes.fetch_sub(size, Ordering::Relaxed);
+                return;
+            }
+            self.ends.insert(vertex.into(), ends.clone());
+        }
+    }
 }
 
 pub(crate) struct EdgeExpander<'e> {
@@ -50,6 +140,9 @@ pub(crate) struct EdgeExpander<'e> {
     /// in the two-field indexes.
     from_with_db: bool,
     to_with_db: bool,
+    /// The neighbourhoods kept between queries, when edges are read from an
+    /// index.
+    cached: Option<Arc<neighbourhoods::Neighbourhoods>>,
     /// `"<database>:"`, what a document's `_id` starts with and an edge's
     /// `_from` / `_to` usually do not (see [`local_id`]).
     db_prefix: String,
@@ -170,7 +263,21 @@ impl<'e> EdgeExpander<'e> {
             None
         };
 
+        // Answers that come from the cache are not reads of stored keys: a
+        // transaction that checks its reads holds the collection to the
+        // range rule.
+        let cached = match (&adjacency, &direction) {
+            (Some(_), _) => None,
+            (None, EdgeDirection::Outbound) => neighbourhoods::of(edge.ks.state(), 0),
+            (None, EdgeDirection::Inbound) => neighbourhoods::of(edge.ks.state(), 1),
+            (None, EdgeDirection::Any) => neighbourhoods::of(edge.ks.state(), 2),
+        };
+        if cached.is_some() {
+            edge.note_range_read();
+        }
+
         Ok(Self {
+            cached,
             edge,
             direction,
             adjacency,
@@ -230,10 +337,27 @@ impl<'e> EdgeExpander<'e> {
     /// [`Self::edges_for`] gives the edges, reading only each edge's ends.
     /// `None` when the edges come from the adjacency map rather than an
     /// index: the caller then goes through [`Self::edges_for`].
-    pub(crate) fn far_ends(&self, current_id: &str) -> Option<Vec<String>> {
+    pub(crate) fn far_ends(&self, current_id: &str) -> Option<neighbourhoods::Ends> {
         if self.adjacency.is_some() {
             return None;
         }
+        let current = self.local(current_id);
+        if let Some(found) = self.cached.as_ref().and_then(|cache| cache.get(current)) {
+            return Some(found);
+        }
+        let ends: neighbourhoods::Ends = self
+            .read_far_ends(current)?
+            .into_iter()
+            .map(String::into_boxed_str)
+            .collect();
+        if let Some(cache) = &self.cached {
+            cache.put(current, &ends);
+        }
+        Some(ends)
+    }
+
+    /// [`Self::far_ends`], read from the index.
+    fn read_far_ends(&self, current_id: &str) -> Option<Vec<String>> {
         let current = self.local(current_id);
         let from_pairs = |field: &str| -> Option<Vec<(String, String)>> {
             let mut pairs = self.pairs(field, current)?;
@@ -511,10 +635,11 @@ impl EdgeExpander<'_> {
             // of the vertices of this level the other side has reached, the
             // one nearest to the other side's end (the first, among equals).
             for at in front.iter() {
-                for to in side.far_ends(at)? {
-                    if seen.contains_key(&to) {
+                for to in side.far_ends(at)?.iter() {
+                    if seen.contains_key(&**to) {
                         continue;
                     }
+                    let to = to.to_string();
                     seen.insert(to.clone(), (Some(at.clone()), *depth));
                     if let Some((_, other_depth)) = other.get(&to) {
                         let length = *depth + other_depth;

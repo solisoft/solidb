@@ -1548,20 +1548,21 @@ impl<'a> QueryExecutor<'a> {
                                             new_rows.len().saturating_add(next.len()),
                                         )?;
                                     }
-                                    let mut admit = |to: String, edge: Option<Value>| {
+                                    let mut admit = |to: &str, edge: Option<Value>| {
                                         if by_path {
-                                            if !trail.contains(&to) {
+                                            if !trail.iter().any(|seen| seen == to) {
                                                 let mut longer = trail.clone();
-                                                longer.push(to.clone());
-                                                next.push((to, edge, longer));
+                                                longer.push(to.to_string());
+                                                next.push((to.to_string(), edge, longer));
                                             }
-                                        } else if visited.insert(to.clone()) {
-                                            next.push((to, edge, Vec::new()));
+                                        } else if !visited.contains(to) {
+                                            visited.insert(to.to_string());
+                                            next.push((to.to_string(), edge, Vec::new()));
                                         }
                                     };
                                     if !edge_docs {
                                         if let Some(ends) = expander.far_ends(id) {
-                                            for to in ends {
+                                            for to in ends.iter() {
                                                 admit(to, None);
                                             }
                                             continue;
@@ -1572,7 +1573,7 @@ impl<'a> QueryExecutor<'a> {
                                         else {
                                             continue;
                                         };
-                                        admit(to, edge_docs.then(|| edge_doc.to_value()));
+                                        admit(&to, edge_docs.then(|| edge_doc.to_value()));
                                     }
                                 }
                                 if next.is_empty() {
