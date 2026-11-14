@@ -672,6 +672,14 @@ the skill says it was observed on. Verify edited examples with the skill's curl
 helper against a throwaway database. The skills live outside the repo, so say in
 the commit message which entries were updated, or that none needed to be.
 
+The solidb skill is also shipped to every new Soli app: `soli new` and
+`soli update docs` write a copy into `.claude/skills/solidb/`. That copy is
+embedded in the `soli` binary from the Soli repository
+(`src/scaffold/templates/skills/solidb/`) and is written only by its
+`scripts/sync-solidb-skill.sh`. After editing the skill, run that script
+there and commit the result, or apps keep being created with the older
+text; `scripts/sync-solidb-skill.sh --check` says when the copy has drifted.
+
 ### Which documentation is authoritative
 
 `doc/` (the Soli app) is the live documentation site and is the one to update.
