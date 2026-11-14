@@ -396,8 +396,9 @@ impl QueryExecutor<'_> {
         rows: &[Context],
     ) -> Option<crate::storage::Collection> {
         let name = &for_clause.collection;
-        // A LET-bound array of that name is iterated, not the collection.
-        if rows.iter().any(|r| r.contains_key(name)) {
+        // A LET-bound array of that name is iterated, not the collection; what
+        // a transaction wrote to it is overlaid by the ordinary scan.
+        if rows.iter().any(|r| r.contains_key(name)) || self.tx_wrote(name) {
             return None;
         }
         if let Some(db_name) = &self.database {

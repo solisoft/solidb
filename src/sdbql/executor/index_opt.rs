@@ -2517,6 +2517,91 @@ impl<'a> QueryExecutor<'a> {
         collection.tx_staged_document(&tx, key)
     }
 
+    /// Whether the executor's transaction has staged a write to `collection`
+    /// (a name of the executor's database). Its scans then read through
+    /// [`Self::overlay_staged`], and every path that reads an index or the
+    /// stored bytes instead steps aside, as for a row policy: the staged
+    /// documents are in neither.
+    pub(super) fn tx_wrote(&self, collection: &str) -> bool {
+        let Some(writer) = self.tx_writer.as_ref() else {
+            return false;
+        };
+        let Ok(tx) = writer.tx.read() else {
+            return false;
+        };
+        let db = self.database.as_deref().unwrap_or("");
+        tx.operations
+            .iter()
+            .any(|op| op.collection() == collection && op.database() == db)
+    }
+
+    /// How many documents the executor's transaction has added to
+    /// `collection`, net of those it deleted.
+    pub(super) fn tx_count_delta(&self, collection: &str) -> i64 {
+        let Some(writer) = self.tx_writer.as_ref() else {
+            return 0;
+        };
+        let Ok(tx) = writer.tx.read() else {
+            return 0;
+        };
+        let db = self.database.as_deref().unwrap_or("");
+        tx.operations
+            .iter()
+            .filter(|op| op.collection() == collection && op.database() == db)
+            .map(|op| match op {
+                crate::transaction::Operation::Insert { .. } => 1,
+                crate::transaction::Operation::Delete { .. } => -1,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// `docs`, a scan of `collection` in key order, as the executor's
+    /// transaction sees it: without the documents it deleted, with those it
+    /// updated as staged, and with those it inserted at their place in key
+    /// order.
+    pub(super) fn overlay_staged(&self, collection: &Collection, docs: Vec<Value>) -> Vec<Value> {
+        let Some(writer) = self.tx_writer.as_ref() else {
+            return docs;
+        };
+        let Ok(tx) = writer.tx.read() else {
+            return docs;
+        };
+        let mut staged = collection.tx_staged_documents(&tx);
+        if staged.is_empty() {
+            return docs;
+        }
+        let mut out = Vec::with_capacity(docs.len() + staged.len());
+        let mut pending = staged
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .peekable();
+        for doc in docs {
+            let key = doc.get("_key").and_then(Value::as_str).unwrap_or("");
+            // Staged keys that sort before this document and were not stored.
+            while let Some(next) = pending.next_if(|k| k.as_str() < key) {
+                if let Some(Some(new)) = staged.remove(&next) {
+                    out.push(new);
+                }
+            }
+            if pending.next_if(|k| k.as_str() == key).is_some() {
+                if let Some(Some(new)) = staged.remove(key) {
+                    out.push(new);
+                }
+            } else {
+                out.push(doc);
+            }
+        }
+        for key in pending {
+            if let Some(Some(new)) = staged.remove(&key) {
+                out.push(new);
+            }
+        }
+        out
+    }
+
     /// Whether this FILTER miss is allowed to create `_auto_{field}`.
     /// Does not create. EXPLAIN uses the same predicate.
     ///
@@ -2805,7 +2890,10 @@ impl QueryExecutor<'_> {
         // A LET-bound array of that name is iterated, not the collection; a
         // row policy, a columnar layout or shards all change what the scan
         // reads.
-        if rows.iter().any(|r| r.contains_key(name)) || self.row_policy_applies(name) {
+        if rows.iter().any(|r| r.contains_key(name))
+            || self.row_policy_applies(name)
+            || self.tx_wrote(name)
+        {
             return Ok(None);
         }
         if let Some(database) = self

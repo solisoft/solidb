@@ -248,7 +248,10 @@ impl QueryExecutor<'_> {
         // A LET-bound array of that name is iterated, not the collection; a
         // row policy, a columnar layout or shards all change what the scan
         // reads. A name `get_collection` resolves is never a search view.
-        if rows.iter().any(|r| r.contains_key(name)) || self.row_policy_applies(name) {
+        if rows.iter().any(|r| r.contains_key(name))
+            || self.row_policy_applies(name)
+            || self.tx_wrote(name)
+        {
             return Ok(None);
         }
         if let Some(database) = self

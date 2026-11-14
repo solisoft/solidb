@@ -9,6 +9,21 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A transaction's queries see its own writes</strong> &mdash; a document read by key already read as the transaction staged it (2.9.4). A scan, a <code>FILTER</code> served by an index, a sorted page, a count, a <code>COLLECT</code>, a join or a subquery read committed data only: after an <code>INSERT</code>, <code>FOR d IN c FILTER d.field == @x</code> in the same transaction did not find the document, an updated one showed its old value, a deleted one was still there. They now read the stored documents with the transaction's writes laid over them, at every isolation level, over HTTP and the driver. Once a transaction has written to a collection, its queries on that collection scan it instead of reading an index, until the commit. Not covered: <code>FULLTEXT</code>, vector and geo searches, graph traversals over the edge index, and <code>AS OF</code> reads.</li>
+        <li><strong class="text-white">A transaction that waits for a document lock is no longer overtaken until its wait runs out</strong> &mdash; a release woke the transaction that had waited longest, but one that asked before it ran took the lock. Under a steady stream of writers to one document a waiter could lose every time and be refused with &ldquo;waited 500 ms&rdquo; although the lock had been free many times over. Once a transaction has waited a quarter of <code>SOLIDB_TX_LOCK_WAIT_MS</code> (125 ms by default), those that arrive queue behind it. The bank benchmark did not move: 103,957 to 105,761 transfers a second at 32 clients, against 103,503 to 105,320 on 2.10.1.</li>
+        <li><strong class="text-white">The Elixir client declares Jason</strong> &mdash; <code>SoliDB.AIClient</code> calls it, and <code>mix.exs</code> did not list it: every request with a body raised <code>UndefinedFunctionError</code> unless the application depended on Jason itself.</li>
+        <li><strong class="text-white">The Rust client's documentation examples compile again</strong>, and CI now runs the tests of <code>solidb-client</code> and <code>sdbql-core</code>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.10.1 -->
   <section id="v2-10-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -250,7 +250,8 @@ impl<'a> QueryExecutor<'a> {
                                 .as_ref()
                                 .is_none_or(|s| s == &for_clause.collection)
                             && !initial_bindings.contains_key(&for_clause.collection)
-                            && !self.row_policy_applies(&for_clause.collection);
+                            && !self.row_policy_applies(&for_clause.collection)
+                            && !self.tx_wrote(&for_clause.collection);
 
                         let (sort_expr, sort_asc) = &sort.fields[0];
                         if iterates_collection {
@@ -374,7 +375,10 @@ impl<'a> QueryExecutor<'a> {
             {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
                     // Same row-policy exclusion as the SORT + LIMIT path.
-                    if sort.fields.len() == 1 && !self.row_policy_applies(&for_clause.collection) {
+                    if sort.fields.len() == 1
+                        && !self.row_policy_applies(&for_clause.collection)
+                        && !self.tx_wrote(&for_clause.collection)
+                    {
                         let (sort_expr, sort_asc) = &sort.fields[0];
 
                         if let Expression::FieldAccess(base, field) = sort_expr {
@@ -447,6 +451,7 @@ impl<'a> QueryExecutor<'a> {
                                 // `get_for_source_docs`, which filters it.
                                 if !initial_bindings.contains_key(source_name)
                                     && !self.row_policy_applies(&for_clause.collection)
+                                    && !self.tx_wrote(&for_clause.collection)
                                 {
                                     let scan_limit = query
                                         .limit_clause
@@ -875,7 +880,10 @@ impl QueryExecutor<'_> {
             // SORT alone: the FOR and nothing else.
             None => rest.is_empty(),
         };
-        if !shape || self.row_policy_applies(&for_clause.collection) {
+        if !shape
+            || self.row_policy_applies(&for_clause.collection)
+            || self.tx_wrote(&for_clause.collection)
+        {
             return None;
         }
         let Expression::FieldAccess(base, field) = &sort.fields[0].0 else {

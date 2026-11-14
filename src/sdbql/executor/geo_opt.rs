@@ -417,6 +417,7 @@ impl<'a> QueryExecutor<'a> {
                 .is_some_and(|s| s != &for_clause.collection)
             || initial_bindings.contains_key(&for_clause.collection)
             || self.row_policy_applies(&for_clause.collection)
+            || self.tx_wrote(&for_clause.collection)
             || query
                 .return_clause
                 .as_ref()

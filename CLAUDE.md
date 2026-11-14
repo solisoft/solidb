@@ -463,7 +463,15 @@ Rules that keep it sound:
   invisible to the range check.
 
 At every level, the executor's point reads (`key_fast_path`, `get_visible`)
-return what the transaction staged (`staged_in_transaction`); scans do not.
+return what the transaction staged (`staged_in_transaction`), and so do its
+scans: once the transaction has staged a write to a collection
+(`QueryExecutor::tx_wrote`), `scan_bounded` and `get_for_source_docs` lay the
+staged documents over the stored ones in key order (`overlay_staged`), and
+every path that answers from an index or from the stored bytes steps aside
+for that scan, at the same guards as for a row policy
+(`row_policy_applies(..) || tx_wrote(..)`). A new fast path needs that guard.
+Not overlaid: the functions that search an index (`FULLTEXT`, vector, geo),
+graph traversals over the edge index, `AS OF` scans.
 
 ### Commits written in groups (2.9.4)
 

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A transaction's queries see its own writes.** A document read by key
+  already read as the transaction staged it (2.9.4); a scan, a FILTER served
+  by an index, a sorted page, a count, a COLLECT, a join or a subquery read
+  committed data only: after an `INSERT`, `FOR d IN c FILTER d.field == @x`
+  in the same transaction did not find the document, an updated one showed
+  its old value, a deleted one was still there. They now read the stored
+  documents with the transaction's writes laid over them, at every isolation
+  level, over HTTP and the driver. Once a transaction has written to a
+  collection, its queries on that collection scan it instead of reading an
+  index, until the commit. Not covered: `FULLTEXT`, vector and geo searches,
+  graph traversals over the edge index, and `AS OF` reads.
+
 ### Fixed
 
 - **A transaction that waits for a document lock is no longer overtaken until

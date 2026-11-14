@@ -640,3 +640,165 @@ async fn concurrent_increments_all_commit_and_none_is_lost() {
     let (_, out) = app.cursor("RETURN DOCUMENT('doctors/bob').shifts").await;
     assert_eq!(out["result"], json!([committed]));
 }
+
+// ── A transaction reads its own writes (card #847) ──────────────────────────
+
+/// `doctors` with an index on `ward`, and four more doctors in two wards.
+async fn wards(app: &App) {
+    let (status, out) = app
+        .call(
+            "POST",
+            &format!("/_api/database/{DB}/index/doctors"),
+            json!({"name": "by_ward", "fields": ["ward"], "type": "persistent"}),
+        )
+        .await;
+    assert!(status.is_success(), "index: {out}");
+    let (_, out) = app
+        .call(
+            "POST",
+            &format!("/_api/database/{DB}/explain"),
+            json!({"query": "FOR d IN doctors FILTER d.ward == 'a' RETURN d"}),
+        )
+        .await;
+    assert!(
+        out.to_string().contains("by_ward"),
+        "the index is not used: {out}"
+    );
+    let (status, out) = app
+        .cursor(
+            "FOR d IN [{_key: 'carl', ward: 'a', shifts: 1}, {_key: 'dora', ward: 'a', shifts: 2},
+                       {_key: 'emil', ward: 'b', shifts: 3}, {_key: 'fay', ward: 'b', shifts: 4}]
+               INSERT d INTO doctors",
+        )
+        .await;
+    assert!(status.is_success(), "seeding wards: {out}");
+}
+
+/// After an insert, an update and a delete in a transaction, every way of
+/// reading the collection in that transaction answers as if they were
+/// stored: a scan, a FILTER an index serves, a sorted page, a count, a
+/// COLLECT, a join and a subquery. Outside the transaction nothing has
+/// changed, and after the commit both agree.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_transaction_reads_its_own_writes_by_scan_and_by_index() {
+    for level in ["read_committed", "repeatable_read", "serializable"] {
+        let app = App::new().await;
+        wards(&app).await;
+        let reads: [(&str, Value, Value); 9] = [
+            (
+                "FOR d IN doctors FILTER d.ward == 'a' SORT d._key RETURN d._key",
+                json!(["carl", "dora"]),
+                json!(["dora", "emil", "gus"]),
+            ),
+            (
+                "FOR d IN doctors FILTER d.ward == 'b' RETURN d._key",
+                json!(["emil", "fay"]),
+                json!(["fay"]),
+            ),
+            (
+                "FOR d IN doctors FILTER d.ward != null SORT d.shifts DESC LIMIT 2 RETURN [d._key, d.shifts]",
+                json!([["fay", 4], ["emil", 3]]),
+                json!([["emil", 30], ["gus", 9]]),
+            ),
+            (
+                "FOR d IN doctors SORT d.shifts DESC LIMIT 1 RETURN d._key",
+                json!(["fay"]),
+                json!(["emil"]),
+            ),
+            (
+                "FOR d IN doctors FILTER d.ward == 'a' COLLECT WITH COUNT INTO n RETURN n",
+                json!([2]),
+                json!([3]),
+            ),
+            (
+                "RETURN LENGTH(FOR d IN doctors FILTER d.ward == 'a' RETURN 1)",
+                json!([2]),
+                json!([3]),
+            ),
+            (
+                "FOR d IN doctors FILTER d.ward != null COLLECT w = d.ward AGGREGATE s = SUM(d.shifts) SORT w RETURN [w, s]",
+                json!([["a", 3], ["b", 7]]),
+                json!([["a", 41], ["b", 4]]),
+            ),
+            (
+                "RETURN COLLECTION_COUNT('doctors')",
+                json!([6]),
+                json!([6]),
+            ),
+            (
+                "FOR k IN ['carl', 'emil', 'gus'] LET hit = (FOR d IN doctors FILTER d._key == k RETURN d.ward) RETURN hit",
+                json!([["a"], ["b"], []]),
+                json!([[], ["a"], ["a"]]),
+            ),
+        ];
+
+        let tx = app.begin(level).await;
+        app.rows(
+            &tx,
+            "INSERT {_key: 'gus', ward: 'a', shifts: 9} INTO doctors",
+        )
+        .await;
+        app.rows(
+            &tx,
+            "FOR d IN doctors FILTER d._key == 'emil' UPDATE d WITH {ward: 'a', shifts: 30} IN doctors",
+        )
+        .await;
+        app.rows(&tx, "REMOVE 'carl' IN doctors").await;
+
+        for (query, before, after) in &reads {
+            assert_eq!(
+                &app.rows(&tx, query).await,
+                after,
+                "{level}, in the transaction: {query}"
+            );
+            let (_, out) = app.cursor(query).await;
+            assert_eq!(&out["result"], before, "{level}, outside it: {query}");
+        }
+        assert_eq!(app.commit(&tx).await, StatusCode::OK, "{level}");
+        for (query, _, after) in &reads {
+            let (_, out) = app.cursor(query).await;
+            assert_eq!(&out["result"], after, "{level}, committed: {query}");
+        }
+    }
+}
+
+/// A statement that reads by index what the transaction wrote, then writes
+/// from it: the update finds the inserted document, and a second
+/// transaction-local delete is not seen again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_write_in_a_transaction_follows_its_earlier_writes() {
+    let app = App::new().await;
+    wards(&app).await;
+    let tx = app.begin("read_committed").await;
+    app.rows(
+        &tx,
+        "INSERT {_key: 'gus', ward: 'c', shifts: 0} INTO doctors",
+    )
+    .await;
+    assert_eq!(
+        app.rows(
+            &tx,
+            "FOR d IN doctors FILTER d.ward == 'c' UPDATE d WITH {shifts: d.shifts + 5} IN doctors RETURN NEW.shifts",
+        )
+        .await,
+        json!([5])
+    );
+    app.rows(
+        &tx,
+        "FOR d IN doctors FILTER d.ward == 'b' REMOVE d IN doctors",
+    )
+    .await;
+    assert_eq!(
+        app.rows(
+            &tx,
+            "FOR d IN doctors FILTER d.ward == 'b' REMOVE d IN doctors RETURN OLD._key"
+        )
+        .await,
+        json!([])
+    );
+    assert_eq!(app.commit(&tx).await, StatusCode::OK);
+    let (_, out) = app
+        .cursor("FOR d IN doctors FILTER d.ward != null SORT d._key RETURN [d._key, d.shifts]")
+        .await;
+    assert_eq!(out["result"], json!([["carl", 1], ["dora", 2], ["gus", 5]]));
+}

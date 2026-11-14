@@ -281,7 +281,10 @@ impl<'a> QueryExecutor<'a> {
 
                     // The index read returns unfiltered rows; a collection
                     // under a row policy takes the scan below (audit H2).
-                    if is_collection && !self.row_policy_applies(&for_clause.collection) {
+                    if is_collection
+                        && !self.row_policy_applies(&for_clause.collection)
+                        && !self.tx_wrote(&for_clause.collection)
+                    {
                         if let Some(index_filter) = index_filter.as_deref() {
                             // Index path only if *every* row's filter is
                             // indexable — mixing index and scan per-row would

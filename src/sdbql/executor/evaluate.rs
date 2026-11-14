@@ -992,7 +992,9 @@ impl<'a> QueryExecutor<'a> {
                 }
                 // The cached count is not a read of stored keys.
                 collection.note_range_read();
-                let count = collection.count();
+                // Plus what the transaction inserted, minus what it deleted.
+                let count =
+                    (collection.count() as i64 + self.tx_count_delta(collection_name)).max(0);
                 Ok(Value::Number(serde_json::Number::from(count)))
             }
 

@@ -341,6 +341,19 @@ impl<'a> QueryExecutor<'a> {
         // the full scan, just without holding it. Only the plain path can do
         // this: valid-time and row-policy filtering happen after the scan, and
         // a capped scan would under-fill them.
+        // A transaction that wrote to the collection reads its own writes:
+        // the whole scan with them laid over it, then the filters and the
+        // LIMIT, which cannot be pushed under the overlay.
+        if self.tx_wrote(&source_coll) {
+            let cap = self.max_intermediate_rows.saturating_add(1);
+            let docs = self.overlay_staged(&collection, collection.scan_values(Some(cap)));
+            let docs = self.apply_valid_time(for_clause, docs, ctx)?;
+            let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
+            if let Some(n) = limit {
+                docs.truncate(n);
+            }
+            return Ok(docs);
+        }
         if !filtered {
             let cap = self.max_intermediate_rows.saturating_add(1);
             let limit = Some(limit.map_or(cap, |n| n.min(cap)));

@@ -174,7 +174,7 @@ impl QueryExecutor<'_> {
             return Ok(SmallRaw::Ordinary);
         };
         let name = &for_clause.collection;
-        if self.row_policy_applies(name) {
+        if self.row_policy_applies(name) || self.tx_wrote(name) {
             return Ok(SmallRaw::Ordinary);
         }
         let Ok(database) = self.storage.get_database(db_name) else {

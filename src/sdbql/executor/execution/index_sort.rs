@@ -288,7 +288,7 @@ impl QueryExecutor<'_> {
         let plan = sort_plan(query)?;
         let name = &plan.for_clause.collection;
         // A LET-bound array of that name is iterated, not the collection.
-        if bindings.contains_key(name) || self.row_policy_applies(name) {
+        if bindings.contains_key(name) || self.row_policy_applies(name) || self.tx_wrote(name) {
             return None;
         }
         let db_name = self.database.as_ref()?;

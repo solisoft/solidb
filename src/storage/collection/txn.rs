@@ -730,6 +730,32 @@ impl Collection {
             .map(|staged| staged.map(|value| Self::txn_document(&self.name, key, &value)))
     }
 
+    /// Everything `tx` has staged for this collection, by key: the document
+    /// as a scan would return it, or `None` for a key it deleted.
+    pub(crate) fn tx_staged_documents(
+        &self,
+        tx: &Transaction,
+    ) -> std::collections::BTreeMap<String, Option<Value>> {
+        let (db_name, coll_name) = self.name.split_once(':').unwrap_or(("", &self.name));
+        let mut staged = std::collections::BTreeMap::new();
+        for op in &tx.operations {
+            if op.database() != db_name || op.collection() != coll_name {
+                continue;
+            }
+            let value = match op {
+                Operation::Insert { data, .. } => Some(data),
+                Operation::Update { new_data, .. } => Some(new_data),
+                Operation::Delete { .. } => None,
+                _ => continue,
+            };
+            staged.insert(
+                op.key().to_string(),
+                value.map(|v| Self::txn_document(&self.name, op.key(), v).into_value()),
+            );
+        }
+        staged
+    }
+
     /// Check what a transaction read from this collection against what is
     /// stored now. The caller holds the write locks of every key in
     /// `points`, and the collection's commit gate exclusively when the

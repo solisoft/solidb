@@ -481,7 +481,8 @@ impl<'a> QueryExecutor<'a> {
         &self,
         collection: &crate::storage::collection::Collection,
     ) -> DbResult<Vec<serde_json::Value>> {
-        let docs = collection.scan_values(self.scan_cap());
+        // In a transaction, with what it wrote to the collection laid over.
+        let docs = self.overlay_staged(collection, collection.scan_values(self.scan_cap()));
         self.check_budget(docs.len())?;
         Ok(docs)
     }
