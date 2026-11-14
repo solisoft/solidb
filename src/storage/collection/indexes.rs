@@ -1603,6 +1603,47 @@ impl Collection {
         Some(docs)
     }
 
+    /// [`Self::index_lookup_eq`] with only `fields` of each document decoded
+    /// (the others are stepped over in the stored bytes), as values: for a
+    /// caller that reads one or two fields of many documents, such as the
+    /// ends of a vertex's edges.
+    pub fn index_lookup_eq_projected(
+        &self,
+        field: &str,
+        value: &Value,
+        fields: &[String],
+    ) -> Option<Vec<Value>> {
+        let index = self.get_single_field_index_for_field(field)?;
+        if value.is_null() && index.sparse {
+            return None;
+        }
+        if self.filter_rules_out(&index, value) {
+            return Some(Vec::new());
+        }
+        let value_str = hex::encode(crate::storage::codec::encode_key(value));
+        let db = &self.db;
+        let cf = self.ks.handle(&self.db)?;
+        let prefix = format!("{}{}:{}:", IDX_PREFIX, index.name, value_str);
+        let doc_keys: Vec<Vec<u8>> = db
+            .prefix_iterator_ks(&cf, prefix.as_bytes())
+            .filter_map(|r| r.ok())
+            .take_while(|(k, _)| k.starts_with(prefix.as_bytes()))
+            .map(|(_, v)| Self::doc_key(&String::from_utf8_lossy(&v)))
+            .collect();
+        if doc_keys.is_empty() {
+            return Some(Vec::new());
+        }
+        Some(
+            db.multi_get_pinned_ks(&cf, &doc_keys)
+                .into_iter()
+                .filter_map(|found| {
+                    crate::storage::serializer::deserialize_doc_projected(&found.ok()??, fields)
+                        .ok()
+                })
+                .collect(),
+        )
+    }
+
     /// The index-entry prefix of `field == value`, as [`Self::index_lookup_eq`]
     /// reads it.
     fn index_eq_prefix(&self, field: &str, value: &Value) -> EqPrefix {

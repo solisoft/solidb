@@ -1468,6 +1468,92 @@ impl<'a> QueryExecutor<'a> {
                         let mut queue: std::collections::VecDeque<TraversalFrame> =
                             std::collections::VecDeque::new();
                         visited.insert(start_id.clone());
+
+                        // A breadth-first walk that keeps each vertex once
+                        // and no path goes level by level: the edges of a
+                        // whole level, then its vertices in one read per
+                        // collection, where the loop below reads a vertex,
+                        // then its edges, one at a time.
+                        if !dfs
+                            && opts.unique_vertices == UniqueVertices::Global
+                            && gt.prune.is_none()
+                            && !keeps_path
+                        {
+                            let mut level: Vec<(String, Option<Value>)> =
+                                vec![(start_id.clone(), None)];
+                            let mut depth = 0;
+                            loop {
+                                if depth >= gt.min_depth && depth <= gt.max_depth {
+                                    let docs = self.level_vertices(&level, &mut vertex_colls);
+                                    for ((id, edge), doc) in level.iter().zip(docs) {
+                                        let (Some(v), Some((coll_name, _))) =
+                                            (doc, id.split_once('/'))
+                                        else {
+                                            continue;
+                                        };
+                                        // A vertex hidden by its row policy
+                                        // is not emitted (audit H2).
+                                        if !self.row_policy_permits(coll_name, &v, ctx) {
+                                            continue;
+                                        }
+                                        let mut new_ctx = ctx.clone();
+                                        new_ctx.insert(gt.vertex_var.clone(), v);
+                                        if let Some(ref edge_var) = gt.edge_var {
+                                            new_ctx.insert(
+                                                edge_var.clone(),
+                                                edge.clone().unwrap_or(Value::Null),
+                                            );
+                                        }
+                                        new_rows.push(new_ctx);
+                                        if new_rows.len() % BUDGET_CHECK_INTERVAL == 0 {
+                                            self.check_budget(new_rows.len())?;
+                                        }
+                                    }
+                                }
+                                if depth >= gt.max_depth {
+                                    break;
+                                }
+                                let mut next: Vec<(String, Option<Value>)> = Vec::new();
+                                for (at, (id, _)) in level.iter().enumerate() {
+                                    if (at + 1).is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                                        self.check_budget(
+                                            new_rows.len().saturating_add(next.len()),
+                                        )?;
+                                    }
+                                    // The query reads nothing of the
+                                    // edges: only their far ends.
+                                    if !wants_edge {
+                                        if let Some(ends) = expander.far_ends(id) {
+                                            for to in ends {
+                                                if visited.insert(to.clone()) {
+                                                    next.push((to, None));
+                                                }
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                    for edge_doc in expander.edges_for(id) {
+                                        let Some(to) = expander.next_id_from_doc(&edge_doc, id)
+                                        else {
+                                            continue;
+                                        };
+                                        if visited.insert(to.clone()) {
+                                            next.push((
+                                                to,
+                                                wants_edge.then(|| edge_doc.to_value()),
+                                            ));
+                                        }
+                                    }
+                                }
+                                if next.is_empty() {
+                                    break;
+                                }
+                                level = next;
+                                depth += 1;
+                            }
+                            continue;
+                        }
+
                         queue.push_back((
                             start_id.clone(),
                             0,
@@ -1925,6 +2011,40 @@ fn vertex_id<'v>(value: &'v Value, which: &str) -> DbResult<&'v str> {
 }
 
 impl QueryExecutor<'_> {
+    /// The documents of a traversal level's vertices, in the level's order:
+    /// one batched read per vertex collection. `None` where the id names no
+    /// collection the executor may read, or no stored document.
+    fn level_vertices(
+        &self,
+        level: &[(String, Option<Value>)],
+        colls: &mut std::collections::HashMap<String, Option<crate::storage::Collection>>,
+    ) -> Vec<Option<Value>> {
+        let mut docs: Vec<Option<Value>> = vec![None; level.len()];
+        let mut by_coll: std::collections::HashMap<&str, Vec<(usize, &str)>> =
+            std::collections::HashMap::new();
+        for (at, (id, _)) in level.iter().enumerate() {
+            if let Some((coll, key)) = id.split_once('/') {
+                by_coll.entry(coll).or_default().push((at, key));
+            }
+        }
+        for (name, wanted) in by_coll {
+            if !colls.contains_key(name) {
+                colls.insert(name.to_string(), self.get_collection(name).ok());
+            }
+            let Some(Some(coll)) = colls.get(name) else {
+                continue;
+            };
+            let keys: Vec<&str> = wanted.iter().map(|(_, key)| *key).collect();
+            let Ok(found) = coll.get_values(&keys) else {
+                continue;
+            };
+            for ((at, _), doc) in wanted.iter().zip(found) {
+                docs[*at] = doc;
+            }
+        }
+        docs
+    }
+
     /// `id` without this executor's database, as edges name their vertices
     /// (see `graph::local_id`).
     fn local_vertex_id(&self, id: &str) -> String {

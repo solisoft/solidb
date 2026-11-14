@@ -150,6 +150,20 @@ impl Collection {
     }
 
     /// Get multiple documents by keys
+    /// [`Self::get_value`] for several keys, read as one batch: each
+    /// document, or `None` where it is absent or cannot be read, in the
+    /// order of `keys`.
+    pub fn get_values(&self, keys: &[&str]) -> DbResult<Vec<Option<Value>>> {
+        let cf = self.live_cf()?;
+        let doc_keys: Vec<Vec<u8>> = keys.iter().map(|key| Self::doc_key(key)).collect();
+        Ok(self
+            .db
+            .multi_get_pinned_ks(&cf, &doc_keys)
+            .into_iter()
+            .map(|found| deserialize_doc_as_value(&found.ok()??).ok())
+            .collect())
+    }
+
     pub fn get_many(&self, keys: &[String]) -> Vec<Document> {
         keys.iter().filter_map(|k| self.get(k).ok()).collect()
     }

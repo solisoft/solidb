@@ -185,6 +185,65 @@ impl<'e> EdgeExpander<'e> {
         Some(edges)
     }
 
+    /// The vertices on the far side of `current_id`'s edges, in the order
+    /// [`Self::edges_for`] gives the edges, reading only each edge's ends.
+    /// `None` when the edges come from the adjacency map rather than an
+    /// index: the caller then goes through [`Self::edges_for`].
+    pub(crate) fn far_ends(&self, current_id: &str) -> Option<Vec<String>> {
+        if self.adjacency.is_some() {
+            return None;
+        }
+        thread_local! {
+            static ENDS: [String; 3] =
+                ["_key".to_string(), "_from".to_string(), "_to".to_string()];
+        }
+        let current = self.local(current_id);
+        let lookup = |field: &str| -> Option<Vec<Value>> {
+            ENDS.with(|ends| {
+                let mut edges = self.edge.index_lookup_eq_projected(
+                    field,
+                    &Value::String(current.to_string()),
+                    ends,
+                )?;
+                if !self.db_prefix.is_empty() {
+                    let with_db = Value::String(format!("{}{}", self.db_prefix, current));
+                    edges.extend(
+                        self.edge
+                            .index_lookup_eq_projected(field, &with_db, ends)
+                            .unwrap_or_default(),
+                    );
+                }
+                Some(edges)
+            })
+        };
+        let edges = match self.direction {
+            EdgeDirection::Outbound => lookup("_from")?,
+            EdgeDirection::Inbound => lookup("_to")?,
+            EdgeDirection::Any => {
+                let mut seen: HashSet<String> = HashSet::new();
+                let mut edges = lookup("_from")?;
+                edges.extend(lookup("_to")?);
+                edges.retain(|e| match e.get("_key").and_then(Value::as_str) {
+                    Some(key) => seen.insert(key.to_string()),
+                    None => true,
+                });
+                edges
+            }
+        };
+        Some(
+            edges
+                .iter()
+                .filter_map(|e| {
+                    self.resolve_next(
+                        e.get("_from").and_then(Value::as_str),
+                        e.get("_to").and_then(Value::as_str),
+                        current,
+                    )
+                })
+                .collect(),
+        )
+    }
+
     /// Edges incident to `current_id` in the configured direction.
     pub(crate) fn edges_for(&self, current_id: &str) -> Vec<Document> {
         let current_id = self.local(current_id);
