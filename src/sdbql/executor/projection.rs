@@ -96,6 +96,24 @@ pub(crate) fn scan_projection(query: &Query) -> Option<(&ForClause, Vec<String>)
 /// the walk stops there; with a path variable the path holds the vertices
 /// themselves.
 pub(crate) fn traversal_projection(query: &Query) -> Option<(&GraphTraversalClause, Vec<String>)> {
+    let traversal = opening_traversal(query)?;
+    let fields = traversal_fields(query, traversal, traversal.vertex_var.as_str())?;
+    Some((traversal, fields))
+}
+
+/// [`traversal_projection`] for the edge variable: the fields of the edges
+/// the query reads, when it binds them and reads them only that way.
+pub(crate) fn traversal_edge_projection(
+    query: &Query,
+) -> Option<(&GraphTraversalClause, Vec<String>)> {
+    let traversal = opening_traversal(query)?;
+    let fields = traversal_fields(query, traversal, traversal.edge_var.as_deref()?)?;
+    Some((traversal, fields))
+}
+
+/// The traversal that opens `query`'s body, when the query is plain enough
+/// for the walk of [`traversal_fields`].
+fn opening_traversal(query: &Query) -> Option<&GraphTraversalClause> {
     if !query.set_operations.is_empty()
         || !query.join_clauses.is_empty()
         || query.with_clause.is_some()
@@ -106,15 +124,27 @@ pub(crate) fn traversal_projection(query: &Query) -> Option<(&GraphTraversalClau
     {
         return None;
     }
-    let (first, rest) = query.body_clauses.split_first()?;
-    let BodyClause::GraphTraversal(traversal) = first else {
+    let BodyClause::GraphTraversal(traversal) = query.body_clauses.first()? else {
         return None;
     };
-    if traversal.path_var.is_some() {
+    // A path holds the vertices and edges themselves.
+    if traversal.path_var.is_some()
+        || traversal.edge_var.as_deref() == Some(traversal.vertex_var.as_str())
+    {
         return None;
     }
-    let var = traversal.vertex_var.as_str();
-    if var.starts_with('@') || traversal.edge_var.as_deref() == Some(var) {
+    Some(traversal)
+}
+
+/// The fields of `var` (the traversal's vertex or edge variable) that
+/// `query` reads, sorted and deduplicated; `None` when it reads `var` any
+/// other way.
+fn traversal_fields(
+    query: &Query,
+    traversal: &GraphTraversalClause,
+    var: &str,
+) -> Option<Vec<String>> {
+    if var.starts_with('@') {
         return None;
     }
     let mut fields = Vec::new();
@@ -124,9 +154,9 @@ pub(crate) fn traversal_projection(query: &Query) -> Option<(&GraphTraversalClau
     let done = |mut fields: Vec<String>| {
         fields.sort_unstable();
         fields.dedup();
-        Some((traversal, fields))
+        Some(fields)
     };
-    for clause in rest {
+    for clause in &query.body_clauses[1..] {
         match clause {
             BodyClause::Filter(f) => collect(&f.expression, var, &mut fields)?,
             BodyClause::Let(l) if l.variable != var => collect(&l.expression, var, &mut fields)?,
@@ -139,7 +169,7 @@ pub(crate) fn traversal_projection(query: &Query) -> Option<(&GraphTraversalClau
                         collect(argument, var, &mut fields)?;
                     }
                 }
-                // Nothing after it can read the vertex.
+                // Nothing after it can read the variable.
                 return done(fields);
             }
             _ => return None,

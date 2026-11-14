@@ -53,6 +53,8 @@ pub(crate) mod neighbourhoods {
 
     pub(crate) type Ends = Arc<[Box<str>]>;
     pub(crate) type Neighbourhoods = Kept<Ends>;
+    /// `(far end, edge key)` of each of a vertex's edges.
+    pub(crate) type Steps = Arc<[(Box<str>, Box<str>)]>;
     /// The documents of a collection as one projection of a traversal reads
     /// them, kept the same way.
     pub(crate) type Vertices = Kept<Arc<serde_json::Value>>;
@@ -83,6 +85,7 @@ pub(crate) mod neighbourhoods {
     /// Keyed by the collection's shared write state (its address, which the
     /// entry keeps alive) and what is kept: the direction, or the fields.
     static ENDS: Registry<Ends> = once_cell::sync::Lazy::new(DashMap::new);
+    static STEPS: Registry<Steps> = once_cell::sync::Lazy::new(DashMap::new);
     static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
 
     fn open<V>(
@@ -117,6 +120,11 @@ pub(crate) mod neighbourhoods {
     /// generation, or `None` when the cache is off.
     pub(crate) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
         open(&ENDS, state, direction as u64)
+    }
+
+    /// The same with the key of each edge.
+    pub(crate) fn steps(state: &Arc<KsState>, direction: u8) -> Option<Arc<Kept<Steps>>> {
+        open(&STEPS, state, direction as u64)
     }
 
     /// The documents of this collection as read with `fields` (`None`: whole).
@@ -382,6 +390,69 @@ impl<'e> EdgeExpander<'e> {
             cache.put(current, &ends, size);
         }
         Some(ends)
+    }
+
+    /// The far end and the key of each of `current_id`'s edges, in key
+    /// order, from the two-field indexes (and kept between queries as
+    /// [`Self::far_ends`] is). `None` when the collection has none for
+    /// this direction.
+    pub(crate) fn far_steps(&self, current_id: &str) -> Option<neighbourhoods::Steps> {
+        let (out, inn) = match self.direction {
+            EdgeDirection::Outbound => (self.out_pairs, false),
+            EdgeDirection::Inbound => (false, self.in_pairs),
+            EdgeDirection::Any => (self.out_pairs, self.in_pairs),
+        };
+        if self.adjacency.is_some()
+            || !(out || inn)
+            || (matches!(self.direction, EdgeDirection::Any) && !(out && inn))
+        {
+            return None;
+        }
+        let current = self.local(current_id);
+        let kind = match self.direction {
+            EdgeDirection::Outbound => 0,
+            EdgeDirection::Inbound => 1,
+            EdgeDirection::Any => 2,
+        };
+        let kept = neighbourhoods::steps(self.edge.ks.state(), kind);
+        if let Some(found) = kept.as_ref().and_then(|kept| kept.get(current)) {
+            return Some(found);
+        }
+        let sorted = |field: &str| -> Option<Vec<(String, String)>> {
+            let mut pairs = self.pairs(field, current)?;
+            pairs.sort_unstable_by(|a, b| a.1.cmp(&b.1));
+            Some(pairs)
+        };
+        let mut pairs = Vec::new();
+        if out {
+            pairs.extend(sorted("_from")?);
+        }
+        if inn {
+            let mut seen: HashSet<String> = pairs.iter().map(|(_, key)| key.clone()).collect();
+            // A self-loop is in both lists.
+            pairs.extend(
+                sorted("_to")?
+                    .into_iter()
+                    .filter(|(_, key)| seen.insert(key.clone())),
+            );
+        }
+        let steps: neighbourhoods::Steps = pairs
+            .into_iter()
+            .map(|(end, key)| (self.local(&end).into(), key.into_boxed_str()))
+            .collect();
+        if let Some(kept) = &kept {
+            let size = steps
+                .iter()
+                .map(|(end, key)| end.len() + key.len() + 32)
+                .sum();
+            kept.put(current, &steps, size);
+        }
+        Some(steps)
+    }
+
+    /// The collection the edges are in.
+    pub(crate) fn edges(&self) -> &Collection {
+        self.edge
     }
 
     /// [`Self::far_ends`], read from the index.

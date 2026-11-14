@@ -1451,6 +1451,7 @@ impl<'a> QueryExecutor<'a> {
                     // The fields of a vertex the query reads, when it reads
                     // nothing else of it: the rest is not decoded.
                     let vertex_fields = self.traversal_projection_for(gt);
+                    let edge_fields = self.traversal_edge_projection_for(gt);
                     // One handle per vertex collection, not one lookup per vertex.
                     let mut vertex_colls: std::collections::HashMap<
                         String,
@@ -1542,24 +1543,45 @@ impl<'a> QueryExecutor<'a> {
                                 // where they lead.
                                 let edge_docs = reads_edge && depth + 1 >= gt.min_depth;
                                 let mut next: Vec<Frame> = Vec::new();
+                                // Frames of `next` whose edge is still to
+                                // be read, with its key: one batch for the
+                                // level.
+                                let mut edges_to_read: Vec<(usize, Box<str>)> = Vec::new();
                                 for (at, (id, _, trail)) in level.iter().enumerate() {
                                     if (at + 1).is_multiple_of(BUDGET_CHECK_INTERVAL) {
                                         self.check_budget(
                                             new_rows.len().saturating_add(next.len()),
                                         )?;
                                     }
+                                    // Where in `next` the frame for `to`
+                                    // went, when `to` is walked.
                                     let mut admit = |to: &str, edge: Option<Value>| {
                                         if by_path {
-                                            if !trail.iter().any(|seen| seen == to) {
-                                                let mut longer = trail.clone();
-                                                longer.push(to.to_string());
-                                                next.push((to.to_string(), edge, longer));
+                                            if trail.iter().any(|seen| seen == to) {
+                                                return None;
                                             }
-                                        } else if !visited.contains(to) {
+                                            let mut longer = trail.clone();
+                                            longer.push(to.to_string());
+                                            next.push((to.to_string(), edge, longer));
+                                        } else {
+                                            if visited.contains(to) {
+                                                return None;
+                                            }
                                             visited.insert(to.to_string());
                                             next.push((to.to_string(), edge, Vec::new()));
                                         }
+                                        Some(next.len() - 1)
                                     };
+                                    if edge_docs {
+                                        if let Some(steps) = expander.far_steps(id) {
+                                            for (to, key) in steps.iter() {
+                                                if let Some(at) = admit(to, None) {
+                                                    edges_to_read.push((at, key.clone()));
+                                                }
+                                            }
+                                            continue;
+                                        }
+                                    }
                                     if !edge_docs {
                                         if let Some(ends) = expander.far_ends(id) {
                                             for to in ends.iter() {
@@ -1574,6 +1596,24 @@ impl<'a> QueryExecutor<'a> {
                                             continue;
                                         };
                                         admit(&to, edge_docs.then(|| edge_doc.to_value()));
+                                    }
+                                }
+                                if !edges_to_read.is_empty() {
+                                    let keys: Vec<(usize, &str)> = edges_to_read
+                                        .iter()
+                                        .map(|(at, key)| (*at, key.as_ref()))
+                                        .collect();
+                                    let mut edges: Vec<Option<Value>> = vec![None; next.len()];
+                                    self.read_kept(
+                                        expander.edges(),
+                                        keys,
+                                        edge_fields.as_deref(),
+                                        &mut edges,
+                                    );
+                                    for ((_, edge, _), read) in next.iter_mut().zip(edges) {
+                                        if read.is_some() {
+                                            *edge = read;
+                                        }
                                     }
                                 }
                                 if next.is_empty() {
@@ -2100,43 +2140,57 @@ impl QueryExecutor<'_> {
             };
             // A row policy reads the whole document.
             let fields = fields.filter(|_| !self.row_policy_applies(name));
-            // What earlier queries read of these vertices, while the
-            // collection has not been written since.
-            let kept = super::graph::neighbourhoods::vertices(coll.ks.state(), fields);
-            let mut missing: Vec<(usize, &str)> = Vec::new();
-            match &kept {
-                Some(kept) => {
-                    coll.note_range_read();
-                    for (at, key) in &wanted {
-                        match kept.get(key) {
-                            Some(doc) => docs[*at] = Some((*doc).clone()),
-                            None => missing.push((*at, key)),
-                        }
-                    }
-                }
-                None => missing = wanted,
-            }
-            if missing.is_empty() {
-                continue;
-            }
-            let keys: Vec<&str> = missing.iter().map(|(_, key)| *key).collect();
-            let found = match fields {
-                Some(fields) => coll.get_values_projected(&keys, fields),
-                None => coll.get_values(&keys),
-            };
-            let Ok(found) = found else {
-                continue;
-            };
-            for ((at, key), doc) in missing.iter().zip(found) {
-                if let (Some(kept), Some(doc)) = (&kept, &doc) {
-                    // About what its JSON text would take.
-                    let size = 48 * doc.as_object().map_or(1, |o| o.len().max(1));
-                    kept.put(key, &std::sync::Arc::new(doc.clone()), size);
-                }
-                docs[*at] = doc;
-            }
+            self.read_kept(coll, wanted, fields, &mut docs);
         }
         docs
+    }
+
+    /// Read the documents `wanted` (position in `docs`, key) of `coll` into
+    /// `docs`, with `fields` only when given: from what earlier queries
+    /// read of them while the collection has not been written since, else
+    /// from storage in one batch.
+    fn read_kept(
+        &self,
+        coll: &crate::storage::Collection,
+        wanted: Vec<(usize, &str)>,
+        fields: Option<&[String]>,
+        docs: &mut [Option<Value>],
+    ) {
+        let kept = super::graph::neighbourhoods::vertices(coll.ks.state(), fields);
+        let mut missing: Vec<(usize, &str)> = Vec::new();
+        match &kept {
+            Some(kept) => {
+                // Not a read of stored keys: the range rule, for a
+                // transaction that checks its reads.
+                coll.note_range_read();
+                for (at, key) in &wanted {
+                    match kept.get(key) {
+                        Some(doc) => docs[*at] = Some((*doc).clone()),
+                        None => missing.push((*at, key)),
+                    }
+                }
+            }
+            None => missing = wanted,
+        }
+        if missing.is_empty() {
+            return;
+        }
+        let keys: Vec<&str> = missing.iter().map(|(_, key)| *key).collect();
+        let found = match fields {
+            Some(fields) => coll.get_values_projected(&keys, fields),
+            None => coll.get_values(&keys),
+        };
+        let Ok(found) = found else {
+            return;
+        };
+        for ((at, key), doc) in missing.iter().zip(found) {
+            if let (Some(kept), Some(doc)) = (&kept, &doc) {
+                // About what its JSON text would take.
+                let size = 48 * doc.as_object().map_or(1, |o| o.len().max(1));
+                kept.put(key, &std::sync::Arc::new(doc.clone()), size);
+            }
+            docs[*at] = doc;
+        }
     }
 
     /// `id` without this executor's database, as edges name their vertices

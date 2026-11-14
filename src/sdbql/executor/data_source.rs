@@ -204,6 +204,33 @@ impl<'a> QueryExecutor<'a> {
         );
     }
 
+    /// The same for its edges, under the address next to the clause's.
+    pub(super) fn record_traversal_edge_projection(
+        &self,
+        traversal: &GraphTraversalClause,
+        fields: Vec<String>,
+    ) {
+        self.caches.scan_projections.lock().insert(
+            traversal as *const GraphTraversalClause as usize + 1,
+            (format!("{}#edge", traversal.edge_collection), fields.into()),
+        );
+    }
+
+    /// The fields recorded for `traversal`'s edges, if any.
+    pub(super) fn traversal_edge_projection_for(
+        &self,
+        traversal: &GraphTraversalClause,
+    ) -> Option<std::sync::Arc<[String]>> {
+        self.caches
+            .scan_projections
+            .lock()
+            .get(&(traversal as *const GraphTraversalClause as usize + 1))
+            .filter(|(collection, _)| {
+                collection.strip_suffix("#edge") == Some(traversal.edge_collection.as_str())
+            })
+            .map(|(_, fields)| fields.clone())
+    }
+
     /// The fields recorded for `traversal`'s vertices, if any.
     pub(super) fn traversal_projection_for(
         &self,
