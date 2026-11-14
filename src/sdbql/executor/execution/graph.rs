@@ -37,194 +37,7 @@ pub(crate) struct Reached {
     pub depth: usize,
 }
 
-/// Where each vertex's edges lead, kept between queries: one map per edge
-/// collection and direction, valid for one write generation of the
-/// collection. Any committed write to it (a generation move, what
-/// transactions already compare) makes the whole map stale, so a reader
-/// never sees a neighbourhood older than the last write it could have
-/// seen through the query cache. Filled as vertices are expanded; a graph
-/// that is read much more than it is written is then walked without
-/// touching storage, as the databases that keep their graph in memory do.
-pub(crate) mod neighbourhoods {
-    use crate::storage::keyspace::KsState;
-    use dashmap::DashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
-
-    pub(crate) type Ends = Arc<[Arc<str>]>;
-    pub(crate) type Neighbourhoods = Kept<Ends>;
-    /// `(far end, edge key)` of each of a vertex's edges.
-    pub(crate) type Steps = Arc<[(Arc<str>, Box<str>)]>;
-    /// The documents of a collection as one projection of a traversal reads
-    /// them, kept the same way.
-    pub(crate) type Vertices = Kept<Arc<serde_json::Value>>;
-
-    /// Values read from a collection, by key, valid for one write
-    /// generation of it.
-    pub(crate) struct Kept<V> {
-        state: Arc<KsState>,
-        generation: u64,
-        values: DashMap<Box<str>, V, foldhash::fast::RandomState>,
-        bytes: AtomicUsize,
-    }
-
-    /// `SOLIDB_GRAPH_CACHE_MB`: what one such map may hold (default 256,
-    /// `0` turns them off).
-    fn budget() -> usize {
-        static BUDGET: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| {
-            std::env::var("SOLIDB_GRAPH_CACHE_MB")
-                .ok()
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(256)
-                << 20
-        });
-        *BUDGET
-    }
-
-    type Registry<V> = once_cell::sync::Lazy<DashMap<(usize, u64), Arc<Kept<V>>>>;
-    /// Keyed by the collection's shared write state (its address, which the
-    /// entry keeps alive) and what is kept: the direction, or the fields.
-    static ENDS: Registry<Ends> = once_cell::sync::Lazy::new(DashMap::new);
-    static STEPS: Registry<Steps> = once_cell::sync::Lazy::new(DashMap::new);
-    static FACTS: Registry<bool> = once_cell::sync::Lazy::new(DashMap::new);
-    static AROUND: Registry<Arc<Around>> = once_cell::sync::Lazy::new(DashMap::new);
-
-    /// A vertex's neighbours, each with its document as one projection
-    /// reads it: what a walk needs of a whole neighbourhood, in one piece.
-    /// The documents belong to other collections than the edges, so the
-    /// entry also records the write generation of each of them when it was
-    /// read, and is used only while none has moved.
-    pub(crate) type Step = (
-        Arc<str>,
-        Option<Arc<serde_json::Value>>,
-        Option<Arc<serde_json::Value>>,
-    );
-
-    pub(crate) struct Around {
-        stamps: Box<[(Arc<KsState>, u64)]>,
-        /// (neighbour, its document, the edge that leads there when the
-        /// entry was built for a query that reads the edges)
-        pub(crate) ends: Box<[Step]>,
-    }
-
-    impl Around {
-        pub(crate) fn new(stamps: Vec<(Arc<KsState>, u64)>, ends: Vec<Step>) -> Self {
-            Self {
-                stamps: stamps.into(),
-                ends: ends.into(),
-            }
-        }
-
-        /// Whether the vertex collections have not been written since.
-        pub(crate) fn current(&self) -> bool {
-            self.stamps.iter().all(|(state, generation)| {
-                !state.is_dead() && state.write_generation() == *generation
-            })
-        }
-    }
-
-    /// The neighbourhoods-with-documents of this edge collection in
-    /// `direction`, for the vertex fields `fields` and, when the query
-    /// reads the edges, their fields `edges`.
-    pub(crate) fn around(
-        state: &Arc<KsState>,
-        direction: u8,
-        fields: Option<&[String]>,
-        edges: Option<Option<&[String]>>,
-    ) -> Option<Arc<Kept<Arc<Around>>>> {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        fields.hash(&mut hasher);
-        edges.hash(&mut hasher);
-        open(&AROUND, state, (hasher.finish() << 8) | direction as u64)
-    }
-    static VERTICES: Registry<Arc<serde_json::Value>> = once_cell::sync::Lazy::new(DashMap::new);
-
-    fn open<V>(
-        registry: &DashMap<(usize, u64), Arc<Kept<V>>>,
-        state: &Arc<KsState>,
-        kind: u64,
-    ) -> Option<Arc<Kept<V>>> {
-        if budget() == 0 || state.is_dead() {
-            return None;
-        }
-        let key = (Arc::as_ptr(state) as usize, kind);
-        let generation = state.write_generation();
-        if let Some(found) = registry.get(&key) {
-            if found.generation == generation {
-                return Some(found.clone());
-            }
-        }
-        // A new generation, or a first use: start empty. Entries of dropped
-        // collections go at the same time.
-        registry.retain(|_, kept| !kept.state.is_dead());
-        let fresh = Arc::new(Kept {
-            state: state.clone(),
-            generation,
-            values: DashMap::with_hasher(foldhash::fast::RandomState::default()),
-            bytes: AtomicUsize::new(0),
-        });
-        registry.insert(key, fresh.clone());
-        Some(fresh)
-    }
-
-    /// The neighbourhoods of this collection in `direction` at its current
-    /// generation, or `None` when the cache is off.
-    pub(crate) fn of(state: &Arc<KsState>, direction: u8) -> Option<Arc<Neighbourhoods>> {
-        open(&ENDS, state, direction as u64)
-    }
-
-    /// A yes-or-no fact about the collection's content (`which` tells them
-    /// apart), computed once per write generation.
-    pub(crate) fn fact(state: &Arc<KsState>, which: u64, compute: impl FnOnce() -> bool) -> bool {
-        let Some(kept) = open(&FACTS, state, which) else {
-            return compute();
-        };
-        kept.get("").unwrap_or_else(|| {
-            let fact = compute();
-            kept.put("", &fact, 1);
-            fact
-        })
-    }
-
-    /// The same with the key of each edge.
-    pub(crate) fn steps(state: &Arc<KsState>, direction: u8) -> Option<Arc<Kept<Steps>>> {
-        open(&STEPS, state, direction as u64)
-    }
-
-    /// The documents of this collection as read with `fields` (`None`: whole).
-    pub(crate) fn vertices(
-        state: &Arc<KsState>,
-        fields: Option<&[String]>,
-    ) -> Option<Arc<Vertices>> {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        fields.hash(&mut hasher);
-        open(&VERTICES, state, hasher.finish())
-    }
-
-    impl<V: Clone> Kept<V> {
-        pub(crate) fn get(&self, key: &str) -> Option<V> {
-            self.values.get(key).map(|value| value.clone())
-        }
-
-        /// Keep `value` (of about `size` bytes) for `key`, unless the
-        /// collection has been written since this map was opened (what was
-        /// just read may then be newer than the map says) or the map is
-        /// full.
-        pub(crate) fn put(&self, key: &str, value: &V, size: usize) {
-            if self.state.write_generation() != self.generation {
-                return;
-            }
-            let size = size + key.len() + 64;
-            if self.bytes.fetch_add(size, Ordering::Relaxed) + size > budget() {
-                self.bytes.fetch_sub(size, Ordering::Relaxed);
-                return;
-            }
-            self.values.insert(key.into(), value.clone());
-        }
-    }
-}
+pub(crate) use crate::storage::kept as neighbourhoods;
 
 pub(crate) struct EdgeExpander<'e> {
     edge: &'e Collection,
@@ -449,6 +262,8 @@ impl<'e> EdgeExpander<'e> {
         if let Some(found) = self.cached.as_ref().and_then(|cache| cache.get(current)) {
             return Some(found);
         }
+        // Noted before the index is read: see `storage::kept`.
+        let seen = self.cached.as_ref().map(|cache| cache.epoch());
         let ends: neighbourhoods::Ends = self
             .read_far_ends(current)?
             .into_iter()
@@ -456,7 +271,7 @@ impl<'e> EdgeExpander<'e> {
             .collect();
         if let Some(cache) = &self.cached {
             let size = ends.iter().map(|end| end.len() + 16).sum();
-            cache.put(current, &ends, size);
+            cache.put(current, &ends, size, seen.unwrap_or_default());
         }
         Some(ends)
     }
@@ -487,6 +302,7 @@ impl<'e> EdgeExpander<'e> {
         if let Some(found) = kept.as_ref().and_then(|kept| kept.get(current)) {
             return Some(found);
         }
+        let seen = kept.as_ref().map(|kept| kept.epoch());
         let sorted = |field: &str| -> Option<Vec<(String, String)>> {
             let mut pairs = self.pairs(field, current)?;
             pairs.sort_unstable_by(|a, b| a.1.cmp(&b.1));
@@ -514,7 +330,7 @@ impl<'e> EdgeExpander<'e> {
                 .iter()
                 .map(|(end, key)| end.len() + key.len() + 32)
                 .sum();
-            kept.put(current, &steps, size);
+            kept.put(current, &steps, size, seen.unwrap_or_default());
         }
         Some(steps)
     }

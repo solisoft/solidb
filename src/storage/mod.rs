@@ -15,6 +15,7 @@ pub mod geo;
 pub(crate) mod group_commit;
 pub mod http_client;
 pub mod index;
+pub(crate) mod kept;
 pub mod keyspace;
 pub mod keyspace_gc;
 pub mod keyspace_migration;

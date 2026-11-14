@@ -141,6 +141,10 @@ struct CommitState {
     /// indexes (`Collection::invalidate_cached_queries`). A transaction that
     /// read a range of the collection compares it at commit.
     write_gen: AtomicU64,
+    /// Moved by the changes a kept neighbourhood cannot follow one document
+    /// at a time (`storage::kept`): a batch, a truncate, an index created
+    /// or dropped. A single document write leaves it alone.
+    coarse_gen: AtomicU64,
     /// Held shared by a transaction commit writing this keyspace, from its
     /// checks until its generation has moved; exclusively by a commit that
     /// has to find the generation unchanged. See [`ReadTracker`].
@@ -160,6 +164,14 @@ impl KsState {
 
     pub fn write_generation(&self) -> u64 {
         self.commits.0.write_gen.load(Ordering::Acquire)
+    }
+
+    pub fn coarse_generation(&self) -> u64 {
+        self.commits.0.coarse_gen.load(Ordering::Acquire)
+    }
+
+    pub fn bump_coarse_generation(&self) {
+        self.commits.0.coarse_gen.fetch_add(1, Ordering::AcqRel);
     }
 
     pub fn bump_write_generation(&self) {

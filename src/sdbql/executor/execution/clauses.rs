@@ -2350,6 +2350,8 @@ impl QueryExecutor<'_> {
         if let Some(found) = around.get(current).filter(|found| found.current()) {
             return Some(found);
         }
+        // Noted before anything is read: see `storage::kept`.
+        let seen = around.epoch();
         // With the edges: each neighbour's edge, read by the key the index
         // names, in one batch.
         let (ends, edge_docs): (Vec<std::sync::Arc<str>>, Vec<Option<std::sync::Arc<Value>>>) =
@@ -2402,7 +2404,7 @@ impl QueryExecutor<'_> {
                 .map(|((end, doc), edge)| (end, doc, edge))
                 .collect(),
         ));
-        around.put(current, &entry, size);
+        around.put(current, &entry, size, seen);
         Some(entry)
     }
 
@@ -2436,6 +2438,7 @@ impl QueryExecutor<'_> {
         if missing.is_empty() {
             return;
         }
+        let seen = kept.as_ref().map(|kept| kept.epoch());
         let keys: Vec<&str> = missing.iter().map(|(_, key)| *key).collect();
         let found = match fields {
             Some(fields) => coll.get_values_projected(&keys, fields),
@@ -2451,7 +2454,7 @@ impl QueryExecutor<'_> {
             if let Some(kept) = &kept {
                 // About what its JSON text would take.
                 let size = 48 * doc.as_object().map_or(1, |o| o.len().max(1));
-                kept.put(key, &doc, size);
+                kept.put(key, &doc, size, seen.unwrap_or_default());
             }
             docs[*at] = Some(doc);
         }

@@ -689,6 +689,15 @@ impl Collection {
     /// returns: truncate, and creating or dropping an index (FULLTEXT on a
     /// collection without a fulltext index answers `[]`, which is cached).
     pub(crate) fn invalidate_cached_queries(&self) {
+        self.invalidate_for_write();
+        // Nothing says which documents: what traversals keep of the
+        // collection goes as a whole (`storage::kept`).
+        self.ks.state().bump_coarse_generation();
+    }
+
+    /// What every write to the collection invalidates, whichever way it is
+    /// announced.
+    fn invalidate_for_write(&self) {
         crate::storage::query_cache::invalidate_collection("", &self.name);
         // Same moments, same reason: what the index holds may have changed.
         super::index_meta::bump_write_generation(&self.db, &self.name);
@@ -729,7 +738,13 @@ impl Collection {
         &self,
         event: ChangeEvent,
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<ChangeEvent>> {
-        self.invalidate_cached_queries();
+        self.invalidate_for_write();
+        // One document: traversals forget what they kept of it, and of its
+        // ends when it is an edge, rather than everything.
+        let is_edge = self.collection_type.read().as_str() == "edge";
+        if !crate::storage::kept::changed(self.ks.state(), &self.name, is_edge, &event) {
+            self.ks.state().bump_coarse_generation();
+        }
         self.change_sender.send(event)
     }
 }
