@@ -16,6 +16,16 @@ pub(super) fn key_exists_error(key: &str) -> DbError {
     DbError::ConflictError(format!("Document with _key '{}' already exists", key))
 }
 
+/// Whether `key` is a UUID as the server writes one: 36 characters,
+/// lowercase hexadecimal, hyphenated. Only those sort by their value.
+fn is_canonical_uuid(key: &str) -> bool {
+    key.len() == 36
+        && key.bytes().enumerate().all(|(at, b)| match at {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_digit() || (b'a'..=b'f').contains(&b),
+        })
+}
+
 /// Remove and return `_key` from `data`, or generate a UUIDv7 key.
 fn take_key(data: &mut Value) -> DbResult<String> {
     if let Some(obj) = data.as_object_mut() {
@@ -2219,10 +2229,19 @@ impl Collection {
 
     /// Prune documents older than timestamp (for timeseries)
     /// The timestamp is in milliseconds since Unix epoch.
-    /// This extracts the timestamp from UUIDv7 keys and deletes matching documents.
+    ///
+    /// A document's time is read from its key, a UUIDv7 (what the server
+    /// generates): the first 48 bits are milliseconds. Such keys sort by
+    /// time, so the documents to prune come first and the walk stops at the
+    /// first canonical key at or after the cut-off: it used to read every
+    /// key of the collection, however little there was to prune. Keys are
+    /// deleted in batches, each with its index entries, events and count,
+    /// rather than held in one list. A key that is not a UUID is never
+    /// pruned.
     pub fn prune_older_than(&self, timestamp_ms: u64) -> DbResult<usize> {
-        // Collect keys to delete
-        // Lock-free: RocksDB is thread-safe for reads
+        /// Documents deleted per batch: bounds the keys held and locked at once.
+        const BATCH: usize = 10_000;
+
         let db = &self.db;
         let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
@@ -2231,39 +2250,34 @@ impl Collection {
             ))
         })?;
         let prefix = DOC_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_ks(&cf, prefix);
-
-        let mut keys_to_delete = Vec::new();
-
-        for result in iter.flatten() {
-            let (key_bytes, _value) = result;
+        let mut deleted = 0;
+        let mut batch: Vec<String> = Vec::new();
+        for (key_bytes, _value) in db.prefix_iterator_ks(&cf, prefix).flatten() {
             if !key_bytes.starts_with(prefix) {
                 break;
             }
-
-            // Extract the document key (without prefix)
-            let doc_key = String::from_utf8_lossy(&key_bytes[prefix.len()..]).to_string();
-
-            // Try to parse as UUID and extract timestamp
-            if let Ok(uuid) = uuid::Uuid::parse_str(&doc_key) {
-                // UUIDv7: timestamp is in the upper 48 bits (milliseconds)
-                // uuid.as_u128() returns: timestamp_ms (48 bits) | version (4 bits) | rand_a (12 bits) | variant (2 bits) | rand_b (62 bits)
-                let uuid_int = uuid.as_u128();
-                let uuid_timestamp_ms = (uuid_int >> 80) as u64;
-
-                if uuid_timestamp_ms < timestamp_ms {
-                    keys_to_delete.push(doc_key);
+            let Ok(doc_key) = std::str::from_utf8(&key_bytes[prefix.len()..]) else {
+                continue;
+            };
+            let Ok(uuid) = uuid::Uuid::parse_str(doc_key) else {
+                continue;
+            };
+            // UUIDv7: timestamp_ms (48 bits) | version | rand_a | variant | rand_b
+            let key_ms = (uuid.as_u128() >> 80) as u64;
+            if key_ms < timestamp_ms {
+                batch.push(doc_key.to_string());
+                if batch.len() >= BATCH {
+                    deleted += self.delete_batch(std::mem::take(&mut batch))?;
                 }
+            } else if is_canonical_uuid(doc_key) {
+                // Every canonical key after this one is at least as recent.
+                break;
             }
         }
-
-        let _ = db; // Keep reference alive until this point
-
-        if keys_to_delete.is_empty() {
-            return Ok(0);
+        if !batch.is_empty() {
+            deleted += self.delete_batch(batch)?;
         }
-
-        self.delete_batch(keys_to_delete)
+        Ok(deleted)
     }
 
     // ==================== Validation ====================

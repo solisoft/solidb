@@ -300,3 +300,20 @@ impl<'e> EdgeExpander<'e> {
         out
     }
 }
+
+/// A path search reads a vertex's edges where a traversal does: from the
+/// `_from` / `_to` index, the part of the graph it visits and no more.
+impl super::paths::Neighbours for EdgeExpander<'_> {
+    fn nexts(&self, current: &str) -> Vec<(String, Value)> {
+        let mut edges = self.edges_for(current);
+        // The order a scan of the collection gives.
+        edges.sort_by(|a, b| a.key.cmp(&b.key));
+        edges
+            .into_iter()
+            .filter_map(|doc| {
+                let next = self.next_id_from_doc(&doc, current)?;
+                Some((next, doc.to_value()))
+            })
+            .collect()
+    }
+}

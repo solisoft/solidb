@@ -1104,3 +1104,124 @@ fn can_honors_document_acl() {
     assert_eq!(v["acl"], json!(true));
     assert_eq!(v["deny"], json!(false));
 }
+
+/// A graph of 40 vertices and 160 edges, the same in an edge collection
+/// (searched through its `_from` / `_to` index) and in a plain collection
+/// with no index (searched through one scan): every kind of path search
+/// answers the same on both, in each direction.
+#[test]
+fn path_searches_agree_through_the_index_and_through_a_scan() {
+    let (e, _t) = engine();
+    e.create_collection("spots".to_string(), None).unwrap();
+    e.create_collection("links".to_string(), Some("edge".to_string()))
+        .unwrap();
+    e.create_collection("links_plain".to_string(), None)
+        .unwrap();
+    let spots = e.get_collection("spots").unwrap();
+    for i in 0..40 {
+        spots.insert(json!({"_key": format!("s{i}")})).unwrap();
+    }
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize
+    };
+    let edges: Vec<Value> = (0..160)
+        .map(|i| {
+            let (from, to) = (next() % 40, next() % 40);
+            json!({"_key": format!("l{i:03}"), "_from": format!("spots/s{from}"),
+                   "_to": format!("spots/s{to}"), "cost": 1 + next() % 9})
+        })
+        .collect();
+    for name in ["links", "links_plain"] {
+        e.get_collection(name)
+            .unwrap()
+            .insert_batch(edges.clone())
+            .unwrap();
+    }
+
+    let searches = [
+        "SHORTEST_PATH {from} TO {to} {dir} {edges}",
+        "SHORTEST_PATH {from} TO {to} {dir} {edges} OPTIONS { weight: \"cost\" }",
+        "ALL_SHORTEST_PATHS {from} TO {to} {dir} {edges}",
+        "K_SHORTEST_PATHS {from} TO {to} {dir} {edges} OPTIONS { k: 3, weight: \"cost\" }",
+        "K_PATHS {from} TO {to} {dir} {edges} OPTIONS { min: 1, max: 3, limit: 20 }",
+    ];
+    let mut found = 0;
+    for search in searches {
+        for dir in ["OUTBOUND", "INBOUND", "ANY"] {
+            for (from, to) in [(0, 7), (3, 31), (12, 12), (25, 4), (39, 18)] {
+                let run = |edges: &str| {
+                    let q = format!(
+                        "FOR v, e, p IN {} RETURN {{v: v._key, w: p.weight, \
+                         vs: p.vertices, es: p.edges[*]._key}}",
+                        search
+                            .replace("{from}", &format!("\"spots/s{from}\""))
+                            .replace("{to}", &format!("\"spots/s{to}\""))
+                            .replace("{dir}", dir)
+                            .replace("{edges}", edges)
+                    );
+                    QueryExecutor::new(&e)
+                        .execute(&parse(&q).unwrap_or_else(|err| panic!("{q}: {err}")))
+                        .unwrap_or_else(|err| panic!("{q}: {err}"))
+                };
+                let (indexed, scanned) = (run("links"), run("links_plain"));
+                assert_eq!(indexed, scanned, "{search} {dir} s{from} -> s{to}");
+                found += indexed.len();
+            }
+        }
+    }
+    assert!(
+        found > 50,
+        "the graph is too sparse to test anything: {found}"
+    );
+    // The edge collection was searched through its index, not scanned.
+    let indexes = e.get_collection("links").unwrap().get_all_indexes();
+    assert!(indexes
+        .iter()
+        .any(|i| i.fields == vec!["_from".to_string()]));
+    assert!(e
+        .get_collection("links_plain")
+        .unwrap()
+        .get_all_indexes()
+        .is_empty());
+}
+
+/// Pruning a timeseries collection deletes the documents whose UUIDv7 key
+/// is older than the cut-off, across several batches, and leaves the recent
+/// ones and the keys that are not UUIDs.
+#[test]
+fn prune_deletes_what_is_older_and_stops_there() {
+    let (e, _t) = engine();
+    e.create_collection("points".to_string(), Some("timeseries".to_string()))
+        .unwrap();
+    let points = e.get_collection("points").unwrap();
+    let key_at = |ms: u64, n: u64| {
+        let value = ((ms as u128) << 80) | (0x7u128 << 76) | (0x8u128 << 60) | n as u128;
+        Uuid::from_u128(value).to_string()
+    };
+    let (old, recent, cut) = (
+        1_700_000_000_000u64,
+        1_800_000_000_000u64,
+        1_750_000_000_000u64,
+    );
+    let mut docs: Vec<Value> = (0..12_500)
+        .map(|n| json!({"_key": key_at(old + n, n), "v": n}))
+        .collect();
+    docs.extend((0..200).map(|n| json!({"_key": key_at(recent + n, n), "v": n})));
+    docs.push(json!({"_key": "not-a-uuid", "v": 0}));
+    points.insert_batch(docs).unwrap();
+    assert_eq!(points.count(), 12_701);
+
+    assert_eq!(points.prune_older_than(cut).unwrap(), 12_500);
+    assert_eq!(points.count(), 201);
+    assert!(points.get("not-a-uuid").is_ok());
+    assert!(points.get(&key_at(recent, 0)).is_ok());
+    assert!(points.get(&key_at(old, 0)).is_err());
+    // Nothing left to prune at that cut-off; a later one takes the rest.
+    assert_eq!(points.prune_older_than(cut).unwrap(), 0);
+    assert_eq!(points.prune_older_than(recent + 1_000).unwrap(), 200);
+    assert_eq!(points.count(), 1);
+}

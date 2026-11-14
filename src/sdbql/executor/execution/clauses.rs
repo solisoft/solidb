@@ -1589,6 +1589,36 @@ impl<'a> QueryExecutor<'a> {
                 BodyClause::ShortestPath(sp) => {
                     let mut new_rows = Vec::new();
 
+                    // The search reads each vertex's edges from the
+                    // `_from` / `_to` index, as a traversal does. It used to
+                    // read the whole edge collection for every start vertex.
+                    // In a transaction that wrote to the collection, the
+                    // staged edges are in no index: the scan, overlaid.
+                    let edge_name = self.resolve_edge_collection_name(&sp.edge_collection)?;
+                    let edge_collection = self.get_collection(&edge_name)?;
+                    let scanned = if self.tx_wrote(&edge_name) {
+                        Some(self.scan_bounded(&edge_collection)?)
+                    } else {
+                        None
+                    };
+                    let expander = match scanned {
+                        Some(_) => None,
+                        None => Some(super::graph::EdgeExpander::new(
+                            &edge_collection,
+                            sp.direction.clone(),
+                            true,
+                            self.max_intermediate_rows(),
+                        )?),
+                    };
+                    let in_memory = scanned
+                        .as_deref()
+                        .map(|edges| super::paths::Scanned::new(edges, &sp.direction));
+                    let graph: &dyn super::paths::Neighbours = match (&in_memory, &expander) {
+                        (Some(scanned), _) => scanned,
+                        (None, Some(expander)) => expander,
+                        (None, None) => unreachable!("one of the two sources is built above"),
+                    };
+
                     for ctx in &rows {
                         let start_value = self.evaluate_expr_with_context(&sp.start_vertex, ctx)?;
                         let start_id = self.local_vertex_id(vertex_id(&start_value, "Start")?);
@@ -1596,10 +1626,7 @@ impl<'a> QueryExecutor<'a> {
                         let end_value = self.evaluate_expr_with_context(&sp.end_vertex, ctx)?;
                         let end_id = self.local_vertex_id(vertex_id(&end_value, "End")?);
 
-                        let edge_name = self.resolve_edge_collection_name(&sp.edge_collection)?;
-                        let edge_collection = self.get_collection(&edge_name)?;
-                        let all_edges = self.scan_bounded(&edge_collection)?;
-                        let found = super::paths::find_paths(sp, &all_edges, &start_id, &end_id)
+                        let found = super::paths::find_paths(sp, graph, &start_id, &end_id)
                             .map_err(DbError::ExecutionError)?;
                         for path in found {
                             let last_id = path.vertices.last().cloned().unwrap_or_default();

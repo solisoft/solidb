@@ -9,6 +9,19 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>SHORTEST_PATH</code> no longer reads the whole edge collection</strong> &mdash; it, <code>ALL_SHORTEST_PATHS</code>, <code>K_SHORTEST_PATHS</code> and <code>K_PATHS</code> loaded every edge into memory for each start vertex, then looked through all of them at every step of the search. On 10,000 vertices and 100,000 edges a shortest path ran into the query time limit (44 to 80&nbsp;s); it now answers in 0.2 to 0.4&nbsp;s, reading each visited vertex's edges from the <code>_from</code> / <code>_to</code> index as a traversal does. More than 5,000,000 edges no longer fail the query.</li>
+        <li><strong class="text-white">Pruning a timeseries collection stops at the cut-off</strong> &mdash; it read every key of the collection and held every key to delete in memory. Documents are keyed by time, so it now stops at the first one recent enough and deletes in batches of 10,000: with nothing to prune among 1,000,000 points, 6&nbsp;ms instead of 399&nbsp;ms. The timeseries page described a prune &ldquo;handled at the storage engine level&rdquo; that the code never had; it now says what it does.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.10.2 -->
   <section id="v2-10-2" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

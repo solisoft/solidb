@@ -39,27 +39,105 @@ impl Ord for State {
     }
 }
 
-fn nexts<'a>(
+/// Where a search finds the edges that leave a vertex.
+pub trait Neighbours {
+    /// The edges incident to `current` in the search's direction, each with
+    /// the vertex on its far side, in the order of the edges' keys.
+    fn nexts(&self, current: &str) -> Vec<(String, Value)>;
+}
+
+/// Edges already read into memory, indexed by their ends once: looking for
+/// a vertex's edges in the whole list at every step made a search cost
+/// (vertices visited) x (edges in the collection).
+pub struct Scanned<'a> {
     edges: &'a [Value],
-    current: &str,
-    dir: &EdgeDirection,
-) -> Vec<(String, &'a Value, f64)> {
-    let mut out = Vec::new();
-    for e in edges {
-        let from = e.get("_from").and_then(Value::as_str);
-        let to = e.get("_to").and_then(Value::as_str);
-        let nxt = match dir {
-            EdgeDirection::Outbound if from == Some(current) => to,
-            EdgeDirection::Inbound if to == Some(current) => from,
-            EdgeDirection::Any if from == Some(current) => to,
-            EdgeDirection::Any if to == Some(current) => from,
-            _ => None,
-        };
-        if let Some(n) = nxt {
-            out.push((n.to_string(), e, 1.0));
+    by_from: HashMap<&'a str, Vec<usize>>,
+    by_to: HashMap<&'a str, Vec<usize>>,
+    dir: EdgeDirection,
+}
+
+impl<'a> Scanned<'a> {
+    pub fn new(edges: &'a [Value], dir: &EdgeDirection) -> Self {
+        let mut by_from: HashMap<&str, Vec<usize>> = HashMap::new();
+        let mut by_to: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (at, e) in edges.iter().enumerate() {
+            if let Some(from) = e.get("_from").and_then(Value::as_str) {
+                by_from.entry(from).or_default().push(at);
+            }
+            if let Some(to) = e.get("_to").and_then(Value::as_str) {
+                by_to.entry(to).or_default().push(at);
+            }
+        }
+        Self {
+            edges,
+            by_from,
+            by_to,
+            dir: dir.clone(),
         }
     }
-    out
+}
+
+impl Neighbours for Scanned<'_> {
+    fn nexts(&self, current: &str) -> Vec<(String, Value)> {
+        let none = Vec::new();
+        let from = self.by_from.get(current).unwrap_or(&none);
+        let to = self.by_to.get(current).unwrap_or(&none);
+        let at: Vec<usize> = match self.dir {
+            EdgeDirection::Outbound => from.clone(),
+            EdgeDirection::Inbound => to.clone(),
+            EdgeDirection::Any => {
+                let mut both: Vec<usize> = from.iter().chain(to).copied().collect();
+                both.sort_unstable();
+                both.dedup();
+                both
+            }
+        };
+        at.into_iter()
+            .filter_map(|i| {
+                let e = &self.edges[i];
+                let from = e.get("_from").and_then(Value::as_str);
+                let to = e.get("_to").and_then(Value::as_str);
+                let next = match self.dir {
+                    EdgeDirection::Outbound => to,
+                    EdgeDirection::Inbound => from,
+                    EdgeDirection::Any if from == Some(current) => to,
+                    EdgeDirection::Any => from,
+                };
+                next.map(|n| (n.to_string(), e.clone()))
+            })
+            .collect()
+    }
+}
+
+/// A graph without the edges and vertices Yen's algorithm sets aside for
+/// one spur search.
+struct Without<'g> {
+    graph: &'g dyn Neighbours,
+    dir: &'g EdgeDirection,
+    forbidden: &'g HashSet<(String, String)>,
+    blocked: &'g HashSet<&'g str>,
+    spur: &'g str,
+}
+
+impl Neighbours for Without<'_> {
+    fn nexts(&self, current: &str) -> Vec<(String, Value)> {
+        let mut nexts = self.graph.nexts(current);
+        nexts.retain(|(_, e)| {
+            let from = e.get("_from").and_then(Value::as_str).unwrap_or("");
+            let to = e.get("_to").and_then(Value::as_str).unwrap_or("");
+            let pair_ok = match self.dir {
+                EdgeDirection::Inbound => {
+                    !self.forbidden.contains(&(to.to_string(), from.to_string()))
+                }
+                _ => !self.forbidden.contains(&(from.to_string(), to.to_string())),
+            };
+            let node_ok = !self.blocked.contains(from) && !self.blocked.contains(to)
+                || from == self.spur
+                || to == self.spur;
+            pair_ok && node_ok
+        });
+        nexts
+    }
 }
 
 fn edge_weight(e: &Value, field: Option<&str>) -> Result<f64, String> {
@@ -93,24 +171,20 @@ fn max_paths() -> usize {
 
 pub fn find_paths(
     sp: &ShortestPathClause,
-    edges: &[Value],
+    graph: &dyn Neighbours,
     start: &str,
     end: &str,
 ) -> Result<Vec<FoundPath>, String> {
     let wfield = sp.weight.as_deref();
     match sp.mode {
         PathFindMode::Shortest if wfield.is_some() => {
-            Ok(dijkstra(edges, start, end, &sp.direction, wfield)?
-                .into_iter()
-                .collect())
+            Ok(dijkstra(graph, start, end, wfield)?.into_iter().collect())
         }
-        PathFindMode::Shortest => Ok(bfs_one(edges, start, end, &sp.direction)
-            .into_iter()
-            .collect()),
-        PathFindMode::AllShortest => Ok(all_shortest(edges, start, end, &sp.direction)),
+        PathFindMode::Shortest => Ok(bfs_one(graph, start, end).into_iter().collect()),
+        PathFindMode::AllShortest => Ok(all_shortest(graph, start, end)),
         PathFindMode::KShortest => {
             let k = sp.k.unwrap_or(3).max(1).min(max_paths());
-            Ok(k_shortest(edges, start, end, &sp.direction, wfield, k)?)
+            Ok(yen(graph, start, end, &sp.direction, wfield, k)?)
         }
         PathFindMode::KPaths => {
             // The DFS below recurses one frame per hop, and a stack overflow
@@ -118,12 +192,12 @@ pub fn find_paths(
             let min = sp.min_len.unwrap_or(1).min(MAX_PATH_HOPS);
             let max = sp.max_len.unwrap_or(5).max(min).min(MAX_PATH_HOPS);
             let limit = sp.limit.unwrap_or(100).min(max_paths());
-            Ok(k_paths(edges, start, end, &sp.direction, min, max, limit))
+            Ok(k_paths(graph, start, end, min, max, limit))
         }
     }
 }
 
-fn bfs_one(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) -> Option<FoundPath> {
+fn bfs_one(graph: &dyn Neighbours, start: &str, end: &str) -> Option<FoundPath> {
     let mut parent: HashMap<String, (Option<String>, Option<Value>)> = HashMap::new();
     let mut q = VecDeque::new();
     parent.insert(start.to_string(), (None, None));
@@ -132,11 +206,11 @@ fn bfs_one(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) -> Opti
         if cur == end {
             return Some(rebuild(&parent, end));
         }
-        for (n, e, _) in nexts(edges, &cur, dir) {
+        for (n, e) in graph.nexts(&cur) {
             if parent.contains_key(&n) {
                 continue;
             }
-            parent.insert(n.clone(), (Some(cur.clone()), Some(e.clone())));
+            parent.insert(n.clone(), (Some(cur.clone()), Some(e)));
             q.push_back(n);
         }
     }
@@ -144,10 +218,9 @@ fn bfs_one(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) -> Opti
 }
 
 fn dijkstra(
-    edges: &[Value],
+    graph: &dyn Neighbours,
     start: &str,
     end: &str,
-    dir: &EdgeDirection,
     wfield: Option<&str>,
 ) -> Result<Option<FoundPath>, String> {
     let mut dist: HashMap<String, f64> = HashMap::new();
@@ -168,12 +241,12 @@ fn dijkstra(
             p.weight = cost;
             return Ok(Some(p));
         }
-        for (n, e, _) in nexts(edges, &id, dir) {
-            let w = edge_weight(e, wfield)?;
+        for (n, e) in graph.nexts(&id) {
+            let w = edge_weight(&e, wfield)?;
             let nd = cost + w;
             if nd < *dist.get(&n).unwrap_or(&f64::INFINITY) {
                 dist.insert(n.clone(), nd);
-                parent.insert(n.clone(), (Some(id.clone()), Some(e.clone())));
+                parent.insert(n.clone(), (Some(id.clone()), Some(e)));
                 heap.push(State { cost: nd, id: n });
             }
         }
@@ -181,7 +254,7 @@ fn dijkstra(
     Ok(None)
 }
 
-fn all_shortest(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) -> Vec<FoundPath> {
+fn all_shortest(graph: &dyn Neighbours, start: &str, end: &str) -> Vec<FoundPath> {
     let mut dist: HashMap<String, usize> = HashMap::new();
     let mut preds: HashMap<String, Vec<(String, Value)>> = HashMap::new();
     let mut q = VecDeque::new();
@@ -194,16 +267,16 @@ fn all_shortest(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) ->
                 continue;
             }
         }
-        for (n, e, _) in nexts(edges, &cur, dir) {
+        for (n, e) in graph.nexts(&cur) {
             let nd = d + 1;
             match dist.get(&n).copied() {
                 None => {
                     dist.insert(n.clone(), nd);
-                    preds.insert(n.clone(), vec![(cur.clone(), e.clone())]);
+                    preds.insert(n.clone(), vec![(cur.clone(), e)]);
                     q.push_back(n);
                 }
                 Some(old) if nd == old => {
-                    preds.entry(n).or_default().push((cur.clone(), e.clone()));
+                    preds.entry(n).or_default().push((cur.clone(), e));
                 }
                 _ => {}
             }
@@ -260,27 +333,16 @@ fn all_shortest(edges: &[Value], start: &str, end: &str, dir: &EdgeDirection) ->
     out
 }
 
-fn k_shortest(
-    edges: &[Value],
-    start: &str,
-    end: &str,
-    dir: &EdgeDirection,
-    wfield: Option<&str>,
-    k: usize,
-) -> Result<Vec<FoundPath>, String> {
-    yen(edges, start, end, dir, wfield, k)
-}
-
 /// Yen's algorithm: successive shortest paths with spur deviations.
 fn yen(
-    edges: &[Value],
+    graph: &dyn Neighbours,
     start: &str,
     end: &str,
     dir: &EdgeDirection,
     wfield: Option<&str>,
     k: usize,
 ) -> Result<Vec<FoundPath>, String> {
-    let Some(first) = dijkstra(edges, start, end, dir, wfield)? else {
+    let Some(first) = dijkstra(graph, start, end, wfield)? else {
         return Ok(vec![]);
     };
     let mut a = vec![first];
@@ -300,25 +362,14 @@ fn yen(
                 .iter()
                 .map(|s| s.as_str())
                 .collect();
-            let filtered: Vec<Value> = edges
-                .iter()
-                .filter(|e| {
-                    let from = e.get("_from").and_then(Value::as_str).unwrap_or("");
-                    let to = e.get("_to").and_then(Value::as_str).unwrap_or("");
-                    let pair_ok = match dir {
-                        EdgeDirection::Inbound => {
-                            !forbidden.contains(&(to.to_string(), from.to_string()))
-                        }
-                        _ => !forbidden.contains(&(from.to_string(), to.to_string())),
-                    };
-                    let node_ok = !blocked_nodes.contains(from) && !blocked_nodes.contains(to)
-                        || from == spur
-                        || to == spur;
-                    pair_ok && node_ok
-                })
-                .cloned()
-                .collect();
-            if let Some(spur_path) = dijkstra(&filtered, &spur, end, dir, wfield)? {
+            let without = Without {
+                graph,
+                dir,
+                forbidden: &forbidden,
+                blocked: &blocked_nodes,
+                spur: &spur,
+            };
+            if let Some(spur_path) = dijkstra(&without, &spur, end, wfield)? {
                 let mut verts = root[..root.len() - 1].to_vec();
                 verts.extend(spur_path.vertices);
                 let mut eds = prev.edges[..i].to_vec();
@@ -349,10 +400,9 @@ fn yen(
 }
 
 fn k_paths(
-    edges: &[Value],
+    graph: &dyn Neighbours,
     start: &str,
     end: &str,
-    dir: &EdgeDirection,
     min: usize,
     max: usize,
     limit: usize,
@@ -363,8 +413,7 @@ fn k_paths(
     // than removing it.
     #[allow(clippy::too_many_arguments)]
     fn dfs(
-        edges: &[Value],
-        dir: &EdgeDirection,
+        graph: &dyn Neighbours,
         end: &str,
         min: usize,
         max: usize,
@@ -389,14 +438,14 @@ fn k_paths(
         if hops >= max {
             return;
         }
-        for (n, e, _) in nexts(edges, cur, dir) {
+        for (n, e) in graph.nexts(cur) {
             if seen.contains(&n) {
                 continue;
             }
             seen.insert(n.clone());
             verts.push(n.clone());
-            eds.push(e.clone());
-            dfs(edges, dir, end, min, max, limit, &n, seen, verts, eds, out);
+            eds.push(e);
+            dfs(graph, end, min, max, limit, &n, seen, verts, eds, out);
             eds.pop();
             verts.pop();
             seen.remove(&n);
@@ -405,8 +454,7 @@ fn k_paths(
     let mut seen = HashSet::new();
     seen.insert(start.to_string());
     dfs(
-        edges,
-        dir,
+        graph,
         end,
         min,
         max,

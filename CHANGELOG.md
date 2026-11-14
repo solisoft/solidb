@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`SHORTEST_PATH` no longer reads the whole edge collection.** It,
+  `ALL_SHORTEST_PATHS`, `K_SHORTEST_PATHS` and `K_PATHS` loaded every edge
+  into memory for each start vertex, then looked through all of them at every
+  step of the search. On 10,000 vertices and 100,000 edges a shortest path
+  ran into the query time limit (44 to 80 s); it now answers in 0.2 to 0.4 s,
+  reading each visited vertex's edges from the `_from` / `_to` index as a
+  traversal does. More than 5,000,000 edges no longer fail the query.
+- **Pruning a timeseries collection stops at the cut-off.** It read every
+  key of the collection and held every key to delete in memory. Documents
+  are keyed by time, so it now stops at the first one recent enough and
+  deletes in batches of 10,000: with nothing to prune among 1,000,000
+  points, 6 ms instead of 399 ms. The docs described a prune "handled at the
+  storage engine level" that the code never had; they now say what it does.
+
 ## [2.10.2](https://github.com/solisoft/solidb/compare/v2.10.1...v2.10.2) (2026-11-14)
 
 A transaction's queries see its own writes, and a transaction waiting for a
