@@ -21,8 +21,15 @@
 //! needs no order between their key locks. The gate is taken before any key
 //! lock. A collection that takes part in no constraint never touches it.
 //!
-//! Not covered (see `doc/`): sharded collections, and nodes that replicate —
-//! a cascade is written by storage and does not reach the replication log.
+//! Replication. Only the node that takes a write checks it. What a delete
+//! cascades into is reported once stored ([`observe_cascades`]) and the
+//! server appends it to the replication log as writes of their own; a
+//! key's definition is replicated too. A node that applies a replicated
+//! write does so inside [`unchecked`]: entries arrive out of order, and
+//! checking or cascading again would refuse or repeat what the origin did.
+//! So two nodes that accept conflicting writes at once can leave an orphan.
+//!
+//! Not covered (see `doc/`): sharded collections.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
