@@ -42,21 +42,21 @@
 <table>
   <thead><tr><th>One client</th><th>SoliDB</th><th>Memgraph</th><th>Neo4j</th><th>ArangoDB</th></tr></thead>
   <tbody>
-    <tr><td><code>hop1</code></td><td>61,604 (16&nbsp;µs)</td><td>19,134 (52&nbsp;µs)</td><td>11,289 (83&nbsp;µs)</td><td>10,477 (95&nbsp;µs)</td></tr>
-    <tr><td><code>hop2</code></td><td>28,236 (35&nbsp;µs)</td><td>12,066 (82&nbsp;µs)</td><td>6,837 (144&nbsp;µs)</td><td>2,527 (396&nbsp;µs)</td></tr>
-    <tr><td><code>hop3</code></td><td>2,924 (338&nbsp;µs)</td><td>2,674 (367&nbsp;µs)</td><td>1,621 (621&nbsp;µs)</td><td>313 (3.2&nbsp;ms)</td></tr>
-    <tr><td><code>filtered</code></td><td>14,052 (69&nbsp;µs)</td><td>12,686 (78&nbsp;µs)</td><td>6,940 (141&nbsp;µs)</td><td>1,656 (594&nbsp;µs)</td></tr>
-    <tr><td><code>fof_bought</code></td><td>6,653 (149&nbsp;µs)</td><td>244 (4.0&nbsp;ms)</td><td>2,844 (349&nbsp;µs)</td><td>428 (2.3&nbsp;ms)</td></tr>
-    <tr><td><code>shortest</code></td><td>22,078 (37&nbsp;µs)</td><td>0.6 (1.8&nbsp;s)</td><td>8,309 (104&nbsp;µs)</td><td>7,578 (112&nbsp;µs)</td></tr>
+    <tr><td><code>hop1</code></td><td>61,500 (16&nbsp;µs)</td><td>19,134 (52&nbsp;µs)</td><td>11,289 (83&nbsp;µs)</td><td>10,477 (95&nbsp;µs)</td></tr>
+    <tr><td><code>hop2</code></td><td>28,341 (35&nbsp;µs)</td><td>12,066 (82&nbsp;µs)</td><td>6,837 (144&nbsp;µs)</td><td>2,527 (396&nbsp;µs)</td></tr>
+    <tr><td><code>hop3</code></td><td>2,917 (339&nbsp;µs)</td><td>2,674 (367&nbsp;µs)</td><td>1,621 (621&nbsp;µs)</td><td>313 (3.2&nbsp;ms)</td></tr>
+    <tr><td><code>filtered</code></td><td>14,174 (69&nbsp;µs)</td><td>12,686 (78&nbsp;µs)</td><td>6,940 (141&nbsp;µs)</td><td>1,656 (594&nbsp;µs)</td></tr>
+    <tr><td><code>fof_bought</code></td><td>6,854 (146&nbsp;µs)</td><td>244 (4.0&nbsp;ms)</td><td>2,844 (349&nbsp;µs)</td><td>428 (2.3&nbsp;ms)</td></tr>
+    <tr><td><code>shortest</code></td><td>22,324 (36&nbsp;µs)</td><td>0.6 (1.8&nbsp;s)</td><td>8,309 (104&nbsp;µs)</td><td>7,578 (112&nbsp;µs)</td></tr>
   </tbody>
 </table>
 <figure class="post-figure"><svg viewBox="0 0 680 236" role="img" aria-labelledby="gr-hop2-t">
-<title id="gr-hop2-t">People within two hops, one client, requests per second: SoliDB 28,236, Memgraph 12,066, Neo4j 6,837, ArangoDB 2,527.</title>
+<title id="gr-hop2-t">People within two hops, one client, requests per second: SoliDB 28,341, Memgraph 12,066, Neo4j 6,837, ArangoDB 2,527.</title>
 <text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">The people within two hops, one client (requests per second)</text>
 <line x1="170" y1="46" x2="170" y2="196" stroke="#29322f"/>
 <text x="20" y="72" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB</text>
 <rect x="170" y="56" width="440" height="24" rx="3" fill="#f5a623"/>
-<text x="620" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">28,236</text>
+<text x="620" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">28,341</text>
 <text x="20" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">Memgraph</text>
 <rect x="170" y="94" width="188" height="24" rx="3" fill="#6b746c"/>
 <text x="368" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">12,066</text>
@@ -72,17 +72,17 @@
 <table>
   <thead><tr><th>Eight clients</th><th>SoliDB</th><th>Memgraph</th><th>Neo4j</th><th>ArangoDB</th></tr></thead>
   <tbody>
-    <tr><td><code>hop1</code></td><td>322,754</td><td>76,294</td><td>37,438</td><td>30,295</td></tr>
-    <tr><td><code>hop2</code></td><td>150,916</td><td>52,092</td><td>28,481</td><td>9,648</td></tr>
-    <tr><td><code>hop3</code></td><td>16,219</td><td>13,201</td><td>8,164</td><td>1,324</td></tr>
-    <tr><td><code>filtered</code></td><td>71,948</td><td>55,131</td><td>29,014</td><td>6,721</td></tr>
-    <tr><td><code>fof_bought</code></td><td>32,950</td><td>1,396</td><td>14,469</td><td>2,102</td></tr>
-    <tr><td><code>shortest</code></td><td>110,252</td><td>2.4</td><td>31,701</td><td>25,957</td></tr>
+    <tr><td><code>hop1</code></td><td>323,272</td><td>76,294</td><td>37,438</td><td>30,295</td></tr>
+    <tr><td><code>hop2</code></td><td>150,343</td><td>52,092</td><td>28,481</td><td>9,648</td></tr>
+    <tr><td><code>hop3</code></td><td>16,213</td><td>13,200</td><td>8,164</td><td>1,324</td></tr>
+    <tr><td><code>filtered</code></td><td>74,274</td><td>55,131</td><td>29,014</td><td>6,721</td></tr>
+    <tr><td><code>fof_bought</code></td><td>35,730</td><td>1,396</td><td>14,469</td><td>2,102</td></tr>
+    <tr><td><code>shortest</code></td><td>112,449</td><td>2.4</td><td>31,701</td><td>25,957</td></tr>
   </tbody>
 </table>
-<p>SoliDB is ahead on the twelve series. The margin is narrow in one place: three hops at one client, 9% over Memgraph, and three earlier passes of the same series had SoliDB 3 to 5% behind, before the last change described below. On the others it is 11% (the filtered traversal at one client) to several times.</p>
+<p>SoliDB is ahead on the twelve series. The margin is narrow in one place: three hops at one client, 9% over Memgraph, and three earlier passes of the same series had SoliDB 3 to 5% behind, before the last change described below. On the others it is 12% (the filtered traversal at one client) to several times.</p>
 <p>Two of Memgraph's figures need a word. Its shortest path takes 1.8 seconds with the query we wrote for it (<code>*BFS</code>), which as far as we can tell explores from the start until it meets the target, among people known by very many; Neo4j's <code>shortestPath</code> and ArangoDB's <code>SHORTEST_PATH</code> search from both ends. And <code>fof_bought</code> is a pattern with a variable-length part followed by a purchase, which it appears to enumerate path by path. Someone who knows Memgraph better may write both differently; the harness is there to be corrected.</p>
-<p>Loading the graph, with its indexes, from eight connections: ArangoDB 27 seconds, SoliDB 46, Neo4j 50, Memgraph 101. ArangoDB loads faster than SoliDB, which now maintains four index entries per edge.</p>
+<p>Loading the graph, with its indexes, from eight connections: SoliDB 24 seconds, ArangoDB 27, Neo4j 50, Memgraph 101. SoliDB's figure is with a write buffer of 2 GB, set in the script. With the server's default of 64 MB the load takes 46 seconds, behind ArangoDB: ten million edges, each with four index entries, fill a 64 MB buffer many times a second, and flushing and compacting them is most of the work. The query figures are the same with either buffer.</p>
 </section>
 
 <section id="before"><h2>Where 2.10.3 stood</h2>
@@ -104,7 +104,7 @@
 <section id="limits"><h2>What this does not show</h2>
 <ul>
 <li><strong>A read-only benchmark is the best case for what SoliDB keeps in memory.</strong> The harness loads the graph and then only reads it, cycling through 2,000 sets of parameters per scenario: after the warm-up, most of what a query needs was read by an earlier one. A graph that is written all the time would see SoliDB read its indexes at every query, at the figures of the paragraph above rather than those of the tables. We have not measured a mix of reads and writes. Memgraph is favoured the same way by keeping its whole graph in memory, and Neo4j by a page cache as large as the data; ArangoDB reads through RocksDB.</li>
-<li><strong>The container gave SoliDB room for it</strong>: 2 GB per kept map, where the server's default is 256 MB. At the default, a graph this size is only partly kept. The setting is in <code>graph.sh</code>, as Neo4j's heap and page cache are.</li>
+<li><strong>The container gave SoliDB room for it</strong>: 2 GB per kept map, where the server's default is 256 MB, and the 2 GB write buffer mentioned above. At the defaults, a graph this size is only partly kept and loads in 46 seconds. Both settings are in <code>graph.sh</code>, as Neo4j's heap and page cache are.</li>
 <li><strong>The questions are small.</strong> Neighbourhoods, a filter, a shortest path. No analytics over the whole graph, no pattern with several branches, no write. Graph databases are built for more than this, and Cypher expresses patterns that SDBQL does not.</li>
 <li><strong>The queries are ours.</strong> Each is the form its own documentation suggests, and the two Memgraph figures above show what a different form may be worth.</li>
 <li><strong>Eight clients on four cores</strong> is as far as the harness went.</li>

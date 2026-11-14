@@ -78,7 +78,7 @@ class BlogController < Controller
         "display_date": "November 14, 2026",
         "summary": "A million people, ten million edges, six questions, four databases on 4 cores each. "
         + "SoliDB 2.10.3 lost most of them and could not finish a shortest path. The build that came "
-        + "out of it leads the twelve series, by 9% to several times: what changed, and why a "
+        + "out of it leads the twelve series, by 9% to several times, and the load: what changed, and why a "
         + "read-only benchmark is its best case.",
         "tags": ["Graph", "Performance", "Benchmarks"],
         "read_minutes": 9
