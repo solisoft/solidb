@@ -82,6 +82,26 @@ describe("Share metadata") do
     expect(share_meta(body, "og:description").starts_with("Every collection used to be")).to_equal(true)
   end
 
+  # The card is rendered from the post's first figure by tools/og/posts.py;
+  # a post added without a figure, or without re-running it, fails here.
+  test("every post has a figure and shares its own card, shown on the index and under its header") do
+    index = res_body(get("/blog"))
+    posts = assigns()["posts"]
+    expect(index.split("class=\"post-thumb\" src=\"/images/blog/").length - 1).to_equal(posts.length)
+    posts.each do |post|
+      slug = post["slug"]
+      body = res_body(get("/blog/" + slug))
+      expect(body.include?("<figure class=\"post-figure\"><svg")).to_equal(true)
+      expect(body.include?("class=\"post-cover\" src=\"/images/blog/" + slug + ".png")).to_equal(true)
+      image = share_meta(body, "og:image")
+      expect(image.include?("/images/blog/" + slug + ".png")).to_equal(true)
+      expect(share_meta(body, "twitter:image")).to_equal(image)
+      card = get("/images/blog/" + slug + ".png")
+      expect(res_status(card)).to_equal(200)
+      expect(res_header(card, "Content-Type").to_s.starts_with("image/png")).to_equal(true)
+    end
+  end
+
   test("the blog index is a website that names the newest post") do
     response = get("/blog")
     expect(res_status(response)).to_equal(200)
@@ -89,5 +109,6 @@ describe("Share metadata") do
     expect(share_meta(body, "og:type")).to_equal("website")
     expect(share_meta(body, "og:description").include?("Latest: ")).to_equal(true)
     expect(body.include?("article:published_time")).to_equal(false)
+    expect(share_meta(body, "og:image").include?("/images/og-cover.png")).to_equal(true)
   end
 end

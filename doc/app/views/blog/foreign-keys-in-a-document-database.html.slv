@@ -6,6 +6,7 @@
   <p class="post-lede">Two days ago we wrote that SoliDB has no foreign keys, and that nothing stops an order from naming a customer that is gone. It was the one line of that comparison with SQL where the answer was a plain &ldquo;No&rdquo;. A collection can now declare one. This post shows what it does, how it stays true when writes race, what it costs, and where it stops.</p>
   <p class="post-note">Foreign keys are in SoliDB 2.10.0. Every result on this page was run on November 13, 2026, on servers built from the branch that became that release; the benchmark's raw results are in the repository, under <code>benchmarks/compare/results/2026-11-13-fk</code>.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -79,6 +80,36 @@
   </tbody>
 </table>
 <p>The key costs SoliDB 5 to 7% on the writes that set the reference, and nothing measurable on an update that leaves it alone. The three runs of an insert at 32 clients spread from 125,000 to 172,000 per second with or without the key, so the 6% there is inside the noise of that series; the 5% at one client is not, its runs differ by 1%. PostgreSQL pays 12 to 26%. Its check takes a row lock on the customer and runs as a trigger per row; ours is one read of the customer under a lock shared by the whole database.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 312" role="img" aria-labelledby="fk-cost-t">
+<title id="fk-cost-t">Throughput lost when a foreign key is declared, SoliDB versus PostgreSQL 18.6: load with 8 connections, SoliDB 7%, PostgreSQL 25%; insert with 1 client, SoliDB 5%, PostgreSQL 12%; insert with 32 clients, SoliDB 6%, PostgreSQL 26%.</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Throughput lost when the key is declared, on writes that set the reference</text>
+<rect x="210" y="42" width="12" height="12" rx="2" fill="#f5a623"/>
+<text x="228" y="52" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">SoliDB</text>
+<rect x="296" y="42" width="12" height="12" rx="2" fill="#6b746c"/>
+<text x="314" y="52" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">PostgreSQL 18.6</text>
+<line x1="210" y1="66" x2="210" y2="244" stroke="#29322f"/>
+<text x="20" y="100" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">Load, 8 connections</text>
+<rect x="210" y="74" width="93" height="18" rx="3" fill="#f5a623"/>
+<text x="311" y="88" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">−7%</text>
+<rect x="210" y="96" width="333" height="18" rx="3" fill="#6b746c"/>
+<text x="551" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">−25%</text>
+<text x="20" y="162" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">Insert, 1 client</text>
+<rect x="210" y="136" width="67" height="18" rx="3" fill="#f5a623"/>
+<text x="285" y="150" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">−5%</text>
+<rect x="210" y="158" width="160" height="18" rx="3" fill="#6b746c"/>
+<text x="378" y="172" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">−12%</text>
+<text x="20" y="224" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">Insert, 32 clients</text>
+<rect x="210" y="198" width="80" height="18" rx="3" fill="#f5a623"/>
+<text x="298" y="212" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">−6%</text>
+<rect x="210" y="220" width="347" height="18" rx="3" fill="#6b746c"/>
+<text x="565" y="234" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">−26%</text>
+<text x="210" y="260" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c" text-anchor="middle">0</text>
+<text x="343" y="260" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c" text-anchor="middle">10%</text>
+<text x="477" y="260" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c" text-anchor="middle">20%</text>
+<text x="610" y="260" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c" text-anchor="middle">30%</text>
+<text x="20" y="284" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. Medians of three 20-second runs; SoliDB's 6% at 32 clients</text>
+<text x="20" y="302" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">is inside that series' noise. Updates that leave the reference alone: no measurable cost for SoliDB.</text>
+</svg><figcaption>A foreign key costs SoliDB 5 to 7% on the writes that set the reference, and PostgreSQL 12 to 26%: one read of the parent under a database-wide shared lock, against a row lock and a trigger per row.</figcaption></figure>
 <p>That shared lock is the other side. A delete in a referenced collection takes it alone: it waits for the writes in progress on the linked collections of its database and holds the others back while it runs, where PostgreSQL locks only the rows involved. We have not measured a workload that deletes parents while it inserts children; one that does so all day will feel it, one that mostly inserts and updates will not.</p>
 </section>
 

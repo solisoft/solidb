@@ -6,6 +6,7 @@
   <p class="post-lede">Before 0.34.0, a SoliDB cluster spread over several machines came up, logged nothing unusual, and replicated nothing. Five faults stacked on top of each other, and each one hid the next. They were found by deploying two real nodes rather than by a test. This post covers what changed, the two flags that matter (<code>--advertise</code> and <code>--keyfile</code>), and how to start three nodes on three machines.</p>
   <p class="post-note">The error messages and the status output below were produced by starting real nodes on one host.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

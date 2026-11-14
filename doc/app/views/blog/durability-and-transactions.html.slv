@@ -7,6 +7,7 @@
   <p class="post-note">Measured on November 9 and 10, 2026, on one machine (AMD Ryzen 9 9950X, NVMe RAID1, Rocky Linux 10), each database in a container limited to 4 cores and 16&nbsp;GB, with the harnesses in <a href="https://github.com/solisoft/solidb/tree/main/benchmarks/compare"><code>benchmarks/compare</code></a> (<code>bank.sh</code>, <code>run.sh</code>) and <a href="https://github.com/solisoft/solidb/tree/main/faults"><code>faults</code></a>, on the published images of SoliDB 2.9.0 to 2.9.3 and PostgreSQL 18.6. SoliDB ran on solistore. Throughput figures are the median of three 20-second runs. The raw results are committed beside the harnesses. The first half of this story is in <a href="/blog/solidb-against-postgresql-mongodb-arangodb-surrealdb#transactions">the comparison post</a>; this one goes further, and corrects one thing it said.</p>
   <p class="post-note"><strong>Updated on November 11 for 2.9.4</strong>, released the next day: locks wait, the two upper isolation levels check what was read, and a transfer costs a third less. PostgreSQL is now 1.22 times ahead at one client and 1.14 at 32, and SoliDB is ahead over five round trips at 32 clients. The text below is as published; the new measurements are in <a href="#v294">their own section</a>.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

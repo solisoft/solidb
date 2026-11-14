@@ -6,6 +6,7 @@
   <p class="post-lede">A job queue polled once a second read 122,050 rows to find 50, although an index on exactly the fields it filtered on was right there. That query started an audit of every query a CRM sends. What it found became five releases: shapes the planner now reads from an index, a bug that returned wrong rows, indexes that hold null, and an index for search boxes.</p>
   <p class="post-note">Every timing here is the median of repeated runs on a throwaway server or in the engine's benchmark suite, against builds of the versions named, with the same data on both sides and the result cache off. The rows returned are the same on both sides unless the table says otherwise.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -41,6 +42,39 @@
     <tr><td>One day of scheduled jobs, counted</td><td>317&nbsp;ms</td><td>16&nbsp;ms</td></tr>
   </tbody>
 </table></div>
+<figure class="post-figure"><svg viewBox="0 0 680 338" role="img" aria-labelledby="sa27-claim-t">
+<title id="sa27-claim-t">Median query time on a job queue of 172,050 jobs, 50 of them due, 2.6.2 versus 2.6.3: the claim 390 ms to 0.21 ms; the claim with indexHint 388 ms to 0.21 ms; state == "scheduled" AND run_at &lt;= @now 314 ms to 0.038 ms; one day of scheduled jobs, counted, 317 ms to 16 ms.</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">A queue of 172,050 jobs, 50 of them due (ms, median)</text>
+<text x="20" y="60" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">The claim</text>
+<text x="20" y="80" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2.6.2</text>
+<rect x="70" y="68" width="520" height="16" rx="2" fill="#6b746c"/>
+<text x="598" y="80" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">390 ms</text>
+<text x="20" y="100" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2.6.3</text>
+<rect x="70" y="88" width="2" height="16" rx="2" fill="#f5a623"/>
+<text x="80" y="100" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0.21 ms</text>
+<text x="20" y="124" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">The claim with <tspan font-family="JetBrains Mono, monospace">indexHint</tspan></text>
+<text x="20" y="144" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2.6.2</text>
+<rect x="70" y="132" width="517.3" height="16" rx="2" fill="#6b746c"/>
+<text x="595.3" y="144" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">388 ms</text>
+<text x="20" y="164" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2.6.3</text>
+<rect x="70" y="152" width="2" height="16" rx="2" fill="#f5a623"/>
+<text x="80" y="164" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0.21 ms</text>
+<text x="20" y="188" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">state == "scheduled" AND run_at &lt;= @now</text>
+<text x="20" y="208" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2.6.2</text>
+<rect x="70" y="196" width="418.7" height="16" rx="2" fill="#6b746c"/>
+<text x="496.7" y="208" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">314 ms</text>
+<text x="20" y="228" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2.6.3</text>
+<rect x="70" y="216" width="2" height="16" rx="2" fill="#f5a623"/>
+<text x="80" y="228" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0.038 ms</text>
+<text x="20" y="252" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">One day of scheduled jobs, counted</text>
+<text x="20" y="272" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2.6.2</text>
+<rect x="70" y="260" width="422.7" height="16" rx="2" fill="#6b746c"/>
+<text x="500.7" y="272" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">317 ms</text>
+<text x="20" y="292" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2.6.3</text>
+<rect x="70" y="280" width="21.3" height="16" rx="2" fill="#f5a623"/>
+<text x="99.3" y="292" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">16 ms</text>
+<text x="20" y="322" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0; those under 1 ms are drawn 2 px wide so they can be seen.</text>
+</svg><figcaption>Up to 2.6.2 the claim read every pending, scheduled and failed job; since 2.6.3 it reads three short ranges of the compound index, one per state.</figcaption></figure>
 <p>Since 2.6.3, the leading fields of a compound index can each be fixed by <code>==</code> or <code>IN</code>, and the field after them can carry a range. Each value of an <code>IN</code> becomes one bounded read of the index, so the claim reads three short ranges, one per state, and finds its 50 jobs.</p>
 </section>
 

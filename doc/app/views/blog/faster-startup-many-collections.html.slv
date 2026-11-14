@@ -6,6 +6,7 @@
   <p class="post-lede">In SoliDB, one collection is one RocksDB column family, and the instance pays for every one of them in places that have nothing to do with the collection you are touching: at startup, when a collection is created or dropped, when collections are listed, when the WAL fills. 1.2.0 removes most of that bill. This is where it came from and what changed.</p>
   <p class="post-note">The numbers are the ones measured for the 1.2.0 changelog. The terminal output was captured on a throwaway test server; the code paths it exercises are the ones 1.2.0 shipped.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

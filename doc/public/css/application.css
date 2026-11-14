@@ -7164,7 +7164,40 @@ a {
 .post-card {
   padding: 28px 0;
   border-bottom: 1px solid var(--rule);
-  max-width: 760px;
+  max-width: 1080px;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.post-card-cover {
+  display: block;
+  margin-top: 4px;
+}
+.post-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  transition: border-color 0.15s;
+}
+.post-card-cover:hover .post-thumb {
+  border-color: var(--rule-strong);
+}
+@media (max-width: 760px) {
+  .post-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+.post-cover {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 32px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
 }
 .post-card h2 {
   font-family: var(--font-display);

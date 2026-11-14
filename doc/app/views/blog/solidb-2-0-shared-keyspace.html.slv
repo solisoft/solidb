@@ -6,6 +6,7 @@
   <p class="post-lede">On a development instance with 1,144 collections, creating a collection took about 0.2&nbsp;s — and so did every insert into a collection that did not exist yet. On a fresh instance the same operation took 9&nbsp;ms. Inserting documents cost the same on both. SoliDB 2.0 changes how collections are stored so that creating one costs a few milliseconds however large the instance is.</p>
   <p class="post-note">All figures on this page were measured on copies of that instance (7.4&nbsp;GB, 1,148 collections), never on the live data.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

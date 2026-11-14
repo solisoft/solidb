@@ -6,6 +6,7 @@
   <p class="post-lede">A query on an agenda read all 200,000 events every time, although <code>date2</code>, the field that selects one event in seven, had an index. The index was in the second FILTER, and the planner only looked at the first. 2.3.1 looks at all of them.</p>
   <p class="post-note">Every response and timing on this page was captured on a throwaway server, from a 2.3.0 and a 2.3.1 release build, with the same 200,000 generated documents and the result cache off.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -54,6 +55,24 @@ POST /_api/database/agenda/cursor
     <tr><td>Median response, 9 runs</td><td>0.43&nbsp;s</td><td>0.13&nbsp;s</td></tr>
   </tbody>
 </table>
+<figure class="post-figure"><svg viewBox="0 0 680 236" role="img" aria-labelledby="ix231-t">
+<title id="ix231-t">Documents read by the agenda query over 200,000 events: 200,000 on 2.3.0, which scans the collection, against 27,294 on 2.3.1, which reads them through the index idx_date2; both return the same 14,155 rows. Median response over 9 runs: 0.43 s on 2.3.0, 0.13 s on 2.3.1.</title>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Documents read and rows returned, agenda query over 200,000 events</text>
+<line x1="170" y1="46" x2="170" y2="190" stroke="#29322f"/>
+<text x="20" y="70" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">2.3.0</text>
+<text x="20" y="86" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c">full_scan</text>
+<rect x="170" y="62" width="420" height="24" rx="3" fill="#6b746c"/>
+<text x="600" y="79" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">200,000</text>
+<text x="20" y="116" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">2.3.1</text>
+<text x="20" y="132" font-family="JetBrains Mono, monospace" font-size="11" fill="#6b746c">idx_date2</text>
+<rect x="170" y="108" width="57" height="24" rx="3" fill="#f5a623"/>
+<text x="237" y="125" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">27,294</text>
+<text x="20" y="162" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">Rows returned</text>
+<text x="20" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6b746c">both versions</text>
+<rect x="170" y="154" width="30" height="24" rx="3" fill="#4fd1c5"/>
+<text x="210" y="171" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">14,155</text>
+<text x="20" y="218" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. Median response, 9 runs: 0.43 s on 2.3.0, 0.13 s on 2.3.1.</text>
+</svg><figcaption>With every FILTER considered, the index on <code>date2</code> serves the query: 2.3.1 reads 27,294 documents instead of all 200,000 and returns the same 14,155 rows.</figcaption></figure>
 <p>The 27,294 are every event dated today or later; the first FILTER then keeps 14,155 of them. The remaining 0.13&nbsp;s is mostly the <code>SORT</code> and sending 14,155 documents back, which the index does not change. Results do not change either: rows read through the index are still checked against every FILTER, in order, exactly as a scan would check them.</p>
 <p><code>EXPLAIN</code>, auto-indexing and <code>OPTIONS { indexHint, forceIndexHint }</code> use the same rule. On 2.3.0, forcing the index on this kind of query was refused, because the FILTER the planner looked at could not use it:</p>
 <div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>FOR e IN events OPTIONS { indexHint: "idx_date2", forceIndexHint: true }

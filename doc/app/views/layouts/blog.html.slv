@@ -4,11 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %></title>
-<% share_image = site_url(public_path("images/og-cover.png")) %>
 <% page_url = site_url(current_path() ?? "/blog") %>
 <%# A post shares under its own headline; og:site_name already says SoliDB. %>
 <% share_title = article ? article["title"] : title %>
+<%# A post shares its own card: its headline beside its first figure, rendered
+    by tools/og/posts.py into public/images/blog/<slug>.png. %>
+<% share_image = site_url(public_path(article ? "images/blog/" + article["slug"] + ".png" : "images/og-cover.png")) %>
 <% image_alt = "SoliDB: documents, graphs, vectors and time-series in one database. Beside it, each data model with the SDBQL that queries it: FOR … FILTER, OUTBOUND, VECTOR_SIMILARITY, FULLTEXT, GEO_DISTANCE and TIME_BUCKET." %>
+<% image_alt = article["title"] + ": the post's headline beside its first figure." if article %>
     <meta name="description" content="<%= description %>">
     <link rel="canonical" href="<%= page_url %>">
     <link rel="alternate" type="application/atom+xml" title="SoliDB Blog" href="/blog/feed.xml">

@@ -6,8 +6,51 @@
   <p class="post-lede">2.1.0 is a release about things SoliDB said it did and did not quite do. A driver transaction that committed on the spot. Two writes of the same unique value that both went through. A custom role that granted nothing. Sync conflict endpoints that answered “not implemented”. Each is fixed here, with the request that shows it, and a few features that fell out of fixing them: database-limited roles, writing queries with <code>COLLECT</code> inside a transaction, and <code>OPTIONS</code> on sharded collections.</p>
   <p class="post-note">The transaction and role responses on this page were captured from a 2.1.0 build on a throwaway server. The sync section describes behaviour pinned by the test suite rather than a captured session, and says so where it matters.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
+<figure class="post-figure"><svg viewBox="0 0 680 340" role="img" aria-labelledby="tcr21-t">
+<title id="tcr21-t">Four things SoliDB said it did, before and in 2.1.0. Driver transaction_command: until 2.1.0 an insert committed at once and a rollback had nothing to undo; in 2.1.0 it is staged, applied at commit and discarded on rollback. Unique index inside one transaction: two inserts of the same value both passed and both committed; now the commit is refused as a whole and writes nothing. Custom role created with POST /_api/auth/roles: it was skipped when loaded and the user had no permissions at all; now it grants its permissions, globally or on one database. Sync conflict endpoints: they answered not implemented and push applied whatever arrived last; now a conflicting change is held until it is resolved.</title>
+<text x="20" y="26" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">What SoliDB said it did, and what it did</text>
+<text x="184" y="56" font-family="Inter, sans-serif" font-size="13" fill="#ff6b6b">Until 2.1.0</text>
+<text x="428" y="56" font-family="Inter, sans-serif" font-size="13" fill="#f5a623">2.1.0</text>
+<rect x="20" y="68" width="640" height="58" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="32" y="92" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Driver transaction</text>
+<text x="32" y="112" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">transaction_command</text>
+<rect x="180" y="74" width="232" height="46" rx="5" fill="none" stroke="#ff6b6b" stroke-dasharray="4 3"/>
+<text x="192" y="93" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">insert committed at once;</text>
+<text x="192" y="110" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">rollback had nothing to undo</text>
+<rect x="424" y="74" width="228" height="46" rx="5" fill="#141d1b" stroke="#f5a623"/>
+<text x="436" y="93" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">staged, applied at commit;</text>
+<text x="436" y="110" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">a rollback discards it</text>
+<rect x="20" y="134" width="640" height="58" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="32" y="158" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Unique index, one tx</text>
+<text x="32" y="178" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">2 × a@x.io</text>
+<rect x="180" y="140" width="232" height="46" rx="5" fill="none" stroke="#ff6b6b" stroke-dasharray="4 3"/>
+<text x="192" y="159" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">both inserts passed</text>
+<text x="192" y="176" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">and both committed</text>
+<rect x="424" y="140" width="228" height="46" rx="5" fill="#141d1b" stroke="#f5a623"/>
+<text x="436" y="159" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">commit refused as a whole;</text>
+<text x="436" y="176" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">nothing is written</text>
+<rect x="20" y="200" width="640" height="58" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="32" y="224" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Custom role</text>
+<text x="32" y="244" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">/_api/auth/roles</text>
+<rect x="180" y="206" width="232" height="46" rx="5" fill="none" stroke="#ff6b6b" stroke-dasharray="4 3"/>
+<text x="192" y="225" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">skipped when loaded: the user</text>
+<text x="192" y="242" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">had no permissions at all</text>
+<rect x="424" y="206" width="228" height="46" rx="5" fill="#141d1b" stroke="#f5a623"/>
+<text x="436" y="225" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">grants its permissions,</text>
+<text x="436" y="242" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">globally or on one database</text>
+<rect x="20" y="266" width="640" height="58" rx="6" fill="#101716" stroke="#29322f"/>
+<text x="32" y="290" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Sync conflicts</text>
+<text x="32" y="310" font-family="JetBrains Mono, monospace" font-size="11" fill="#9ba39c">/_api/sync/conflicts</text>
+<rect x="180" y="272" width="232" height="46" rx="5" fill="none" stroke="#ff6b6b" stroke-dasharray="4 3"/>
+<text x="192" y="291" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">“not implemented”; push</text>
+<text x="192" y="308" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">applied whatever arrived last</text>
+<rect x="424" y="272" width="228" height="46" rx="5" fill="#141d1b" stroke="#f5a623"/>
+<text x="436" y="291" font-family="Inter, sans-serif" font-size="12" fill="#ece6d6">a conflicting change is held</text>
+<text x="436" y="308" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">until you resolve it</text>
+</svg><figcaption>Four things SoliDB said it did and did not quite do, each fixed in 2.1.0.</figcaption></figure>
 <nav class="post-toc" aria-label="In this post">
   <p class="post-toc-title">In this post</p>
   <ol>

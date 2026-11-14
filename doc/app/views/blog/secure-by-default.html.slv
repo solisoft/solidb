@@ -6,6 +6,7 @@
   <p class="post-lede">A handful of SoliDB’s own collections are not data: they hold credentials, the rules that decide who is an admin, and Lua code the server runs. Until 1.1.0 most of them could be written like any other collection by anyone with Write. 1.1.0 puts them in three tiers behind one check, makes Lua scripts write as the person who called them, and puts a login in front of the admin console. Each of these closes a real finding.</p>
   <p class="post-note">The responses on this page were captured on a throwaway server. <code>src/storage/protected.rs</code>, where the tiers and their error messages live, has not changed since 1.1.0.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

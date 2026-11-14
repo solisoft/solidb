@@ -6,6 +6,7 @@
   <p class="post-lede">A 613-collection SoliDB instance was OOM-killed at 21.7 GB RSS while holding 6.3 GB of data, and nothing it exposed could say which part of it had grown. SoliDB 1.1.0 changes two things: jemalloc now serves RocksDB's C++ allocations as well as Rust's, and <code>/metrics</code> reports memory per component.</p>
   <p class="post-note">The measurements quoted here are the ones recorded in the 1.1.0 changelog and source. The <code>/metrics</code> excerpt comes from a throwaway server built from a later release; the gauges it shows are the ones 1.1.0 added, unchanged.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

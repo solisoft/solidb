@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SoliDB — blog post share card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400..600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* The share card of one blog post: its headline beside its first figure.
+     tools/og/posts.py fills the three slots below and screenshots the page.
+     Same tokens and ink band as og.html; always the light theme. */
+  :root {
+    --bg: #e9e3d6;
+    --surface: #efeadf;
+    --sunken: #ded7c8;
+    --text: #1a1915;
+    --text-2: #433f36;
+    --text-3: #5e5849;
+    --rule: #cfc6b3;
+    --rule-strong: #b3a88f;
+    --accent: #a02d0a;
+    --data: #1b5499;
+    --error: #b42318;
+    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+    --font-display: "Newsreader", Georgia, serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); }
+
+  .card {
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .inner {
+    flex: 1;
+    min-height: 0;
+    padding: 44px 56px 36px 64px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 620px;
+    gap: 44px;
+    align-items: center;
+  }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+    margin-bottom: 18px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 46px;
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  .meta { margin-top: 22px; font-size: 18px; color: var(--text-3); }
+
+  /* The figure, ruled like .post-figure on the site. */
+  .figure {
+    border-top: 2px solid var(--text);
+    border-bottom: 1px solid var(--rule);
+    padding: 16px 0 12px;
+  }
+  .figure svg { display: block; width: 100%; height: auto; max-height: 410px; }
+
+  /* The posts' figures carry the old dark palette as attributes; the site
+     maps each colour to a token (app/assets/css/application.css), and so
+     does the card, with the light theme's values. */
+  svg [fill="#9ba39c" i] { fill: var(--text-2); }
+  svg [fill="#ece6d6" i] { fill: var(--text); }
+  svg [fill="#6b746c" i] { fill: var(--text-3); }
+  svg [fill="#141d1b" i] { fill: var(--surface); }
+  svg [fill="#101716" i] { fill: var(--sunken); }
+  svg [fill="#f5a623" i] { fill: var(--accent); }
+  svg [fill="#4fd1c5" i] { fill: var(--data); }
+  svg [fill="#ff6b6b" i] { fill: var(--error); }
+  svg [stroke="#29322f" i] { stroke: var(--rule-strong); }
+  svg [stroke="#3a4541" i] { stroke: var(--rule-strong); }
+  svg [stroke="#9ba39c" i] { stroke: var(--text-2); }
+  svg [stroke="#f5a623" i] { stroke: var(--accent); }
+  svg [stroke="#4fd1c5" i] { stroke: var(--data); }
+  svg [stroke="#ff6b6b" i] { stroke: var(--error); }
+
+  .band {
+    flex: none;
+    height: 88px;
+    padding: 0 64px;
+    background: var(--text);
+    color: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .band .word { font-family: var(--font-display); font-size: 34px; font-weight: 500; letter-spacing: -0.01em; }
+  .band .word span { font-family: var(--font-sans); font-size: 22px; font-weight: 400; opacity: 0.7; margin-left: 14px; }
+  .band .url { font-family: var(--font-mono); font-size: 20px; opacity: 0.8; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="inner">
+    <div class="head">
+      <p class="kicker"><!--KICKER--></p>
+      <h1><!--TITLE--></h1>
+      <p class="meta"><!--META--></p>
+    </div>
+    <div class="figure"><!--FIGURE--></div>
+  </div>
+  <div class="band">
+    <span class="word">SoliDB<span>Blog</span></span>
+    <span class="url">solidb.solisoft.net/blog</span>
+  </div>
+</div>
+<script>
+  // A long headline steps down until the left column holds it.
+  document.fonts.ready.then(() => {
+    const head = document.querySelector(".head");
+    const title = document.querySelector("h1");
+    const room = document.querySelector(".inner").clientHeight - 80;
+    let size = 46;
+    while (head.scrollHeight > room && size > 28) {
+      size -= 2;
+      title.style.fontSize = size + "px";
+    }
+  });
+</script>
+</body>
+</html>

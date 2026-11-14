@@ -6,6 +6,7 @@
   <p class="post-lede">2.3.0 is mostly about answers that were wrong without saying so. A dropped database whose rows a query could still return. An <code>UPDATE</code> of an edge&rsquo;s <code>_from</code> that changed every field but that one. A metrics token that the documented header could not deliver. And a two-phase-commit API that had never written a document. Each is fixed, or in the last case removed, and there are two additions: query latency on <code>/metrics</code>, and reading a document inside a transaction.</p>
   <p class="post-note">Every response on this page was captured from a 2.3.0 release build on a throwaway server. The behaviour before 2.3.0 is described from the code and the regression tests that reproduce it, not from a captured session.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -23,6 +24,36 @@
 
 <section id="cache"><h2>A cached answer that outlived its database</h2>
 <p>SoliDB caches the result of a read-only query, keyed by the database name, the query, its bind variables and the caller. A write to a collection drops every entry that read it. Dropping things did not. Delete a database, create one with the same name, and the identical query was answered from the cache with the dropped database&rsquo;s rows: for up to a minute with the default TTL, or until something wrote to that collection. Test suites that recreate a database between runs are exactly the workload that hits it. Truncating a collection had the same gap, and so did dropping and recreating a single collection.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 300" role="img" aria-labelledby="ghost-cache-t">
+<title id="ghost-cache-t">The same query before and after dropping and recreating a database. Run twice, it returns ghost1, the second time from the cache. The database shop is deleted and recreated with an empty layouts collection. Run again, before 2.3.0 the query answered ghost1 from the cache, the dropped database's rows, for up to a minute with the default TTL; in 2.3.0 it answers an empty list, not from the cache, because the drop itself invalidates.</title>
+<defs><marker id="ghost-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ba39c"/></marker></defs>
+<text x="20" y="26" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">One query, run around a database drop (database shop, collection layouts)</text>
+<rect x="20" y="42" width="196" height="64" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="34" y="66" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">1. run the query</text>
+<text x="34" y="90" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">ghost1  cached:false</text>
+<line x1="218" y1="74" x2="240" y2="74" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#ghost-arr)"/>
+<rect x="242" y="42" width="196" height="64" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="256" y="66" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">2. run it again</text>
+<text x="256" y="90" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">ghost1  cached:true</text>
+<line x1="440" y1="74" x2="462" y2="74" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#ghost-arr)"/>
+<rect x="464" y="42" width="196" height="64" rx="6" fill="#141d1b" stroke="#3a4541"/>
+<text x="478" y="66" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">3. drop and recreate</text>
+<text x="478" y="90" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">shop, layouts: empty</text>
+<text x="340" y="138" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6" text-anchor="middle">4. run the identical query</text>
+<path d="M562,106 V118 H175 V148" fill="none" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#ghost-arr)"/>
+<line x1="505" y1="118" x2="505" y2="148" stroke="#9ba39c" stroke-width="1.5" marker-end="url(#ghost-arr)"/>
+<rect x="20" y="150" width="310" height="104" rx="6" fill="#101716" stroke="#ff6b6b"/>
+<text x="34" y="174" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">Before 2.3.0</text>
+<text x="34" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#ff6b6b">["ghost1"]  from the cache</text>
+<text x="34" y="224" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">The dropped database’s rows, for up to</text>
+<text x="34" y="241" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">a minute with the default TTL</text>
+<rect x="350" y="150" width="310" height="104" rx="6" fill="#101716" stroke="#f5a623"/>
+<text x="364" y="174" font-family="Inter, sans-serif" font-size="13" fill="#ece6d6">2.3.0</text>
+<text x="364" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">[]  cached:false</text>
+<text x="364" y="224" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">The drop itself invalidates the cache,</text>
+<text x="364" y="241" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">after the data and registry are gone</text>
+<text x="20" y="284" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Truncating a collection, or dropping and recreating one, had the same gap.</text>
+</svg><figcaption>A write dropped every cached entry that read the collection; dropping the database did not. In 2.3.0 the drop invalidates too.</figcaption></figure>
 <p>In 2.3.0 the drop itself invalidates. Here is the sequence that used to return <code>ghost1</code> from the cache:</p>
 <div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre><span class="tok-com"># database shop, collection layouts, one document ghost1</span>
 FOR l IN layouts FILTER l.object == @o RETURN l._key

@@ -1,7 +1,10 @@
 # Blog controller — release notes and deep dives, written as static views.
 # Each post is app/views/blog/<slug>.html.slv, listed in posts() newest first.
 # `show` only renders slugs from that list, so a bad :slug can't reach an
-# arbitrary template. Adding a post = one view + one entry in posts().
+# arbitrary template. Adding a post = one view (with at least one
+# <figure class="post-figure"><svg>) + one entry in posts() + its share card,
+# rendered from that first figure by `tools/og/posts.py <slug>` and committed
+# as public/images/blog/<slug>.png. tests/share_meta_spec.sl checks all three.
 
 class BlogController < Controller
   # GET /blog

@@ -6,6 +6,7 @@
   <p class="post-lede">SoliDB works to one rule: a request may fail, but it must never take the server down. 1.1.0 closed the known ways a single request could crash or stall the process. On 26 September a bulk upsert found another way, and the kernel OOM-killed the server at about 61 GB. This post covers the rule, the incident, and the fix in 1.2.3.</p>
   <p class="post-note">The incident and before/after figures come from the 1.2.3 changelog and the fix commit. The run shown near the end was made on a 1.2.3-or-later build.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

@@ -1,0 +1,2 @@
+<%# A post's share card (tools/og/posts.py): its headline beside its first figure. %>
+<img class="<%= css_class %>" src="<%= public_path("images/blog/" + post["slug"] + ".png") %>" width="1200" height="630" alt="<%= post["title"] %>: the post's headline beside its first figure." loading="<%= loading %>" decoding="async">

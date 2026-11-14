@@ -6,6 +6,7 @@
   <p class="post-lede">Until 0.33.0, a columnar collection answered exactly one kind of SDBQL query: <code>FOR x IN c COLLECT AGGREGATE … RETURN …</code>. Add a <code>FILTER</code> and the same collection reported <em>CollectionNotFound</em>. And even that one shape could return the wrong numbers. 0.33.0 fixes both: <code>FOR</code> reads columnar collections like any other source, and four aggregate bugs that produced wrong results, not errors, are gone.</p>
   <p class="post-note">Every result on this page was produced by running the query on a throwaway SoliDB server.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

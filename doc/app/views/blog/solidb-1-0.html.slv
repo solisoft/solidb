@@ -6,6 +6,7 @@
   <p class="post-lede">SoliDB 1.0.0 is security hardening, SDBQL completeness, and one product breaking change: the client-facing job and cron queue is gone. A fresh node now starts closed — loopback only, no unauthenticated replication, no public <code>/metrics</code> — and SDBQL gains set operations, recursive CTEs and <code>RETURN DISTINCT</code>. If you run 0.34 today, read the last section before upgrading.</p>
   <p class="post-note">Every query result on this page was produced by running the query on a test server.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">

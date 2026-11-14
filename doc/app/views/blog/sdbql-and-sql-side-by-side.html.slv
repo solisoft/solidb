@@ -6,6 +6,7 @@
   <p class="post-lede">Someone asked whether SDBQL can do things SQL cannot. The honest answer is no: with JSON functions and recursive queries, PostgreSQL returns every result on this page. What differs is how much you write to get it, and what the database checks for you. So here are six questions asked of the same small shop, in both languages, with the answers each gave, and then the things SQL does that SDBQL does not.</p>
   <p class="post-note">Every query and every result on this page was run on November 11, 2026: the SDBQL on the released SoliDB 2.9.4 binary, on a throwaway server; the SQL on PostgreSQL 18.6 in a container. The two hold the same four customers, four orders and four &ldquo;follows&rdquo; links.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -41,6 +42,48 @@
   <span class="tok-kw">INSERT</span> {_from: <span class="tok-fn">CONCAT</span>(<span class="tok-str">"customers/"</span>, e[<span class="tok-num">0</span>]), _to: <span class="tok-fn">CONCAT</span>(<span class="tok-str">"customers/"</span>, e[<span class="tok-num">1</span>])} <span class="tok-kw">INTO</span> follows</pre></div>
 <p>Three collections were created first, <code>follows</code> as an edge collection; nothing else was declared. Only one order has a <code>gift</code>, and no schema had to say that it may.</p>
 <p>In PostgreSQL the same shop is four tables, as anyone would model it: the lines of an order are rows of their own, and so are the links.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 320" role="img" aria-labelledby="sqlside-t">
+<title id="sqlside-t">The same shop in SoliDB and in PostgreSQL. In SoliDB it is three collections: customers, orders and the follows edges, and order o1 holds its two lines, pen (qty 2, price 3) and ink (qty 1, price 9), inside the document. In PostgreSQL it is four tables: customers, orders, order_items and follows, with the two lines of o1 stored as rows of order_items, and the tables tied together by references.</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">SoliDB — 3 collections</text>
+<rect x="20" y="44" width="310" height="236" rx="8" fill="#101716" stroke="#29322f"/>
+<rect x="36" y="56" width="278" height="30" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="48" y="76" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">customers</text>
+<text x="150" y="76" font-family="JetBrains Mono, monospace" font-size="12" fill="#6b746c">ann bob cid dee</text>
+<rect x="36" y="96" width="278" height="124" rx="5" fill="#141d1b" stroke="#f5a623"/>
+<text x="48" y="116" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">orders</text>
+<text x="150" y="116" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">o1 is one document</text>
+<rect x="46" y="126" width="258" height="84" rx="4" fill="#101716" stroke="#3a4541"/>
+<text x="54" y="146" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">status: "paid",</text>
+<text x="54" y="164" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">items: [</text>
+<text x="66" y="182" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">{sku: "pen", qty: 2, price: 3},</text>
+<text x="66" y="200" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">{sku: "ink", qty: 1, price: 9}]</text>
+<rect x="36" y="230" width="278" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="48" y="252" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">follows</text>
+<text x="150" y="252" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">edges, ann → bob …</text>
+<text x="360" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">PostgreSQL — 4 tables</text>
+<rect x="350" y="44" width="310" height="236" rx="8" fill="#101716" stroke="#29322f"/>
+<rect x="366" y="56" width="278" height="30" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="378" y="76" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">customers</text>
+<text x="480" y="76" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">key, name, city</text>
+<rect x="366" y="96" width="278" height="48" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="378" y="116" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">orders</text>
+<text x="378" y="134" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">key, customer, status, gift_note</text>
+<rect x="366" y="154" width="278" height="66" rx="5" fill="#141d1b" stroke="#4fd1c5"/>
+<text x="378" y="174" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">order_items</text>
+<text x="480" y="174" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">order_key, sku, qty, price</text>
+<text x="378" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">o1</text><text x="410" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">pen</text><text x="450" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">2</text><text x="472" y="194" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">3</text>
+<text x="378" y="211" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">o1</text><text x="410" y="211" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">ink</text><text x="450" y="211" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">1</text><text x="472" y="211" font-family="JetBrains Mono, monospace" font-size="12" fill="#4fd1c5">9</text>
+<rect x="366" y="230" width="278" height="34" rx="5" fill="#141d1b" stroke="#3a4541"/>
+<text x="378" y="252" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">follows</text>
+<text x="480" y="252" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">follower, followed</text>
+<polyline points="366,120 358,120 358,71 364,71" fill="none" stroke="#9ba39c"/>
+<polyline points="366,247 358,247 358,120" fill="none" stroke="#9ba39c"/>
+<polygon points="366,71 360,67 360,75" fill="#9ba39c"/>
+<polyline points="644,187 652,187 652,120 646,120" fill="none" stroke="#9ba39c"/>
+<polygon points="644,120 650,116 650,124" fill="#9ba39c"/>
+<text x="20" y="306" font-family="Inter, sans-serif" font-size="12" fill="#f5a623">The order is its lines.</text>
+<text x="350" y="306" font-family="Inter, sans-serif" font-size="12" fill="#9ba39c">The lines are rows of their own, tied by references.</text>
+</svg><figcaption>Four things SoliDB said it did and did not quite do, each fixed in 2.1.0.</figcaption></figure>
 <div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sql</div><pre><span class="tok-kw">create</span> <span class="tok-kw">table</span> customers (key text <span class="tok-kw">primary</span> <span class="tok-kw">key</span>, name text <span class="tok-kw">not</span> <span class="tok-kw">null</span>, city text <span class="tok-kw">not</span> <span class="tok-kw">null</span>);
 <span class="tok-kw">create</span> <span class="tok-kw">table</span> orders (
   key text <span class="tok-kw">primary</span> <span class="tok-kw">key</span>,

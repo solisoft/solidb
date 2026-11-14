@@ -6,6 +6,7 @@
   <p class="post-lede">SoliDB 1.2.2 and 1.3.0 add 33 functions to SDBQL. Most of them replace something that used to take a subquery per row, a trip back to application code, or a helper every project ends up writing: the empty days in a report, a join, an audit diff, accent-insensitive search, an IBAN check. And one parser fix: <code>FOR x IN</code> now takes any expression.</p>
   <p class="post-note">Every result on this page was produced by running the query on a 1.3.0 server.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -33,6 +34,38 @@
   {"day": "2024-03-03", "orders": 1},
   {"day": "2024-03-04", "orders": 0}
 ]</pre></div></div>
+<figure class="post-figure"><svg viewBox="0 0 680 300" role="img" aria-labelledby="s13-series-t">
+<title id="s13-series-t">Daily orders from 2024-03-01 to 2024-03-04. Grouping the orders gives a row only for the days that had some: 2 orders on March 1 and 1 on March 3, nothing for March 2 and March 4. Iterating over DATE_SERIES gives all four days: 2, 0, 1 and 0.</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Over the data: COLLECT</text>
+<rect x="20" y="44" width="310" height="200" rx="8" fill="#101716" stroke="#29322f"/>
+<text x="36" y="86" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-01</text>
+<rect x="124" y="71" width="140" height="22" rx="3" fill="#6b746c"/>
+<text x="274" y="87" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">2</text>
+<text x="36" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#6b746c">2024-03-02</text>
+<rect x="124" y="111" width="140" height="22" rx="3" fill="none" stroke="#ff6b6b" stroke-dasharray="4 4"/>
+<text x="136" y="127" font-family="Inter, sans-serif" font-size="12" fill="#ff6b6b">no row</text>
+<text x="36" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-03</text>
+<rect x="124" y="151" width="70" height="22" rx="3" fill="#6b746c"/>
+<text x="204" y="167" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">1</text>
+<text x="36" y="206" font-family="JetBrains Mono, monospace" font-size="12" fill="#6b746c">2024-03-04</text>
+<rect x="124" y="191" width="140" height="22" rx="3" fill="none" stroke="#ff6b6b" stroke-dasharray="4 4"/>
+<text x="136" y="207" font-family="Inter, sans-serif" font-size="12" fill="#ff6b6b">no row</text>
+<text x="350" y="28" font-family="Inter, sans-serif" font-size="14" fill="#ece6d6">Over the calendar: DATE_SERIES</text>
+<rect x="350" y="44" width="310" height="200" rx="8" fill="#101716" stroke="#29322f"/>
+<text x="366" y="86" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-01</text>
+<rect x="454" y="71" width="140" height="22" rx="3" fill="#f5a623"/>
+<text x="604" y="87" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2</text>
+<text x="366" y="126" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-02</text>
+<line x1="454" y1="111" x2="454" y2="133" stroke="#f5a623" stroke-width="2"/>
+<text x="464" y="127" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0</text>
+<text x="366" y="166" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-03</text>
+<rect x="454" y="151" width="70" height="22" rx="3" fill="#f5a623"/>
+<text x="534" y="167" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">1</text>
+<text x="366" y="206" font-family="JetBrains Mono, monospace" font-size="12" fill="#9ba39c">2024-03-04</text>
+<line x1="454" y1="191" x2="454" y2="213" stroke="#f5a623" stroke-width="2"/>
+<text x="464" y="207" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">0</text>
+<text x="20" y="276" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Orders per day, same data on both sides. Bars share one scale starting at 0.</text>
+</svg><figcaption>Grouping the orders has no row for a day without orders; iterating over <code>DATE_SERIES</code> gives every day, and the empty ones read 0.</figcaption></figure>
 <p>The keys line up because <code>DATE_SERIES</code> returns dates in the same shape as <code>DATE_TRUNC</code>. Each date is computed from the start — start plus k steps — so a monthly series from January 31 lands on the last day of February and comes back to the 31st in March, instead of drifting to the 28th.</p>
 <div class="post-fn" id="date_series"><h3><code>DATE_SERIES(start, end, unit, step?, tz?)</code> <span class="post-ver">1.3.0</span></h3><p>Every date from start to end inclusive, step units apart. Each date is start + k·step, so a monthly series from the 31st lands on the last day of shorter months and comes back to the 31st. Accepts quarter; capped at 100,000 dates.</p><div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> query.sdbql</div><pre><span class="tok-kw">RETURN</span> <span class="tok-fn">DATE_SERIES</span>(<span class="tok-str">"2024-01-31"</span>, <span class="tok-str">"2024-03-31"</span>, <span class="tok-str">"month"</span>)</pre><div class="post-result"><span class="post-arrow" aria-hidden="true">→</span><pre>[
   "2024-01-31T00:00:00.000Z",

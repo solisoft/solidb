@@ -6,6 +6,7 @@
   <p class="post-lede">SoliDB has run on RocksDB since its first release. It can now also run on solistore, a storage engine we wrote in Rust for it. In the whole server, against RocksDB with SoliDB&rsquo;s production settings, solistore is ahead on every phase we measured. It is behind a build flag for now, and nothing changes for an existing data directory.</p>
   <p class="post-note">Every figure on this page comes from the same SoliDB release build running on one engine and then the other, on 8 cores, with 1M documents, over the native driver, and with the query cache off. They are medians of three runs, alternating the engines. The raw results and the scripts are in the <a href="https://github.com/solisoft/solistore">solistore repository</a>.</p>
 </header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
 
 <div class="post-body wrap-narrow">
 <nav class="post-toc" aria-label="In this post">
@@ -88,6 +89,34 @@
   </tbody>
 </table></div>
 <p>solistore also uses less CPU per request, for example 27&nbsp;&micro;s per update against 32. Its peak memory is 1.02&ndash;1.08&times; RocksDB&rsquo;s. Under heavy concurrency the gap widens: at 256 connections, the p99 latency of an update is 3.0&nbsp;ms on solistore and 4.4&nbsp;ms on RocksDB, whose writers spin while they wait.</p>
+<figure class="post-figure"><svg viewBox="0 0 680 284" role="img" aria-labelledby="sst-bars-t">
+<title id="sst-bars-t">solistore against RocksDB on three measurements from this post: fsynced batches committed per second from 8 threads in the engine benchmark, 214,000 against 63,500; p99 latency of an update inside SoliDB at 256 connections, 3.0 ms against 4.4 ms; CPU per update inside SoliDB, 27 µs against 32 µs.</title>
+<text x="20" y="28" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Fsynced batches committed per second, 8 threads (engine benchmark) — higher is better</text>
+<line x1="130" y1="36" x2="130" y2="88" stroke="#29322f"/>
+<text x="20" y="53" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">solistore</text>
+<rect x="130" y="40" width="470" height="18" rx="3" fill="#f5a623"/>
+<text x="608" y="53" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">214,000</text>
+<text x="20" y="79" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">RocksDB</text>
+<rect x="130" y="66" width="139" height="18" rx="3" fill="#6b746c"/>
+<text x="277" y="79" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">63,500</text>
+<text x="20" y="108" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">p99 latency of an update in SoliDB, 256 connections (ms) — lower is better</text>
+<line x1="130" y1="116" x2="130" y2="168" stroke="#29322f"/>
+<text x="20" y="133" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">solistore</text>
+<rect x="130" y="120" width="320" height="18" rx="3" fill="#f5a623"/>
+<text x="458" y="133" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">3.0</text>
+<text x="20" y="159" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">RocksDB</text>
+<rect x="130" y="146" width="470" height="18" rx="3" fill="#6b746c"/>
+<text x="608" y="159" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">4.4</text>
+<text x="20" y="188" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">CPU per update in SoliDB (µs) — lower is better</text>
+<line x1="130" y1="196" x2="130" y2="248" stroke="#29322f"/>
+<text x="20" y="213" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">solistore</text>
+<rect x="130" y="200" width="397" height="18" rx="3" fill="#f5a623"/>
+<text x="535" y="213" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">27</text>
+<text x="20" y="239" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">RocksDB</text>
+<rect x="130" y="226" width="470" height="18" rx="3" fill="#6b746c"/>
+<text x="608" y="239" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">32</text>
+<text x="20" y="270" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Each pair of bars has its own scale starting at 0. SoliDB runs: 8 cores, 1M documents, native driver.</text>
+</svg><figcaption>Group commit is where solistore pulls furthest ahead; inside SoliDB it also spends less CPU per update and, at 256 connections, holds a lower tail latency.</figcaption></figure>
 <p>It did not start there. The first run had updates at 0.89&times;. Profiling the server found three things:</p>
 <ul>
 <li>block searches that copied every key they looked at;</li>
