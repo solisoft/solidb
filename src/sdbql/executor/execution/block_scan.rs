@@ -238,6 +238,10 @@ impl QueryExecutor<'_> {
         let unsealed = set.unsealed(&collection);
         let sealed = (collection.count() as u64).saturating_sub(unsealed);
         if sealed == 0 || unsealed > UNSEALED_READ.max(sealed / 4) {
+            // After a restart the small blocks are gone and nothing was
+            // written yet: have the sealing thread catch up for the next
+            // query. This one takes the ordinary path.
+            collection.seal_column_blocks_behind(&set, false);
             return None;
         }
         Some((found, collection, set, block_plan))

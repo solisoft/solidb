@@ -268,6 +268,29 @@ pub(crate) struct Entry {
     pub(crate) max_time: i64,
     /// A merge with its neighbours failed: not tried again.
     unmergeable: AtomicBool,
+    /// Whether the block is on disk: every block is, once listed. (Keeping
+    /// the small ones in memory until they were merged was tried, to write
+    /// each point once instead of three times: it changed nothing that
+    /// was measured, and a restart then had them to seal again.)
+    stored: AtomicBool,
+}
+
+/// A block as it is stored, from one of the directory.
+#[derive(Serialize)]
+struct StoredRef<'a> {
+    lo: &'a str,
+    hi: &'a str,
+    rows: u64,
+    fingerprint: u64,
+    columns: Option<&'a Columns>,
+}
+
+/// The bytes of a block: its format, then the block.
+fn encoded<T: Serialize>(block: &T) -> DbResult<Vec<u8>> {
+    let mut bytes = vec![FORMAT];
+    bincode::serialize_into(&mut bytes, block)
+        .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
+    Ok(bytes)
 }
 
 /// A range being sealed: what was written since it was registered.
@@ -295,6 +318,8 @@ pub(crate) struct BlockSet {
     inner: parking_lot::Mutex<Inner>,
     /// One seal at a time.
     sealing: parking_lot::Mutex<()>,
+    /// Waiting for, or with, the thread that seals (`Sealer`).
+    queued: AtomicBool,
     /// Documents covered by blocks that have columns.
     sealed_rows: AtomicU64,
     /// Documents covered by any block.
@@ -437,6 +462,7 @@ impl BlockSet {
             def,
             inner: parking_lot::Mutex::new(Inner::default()),
             sealing: parking_lot::Mutex::new(()),
+            queued: AtomicBool::new(false),
             sealed_rows: AtomicU64::new(0),
             covered_rows: AtomicU64::new(0),
             frontier: AtomicU64::new(u64::MAX),
@@ -445,7 +471,7 @@ impl BlockSet {
         }
     }
 
-    fn entry(&self, stored: Stored, verified: bool) -> Arc<Entry> {
+    fn entry(&self, stored: Stored, verified: bool, on_disk: bool) -> Arc<Entry> {
         let opaque = stored.columns.is_none();
         let (min_time, max_time) = stored
             .columns
@@ -454,7 +480,9 @@ impl BlockSet {
         self.covered_rows.fetch_add(stored.rows, Ordering::Relaxed);
         let cached = stored.columns.and_then(|columns| {
             let bytes = columns.bytes();
-            (HELD.fetch_add(bytes, Ordering::Relaxed) + bytes <= budget())
+            // What is not on disk is kept whatever the budget says: there
+            // is nowhere else to read it from.
+            (HELD.fetch_add(bytes, Ordering::Relaxed) + bytes <= budget() || !on_disk)
                 .then(|| Arc::new(columns))
                 .or_else(|| {
                     HELD.fetch_sub(bytes, Ordering::Relaxed);
@@ -475,6 +503,7 @@ impl BlockSet {
             min_time,
             max_time,
             unmergeable: AtomicBool::new(false),
+            stored: AtomicBool::new(on_disk),
         })
     }
 
@@ -520,12 +549,42 @@ impl BlockSet {
                 .then(|| key_ms(&stored.hi))
                 .flatten();
             frontier = frontier.zip(bounded).map(|(f, hi)| f.max(hi + 1));
-            let entry = self.entry(stored, false);
+            let entry = self.entry(stored, false, true);
             inner.blocks.insert(entry.lo.clone(), entry);
         }
         self.frontier
             .store(frontier.unwrap_or(u64::MAX), Ordering::Release);
         inner.changes += 1;
+    }
+
+    /// Write the blocks that are in memory only: an explicit seal is meant
+    /// to last, and a restart reads what is on disk.
+    fn store_all(&self, coll: &Collection) -> DbResult<()> {
+        let inner = self.inner.lock();
+        let Some(cf) = coll.ks.handle(&coll.db) else {
+            return Ok(());
+        };
+        for entry in inner
+            .blocks
+            .values()
+            .filter(|e| !e.stored.load(Ordering::Acquire))
+        {
+            let block = StoredRef {
+                lo: &entry.lo,
+                hi: &entry.hi,
+                rows: entry.rows,
+                fingerprint: entry.fingerprint,
+                columns: entry.cached.as_deref(),
+            };
+            // A block with columns that are nowhere cannot be written.
+            if entry.opaque || block.columns.is_some() {
+                coll.db
+                    .put_ks(&cf, block_key(&entry.lo), encoded(&block)?)
+                    .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
+                entry.stored.store(true, Ordering::Release);
+            }
+        }
+        Ok(())
     }
 
     fn delete_stored(&self, coll: &Collection, lo: &str) {
@@ -579,7 +638,9 @@ impl BlockSet {
         for lo in hit {
             if let Some(entry) = inner.blocks.remove(&lo) {
                 self.forget(&entry);
-                self.delete_stored(coll, &lo);
+                if entry.stored.load(Ordering::Acquire) {
+                    self.delete_stored(coll, &lo);
+                }
                 inner.changes += 1;
             }
         }
@@ -725,10 +786,18 @@ impl BlockSet {
             .and_then(|p| p.written_from)
             .is_some_and(|from| from.as_str() < stored.hi.as_str());
         if disturbed || self.state.is_dead() {
-            self.delete_stored(coll, &stored.lo);
             return Ok(false);
         }
-        let entry = self.entry(stored, true);
+        // Written before it is listed: a restart reads what is on disk.
+        {
+            let cf = coll.ks.handle(&coll.db).ok_or_else(|| {
+                DbError::CollectionNotFound(format!("{} (dropped while sealing)", coll.name))
+            })?;
+            coll.db
+                .put_ks(&cf, block_key(&stored.lo), encoded(&stored)?)
+                .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
+        }
+        let entry = self.entry(stored, true, true);
         inner.blocks.insert(entry.lo.clone(), entry);
         inner.changes += 1;
         Ok(true)
@@ -793,10 +862,11 @@ impl BlockSet {
             fingerprint: run.iter().fold(0, |f, e| f ^ e.fingerprint),
             columns: Some(columns),
         };
-        let mut bytes = vec![FORMAT];
-        if bincode::serialize_into(&mut bytes, &stored).is_err() {
-            return give_up();
-        }
+        let persist = true;
+        let bytes = match encoded(&stored) {
+            Ok(bytes) => Some(bytes),
+            Err(_) => return give_up(),
+        };
         let Some(cf) = coll.ks.handle(&coll.db) else {
             return false;
         };
@@ -811,25 +881,27 @@ impl BlockSet {
         if !untouched {
             return true;
         }
-        let mut batch = super::kv::KvBatch::default();
-        for entry in &run[1..] {
-            batch.delete_ks(&cf, block_key(&entry.lo));
-        }
-        batch.put_ks(&cf, block_key(&stored.lo), bytes);
-        if coll.db.write(batch).is_err() {
-            return false;
+        if let Some(bytes) = bytes {
+            let mut batch = super::kv::KvBatch::default();
+            for entry in run[1..].iter().filter(|e| e.stored.load(Ordering::Acquire)) {
+                batch.delete_ks(&cf, block_key(&entry.lo));
+            }
+            batch.put_ks(&cf, block_key(&stored.lo), bytes);
+            if coll.db.write(batch).is_err() {
+                return false;
+            }
         }
         for entry in &run {
             inner.blocks.remove(&entry.lo);
             self.forget(entry);
         }
-        let entry = self.entry(stored, true);
+        let entry = self.entry(stored, true, persist);
         inner.blocks.insert(entry.lo.clone(), entry);
         inner.changes += 1;
         true
     }
 
-    /// Build and store the block of the first documents of `[lo, bound)`.
+    /// Build the block of the first documents of `[lo, bound)`.
     /// `None` when the range is an open tail too short to seal.
     fn seal_range(
         &self,
@@ -926,15 +998,6 @@ impl BlockSet {
             fingerprint,
             columns: rows.and_then(columns_of),
         };
-        let cf = coll.ks.handle(&coll.db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("{} (dropped while sealing)", coll.name))
-        })?;
-        let mut bytes = vec![FORMAT];
-        bincode::serialize_into(&mut bytes, &stored)
-            .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
-        coll.db
-            .put_ks(&cf, block_key(lo), bytes)
-            .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
         Ok(Some(stored))
     }
 }
@@ -1307,19 +1370,15 @@ impl Collection {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         while set.merge_next(self) {}
+        set.store_all(self)?;
         Ok(added)
     }
 
-    /// After a write: seal one block when enough documents wait behind the
-    /// newest, unless another thread is sealing.
-    pub(crate) fn seal_column_blocks_behind(&self, set: &BlockSet) {
+    /// Seal what waits behind the newest block, and merge the small
+    /// blocks: what the sealing thread does for a collection.
+    fn seal_behind(&self, set: &BlockSet) {
         let waiting = (SEAL_ROWS + TAIL_KEPT) as u64;
-        if set.uncovered(self) < waiting {
-            return;
-        }
-        let Some(_sealing) = set.sealing.try_lock() else {
-            return;
-        };
+        let _sealing = set.sealing.lock();
         while set.uncovered(self) >= waiting {
             match set.seal_next(self, false) {
                 Ok(true) => {}
@@ -1333,16 +1392,34 @@ impl Collection {
         while set.merge_next(self) {}
     }
 
-    /// A committed write to `keys`: the blocks holding them go, and with
-    /// `seal` a new one is sealed when enough documents wait.
+    /// After a write: when enough documents wait behind the newest block
+    /// (new points, or a range whose block a write threw away), hand the
+    /// collection to the thread that seals. The write does not wait for
+    /// it. If that thread cannot be started, `here` says whether this one
+    /// may seal instead: not a thread others wait for.
+    pub(crate) fn seal_column_blocks_behind(&self, set: &BlockSet, here: bool) {
+        if set.uncovered(self) < (SEAL_ROWS + TAIL_KEPT) as u64
+            || set.queued.swap(true, Ordering::AcqRel)
+        {
+            return;
+        }
+        if !send_to_sealer(self) {
+            set.queued.store(false, Ordering::Release);
+            if here {
+                self.seal_behind(set);
+            }
+        }
+    }
+
+    /// A committed write to `keys`: the blocks holding them go, and what
+    /// waits unsealed is handed to the sealing thread (`seal`: whether this
+    /// thread may do it itself, should there be none).
     pub(crate) fn column_blocks_wrote(&self, keys: Wrote<'_>, seal: bool) {
         let Some(set) = self.column_blocks() else {
             return;
         };
         set.wrote(self, keys);
-        if seal {
-            self.seal_column_blocks_behind(&set);
-        }
+        self.seal_column_blocks_behind(&set, seal);
     }
 
     /// The state of this collection's blocks.
@@ -1358,5 +1435,78 @@ impl Collection {
             sealed_documents: set.sealed_rows.load(Ordering::Relaxed),
             documents: self.count(),
         })
+    }
+}
+
+/// The thread that seals the blocks of the collections of one database
+/// instance. Sealing reads a thousand documents and more: on the thread of
+/// the write that crossed the threshold, it made that write, and those
+/// queued behind it on a busy server, wait for it.
+struct Sealer {
+    jobs: std::sync::mpsc::Sender<Collection>,
+    /// Set at shutdown: what is still queued is dropped, not sealed.
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+/// By database instance (its address; the collections queued keep it
+/// alive, and [`stop_sealer`] removes the entry before it goes).
+static SEALERS: once_cell::sync::Lazy<DashMap<usize, Sealer>> =
+    once_cell::sync::Lazy::new(DashMap::new);
+
+/// Queue `coll` for sealing; false when no thread could be started.
+fn send_to_sealer(coll: &Collection) -> bool {
+    let key = Arc::as_ptr(&coll.db) as usize;
+    let jobs = match SEALERS.get(&key) {
+        Some(sealer) => sealer.jobs.clone(),
+        None => {
+            let (jobs, queue) = std::sync::mpsc::channel::<Collection>();
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopped = stop.clone();
+            let spawned = std::thread::Builder::new()
+                .name("solidb-seal".to_string())
+                .spawn(move || {
+                    for coll in queue {
+                        let Some(set) = coll.column_blocks() else {
+                            continue;
+                        };
+                        // Cleared first: a write that arrives while this
+                        // seal runs queues the collection again.
+                        set.queued.store(false, Ordering::Release);
+                        if !stopped.load(Ordering::Acquire) {
+                            coll.seal_behind(&set);
+                        }
+                    }
+                });
+            let Ok(thread) = spawned else {
+                return false;
+            };
+            SEALERS
+                .entry(key)
+                .or_insert(Sealer {
+                    jobs,
+                    stop,
+                    thread: Some(thread),
+                })
+                .jobs
+                .clone()
+        }
+    };
+    jobs.send(coll.clone()).is_ok()
+}
+
+/// Stop the sealing thread of `db` and wait for it: called when the last
+/// handle on the engine goes, before the database is closed. Blocks not
+/// sealed yet are sealed by the next process, or read as documents.
+pub(crate) fn stop_sealer(db: &Arc<DB>) {
+    let Some((_, mut sealer)) = SEALERS.remove(&(Arc::as_ptr(db) as usize)) else {
+        return;
+    };
+    sealer.stop.store(true, Ordering::Release);
+    let thread = sealer.thread.take();
+    // The queue closes when its last sender goes: the thread then ends.
+    drop(sealer);
+    if let Some(thread) = thread {
+        let _ = thread.join();
     }
 }

@@ -143,6 +143,23 @@ fn same(engine: &StorageEngine, expect_fold: bool, when: &str) {
     }
 }
 
+/// Wait for the sealing thread to have sealed all but the newest points
+/// (it leaves up to 1,536 of them), and give the state of the blocks.
+fn sealed_behind(coll: &solidb::storage::Collection) -> solidb::storage::blocks::BlocksStatus {
+    let began = std::time::Instant::now();
+    loop {
+        let status = coll.column_blocks_status().unwrap();
+        if status.sealed_documents + 1_536 > status.documents as u64 {
+            return status;
+        }
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(20),
+            "not sealed: {status:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 fn points_of(engine: &StorageEngine) -> solidb::storage::Collection {
     engine
         .get_database(DB)
@@ -156,9 +173,10 @@ fn blocks_answer_what_the_documents_answer() {
     let points = 3 * BLOCK_ROWS as i64 + 5_000;
     let (engine, _tmp) = engine_with(points);
     let coll = points_of(&engine);
-    // Writes sealed some blocks behind them; the rest on demand.
-    let before = coll.column_blocks_status().unwrap();
-    assert!(before.blocks >= 2, "{before:?}");
+    // The writes had the sealing thread seal behind them, all but the
+    // newest points; the rest on demand.
+    let before = sealed_behind(&coll);
+    assert!(before.blocks >= 1, "{before:?}");
     same(&engine, true, "sealed by the writes");
 
     let sealed = coll.seal_column_blocks().unwrap();
@@ -187,7 +205,8 @@ fn a_write_throws_away_the_block_it_falls_in() {
     let mut late = point(7);
     late["_key"] = json!("00000000-0000-7000-8000-000000000000");
     coll.insert(late).unwrap();
-    // (The write that threw it away sealed its range again at once.)
+    // The write that threw it away had its range sealed again.
+    sealed_behind(&coll);
     same(&engine, true, "after a late point");
 
     // Sealed again, the late point is in a block.
@@ -202,7 +221,6 @@ fn a_write_throws_away_the_block_it_falls_in() {
     // The block the deleted point was in goes; until its range is sealed
     // again the documents answer, by whichever path.
     coll.delete("00000000-0000-7000-8000-000000000000").unwrap();
-    assert!(coll.column_blocks_status().unwrap().sealed_documents < coll.count() as u64);
     for q in queries() {
         assert_eq!(
             run(&engine, &q, true),
@@ -386,4 +404,23 @@ fn concurrent_writes_and_seals_agree_with_the_documents() {
     let status = coll.column_blocks_status().unwrap();
     assert_eq!(status.sealed_documents, total, "{status:?}");
     same(&engine, true, "after the writers, sealed");
+}
+
+/// After a restart with no explicit seal, the blocks the sealing thread
+/// wrote are read back and checked, and the answers are the documents'.
+#[test]
+fn a_restart_without_an_explicit_seal() {
+    let points = 30_000;
+    let (engine, tmp) = engine_with(points);
+    sealed_behind(&points_of(&engine));
+    let before: Vec<_> = queries().iter().map(|q| run(&engine, q, false)).collect();
+    drop(engine);
+
+    let engine = open(&tmp);
+    let coll = points_of(&engine);
+    for (q, want) in queries().iter().zip(&before) {
+        assert_eq!(&run(&engine, q, true), want, "after the restart: {q}");
+    }
+    sealed_behind(&coll);
+    same(&engine, true, "after the restart");
 }

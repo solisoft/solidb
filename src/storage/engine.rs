@@ -1334,6 +1334,9 @@ impl Drop for StorageEngine {
 
         if last {
             super::foreign_keys::forget_engine(&self.db);
+            // The thread that seals column blocks holds collections of this
+            // database while it works: joined before the database closes.
+            super::blocks::stop_sealer(&self.db);
             // Before the flush and before this handle's `Arc<DB>` goes away:
             // a background dropper still inside `drop_cf` races the static
             // destructors that free RocksDB's global option-type registry, and
