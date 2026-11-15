@@ -771,6 +771,10 @@ Rules that keep it sound:
   forgets it brings card #901 back (rows missing from filtered results).
   A column with no entry was indexed by 2.10.4 or earlier: its index is
   not used.
+- **SDBQL writes one way**: `INSERT … INTO` a columnar name is taken by
+  `QueryExecutor::insert_into_columnar` before the document path (and the
+  streaming insert steps aside for it); `get_collection_for_write` refuses
+  a columnar name, which is what answers UPDATE, UPSERT and REMOVE.
 - **A client's rows are checked against the schema** (`conform`, in
   `insert_rows`): type, nullability, unknown columns; an integer in a
   `float64` column becomes a float, so the column stays one array. The

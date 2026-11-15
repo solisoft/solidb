@@ -201,6 +201,13 @@
   ]
 }</code></pre>
           </div>
+
+          <p class="text-gray-300 mt-6 mb-4">
+            A query can insert too, which is how a columnar collection is filled from documents. Every row of the query goes in as one insert; it takes no <code>OPTIONS</code>, binds no <code>NEW</code>, and is refused inside a transaction. <code>UPDATE</code>, <code>UPSERT</code> and <code>REMOVE</code> do not apply to a columnar collection.
+          </p>
+          <pre><code class="language-sdbql text-sm">FOR e IN events
+  FILTER e.status == "done"
+  INSERT { host: e.host, cpu_usage: e.cpu, requests: e.count } INTO metrics</code></pre>
         </div>
       </section>
 

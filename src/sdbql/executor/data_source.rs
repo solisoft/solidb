@@ -81,9 +81,64 @@ impl<'a> QueryExecutor<'a> {
         name: &str,
     ) -> DbResult<crate::storage::Collection> {
         crate::storage::check_write_access(name, self.write_actor())?;
+        // A columnar collection is no document collection: say so, where
+        // the name used to be reported as not found.
+        if self.columnar_database(name).is_some() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{name}' is a columnar collection: SDBQL can INSERT into it, but not UPDATE, \
+                 UPSERT or REMOVE (rows are deleted with POST …/columnar/{name}/delete)"
+            )));
+        }
         // Not the tracked handle: what a write reads on its way (a unique
         // value, the document it replaces) is checked by the commit itself.
         self.get_collection_untracked(name)
+    }
+
+    /// The query's database, when `name` is one of its columnar collections.
+    pub(super) fn columnar_database(&self, name: &str) -> Option<crate::storage::Database> {
+        let database = self.storage.get_database(self.database.as_deref()?).ok()?;
+        self.is_columnar(&database, name).then_some(database)
+    }
+
+    /// `INSERT … INTO` a columnar collection: the document of every row,
+    /// inserted in one call (checked against the schema, sealed as blocks
+    /// when there are enough, logged for the peers). `None` when the
+    /// target is not columnar.
+    pub(super) fn insert_into_columnar(
+        &self,
+        clause: &crate::sdbql::ast::InsertClause,
+        rows: &[Context],
+    ) -> DbResult<Option<usize>> {
+        let Some(database) = self.columnar_database(&clause.collection) else {
+            return Ok(None);
+        };
+        crate::storage::check_write_access(&clause.collection, self.write_actor())?;
+        if self.tx_writer.is_some() {
+            return Err(DbError::OperationNotSupported(
+                "inserting into a columnar collection is not supported in a transaction"
+                    .to_string(),
+            ));
+        }
+        if clause.options != crate::sdbql::ast::MutationOptions::default()
+            || clause.binds_new
+            || clause.binds_old
+        {
+            return Err(DbError::OperationNotSupported(
+                "INSERT INTO a columnar collection takes no OPTIONS and binds no NEW or OLD"
+                    .to_string(),
+            ));
+        }
+        let documents = rows
+            .iter()
+            .map(|ctx| self.evaluate_expr_with_context(&clause.document, ctx))
+            .collect::<DbResult<Vec<Value>>>()?;
+        let inserted = crate::sync::columnar::insert(
+            &database,
+            self.replication,
+            &clause.collection,
+            documents,
+        )?;
+        Ok(Some(inserted.len()))
     }
 
     /// Who this executor writes as: the principal a client handler attached,

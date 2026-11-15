@@ -244,3 +244,92 @@ fn grouped_result_uses_the_collect_variable_name() {
         ]
     );
 }
+
+// ===========================================================================
+// Writing (card #887)
+// ===========================================================================
+
+fn try_run(storage: &StorageEngine, query: &str) -> Result<Vec<Value>, String> {
+    let parsed = parse(query).map_err(|e| e.to_string())?;
+    QueryExecutor::with_database(storage, "testdb".to_string())
+        .execute(&parsed)
+        .map_err(|e| e.to_string())
+}
+
+fn total(storage: &StorageEngine) -> Value {
+    run(
+        storage,
+        "FOR m IN metrics COLLECT AGGREGATE n = COUNT(), s = SUM(m.value) RETURN {n, s}",
+    )[0]
+    .clone()
+}
+
+/// `INSERT … INTO` a columnar collection used to answer that the
+/// collection did not exist. One row, rows computed from documents, and a
+/// range large enough for the streaming path and for sealed blocks.
+#[test]
+fn sdbql_inserts_into_a_columnar_collection() {
+    let (storage, _d) = fixture();
+    run(&storage, r#"INSERT {host: "c", value: 5} INTO metrics"#);
+    assert_eq!(total(&storage), json!({"n": 4, "s": 65.0}));
+
+    let database = storage.get_database("testdb").unwrap();
+    database
+        .create_collection("events".to_string(), None)
+        .unwrap();
+    let events = database.get_collection("events").unwrap();
+    for (host, ms) in [("a", 1.5), ("b", 2.5), ("z", 4.0)] {
+        events.insert(json!({"host": host, "ms": ms})).unwrap();
+    }
+    run(
+        &storage,
+        "FOR e IN events FILTER e.host != 'z' INSERT {host: e.host, value: e.ms * 2} INTO metrics",
+    );
+    assert_eq!(total(&storage), json!({"n": 6, "s": 73.0}));
+
+    run(
+        &storage,
+        r#"FOR i IN 1..6000 INSERT {host: CONCAT("h", i % 3), value: i} INTO metrics"#,
+    );
+    assert_eq!(total(&storage), json!({"n": 6006, "s": 18003073.0}));
+    // No document collection appeared beside it.
+    assert!(database.get_collection("metrics").is_err());
+}
+
+/// The schema decides, and a refused insert leaves nothing; the other
+/// writes say what a columnar collection takes.
+#[test]
+fn sdbql_writes_a_columnar_collection_does_not_take_are_refused() {
+    let (storage, _d) = fixture();
+    let before = total(&storage);
+
+    let error = try_run(
+        &storage,
+        r#"FOR i IN 1..3 INSERT {host: "c", value: i == 2 ? "x" : i} INTO metrics"#,
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("row 1: column 'value' is float64"),
+        "{error}"
+    );
+
+    let error = try_run(
+        &storage,
+        r#"INSERT {host: "c", value: 1} INTO metrics RETURN NEW"#,
+    )
+    .unwrap_err();
+    assert!(error.contains("no OPTIONS and binds no NEW"), "{error}");
+
+    for query in [
+        r#"FOR m IN metrics UPDATE m WITH {value: 0} IN metrics"#,
+        r#"FOR m IN metrics REMOVE m IN metrics"#,
+        r#"UPSERT {host: "a"} INSERT {host: "a", value: 1} UPDATE {value: 2} IN metrics"#,
+    ] {
+        let error = try_run(&storage, query).unwrap_err();
+        assert!(
+            error.contains("is a columnar collection"),
+            "{query}: {error}"
+        );
+    }
+    assert_eq!(total(&storage), before);
+}

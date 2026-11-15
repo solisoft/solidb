@@ -116,6 +116,12 @@ impl<'a> QueryExecutor<'a> {
             BATCH_SIZE
         );
 
+        // A columnar target goes the ordinary way, which inserts every row
+        // in one call.
+        if self.columnar_database(&insert_clause.collection).is_some() {
+            return Ok(None);
+        }
+
         // Get collection once
         let collection = self.get_collection_for_write(&insert_clause.collection)?;
 

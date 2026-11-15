@@ -520,6 +520,12 @@ impl<'a> QueryExecutor<'a> {
                     rows = kept;
                 }
                 BodyClause::Insert(insert_clause) => {
+                    // Into a columnar collection: every row in one insert.
+                    if let Some(inserted) = self.insert_into_columnar(insert_clause, &rows)? {
+                        stats.documents_inserted += inserted;
+                        i += 1;
+                        continue;
+                    }
                     // Get collection once, outside the loop
                     let collection = self.get_collection_for_write(&insert_clause.collection)?;
                     let per_row = insert_clause.options != MutationOptions::default()
