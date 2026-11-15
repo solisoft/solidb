@@ -118,6 +118,11 @@ run_one() {
     "${ARGS[@]}" ${cgroup:+--cgroup "$cgroup"} --out "$OUT/$cfg.json" \
     2>&1 | tee "$OUT/$cfg.log" || status=$?
   $SUDO du -sb "$data" 2>/dev/null | cut -f1 >"$OUT/$cfg.disk_bytes" || true
+  # What the directory holds, by kind of file (digits in names folded).
+  $SUDO find "$data" -type f -printf '%s %P\n' 2>/dev/null |
+    awk '{n=$2; gsub(/[0-9]+/,"N",n); s[n]+=$1; c[n]++}
+         END{for(k in s) printf "%10.1f MB %6d %s\n", s[k]/1048576, c[k], k}' |
+    sort -rn >"$OUT/$cfg.disk_detail" || true
   $DOCKER logs "$NAME" >"$OUT/$cfg.server.log" 2>&1 || true
   $DOCKER rm -f "$NAME" >/dev/null
   $SUDO rm -rf "$data"

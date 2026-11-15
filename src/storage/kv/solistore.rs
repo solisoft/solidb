@@ -42,7 +42,23 @@ fn options() -> Options {
         write_buffer_size: p.write_buffer_size,
         max_immutable_memtables: (p.max_write_buffer_number.max(2) - 1) as usize,
         max_background_jobs: p.max_background_jobs.max(2) as usize,
+        recycle_wal_files: recycled_wals(p.write_buffer_size),
         ..Options::default()
+    }
+}
+
+/// How many dead WAL files solistore keeps to write over. A WAL grows to
+/// about the size of the write buffer and a kept one stays that long on
+/// disk: with a 2 GB buffer, 1.5 GB of dead log per file, measured (3.1 GB
+/// of log beside 1.7 GB of tables once everything was flushed). Reusing a
+/// file saves creating one per buffer filled, which matters when buffers
+/// are small and fill often, and not when one holds gigabytes.
+fn recycled_wals(write_buffer_size: usize) -> usize {
+    const LARGE_BUFFER: usize = 256 << 20;
+    if write_buffer_size > LARGE_BUFFER {
+        0
+    } else {
+        Options::default().recycle_wal_files
     }
 }
 
