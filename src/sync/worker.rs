@@ -840,6 +840,15 @@ impl SyncWorker {
         {
             return Ok(());
         }
+        // The same for a columnar collection, when the full sync carried
+        // them (card #884).
+        if columnar_in_full_sync(entry.operation)
+            && self
+                .state
+                .in_columnar_snapshot(&entry.origin_node, entry.origin_sequence)
+        {
+            return Ok(());
+        }
 
         if is_node_local(&entry.collection) {
             return Ok(());
@@ -1222,6 +1231,9 @@ impl SyncWorker {
 
         self.pool.send(peer_addr, &request).await?;
 
+        // Whether the serving node sends its columnar collections.
+        let mut columnar_included = false;
+
         // Process full sync messages
         loop {
             let msg = self.pool.receive(peer_addr).await?;
@@ -1361,9 +1373,29 @@ impl SyncWorker {
                         }
                     }
                 }
+                SyncMessage::FullSyncColumnarIncluded => columnar_included = true,
+                SyncMessage::FullSyncColumnar {
+                    database,
+                    collection,
+                    part,
+                } => {
+                    if let Ok(db) = self.storage.get_database(&database) {
+                        if let Err(e) =
+                            super::columnar::apply_full_sync_part(&db, &collection, part)
+                        {
+                            warn!(
+                                "Full sync: columnar collection {}.{}: {}",
+                                database, collection, e
+                            );
+                        }
+                    }
+                }
                 SyncMessage::FullSyncOrigins { origins } => {
                     for (origin, seq) in &origins {
                         self.state.raise_snapshot_floor(origin, *seq);
+                        if columnar_included {
+                            self.state.raise_columnar_floor(origin, *seq);
+                        }
                     }
                     self.state.persist();
                 }
@@ -1583,6 +1615,7 @@ impl SyncWorker {
             total_documents,
         };
         ConnectionPool::write_message(stream, &start).await?;
+        ConnectionPool::write_message(stream, &SyncMessage::FullSyncColumnarIncluded).await?;
 
         for db_name in &databases {
             let db_msg = SyncMessage::FullSyncDatabase {
@@ -1619,6 +1652,18 @@ impl SyncWorker {
 
                 if is_node_local(&coll_name) {
                     continue;
+                }
+                // The collection behind a columnar one holds no document:
+                // its rows are sent as such.
+                if let Some(columnar) = coll_name.strip_prefix("_columnar_") {
+                    if let Ok(col) = crate::storage::columnar::ColumnarCollection::load(
+                        columnar.to_string(),
+                        db_name,
+                        db.db_arc(),
+                    ) {
+                        stream_columnar_collection(stream, db_name, columnar, &col).await?;
+                        continue;
+                    }
                 }
                 if let Ok(coll) = db.system_collection(&coll_name) {
                     let indexes: Vec<Vec<u8>> = coll
@@ -1910,6 +1955,72 @@ fn is_node_local(collection: &str) -> bool {
     collection == "_env"
 }
 
+/// Send a columnar collection: its definition, its rows in byte-bounded
+/// batches, then its indexes. One that cannot be read is reported and left
+/// out; the rest of the full sync goes on.
+async fn stream_columnar_collection<W>(
+    stream: &mut W,
+    db_name: &str,
+    name: &str,
+    col: &crate::storage::columnar::ColumnarCollection,
+) -> Result<(), TransportError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use super::protocol::ColumnarPart;
+    use super::transport::ConnectionPool;
+
+    let message = |part| SyncMessage::FullSyncColumnar {
+        database: db_name.to_string(),
+        collection: name.to_string(),
+        part,
+    };
+    let unreadable = |e: crate::error::DbError| {
+        error!(
+            "Full sync: columnar collection {}.{} was NOT sent: {}",
+            db_name, name, e
+        );
+    };
+    let (definition, mut batches, indexes) = match (
+        super::columnar::full_sync_definition(col),
+        super::columnar::RowBatches::of(col),
+        super::columnar::full_sync_indexes(col),
+    ) {
+        (Ok(definition), Ok(batches), Ok(indexes)) => (definition, batches, indexes),
+        (Err(e), ..) | (_, Err(e), _) | (.., Err(e)) => {
+            unreadable(e);
+            return Ok(());
+        }
+    };
+    ConnectionPool::write_message(stream, &message(ColumnarPart::Definition(definition))).await?;
+    loop {
+        let (data, row_count) = match batches.next_batch(BATCH_BYTE_BUDGET) {
+            Ok(Some(batch)) => batch,
+            Ok(None) => break,
+            Err(e) => {
+                unreadable(e);
+                return Ok(());
+            }
+        };
+        let compressed = data.len() > 10 * 1024;
+        let data = if compressed {
+            lz4_flex::compress_prepend_size(&data)
+        } else {
+            data
+        };
+        let rows = ColumnarPart::Rows {
+            data,
+            compressed,
+            row_count,
+        };
+        ConnectionPool::write_message(stream, &message(rows)).await?;
+    }
+    if !indexes.is_empty() {
+        ConnectionPool::write_message(stream, &message(ColumnarPart::Indexes(indexes))).await?;
+    }
+    Ok(())
+}
+
 /// Stream one collection's documents as byte-bounded `FullSyncDocuments`.
 async fn stream_collection_documents<W>(
     stream: &mut W,
@@ -2056,7 +2167,8 @@ fn collect_local_stats(system: &mut sysinfo::System, storage: &StorageEngine) ->
 /// documents, and the databases, collections, indexes and foreign keys
 /// that exist. Below the floor a full sync left
 /// (`SyncState::raise_snapshot_floor`) these are not applied again. Blob
-/// chunks and columnar rows are not in a full sync and are still replayed.
+/// chunks are not in a full sync and are still replayed; columnar
+/// collections have their own floor (`columnar_in_full_sync`).
 fn in_full_sync(operation: Operation) -> bool {
     matches!(
         operation,
@@ -2072,6 +2184,24 @@ fn in_full_sync(operation: Operation) -> bool {
             | Operation::DropIndex
             | Operation::CreateForeignKey
             | Operation::DropForeignKey
+    )
+}
+
+/// The operations on columnar collections. A full sync that carries those
+/// collections (`SyncMessage::FullSyncColumnarIncluded`) reflects them up
+/// to its origins, and below that floor
+/// (`SyncState::raise_columnar_floor`) they are not applied again: a
+/// replayed drop would take away a collection created again since.
+fn columnar_in_full_sync(operation: Operation) -> bool {
+    matches!(
+        operation,
+        Operation::ColumnarInsert
+            | Operation::ColumnarDelete
+            | Operation::ColumnarCreateCollection
+            | Operation::ColumnarDropCollection
+            | Operation::ColumnarTruncate
+            | Operation::ColumnarCreateIndex
+            | Operation::ColumnarDropIndex
     )
 }
 
@@ -2113,6 +2243,184 @@ mod tests {
         ] {
             assert!(!in_full_sync(replayed), "{replayed:?}");
         }
+        // Columnar operations answer to their own floor, which only a full
+        // sync that carries columnar collections raises.
+        for columnar in [
+            Operation::ColumnarInsert,
+            Operation::ColumnarDelete,
+            Operation::ColumnarCreateCollection,
+            Operation::ColumnarDropCollection,
+            Operation::ColumnarTruncate,
+            Operation::ColumnarCreateIndex,
+            Operation::ColumnarDropIndex,
+        ] {
+            assert!(columnar_in_full_sync(columnar), "{columnar:?}");
+        }
+        assert!(!columnar_in_full_sync(Operation::Insert));
+        assert!(!columnar_in_full_sync(Operation::PutBlobChunk));
+    }
+
+    /// A columnar collection is sent whole by a full sync (card #884): a
+    /// node that joins has its rows under their ids, its compression and
+    /// its indexes, with no log to replay.
+    #[tokio::test]
+    async fn a_full_sync_sends_columnar_collections() {
+        use crate::storage::columnar::{
+            AggregateOp, ColumnDef, ColumnFilter, ColumnarCollection, ColumnarIndexType,
+            CompressionType,
+        };
+        use crate::sync::protocol::ColumnarPart;
+
+        let node = |tmp: &tempfile::TempDir| {
+            let storage = StorageEngine::new(tmp.path().join("data").to_str().unwrap()).unwrap();
+            storage.initialize().unwrap();
+            storage
+        };
+        let (dir_a, dir_b) = (
+            tempfile::TempDir::new().unwrap(),
+            tempfile::TempDir::new().unwrap(),
+        );
+        let (a, b) = (node(&dir_a), node(&dir_b));
+        a.create_database("shop".to_string()).unwrap();
+        let db = a.get_database("shop").unwrap();
+        let columns: Vec<ColumnDef> = serde_json::from_value(json!([
+            {"name": "sensor", "data_type": "string", "nullable": false, "indexed": false},
+            {"name": "value", "data_type": "float64", "nullable": false, "indexed": false},
+        ]))
+        .unwrap();
+        // No log: made while this node had no peer, so in no log at all.
+        crate::sync::columnar::create(&db, None, "metrics", columns, CompressionType::None)
+            .unwrap();
+        // A block, and a few rows left in the tail. A third of a float does
+        // not survive JSON text.
+        let rows = |n: usize| -> Vec<serde_json::Value> {
+            (0..n)
+                .map(|i| json!({"sensor": format!("s{}", i % 3), "value": i as f64 / 3.0}))
+                .collect()
+        };
+        crate::sync::columnar::insert(&db, None, "metrics", rows(5000)).unwrap();
+        crate::sync::columnar::insert(&db, None, "metrics", rows(7)).unwrap();
+        crate::sync::columnar::create_index(
+            &db,
+            None,
+            "metrics",
+            "sensor",
+            ColumnarIndexType::Bitmap,
+        )
+        .unwrap();
+
+        let log_dir = dir_a.path().join("log");
+        let log = SyncLog::new("n1".to_string(), log_dir.to_str().unwrap(), 64).unwrap();
+        let state = SyncState::new(Arc::new(a.clone()), "n1".to_string());
+        let (mut tx, mut rx) = tokio::io::duplex(1 << 22);
+        SyncWorker::serve_full_sync(&mut tx, &a, &log, &state)
+            .await
+            .unwrap();
+        drop(tx);
+
+        // What the requesting node does with each message.
+        let mut order = Vec::new();
+        let mut parts = Vec::new();
+        while let Ok(message) = ConnectionPool::read_message(&mut rx).await {
+            match message {
+                SyncMessage::FullSyncColumnarIncluded => order.push("included"),
+                SyncMessage::FullSyncDatabase { name } => {
+                    let _ = b.create_database(name);
+                }
+                SyncMessage::FullSyncCollection {
+                    database,
+                    name,
+                    collection_type,
+                    ..
+                } => {
+                    let _ = b
+                        .get_database(&database)
+                        .unwrap()
+                        .create_collection(name, collection_type);
+                }
+                SyncMessage::FullSyncDocuments { collection, .. } => {
+                    assert_ne!(collection, "_columnar_metrics", "rows are not documents");
+                }
+                SyncMessage::FullSyncColumnar {
+                    database,
+                    collection,
+                    part,
+                } => {
+                    assert_eq!(
+                        (database.as_str(), collection.as_str()),
+                        ("shop", "metrics")
+                    );
+                    order.push(match part {
+                        ColumnarPart::Definition(_) => "definition",
+                        ColumnarPart::Rows { .. } => "rows",
+                        ColumnarPart::Indexes(_) => "indexes",
+                    });
+                    parts.push(part);
+                }
+                SyncMessage::FullSyncOrigins { .. } => order.push("origins"),
+                _ => {}
+            }
+        }
+        assert_eq!(order.first(), Some(&"included"));
+        assert_eq!(order[1], "definition");
+        assert_eq!(&order[order.len() - 2..], ["indexes", "origins"]);
+        assert!(order[2..order.len() - 2].iter().all(|o| *o == "rows"));
+
+        let peer = b.get_database("shop").unwrap();
+        // Twice: a second full sync finds everything there.
+        for _ in 0..2 {
+            for part in &parts {
+                crate::sync::columnar::apply_full_sync_part(&peer, "metrics", part.clone())
+                    .unwrap();
+            }
+        }
+        let load = |storage: &StorageEngine| {
+            let db = storage.get_database("shop").unwrap();
+            ColumnarCollection::load("metrics".to_string(), "shop", db.db_arc()).unwrap()
+        };
+        let (on_a, on_b) = (load(&a), load(&b));
+        assert_eq!(on_b.count(), 5007);
+        assert_eq!(
+            on_b.list_row_uuids().unwrap(),
+            on_a.list_row_uuids().unwrap()
+        );
+        assert_eq!(
+            on_b.read_columns(&["sensor", "value"], None).unwrap(),
+            on_a.read_columns(&["sensor", "value"], None).unwrap(),
+            "every value as it was, floats included"
+        );
+        assert_eq!(
+            on_b.aggregate("value", AggregateOp::Sum).unwrap(),
+            on_a.aggregate("value", AggregateOp::Sum).unwrap()
+        );
+        assert_eq!(on_b.metadata().unwrap().compression, CompressionType::None);
+        assert_eq!(
+            on_b.get_index_type("sensor"),
+            Some(ColumnarIndexType::Bitmap)
+        );
+        let filter = ColumnFilter::Eq("sensor".to_string(), json!("s1"));
+        assert_eq!(
+            on_b.scan_filtered(&filter, &["value"]).unwrap().len(),
+            on_a.scan_filtered(&filter, &["value"]).unwrap().len()
+        );
+    }
+
+    /// Below the floor a full sync with columnar collections left, their
+    /// operations are in the snapshot; a full sync without them leaves no
+    /// such floor.
+    #[test]
+    fn the_columnar_floor_is_apart_from_the_documents() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let storage = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        let state = SyncState::new(Arc::new(storage), "n1".to_string());
+        state.raise_snapshot_floor("n2", 10);
+        assert!(state.is_duplicate_document("n2", 10));
+        assert!(!state.in_columnar_snapshot("n2", 3));
+        state.raise_columnar_floor("n2", 6);
+        state.raise_columnar_floor("n2", 4);
+        assert!(state.in_columnar_snapshot("n2", 6));
+        assert!(!state.in_columnar_snapshot("n2", 7));
+        assert!(!state.in_columnar_snapshot("n3", 1));
     }
 
     /// What a full sync sends besides the documents: each collection's

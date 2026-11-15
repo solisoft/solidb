@@ -763,6 +763,54 @@ impl ColumnarCollection {
         Ok(inserted_ids)
     }
 
+    /// Insert rows under the ids their origin gave them (a full sync sends
+    /// a collection this way). A row whose id is already here is passed
+    /// over, so the same rows may arrive twice. Returns how many went in.
+    ///
+    /// Unlike [`Self::insert_row_with_id`], enough rows are sealed as
+    /// blocks at once.
+    pub fn insert_rows_with_ids(
+        &self,
+        rows: Vec<(String, serde_json::Map<String, Value>)>,
+    ) -> DbResult<usize> {
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        self.refresh_meta(db, &cf, &mut meta);
+
+        let mut fresh = {
+            let here = self.row_set_with(&meta.compression)?;
+            rows.into_iter()
+                .filter(|(id, _)| here.find(id).is_none())
+                .collect::<Vec<_>>()
+        };
+        // `stage_rows` takes them ascending, each id once.
+        fresh.sort_by(|a, b| a.0.cmp(&b.0));
+        fresh.dedup_by(|a, b| a.0 == b.0);
+        if fresh.is_empty() {
+            return Ok(0);
+        }
+        let inserted = fresh.len();
+
+        let mut batch = KvBatch::default();
+        let mut new_meta = meta.clone();
+        let sealed = self.stage_rows(&cf, &mut batch, &mut new_meta, fresh)?;
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        self.keep_blocks(sealed);
+        Ok(inserted)
+    }
+
     /// Insert a row with a specific UUID (for replication)
     /// This is idempotent - if the row already exists, it's skipped
     pub fn insert_row_with_id(&self, row_uuid: &str, row: Value) -> DbResult<bool> {

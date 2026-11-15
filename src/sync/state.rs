@@ -29,9 +29,14 @@ pub struct SyncState {
     /// (`SyncMessage::FullSyncOrigins`). Kept apart from `origin_sequences`:
     /// only what a full sync carries is skipped below it (documents,
     /// collections, indexes, foreign keys: `worker::in_full_sync`). Blob
-    /// chunks and columnar rows are not in a full sync and still have to
-    /// be replayed.
+    /// chunks are not in a full sync and still have to be replayed;
+    /// columnar collections have their own floor, below.
     snapshot_floor: RwLock<HashMap<String, u64>>,
+
+    /// The same, for the operations on columnar collections. Apart from
+    /// `snapshot_floor` because not every full sync carries them: only one
+    /// that said so (`SyncMessage::FullSyncColumnarIncluded`) raises it.
+    columnar_floor: RwLock<HashMap<String, u64>>,
 
     /// Pull cursor per peer *address*: the last sequence of that peer's log we
     /// have applied. Audit H9: this used to share `origin_sequences`, keyed by
@@ -76,6 +81,7 @@ impl SyncState {
             local_sequence: RwLock::new(0),
             origin_sequences: RwLock::new(HashMap::new()),
             snapshot_floor: RwLock::new(HashMap::new()),
+            columnar_floor: RwLock::new(HashMap::new()),
             pull_cursors: RwLock::new(HashMap::new()),
             sent_sequences: RwLock::new(HashMap::new()),
             last_heartbeat: RwLock::new(HashMap::new()),
@@ -114,6 +120,14 @@ impl SyncState {
                 }
                 if let Some(floor) = data.get("snapshot_floor").and_then(|v| v.as_object()) {
                     let mut map = self.snapshot_floor.write().unwrap();
+                    for (k, v) in floor {
+                        if let Some(seq) = v.as_u64() {
+                            map.insert(k.clone(), seq);
+                        }
+                    }
+                }
+                if let Some(floor) = data.get("columnar_floor").and_then(|v| v.as_object()) {
+                    let mut map = self.columnar_floor.write().unwrap();
                     for (k, v) in floor {
                         if let Some(seq) = v.as_u64() {
                             map.insert(k.clone(), seq);
@@ -222,6 +236,7 @@ impl SyncState {
         let origins: HashMap<String, u64> = self.origin_sequences.read().unwrap().clone();
         let cursors: HashMap<String, u64> = self.pull_cursors.read().unwrap().clone();
         let floor: HashMap<String, u64> = self.snapshot_floor.read().unwrap().clone();
+        let columnar_floor: HashMap<String, u64> = self.columnar_floor.read().unwrap().clone();
         let sent: HashMap<String, u64> = self.sent_sequences.read().unwrap().clone();
 
         let state_doc = serde_json::json!({
@@ -230,6 +245,7 @@ impl SyncState {
             "origin_sequences": origins,
             "pull_cursors": cursors,
             "snapshot_floor": floor,
+            "columnar_floor": columnar_floor,
             "sent_sequences": sent,
         });
 
@@ -335,6 +351,25 @@ impl SyncState {
         if seq > floor.get(origin).copied().unwrap_or(0) {
             floor.insert(origin.to_string(), seq);
         }
+    }
+
+    /// Record that the full sync this node started from already held
+    /// `origin`'s columnar operations up to `seq` (never moves backwards).
+    pub fn raise_columnar_floor(&self, origin: &str, seq: u64) {
+        let mut floor = self.columnar_floor.write().unwrap();
+        if seq > floor.get(origin).copied().unwrap_or(0) {
+            floor.insert(origin.to_string(), seq);
+        }
+    }
+
+    /// Whether an operation on a columnar collection is already in the full
+    /// sync this node started from.
+    pub fn in_columnar_snapshot(&self, origin: &str, origin_seq: u64) -> bool {
+        self.columnar_floor
+            .read()
+            .unwrap()
+            .get(origin)
+            .is_some_and(|floor| *floor >= origin_seq)
     }
 
     /// Whether a *document* write (insert, update, delete) must not be
@@ -479,6 +514,7 @@ impl Clone for SyncState {
             local_sequence: RwLock::new(*self.local_sequence.read().unwrap()),
             origin_sequences: RwLock::new(self.origin_sequences.read().unwrap().clone()),
             snapshot_floor: RwLock::new(self.snapshot_floor.read().unwrap().clone()),
+            columnar_floor: RwLock::new(self.columnar_floor.read().unwrap().clone()),
             pull_cursors: RwLock::new(self.pull_cursors.read().unwrap().clone()),
             sent_sequences: RwLock::new(self.sent_sequences.read().unwrap().clone()),
             last_heartbeat: RwLock::new(self.last_heartbeat.read().unwrap().clone()),

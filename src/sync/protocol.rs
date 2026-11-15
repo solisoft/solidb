@@ -374,6 +374,39 @@ pub enum SyncMessage {
     /// log brought back a document that another peer's log had deleted
     /// before the snapshot.
     FullSyncOrigins { origins: Vec<(String, u64)> },
+    /// Full sync: the serving node sends its columnar collections
+    /// ([`SyncMessage::FullSyncColumnar`]), so the origins it ends with
+    /// stand for the columnar operations too. Sent once, before the first
+    /// database, whether or not there is such a collection: a node that
+    /// does not send it (an older build) carries none, and the requester
+    /// then keeps replaying columnar operations from the logs.
+    FullSyncColumnarIncluded,
+    /// Full sync: a part of a columnar collection, after the
+    /// `FullSyncCollection` of the collection that backs it
+    /// (`_columnar_<collection>`): its definition, then its rows, then its
+    /// indexes.
+    FullSyncColumnar {
+        database: String,
+        collection: String,
+        part: ColumnarPart,
+    },
+}
+
+/// What a [`SyncMessage::FullSyncColumnar`] carries (`sync::columnar` writes
+/// and reads each).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ColumnarPart {
+    /// The columns and the compression, as JSON.
+    Definition(Vec<u8>),
+    /// Rows with their ids, in id order; LZ4 when `compressed`.
+    Rows {
+        data: Vec<u8>,
+        compressed: bool,
+        row_count: u32,
+    },
+    /// The indexed columns, each with its JSON `ColumnarIndexType`. After
+    /// the rows: an index is built from the rows that are there.
+    Indexes(Vec<(String, Vec<u8>)>),
 }
 
 /// Entry describing a conflict for client resolution

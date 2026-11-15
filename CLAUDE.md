@@ -575,8 +575,9 @@ deleted before the snapshot (card #844), and one peer's `DeleteCollection`
 or `TruncateCollection` emptied a collection another had recreated or
 refilled (card #853).
 
-Blob chunks and columnar rows are not in a full sync and are still replayed
-from the logs. A new operation that the full sync carries belongs in
+Blob chunks are not in a full sync and are still replayed from the logs.
+Columnar collections are, when the serving node says so, under a floor of
+their own (see the columnar section). A new operation that the full sync carries belongs in
 `in_full_sync`, and one it does not carry must stay out of it; whatever a
 skipped operation used to bring (a collection's shard configuration came
 with `CreateCollection`) has to be in the full sync's own messages. `FullSyncDefinitions` and
@@ -688,11 +689,16 @@ Rules that keep it sound:
 - The fold steps aside at the same guards as `scan_collect` (row policy,
   a transaction that wrote the collection, columnar, sharded) and calls
   `note_range_read`.
-- Sealing runs on the writer that crosses the threshold (1,024 documents
-  waiting, the newest 512 left out) and merges adjacent small blocks up to
-  65,536 rows; a commit thread only announces (`seal: false`). There is no
-  background thread: after a restart or a bulk delete, `POST …/blocks/seal`
-  seals what is left.
+- Sealing runs on one thread per database instance (`solidb-seal`,
+  `blocks::Sealer`): a write that leaves 1,536 documents or more outside
+  the blocks — new points, or a range whose block it threw away — queues
+  its collection, and does not wait. The thread seals 1,024 documents at a
+  time, the newest 512 left out, and merges adjacent small blocks up to
+  65,536 rows. `StorageEngine`'s `Drop` stops and joins it
+  (`blocks::stop_sealer`) before the database closes, as it joins the
+  column-family droppers: a thread still holding a collection at exit is
+  what crashed `rbac_admin_endpoints_tests`. After a restart nothing is
+  queued until a write: `POST …/blocks/seal` seals what is left.
 - Blocks are local to a node: not replicated, not in a full sync, not
   dumped. The definition is not replicated either; declare it on each node.
 
@@ -720,8 +726,14 @@ compare columns with constants (`==` with a string, number or boolean, `<`
 `<=` `>` `>=` with a number), the keys are columns and the aggregates are
 `COUNT`, `SUM`, `AVG`, `MIN`, `MAX` of a column: on several threads, into a
 table of groups handed to the same `CollectFold` as rows, with the exact
-state of each sum. Measured on one million rows against 2.10.4: a filtered
-sum 0.4 → 2,500 requests/s, a group-by of 50 groups 0.4 → 400.
+state of each sum. A single integer key of small range is grouped in plain
+arrays indexed by the key (`Flat`): a sum and, beside it, the total of what
+its additions rounded away, which together are the exact sum for as long as
+adding those errors rounds nothing (`ok`); when it does, the rows are read
+again with exact accumulators. A `SORT … LIMIT` on an aggregate keeps only
+the groups that can be returned. Measured on ten million rows against
+ClickHouse (`benchmarks/compare/col.sh`): ahead on the eight rows, 7% to 2.4
+times; 2.10.4 answered each question in 2.4 s on one million.
 
 Rules that keep it sound:
 
@@ -734,8 +746,22 @@ Rules that keep it sound:
   (the `apply_*` functions, which the replication worker calls and which
   must stay idempotent: a joining node replays logs from their start).
   Only the HTTP insert used to be logged, so a peer never had the
-  collection (cards #882, #883). A full sync does not carry columnar
-  collections yet (#884); row deletes and truncate have no origin (#885).
+  collection (cards #882, #883). Row deletes and truncate have no origin
+  yet (#885).
+- **A full sync sends a columnar collection whole** (`SyncMessage::
+  FullSyncColumnar`, after the `FullSyncCollection` of its backing
+  `_columnar_<name>`): definition, rows under their ids in byte-bounded
+  batches (MessagePack, as the tail: JSON text loses floats), then
+  indexes, each applied by `sync::columnar::apply_full_sync_part`, which
+  takes any part twice. The serving node says so first
+  (`FullSyncColumnarIncluded`), and only then do its origins raise the
+  *columnar* floor (`SyncState::raise_columnar_floor`), below which
+  `worker::columnar_in_full_sync` operations are not replayed. An older
+  serving node sends neither, and the logs are replayed as before. A new
+  columnar operation belongs in `columnar_in_full_sync`.
+- **An index is not maintained by inserts** (card #901): it holds the rows
+  that were there when it was created. Do not build on it until that is
+  fixed.
 - **A value read back is the value inserted.** The array's kind is chosen
   from the values (not from the declared type), and the tail is MessagePack
   because JSON text does not always give a float back (`93.33333333333333`
@@ -747,6 +773,11 @@ Rules that keep it sound:
   kinds, a constant of another kind) and the tail are read as objects and
   folded the ordinary way: `tests/columnar_blocks_tests.rs` runs each query
   both ways.
+- **The decoded blocks are all kept in memory**, ids of the rows included
+  (1.4 GB for ten million rows of six columns): there is no ceiling yet.
+- A large insert builds its columns before taking the write lock and gets
+  its row ids under it: ids of one insert must follow those of the one
+  before, or every query would have to order blocks and tail together.
 - The hint that lets the fold keep only the groups a `SORT … LIMIT` can
   return (`ExecCaches::collect_top`) carries the address of its query's
   body: a COLLECT of another body must not take it. It keeps every group

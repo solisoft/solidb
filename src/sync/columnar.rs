@@ -8,7 +8,8 @@
 //! Every transport goes through [`create`], [`drop`] and [`insert`], which
 //! do the work on this node and append what a peer needs; the replication
 //! worker applies those entries with [`apply_create`], [`apply_insert`],
-//! [`apply_drop`], [`apply_create_index`] and [`apply_drop_index`].
+//! [`apply_drop`], [`apply_create_index`] and [`apply_drop_index`]. A full
+//! sync sends a collection whole (the second half of this file).
 
 use serde_json::Value;
 
@@ -224,4 +225,140 @@ pub fn apply_drop_index(db: &Database, name: &str, column: &str) -> DbResult<()>
         return Ok(());
     }
     col.drop_index(column)
+}
+
+// ---- Full sync -----------------------------------------------------------
+//
+// A node that joins is sent each columnar collection whole: its definition,
+// its rows under their ids, then its indexes. The replication worker writes
+// the parts with the functions below and applies them with
+// [`apply_full_sync_part`].
+
+/// The first part: the columns, none marked as indexed (the indexes come
+/// after the rows), and the compression.
+pub(crate) fn full_sync_definition(col: &ColumnarCollection) -> DbResult<Vec<u8>> {
+    let meta = col.metadata()?;
+    let columns = meta
+        .columns
+        .into_iter()
+        .map(|c| ColumnDef {
+            indexed: false,
+            index_type: None,
+            ..c
+        })
+        .collect();
+    Ok(serde_json::to_vec(&Definition {
+        columns,
+        compression: meta.compression,
+    })?)
+}
+
+/// The last part: the indexed columns and the type of each index.
+pub(crate) fn full_sync_indexes(col: &ColumnarCollection) -> DbResult<Vec<(String, Vec<u8>)>> {
+    let mut indexes = Vec::new();
+    for index in col.list_indexes()? {
+        indexes.push((index.column, serde_json::to_vec(&index.index_type)?));
+    }
+    Ok(indexes)
+}
+
+/// The rows of a collection in id order, in batches of at most about
+/// `budget` encoded bytes: `(data, rows)` for a `ColumnarPart::Rows`, not
+/// compressed. A batch is rows one after another, each the MessagePack of
+/// `(id, row)`: what the tail stores, which gives a float back as it was.
+pub(crate) struct RowBatches {
+    rows: crate::storage::columnar_blocks::RowSet,
+    names: Vec<String>,
+    /// Rows already handed out.
+    done: usize,
+}
+
+impl RowBatches {
+    pub(crate) fn of(col: &ColumnarCollection) -> DbResult<Self> {
+        let names = col
+            .metadata()?
+            .columns
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        Ok(Self {
+            rows: col.row_set()?,
+            names,
+            done: 0,
+        })
+    }
+
+    pub(crate) fn next_batch(&mut self, budget: usize) -> DbResult<Option<(Vec<u8>, u32)>> {
+        let mut data = Vec::new();
+        let mut count = 0u32;
+        for at in self.rows.positions().skip(self.done) {
+            let row: serde_json::Map<String, Value> = self
+                .names
+                .iter()
+                .map(|name| (name.clone(), self.rows.value(at, name)))
+                .collect();
+            rmp_serde::encode::write(&mut data, &(self.rows.uuid(at), row)).map_err(|e| {
+                crate::error::DbError::InternalError(format!("columnar full sync: {e}"))
+            })?;
+            count += 1;
+            if data.len() >= budget {
+                break;
+            }
+        }
+        self.done += count as usize;
+        Ok((count > 0).then_some((data, count)))
+    }
+}
+
+/// Read back what [`RowBatches::next_batch`] wrote.
+fn decode_rows(data: &[u8]) -> DbResult<Vec<(String, serde_json::Map<String, Value>)>> {
+    let mut rows = Vec::new();
+    let mut cursor = std::io::Cursor::new(data);
+    while (cursor.position() as usize) < data.len() {
+        let row = rmp_serde::from_read(&mut cursor).map_err(|e| {
+            crate::error::DbError::BadRequest(format!("columnar full sync: unreadable rows: {e}"))
+        })?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+/// Apply one part of a columnar collection received in a full sync. Every
+/// part may arrive again (a node may ask for a full sync twice): the
+/// definition leaves a collection that is there alone, rows are taken by
+/// id, and an index is built again from the rows as they then are.
+pub fn apply_full_sync_part(
+    db: &Database,
+    name: &str,
+    part: super::protocol::ColumnarPart,
+) -> DbResult<()> {
+    use super::protocol::ColumnarPart;
+    match part {
+        ColumnarPart::Definition(data) => apply_create(db, name, &data),
+        ColumnarPart::Rows {
+            data, compressed, ..
+        } => {
+            let data = if compressed {
+                super::protocol::decompress_checked(&data)
+                    .map_err(crate::error::DbError::BadRequest)?
+            } else {
+                data
+            };
+            let rows = decode_rows(&data)?;
+            let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+            col.insert_rows_with_ids(rows)?;
+            Ok(())
+        }
+        ColumnarPart::Indexes(indexes) => {
+            let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+            for (column, index_type) in indexes {
+                let index_type: ColumnarIndexType = serde_json::from_slice(&index_type)?;
+                if col.has_index(&column) {
+                    col.drop_index(&column)?;
+                }
+                col.create_index(&column, index_type)?;
+            }
+            Ok(())
+        }
+    }
 }
