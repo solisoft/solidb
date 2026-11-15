@@ -1120,25 +1120,13 @@ impl SyncWorker {
             }
             Operation::ColumnarDelete => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    match crate::storage::columnar::ColumnarCollection::load(
-                        entry.collection.clone(),
-                        &entry.database,
-                        db.db_arc(),
-                    ) {
-                        Ok(col) => {
-                            if let Err(e) = col.delete_row(&entry.document_key) {
-                                warn!(
-                                    "apply_entry: columnar delete failed for {}: {}",
-                                    entry.document_key, e
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            warn!(
-                                "apply_entry: failed to load columnar collection {}: {}",
-                                entry.collection, e
-                            );
-                        }
+                    if let Err(e) =
+                        super::columnar::apply_delete(&db, &entry.collection, &entry.document_key)
+                    {
+                        warn!(
+                            "apply_entry: columnar delete failed for {}/{}: {}",
+                            entry.collection, entry.document_key, e
+                        );
                     }
                 }
             }
@@ -1198,17 +1186,11 @@ impl SyncWorker {
             }
             Operation::ColumnarTruncate => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    if let Ok(col) = crate::storage::columnar::ColumnarCollection::load(
-                        entry.collection.clone(),
-                        &entry.database,
-                        db.db_arc(),
-                    ) {
-                        if let Err(e) = crate::storage::foreign_keys::unchecked(|| col.truncate()) {
-                            warn!(
-                                "apply_entry: columnar truncate failed for {}: {}",
-                                entry.collection, e
-                            );
-                        }
+                    if let Err(e) = super::columnar::apply_truncate(&db, &entry.collection) {
+                        warn!(
+                            "apply_entry: columnar truncate failed for {}: {}",
+                            entry.collection, e
+                        );
                     }
                 }
             }

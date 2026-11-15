@@ -549,6 +549,19 @@ pub enum Command {
         collection: String,
         column: String,
     },
+    /// Delete rows of a columnar collection: by `ids`, or those a `filter`
+    /// keeps (JSON, as `QueryColumnar` takes). Exactly one of the two.
+    DeleteColumnarRows {
+        database: String,
+        collection: String,
+        ids: Option<Vec<String>>,
+        filter: Option<String>,
+    },
+    /// Delete every row of a columnar collection, keeping its columns.
+    TruncateColumnar {
+        database: String,
+        collection: String,
+    },
 }
 
 fn default_true() -> bool {
@@ -637,7 +650,9 @@ impl Command {
             | QueryColumnar { database, .. }
             | CreateColumnarIndex { database, .. }
             | ListColumnarIndexes { database, .. }
-            | DeleteColumnarIndex { database, .. } => Some(database),
+            | DeleteColumnarIndex { database, .. }
+            | DeleteColumnarRows { database, .. }
+            | TruncateColumnar { database, .. } => Some(database),
             TransactionCommand { command, .. } => command.database(),
             RunTransaction { database, .. } => Some(database),
             _ => None,
@@ -722,9 +737,10 @@ impl Command {
             GraphNeighbors { .. } | GraphRag { .. } => Some(A::Write),
 
             // Irreversible bulk destruction — Admin, same as HTTP
-            TruncateCollection { .. } | DeleteCollection { .. } | DeleteColumnar { .. } => {
-                Some(A::Admin)
-            }
+            TruncateCollection { .. }
+            | DeleteCollection { .. }
+            | DeleteColumnar { .. }
+            | TruncateColumnar { .. } => Some(A::Admin),
 
             // `_env` holds provider credentials, so reading it is an Admin
             // operation on this database — matching the HTTP env endpoints.

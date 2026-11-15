@@ -916,3 +916,114 @@ fn test_large_batch_insert() {
     let count = col.aggregate("name", AggregateOp::Count).unwrap();
     assert_eq!(count, json!(1000));
 }
+
+/// Rows deleted in one call, whatever blocks they are in: each block is
+/// written again once, and what is left reads as before.
+#[test]
+fn rows_are_deleted_in_bulk_across_blocks_and_tail() {
+    let (engine, _dir) = create_test_engine();
+    let db = engine.get_database("_system").unwrap();
+    db.create_collection("_columnar_bulk".to_string(), None)
+        .unwrap();
+    let col = ColumnarCollection::new(
+        "bulk".to_string(),
+        "_system",
+        db.db_arc(),
+        create_test_columns(),
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    let rows = |from: i64, to: i64| -> Vec<serde_json::Value> {
+        (from..to)
+            .map(|i| json!({"name": format!("n{i}"), "age": i}))
+            .collect()
+    };
+    // Three blocks (two inserts large enough to seal, the first over one
+    // block's size) and a tail.
+    let mut ids = col.insert_rows(rows(0, 70_000)).unwrap();
+    ids.extend(col.insert_rows(rows(70_000, 75_000)).unwrap());
+    ids.extend(col.insert_rows(rows(75_000, 75_010)).unwrap());
+
+    // The first row of the first block and many after it, the whole of the
+    // second block, one row of the third, two of the tail, an id twice and
+    // one that is not there.
+    let mut gone: Vec<usize> = (0..65_536).step_by(2).collect();
+    gone.extend(65_536..70_000);
+    gone.extend([70_500, 75_001, 75_009]);
+    let mut asked: Vec<String> = gone.iter().map(|at| ids[*at].clone()).collect();
+    asked.push(ids[0].clone());
+    asked.push("no-such-row".to_string());
+    let deleted = col.delete_rows(&asked).unwrap();
+    assert_eq!(deleted.len(), gone.len());
+
+    let gone: std::collections::HashSet<usize> = gone.into_iter().collect();
+    let left: Vec<usize> = (0..75_010).filter(|at| !gone.contains(at)).collect();
+    let check = |col: &ColumnarCollection| {
+        assert_eq!(col.count(), left.len());
+        assert_eq!(
+            col.list_row_uuids().unwrap(),
+            left.iter().map(|at| ids[*at].clone()).collect::<Vec<_>>()
+        );
+        let ages: Vec<i64> = col
+            .read_column("age", None)
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap())
+            .collect();
+        assert_eq!(ages, left.iter().map(|at| *at as i64).collect::<Vec<_>>());
+        assert_eq!(
+            col.aggregate("age", AggregateOp::Sum).unwrap(),
+            json!(left.iter().sum::<usize>() as f64)
+        );
+    };
+    check(&col);
+    // And as stored: a handle that reads the blocks back.
+    drop(col);
+    let again = ColumnarCollection::load("bulk".to_string(), "_system", db.db_arc()).unwrap();
+    check(&again);
+
+    // By filter.
+    let filter = ColumnFilter::Gte("age".to_string(), json!(74_000));
+    let by_filter = again.delete_where(&filter).unwrap();
+    assert_eq!(
+        by_filter.len(),
+        left.iter().filter(|at| **at >= 74_000).count()
+    );
+    assert!(again.scan_filtered(&filter, &["age"]).unwrap().is_empty());
+}
+
+/// Each side of an AND is asked for every row. The second used to be asked
+/// only for as many positions as the first had kept, so a row past them
+/// was never returned.
+#[test]
+fn an_and_keeps_rows_past_what_its_first_side_kept() {
+    let (engine, _dir) = create_test_engine();
+    let db = engine.get_database("_system").unwrap();
+    db.create_collection("_columnar_conj".to_string(), None)
+        .unwrap();
+    let col = ColumnarCollection::new(
+        "conj".to_string(),
+        "_system",
+        db.db_arc(),
+        create_test_columns(),
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    col.insert_rows(vec![
+        json!({"name": "a", "age": 3}),
+        json!({"name": "c", "age": 4}),
+        json!({"name": "c", "age": 5}),
+        json!({"name": "d", "age": 6}),
+    ])
+    .unwrap();
+    let filter = ColumnFilter::And(vec![
+        ColumnFilter::Eq("name".to_string(), json!("c")),
+        ColumnFilter::Gt("age".to_string(), json!(4)),
+    ]);
+    assert_eq!(
+        col.scan_filtered(&filter, &["age"]).unwrap(),
+        vec![json!({"age": 5})]
+    );
+    assert_eq!(col.delete_where(&filter).unwrap().len(), 1);
+    assert_eq!(col.count(), 3);
+}

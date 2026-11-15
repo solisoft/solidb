@@ -390,6 +390,102 @@ pub async fn insert_columnar_handler(
     }))
 }
 
+/// Delete one row by its id
+///
+/// # Endpoint
+/// `DELETE /_api/database/{db}/columnar/{collection}/row/{id}`
+///
+/// # Response
+/// ```json
+/// {"status": "deleted", "id": "01a1…"}
+/// ```
+/// `404` when the collection has no row of that id.
+pub async fn delete_columnar_row_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, id)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let deleted = crate::sync::columnar::delete_rows(
+        &db,
+        state.replication_log.as_deref(),
+        &collection,
+        std::slice::from_ref(&id),
+    )?;
+    if deleted.is_empty() {
+        return Err(DbError::DocumentNotFound(id));
+    }
+    Ok(Json(serde_json::json!({"status": "deleted", "id": id})))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteColumnarRowsRequest {
+    /// Row ids, as an insert returned them.
+    #[serde(default)]
+    pub ids: Option<Vec<String>>,
+    /// A filter as `/query` takes, `{"and": […]}` / `{"or": […]}` included.
+    #[serde(default)]
+    pub filter: Option<Value>,
+}
+
+/// Delete rows, by id or by filter
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/delete`
+///
+/// # Request Body
+/// Exactly one of `ids` (an array of row ids) and `filter`
+/// (`{"column": c, "op": o, "value": v}`, or `{"and": [..]}` / `{"or": [..]}`).
+/// Neither is refused: emptying a collection is `PUT …/truncate`.
+///
+/// # Response
+/// ```json
+/// {"status": "ok", "deleted": 12}
+/// ```
+pub async fn delete_columnar_rows_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    Json(req): Json<DeleteColumnarRowsRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let log = state.replication_log.as_deref();
+    let deleted = match (req.ids, req.filter) {
+        (Some(ids), None) => crate::sync::columnar::delete_rows(&db, log, &collection, &ids)?.len(),
+        (None, Some(filter)) => {
+            let filter = ColumnFilter::from_json(&filter)?;
+            crate::sync::columnar::delete_where(&db, log, &collection, &filter)?
+        }
+        _ => {
+            return Err(DbError::BadRequest(
+                "give either 'ids' or 'filter' (to empty the collection: PUT …/truncate)"
+                    .to_string(),
+            ))
+        }
+    };
+    Ok(Json(
+        serde_json::json!({"status": "ok", "deleted": deleted}),
+    ))
+}
+
+/// Delete every row of a columnar collection, keeping its columns
+///
+/// # Endpoint
+/// `PUT /_api/database/{db}/columnar/{collection}/truncate` (Admin)
+///
+/// # Response
+/// ```json
+/// {"status": "truncated", "name": "metrics"}
+/// ```
+pub async fn truncate_columnar_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    crate::sync::columnar::truncate(&db, state.replication_log.as_deref(), &collection)?;
+    Ok(Json(
+        serde_json::json!({"status": "truncated", "name": collection}),
+    ))
+}
+
 /// Execute aggregation on a columnar collection
 ///
 /// # Endpoint

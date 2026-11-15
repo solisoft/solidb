@@ -1241,6 +1241,18 @@ impl DriverHandler {
                 collection,
                 column,
             } => database::handle_delete_columnar_index(self, database, collection, column),
+
+            Command::DeleteColumnarRows {
+                database,
+                collection,
+                ids,
+                filter,
+            } => database::handle_delete_columnar_rows(self, database, collection, ids, filter),
+
+            Command::TruncateColumnar {
+                database,
+                collection,
+            } => database::handle_truncate_columnar(self, database, collection),
         }
     }
 

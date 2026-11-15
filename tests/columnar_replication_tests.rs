@@ -59,6 +59,10 @@ fn apply(peer: &StorageEngine, entries: &[LogEntry]) {
                     .unwrap()
             }
             Operation::ColumnarDropCollection => columnar::apply_drop(&db, &e.collection).unwrap(),
+            Operation::ColumnarDelete => {
+                columnar::apply_delete(&db, &e.collection, &e.key).unwrap()
+            }
+            Operation::ColumnarTruncate => columnar::apply_truncate(&db, &e.collection).unwrap(),
             Operation::ColumnarCreateIndex => {
                 columnar::apply_create_index(&db, &e.collection, &e.key, e.data.as_ref().unwrap())
                     .unwrap()
@@ -435,4 +439,211 @@ async fn indexes_reach_a_peer() {
     apply(&b, rest);
     let on_b = load(&b, "metrics").unwrap();
     assert!(!on_b.has_index("sensor") && !on_b.has_index("value"));
+}
+
+/// Every value of `value` a node holds, ascending.
+fn values(engine: &StorageEngine) -> Vec<i64> {
+    let mut values: Vec<i64> = load(engine, "metrics")
+        .unwrap()
+        .read_column("value", None)
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    values.sort();
+    values
+}
+
+/// Rows deleted by id, by filter, and a truncate, over HTTP (card #885):
+/// done on the node, and on a peer that applies its log.
+#[tokio::test]
+async fn http_deletes_and_truncate_reach_a_peer() {
+    let (a, log, _da) = node(true);
+    let log = log.unwrap();
+    let (b, _, _db) = node(false);
+    let app = create_router(
+        a.clone(),
+        None,
+        Some(log.clone()),
+        None,
+        None,
+        Arc::new(ScriptStats::default()),
+        None,
+        None,
+        0,
+    );
+    let token = common::seed_user_token(&a, "test_admin", &["admin"]);
+    let db = a.get_database("app").unwrap();
+    columnar::create(
+        &db,
+        Some(&log),
+        "metrics",
+        load_columns(),
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    // A block of 5,000 and 20 rows in the tail.
+    let mut ids = columnar::insert(&db, Some(&log), "metrics", rows(5000)).unwrap();
+    ids.extend(columnar::insert(&db, Some(&log), "metrics", rows(5020)[5000..].to_vec()).unwrap());
+    let mut applied = 0;
+    let mut catch_up = |b: &StorageEngine| {
+        let logged = entries(&log);
+        apply(b, &logged[applied..]);
+        applied = logged.len();
+    };
+    catch_up(&b);
+    assert_eq!(values(&b).len(), 5020);
+
+    // One row, by id: the first of the block.
+    let uri = format!("/_api/database/app/columnar/metrics/row/{}", ids[0]);
+    let (status, body) = call(&app, &token, "DELETE", &uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "deleted");
+    // Gone: a second delete finds nothing.
+    let (status, _) = call(&app, &token, "DELETE", &uri, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // By ids: two of the block, one of the tail, one that does not exist.
+    let (status, body) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/app/columnar/metrics/delete",
+        Some(json!({"ids": [ids[10], ids[11], ids[5005], "no-such-row"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 3);
+
+    // By filter, with an `and`: values 100..200 of sensor s1.
+    let (status, body) = call(
+        &app,
+        &token,
+        "POST",
+        "/_api/database/app/columnar/metrics/delete",
+        Some(json!({"filter": {"and": [
+            {"column": "sensor", "op": "EQ", "value": "s1"},
+            {"column": "value", "op": "GTE", "value": 100},
+            {"column": "value", "op": "LT", "value": 200},
+        ]}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["deleted"], 34);
+
+    // Neither, or both: refused, nothing deleted.
+    for bad in [
+        json!({}),
+        json!({"ids": [], "filter": {"column": "value", "op": "GT", "value": 0}}),
+    ] {
+        let (status, _) = call(
+            &app,
+            &token,
+            "POST",
+            "/_api/database/app/columnar/metrics/delete",
+            Some(bad),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    let expected: Vec<i64> = (0..5020)
+        .filter(|v| ![0, 10, 11, 5005].contains(v) && !(v % 3 == 1 && (100..200).contains(v)))
+        .collect();
+    assert_eq!(values(&a), expected);
+    assert_eq!(load(&a, "metrics").unwrap().count(), expected.len());
+    catch_up(&b);
+    assert_eq!(values(&b), expected);
+    assert_eq!(
+        load(&b, "metrics").unwrap().list_row_uuids().unwrap(),
+        load(&a, "metrics").unwrap().list_row_uuids().unwrap()
+    );
+    // What is left still aggregates from the blocks.
+    assert_eq!(
+        load(&a, "metrics")
+            .unwrap()
+            .aggregate("value", AggregateOp::Sum)
+            .unwrap(),
+        json!(expected.iter().sum::<i64>() as f64)
+    );
+
+    let (status, body) = call(
+        &app,
+        &token,
+        "PUT",
+        "/_api/database/app/columnar/metrics/truncate",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(values(&a).is_empty());
+    catch_up(&b);
+    assert!(values(&b).is_empty());
+    // The columns stay, and rows go in again.
+    columnar::insert(&db, Some(&log), "metrics", rows(3)).unwrap();
+    catch_up(&b);
+    assert_eq!(values(&b), [0, 1, 2]);
+}
+
+/// The same over the driver.
+#[test]
+fn driver_deletes_and_truncate_reach_a_peer() {
+    let (a, log, _da) = node(true);
+    let log = log.unwrap();
+    let (b, _, _db) = node(false);
+    let handler = DriverHandler::new(Arc::new(a.clone()), Some(log.clone()));
+    let db = a.get_database("app").unwrap();
+    columnar::create(
+        &db,
+        Some(&log),
+        "metrics",
+        load_columns(),
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    let ids = columnar::insert(&db, Some(&log), "metrics", rows(30)).unwrap();
+    let count = |r: Response| match r {
+        Response::Ok { count, .. } => count,
+        other => panic!("{other:?}"),
+    };
+
+    let by_ids = driver::handle_delete_columnar_rows(
+        &handler,
+        "app".to_string(),
+        "metrics".to_string(),
+        Some(vec![ids[0].clone(), ids[29].clone()]),
+        None,
+    );
+    assert_eq!(count(by_ids), Some(2));
+    let by_filter = driver::handle_delete_columnar_rows(
+        &handler,
+        "app".to_string(),
+        "metrics".to_string(),
+        None,
+        Some(r#"{"column": "value", "op": "LT", "value": 10}"#.to_string()),
+    );
+    assert_eq!(count(by_filter), Some(9));
+    let neither = driver::handle_delete_columnar_rows(
+        &handler,
+        "app".to_string(),
+        "metrics".to_string(),
+        None,
+        None,
+    );
+    assert!(matches!(neither, Response::Error { .. }));
+
+    apply(&b, &entries(&log));
+    assert_eq!(values(&a), (10..29).collect::<Vec<i64>>());
+    assert_eq!(values(&b), values(&a));
+
+    let truncated =
+        driver::handle_truncate_columnar(&handler, "app".to_string(), "metrics".to_string());
+    assert!(matches!(truncated, Response::Ok { .. }), "{truncated:?}");
+    let logged = entries(&log);
+    assert_eq!(
+        logged.last().unwrap().operation,
+        Operation::ColumnarTruncate
+    );
+    apply(&b, &logged[logged.len() - 1..]);
+    assert!(values(&a).is_empty() && values(&b).is_empty());
 }

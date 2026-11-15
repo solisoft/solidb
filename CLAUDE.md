@@ -741,13 +741,15 @@ Rules that keep it sound:
   decoded blocks kept for all handles (`BLOCK_STORES`, by database and
   collection) after its batch is written, never before. The entry holds a
   `Weak` on the database so that its address cannot be reused by another.
-- **Create, insert, drop and a column's index go through `sync::columnar`**,
+- **Create, insert, delete, truncate, drop and a column's index go through
+  `sync::columnar`**,
   on every transport: it does the work and appends what a peer applies
   (the `apply_*` functions, which the replication worker calls and which
   must stay idempotent: a joining node replays logs from their start).
   Only the HTTP insert used to be logged, so a peer never had the
-  collection (cards #882, #883). Row deletes and truncate have no origin
-  yet (#885).
+  collection (cards #882, #883). A delete by filter is logged as the ids
+  it deleted, never as the filter: a peer holding other rows would answer
+  it differently.
 - **A full sync sends a columnar collection whole** (`SyncMessage::
   FullSyncColumnar`, after the `FullSyncCollection` of its backing
   `_columnar_<name>`): definition, rows under their ids in byte-bounded

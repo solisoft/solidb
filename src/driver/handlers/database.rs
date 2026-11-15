@@ -575,6 +575,52 @@ pub fn handle_delete_columnar_index(
     }
 }
 
+pub fn handle_delete_columnar_rows(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    ids: Option<Vec<String>>,
+    filter: Option<String>,
+) -> Response {
+    let delete = || -> crate::error::DbResult<usize> {
+        let db = handler.storage.get_database(&database)?;
+        let log = handler.replication.as_deref();
+        match (ids, filter.filter(|f| !f.trim().is_empty())) {
+            (Some(ids), None) => {
+                Ok(crate::sync::columnar::delete_rows(&db, log, &collection, &ids)?.len())
+            }
+            (None, Some(filter)) => {
+                let json: Value = serde_json::from_str(&filter).map_err(|e| {
+                    crate::error::DbError::BadRequest(format!("Invalid filter JSON: {}", e))
+                })?;
+                let filter = crate::storage::columnar::ColumnFilter::from_json(&json)?;
+                crate::sync::columnar::delete_where(&db, log, &collection, &filter)
+            }
+            _ => Err(crate::error::DbError::BadRequest(
+                "give either 'ids' or 'filter'".to_string(),
+            )),
+        }
+    };
+    match delete() {
+        Ok(count) => Response::ok_count(count),
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
+pub fn handle_truncate_columnar(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+) -> Response {
+    let truncated = handler.storage.get_database(&database).and_then(|db| {
+        crate::sync::columnar::truncate(&db, handler.replication.as_deref(), &collection)
+    });
+    match truncated {
+        Ok(()) => Response::ok_empty(),
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

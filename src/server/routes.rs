@@ -682,6 +682,18 @@ pub fn create_router(
             post(super::columnar_handlers::insert_columnar_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/row/{id}",
+            delete(super::columnar_handlers::delete_columnar_row_handler),
+        )
+        .route(
+            "/_api/database/{db}/columnar/{collection}/delete",
+            post(super::columnar_handlers::delete_columnar_rows_handler),
+        )
+        .route(
+            "/_api/database/{db}/columnar/{collection}/truncate",
+            put(super::columnar_handlers::truncate_columnar_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/aggregate",
             post(super::columnar_handlers::aggregate_columnar_handler),
         )

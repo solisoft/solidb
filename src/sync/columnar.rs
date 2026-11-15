@@ -5,7 +5,8 @@
 //! and drop did not, and the driver logged nothing. A peer therefore never
 //! had the collection, and every insert it received failed to load it.
 //!
-//! Every transport goes through [`create`], [`drop`] and [`insert`], which
+//! Every transport goes through [`create`], [`drop`], [`insert`],
+//! [`delete_rows`], [`delete_where`] and [`truncate`], which
 //! do the work on this node and append what a peer needs; the replication
 //! worker applies those entries with [`apply_create`], [`apply_insert`],
 //! [`apply_drop`], [`apply_create_index`] and [`apply_drop_index`]. A full
@@ -119,6 +120,87 @@ pub fn insert(
     }
     log.append_batch(entries);
     Ok(ids)
+}
+
+/// Log the deletion of these rows, each under its id.
+fn log_deleted(log: Option<&SyncLog>, db: &Database, name: &str, ids: &[String]) {
+    let Some(log) = writing(log) else {
+        return;
+    };
+    for chunk in ids.chunks(LOG_BATCH) {
+        log.append_batch(
+            chunk
+                .iter()
+                .map(|id| {
+                    LogEntry::new_op(
+                        db.name.as_str(),
+                        name,
+                        Operation::ColumnarDelete,
+                        id.as_str(),
+                        None,
+                    )
+                })
+                .collect(),
+        );
+    }
+}
+
+/// Delete rows by id on this node and log each for the peers. Returns the
+/// ids that were there.
+pub fn delete_rows(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    ids: &[String],
+) -> DbResult<Vec<String>> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    let deleted = col.delete_rows(ids)?;
+    log_deleted(log, db, name, &deleted);
+    Ok(deleted)
+}
+
+/// Delete the rows a filter keeps on this node, and log each for the
+/// peers: by id, not as the filter, which a peer holding other rows would
+/// answer differently. Returns how many went.
+pub fn delete_where(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    filter: &crate::storage::columnar::ColumnFilter,
+) -> DbResult<usize> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    let deleted = col.delete_where(filter)?;
+    log_deleted(log, db, name, &deleted);
+    Ok(deleted.len())
+}
+
+/// Empty a collection on this node, keeping its columns, and log it for
+/// the peers.
+pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.truncate()?;
+    if let Some(log) = writing(log) {
+        log.append(LogEntry::new_op(
+            db.name.as_str(),
+            name,
+            Operation::ColumnarTruncate,
+            "",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// Apply a peer's `ColumnarDelete`. A row that is not there is deleted.
+pub fn apply_delete(db: &Database, name: &str, id: &str) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.delete_row(id)?;
+    Ok(())
+}
+
+/// Apply a peer's `ColumnarTruncate`.
+pub fn apply_truncate(db: &Database, name: &str) -> DbResult<()> {
+    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.truncate()
 }
 
 /// Apply a peer's `ColumnarCreateCollection`. `data` is what [`create`]

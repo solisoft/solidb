@@ -401,6 +401,29 @@ mod tests {
             required_action(&delete, "/_api/database/{db}/columnar/{collection}"),
             PermissionAction::Admin
         );
+        // Rows of a columnar collection: a Write, and emptying it an Admin
+        // action like any truncate.
+        assert_eq!(
+            required_action(
+                &delete,
+                "/_api/database/{db}/columnar/{collection}/row/{id}"
+            ),
+            PermissionAction::Write
+        );
+        assert_eq!(
+            required_action(
+                &Method::POST,
+                "/_api/database/{db}/columnar/{collection}/delete"
+            ),
+            PermissionAction::Write
+        );
+        assert_eq!(
+            required_action(
+                &Method::PUT,
+                "/_api/database/{db}/columnar/{collection}/truncate"
+            ),
+            PermissionAction::Admin
+        );
         assert_eq!(
             required_action(&post, "/_api/database/{db}/repl"),
             PermissionAction::Admin

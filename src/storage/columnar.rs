@@ -912,6 +912,18 @@ impl ColumnarCollection {
 
     /// Delete a row by UUID
     pub fn delete_row(&self, row_uuid: &str) -> DbResult<bool> {
+        Ok(!self.delete_rows(&[row_uuid.to_string()])?.is_empty())
+    }
+
+    /// Delete the rows of these ids, in one batch. Returns the ids that
+    /// were there, in the order given.
+    ///
+    /// A block that loses rows is written again once, whatever their
+    /// number.
+    pub fn delete_rows(&self, ids: &[String]) -> DbResult<Vec<String>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
         let mut meta = self
@@ -923,50 +935,92 @@ impl ColumnarCollection {
         self.refresh_meta(db, &cf, &mut meta);
 
         let rows = self.row_set_with(&meta.compression)?;
-        let Some((at, row)) = rows.find(row_uuid) else {
-            return Ok(false); // Doesn't exist
-        };
-
+        // Where each row is: by block, or in the tail.
+        let mut in_blocks: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+        let mut in_tail = 0u64;
+        let mut seen = std::collections::HashSet::new();
+        let mut deleted = Vec::new();
         let mut batch = KvBatch::default();
-        let mut new_meta = meta.clone();
-        self.cap_indexes(&meta, &mut new_meta, row_uuid)?;
-        // In the tail: its key goes. In a block: the block is written again
-        // without it, under the same key.
-        let rewritten = match rows.blocks.get(at) {
-            None => {
-                batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, row_uuid).as_bytes());
-                new_meta.tail_rows = new_meta.tail_rows.saturating_sub(1);
-                None
+        for id in ids {
+            if !seen.insert(id.as_str()) {
+                continue;
             }
-            Some(block) => {
-                let smaller = block.without(row);
-                if smaller.len() == 0 {
-                    let key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
-                    batch.delete_ks(&cf, key.as_bytes());
-                } else {
-                    self.stage_block(&cf, &mut batch, &meta.compression, &smaller)?;
-                }
-                Some(smaller)
+            let Some((at, row)) = rows.find(id) else {
+                continue;
+            };
+            if at < rows.blocks.len() {
+                in_blocks.entry(at).or_default().push(row);
+            } else {
+                batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, id).as_bytes());
+                in_tail += 1;
             }
+            deleted.push(id.clone());
+        }
+        let Some(first) = deleted.iter().min() else {
+            return Ok(deleted);
         };
 
-        // Update metadata
-        new_meta.row_count = new_meta.row_count.saturating_sub(1);
+        let mut new_meta = meta.clone();
+        self.cap_indexes(&meta, &mut new_meta, first)?;
+        new_meta.tail_rows = new_meta.tail_rows.saturating_sub(in_tail);
+
+        // Each block written again without its rows: under its key when a
+        // single row goes, sealed anew from the rows left otherwise.
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        let mut rewritten: Vec<(String, Option<ColBlock>)> = Vec::new();
+        for (at, gone) in in_blocks {
+            let block = &rows.blocks[at];
+            let old_key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
+            let smaller = if gone.len() >= block.len() {
+                None
+            } else if let [row] = gone[..] {
+                Some(block.without(row))
+            } else {
+                let gone: std::collections::HashSet<usize> = gone.into_iter().collect();
+                let kept: Vec<(String, serde_json::Map<String, Value>)> = (0..block.len())
+                    .filter(|row| !gone.contains(row))
+                    .map(|row| (block.uuids[row].clone(), block.row(row)))
+                    .collect();
+                Some(ColBlock::seal(&names, &kept))
+            };
+            match &smaller {
+                Some(smaller) => {
+                    if smaller.key != block.key {
+                        batch.delete_ks(&cf, old_key.as_bytes());
+                    }
+                    self.stage_block(&cf, &mut batch, &meta.compression, smaller)?;
+                }
+                None => batch.delete_ks(&cf, old_key.as_bytes()),
+            }
+            rewritten.push((block.key.clone(), smaller));
+        }
+
+        new_meta.row_count = new_meta.row_count.saturating_sub(deleted.len() as u64);
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
         db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
-        if let (Some(smaller), Some(blocks)) = (rewritten, self.store().write().as_mut()) {
-            blocks.retain(|b| b.key != smaller.key);
-            if smaller.len() > 0 {
-                blocks.push(Arc::new(smaller));
+        if !rewritten.is_empty() {
+            if let Some(blocks) = self.store().write().as_mut() {
+                for (old_key, smaller) in rewritten {
+                    blocks.retain(|b| b.key != old_key);
+                    if let Some(smaller) = smaller {
+                        blocks.push(Arc::new(smaller));
+                    }
+                }
                 blocks.sort_by(|a, b| a.key.cmp(&b.key));
             }
         }
 
-        Ok(true)
+        Ok(deleted)
+    }
+
+    /// Delete the rows `filter` keeps. Returns their ids.
+    pub fn delete_where(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
+        let ids = self.filtered_row_uuids(filter)?;
+        self.delete_rows(&ids)
     }
 
     /// List all row UUIDs in the collection
@@ -2414,9 +2468,12 @@ impl ColumnarCollection {
             }
 
             ColumnFilter::And(filters) => {
-                let mut result: Vec<u64> = row_range.collect();
+                // Each side over the whole range: it used to be asked only
+                // for as many positions as the sides before it had kept,
+                // and a row past them was lost.
+                let mut result: Vec<u64> = row_range.clone().collect();
                 for f in filters {
-                    let matching = self.apply_filter(f, 0..result.len() as u64)?;
+                    let matching = self.apply_filter(f, row_range.clone())?;
                     let matching_set: std::collections::HashSet<u64> =
                         matching.into_iter().collect();
                     result.retain(|id| matching_set.contains(id));
