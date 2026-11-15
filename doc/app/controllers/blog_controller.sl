@@ -72,6 +72,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-against-clickhouse-on-a-columnar-table",
+        "title": "SoliDB against ClickHouse on a columnar table",
+        "date": "2026-11-15",
+        "display_date": "November 15, 2026",
+        "summary": "Ten million rows, four analytical questions, 4 cores each. SoliDB 2.10.4 took 2.4 "
+        + "seconds a question on a tenth of that: its columnar collections stored one key per cell. "
+        + "They now store blocks of typed arrays, queries are computed on the arrays, and the build "
+        + "leads the eight rows: what changed, and what four questions do not say about ClickHouse.",
+        "tags": ["Columnar", "Performance", "Benchmarks"],
+        "read_minutes": 9
+      },
+      {
         "slug": "solidb-against-questdb-timescaledb-on-time-series",
         "title": "SoliDB against QuestDB and TimescaleDB on time series",
         "date": "2026-11-15",
