@@ -6,6 +6,7 @@
 //! - Column pruning (only read needed columns)
 //! - LZ4 compression for efficient storage
 
+use super::columnar_blocks::{ColBlock, RowSet, BLOCK_ROWS, COL_BLOCK_PREFIX, SEAL_ROWS};
 use super::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
 use crate::storage::kv::KvBatch;
 use fastbloom::BloomFilter;
@@ -105,7 +106,29 @@ pub struct ColumnarCollectionMeta {
     pub created_at: i64,
     #[serde(default)]
     pub last_updated_at: i64,
+    /// How the rows are stored: 2 is blocks and a tail
+    /// (`storage::columnar_blocks`); anything lower is one key per cell, and
+    /// is converted when the collection is loaded.
+    #[serde(default)]
+    pub format: u8,
+    /// Rows in the tail (`col_row:`), not yet sealed into a block.
+    #[serde(default)]
+    pub tail_rows: u64,
 }
+
+/// The storage format new collections are created in.
+const BLOCK_FORMAT: u8 = 2;
+
+/// The decoded blocks of a collection, `None` until they are read from
+/// disk, and the database they belong to: the entry keeps that address
+/// from being used again by another one.
+type BlockStore = (
+    std::sync::Weak<DB>,
+    Arc<parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>>,
+);
+/// By (database, backing collection), shared by every handle.
+static BLOCK_STORES: once_cell::sync::Lazy<dashmap::DashMap<(usize, String), BlockStore>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 /// Aggregation operations supported on columnar data
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -328,6 +351,8 @@ impl ColumnarCollection {
             compression,
             created_at: now,
             last_updated_at: now,
+            format: BLOCK_FORMAT,
+            tail_rows: 0,
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -347,13 +372,16 @@ impl ColumnarCollection {
                 .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
-        Ok(Self {
+        let created = Self {
             name,
             db,
             cf_name,
             ks,
             meta: Arc::new(RwLock::new(meta)),
-        })
+        };
+        // Nothing of an earlier collection of that name is kept.
+        *created.store().write() = Some(Vec::new());
+        Ok(created)
     }
 
     /// Load an existing columnar collection
@@ -384,13 +412,18 @@ impl ColumnarCollection {
 
         let meta = serde_json::from_slice::<ColumnarCollectionMeta>(&meta_bytes)?;
 
-        Ok(Self {
+        let format = meta.format;
+        let loaded = Self {
             name,
             db,
             cf_name,
             ks,
             meta: Arc::new(RwLock::new(meta)),
-        })
+        };
+        if format < BLOCK_FORMAT {
+            loaded.migrate()?;
+        }
+        Ok(loaded)
     }
 
     /// Lock shared by every handle of this columnar collection. The per-handle
@@ -426,89 +459,264 @@ impl ColumnarCollection {
         Ok(())
     }
 
-    /// Stage one row (column values, UUID index appends, full row) into
-    /// `batch`. Index lists are accumulated in `uuid_indexes` and written
-    /// once by `stage_uuid_indexes`, so rows in the same batch that share an
-    /// index value do not overwrite each other's append.
-    #[allow(clippy::too_many_arguments)]
-    fn stage_row(
+    /// The decoded blocks of this collection, shared by every handle.
+    fn store(&self) -> Arc<parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>> {
+        let key = (Arc::as_ptr(&self.db) as usize, self.cf_name.clone());
+        if let Some(found) = BLOCK_STORES.get(&key) {
+            return found.1.clone();
+        }
+        BLOCK_STORES.retain(|_, (db, _)| db.strong_count() > 0);
+        BLOCK_STORES
+            .entry(key)
+            .or_insert_with(|| (Arc::downgrade(&self.db), Arc::default()))
+            .1
+            .clone()
+    }
+
+    fn not_found(&self) -> DbError {
+        DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
+    }
+
+    /// The blocks, in the order of their keys: from memory, or read once.
+    fn blocks(&self, cf: &KsCf, compression: &CompressionType) -> DbResult<Vec<Arc<ColBlock>>> {
+        let store = self.store();
+        if let Some(blocks) = store.read().as_ref() {
+            return Ok(blocks.clone());
+        }
+        let mut held = store.write();
+        if let Some(blocks) = held.as_ref() {
+            return Ok(blocks.clone());
+        }
+        let prefix = COL_BLOCK_PREFIX.as_bytes();
+        let mut blocks = Vec::new();
+        for (key, bytes) in self.db.prefix_iterator_ks(cf, prefix).flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let block = self
+                .decompress_data(&bytes, compression)
+                .ok()
+                .and_then(|plain| ColBlock::decode(&plain))
+                .ok_or_else(|| {
+                    DbError::InternalError(format!(
+                        "columnar block '{}' of '{}' cannot be read",
+                        String::from_utf8_lossy(&key),
+                        self.name
+                    ))
+                })?;
+            blocks.push(Arc::new(block));
+        }
+        *held = Some(blocks.clone());
+        Ok(blocks)
+    }
+
+    /// The rows of the tail, ascending by id.
+    fn tail(
         &self,
-        db: &DB,
+        cf: &KsCf,
+        compression: &CompressionType,
+    ) -> DbResult<Vec<(String, serde_json::Map<String, Value>)>> {
+        let prefix = COL_ROW_PREFIX.as_bytes();
+        let mut rows = Vec::new();
+        for (key, bytes) in self.db.prefix_iterator_ks(cf, prefix).flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let Some(uuid) = std::str::from_utf8(&key[prefix.len()..]).ok() else {
+                continue;
+            };
+            let plain = self.decompress_data(&bytes, compression)?;
+            // MessagePack, which holds a float exactly; rows written
+            // through 2.10.4 are JSON text, which starts with `{` — to
+            // MessagePack a small integer, not a map.
+            let row = match rmp_serde::from_slice::<Value>(&plain) {
+                Ok(Value::Object(row)) => Some(row),
+                _ => match serde_json::from_slice::<Value>(&plain) {
+                    Ok(Value::Object(row)) => Some(row),
+                    _ => None,
+                },
+            };
+            if let Some(row) = row {
+                rows.push((uuid.to_string(), row));
+            }
+        }
+        Ok(rows)
+    }
+
+    /// The rows as a query reads them: the blocks, then the tail.
+    pub(crate) fn row_set(&self) -> DbResult<RowSet> {
+        let compression = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .compression
+            .clone();
+        self.row_set_with(&compression)
+    }
+
+    fn row_set_with(&self, compression: &CompressionType) -> DbResult<RowSet> {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        Ok(RowSet::new(
+            self.blocks(&cf, compression)?,
+            self.tail(&cf, compression)?,
+        ))
+    }
+
+    /// Stage `block` into `batch`.
+    fn stage_block(
+        &self,
         cf: &KsCf,
         batch: &mut KvBatch,
-        uuid_indexes: &mut HashMap<String, Vec<String>>,
-        meta: &ColumnarCollectionMeta,
-        obj: &serde_json::Map<String, Value>,
-        row: &Value,
-        row_uuid: &str,
+        compression: &CompressionType,
+        block: &ColBlock,
     ) -> DbResult<()> {
-        // Store each column value separately
-        for col_def in &meta.columns {
-            let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
-            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-            let value_bytes = serde_json::to_vec(value)?;
-            batch.put_ks(
-                cf,
-                col_key.as_bytes(),
-                self.compress_data(&value_bytes, &meta.compression),
-            );
-        }
-
-        // Inverted UUID index for indexed columns. Bitmap indexes need
-        // positional ids, so UUID rows fall back to the inverted index;
-        // MinMax is skipped for UUID rows.
-        for col_def in meta.columns.iter().filter(|c| c.indexed) {
-            if matches!(col_def.index_type, Some(ColumnarIndexType::MinMax)) {
-                continue;
-            }
-            let value = obj.get(&col_def.name).unwrap_or(&Value::Null);
-            // A different key suffix distinguishes UUID indexes from u64 ones.
-            let uuid_idx_key = format!("{}_uuids", self.encode_index_key(&col_def.name, value));
-            let uuids = match uuid_indexes.entry(uuid_idx_key) {
-                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    let existing: Vec<String> = match db.get_ks(cf, e.key().as_bytes()) {
-                        Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
-                        Ok(None) => Vec::new(),
-                        Err(err) => return Err(DbError::InternalError(err.to_string())),
-                    };
-                    e.insert(existing)
-                }
-            };
-            uuids.push(row_uuid.to_string());
-        }
-
-        // Also store full row for reconstruction
-        let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-        let row_bytes = serde_json::to_vec(row)?;
-        batch.put_ks(
-            cf,
-            row_key.as_bytes(),
-            self.compress_data(&row_bytes, &meta.compression),
-        );
+        let bytes = block
+            .encode()
+            .ok_or_else(|| DbError::InternalError("columnar block: encoding".to_string()))?;
+        let key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
+        batch.put_ks(cf, key.as_bytes(), self.compress_data(&bytes, compression));
         Ok(())
     }
 
-    fn stage_uuid_indexes(
+    /// Stage new rows (ascending by id) into `batch`: as blocks when there
+    /// are enough of them, alone or with the tail, else in the tail. Returns
+    /// the blocks sealed, for the store once the batch is written.
+    fn stage_rows(
+        &self,
         cf: &KsCf,
         batch: &mut KvBatch,
-        uuid_indexes: HashMap<String, Vec<String>>,
-    ) -> DbResult<()> {
-        for (key, uuids) in uuid_indexes {
-            batch.put_ks(cf, key.as_bytes(), serde_json::to_vec(&uuids)?);
+        meta: &mut ColumnarCollectionMeta,
+        mut rows: Vec<(String, serde_json::Map<String, Value>)>,
+    ) -> DbResult<Vec<ColBlock>> {
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        meta.row_count += rows.len() as u64;
+        meta.last_updated_at = chrono::Utc::now().timestamp();
+        if rows.len() < SEAL_ROWS && meta.tail_rows as usize + rows.len() < SEAL_ROWS {
+            for (uuid, row) in &rows {
+                let key = format!("{}{}", COL_ROW_PREFIX, uuid);
+                let bytes = rmp_serde::to_vec(row)
+                    .map_err(|e| DbError::InternalError(format!("columnar row: {e}")))?;
+                batch.put_ks(
+                    cf,
+                    key.as_bytes(),
+                    self.compress_data(&bytes, &meta.compression),
+                );
+            }
+            meta.tail_rows += rows.len() as u64;
+            return Ok(Vec::new());
         }
+        // Enough for a block: with the tail, when these rows are few.
+        if rows.len() < SEAL_ROWS {
+            let tail = self.tail(cf, &meta.compression)?;
+            for (uuid, _) in &tail {
+                batch.delete_ks(cf, format!("{}{}", COL_ROW_PREFIX, uuid).as_bytes());
+            }
+            rows.extend(tail);
+            rows.sort_by(|a, b| a.0.cmp(&b.0));
+            meta.tail_rows = 0;
+        }
+        let mut sealed = Vec::new();
+        for chunk in rows.chunks(BLOCK_ROWS) {
+            let block = ColBlock::seal(&names, chunk);
+            self.stage_block(cf, batch, &meta.compression, &block)?;
+            sealed.push(block);
+        }
+        Ok(sealed)
+    }
+
+    /// Make the store hold `sealed` too, once their batch is written.
+    fn keep_blocks(&self, sealed: Vec<ColBlock>) {
+        if sealed.is_empty() {
+            return;
+        }
+        if let Some(blocks) = self.store().write().as_mut() {
+            blocks.extend(sealed.into_iter().map(Arc::new));
+            blocks.sort_by(|a, b| a.key.cmp(&b.key));
+        }
+    }
+
+    /// Convert a collection stored one key per cell: its rows (`col_row:`
+    /// holds each in full) are sealed into blocks, and the cells deleted.
+    /// A conversion interrupted part-way starts again from the rows left.
+    fn migrate(&self) -> DbResult<()> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        self.refresh_meta(db, &cf, &mut meta);
+        if meta.format >= BLOCK_FORMAT {
+            return Ok(());
+        }
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        let rows = self.tail(&cf, &meta.compression)?;
+        for chunk in rows.chunks(BLOCK_ROWS) {
+            let mut batch = KvBatch::default();
+            self.stage_block(
+                &cf,
+                &mut batch,
+                &meta.compression,
+                &ColBlock::seal(&names, chunk),
+            )?;
+            for (uuid, _) in chunk {
+                batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, uuid).as_bytes());
+            }
+            db.write(batch)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+        }
+        // `col;` follows every `col:` key and precedes `col_…`.
+        let mut batch = KvBatch::default();
+        batch.delete_range_ks(&cf, COL_DATA_PREFIX.as_bytes(), b"col;".as_slice());
+        let mut new_meta = meta.clone();
+        new_meta.format = BLOCK_FORMAT;
+        new_meta.tail_rows = 0;
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        *self.store().write() = None;
+        tracing::info!(
+            "columnar collection '{}': {} rows converted to blocks",
+            self.name,
+            rows.len()
+        );
         Ok(())
     }
 
     /// Insert rows into columnar storage
     /// Returns a vector of UUIDs for the inserted rows (for replication)
     ///
-    /// All rows, their index entries and the updated metadata land in one
-    /// KvBatch, so a failure part-way leaves nothing half-written.
+    /// The rows and the updated metadata land in one KvBatch, so a failure
+    /// part-way leaves nothing half-written.
     pub fn insert_rows(&self, rows: Vec<Value>) -> DbResult<Vec<String>> {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
+        // Anything but an object is passed over.
+        let objects: Vec<serde_json::Map<String, Value>> = rows
+            .into_iter()
+            .filter_map(|row| match row {
+                Value::Object(obj) => Some(obj),
+                _ => None,
+            })
+            .collect();
+        // Enough rows for blocks of their own: their columns are built
+        // here, before the lock every writer of the collection waits for.
+        // The schema's columns do not change once the collection exists.
+        let columns = (objects.len() >= SEAL_ROWS).then(|| {
+            let names: Vec<String> = self
+                .meta
+                .read()
+                .map(|meta| meta.columns.iter().map(|c| c.name.clone()).collect())
+                .unwrap_or_default();
+            objects
+                .chunks(BLOCK_ROWS)
+                .map(|chunk| (chunk.len(), ColBlock::of_rows(&names, chunk)))
+                .collect::<Vec<_>>()
+        });
 
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
@@ -517,44 +725,40 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
         self.refresh_meta(db, &cf, &mut meta);
 
+        // A UUID v7 (time-ordered) for each row, under the lock: the ids of
+        // one insert follow those of the one before it.
+        let inserted_ids: Vec<String> =
+            objects.iter().map(|_| uuid7::uuid7().to_string()).collect();
+
         let mut batch = KvBatch::default();
-        let mut uuid_indexes = HashMap::new();
-        let mut inserted_ids = Vec::new();
-
-        for row in rows.iter() {
-            // Generate UUID v7 (time-ordered) for each row
-            let row_uuid = uuid7::uuid7().to_string();
-
-            if let Value::Object(obj) = row {
-                self.stage_row(
-                    db,
-                    &cf,
-                    &mut batch,
-                    &mut uuid_indexes,
-                    &meta,
-                    obj,
-                    row,
-                    &row_uuid,
-                )?;
-                inserted_ids.push(row_uuid);
-            }
-        }
-        Self::stage_uuid_indexes(&cf, &mut batch, uuid_indexes)?;
-
-        // Update metadata
         let mut new_meta = meta.clone();
-        new_meta.row_count += inserted_ids.len() as u64;
-        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        let sealed = match columns {
+            Some(columns) => {
+                let mut ids = inserted_ids.iter().cloned();
+                let mut sealed = Vec::with_capacity(columns.len());
+                for (rows, block) in columns {
+                    let block = block.identified(ids.by_ref().take(rows).collect());
+                    self.stage_block(&cf, &mut batch, &new_meta.compression, &block)?;
+                    sealed.push(block);
+                }
+                new_meta.row_count += objects.len() as u64;
+                new_meta.last_updated_at = chrono::Utc::now().timestamp();
+                sealed
+            }
+            None => {
+                let fresh = inserted_ids.iter().cloned().zip(objects).collect();
+                self.stage_rows(&cf, &mut batch, &mut new_meta, fresh)?
+            }
+        };
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
         db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
+        self.keep_blocks(sealed);
 
         Ok(inserted_ids)
     }
@@ -569,50 +773,37 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
         self.refresh_meta(db, &cf, &mut meta);
 
         // Check if row already exists (idempotency for replication)
-        let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-        if db
-            .get_ks(&cf, row_key.as_bytes())
-            .map_err(|e| DbError::InternalError(e.to_string()))?
+        if self
+            .row_set_with(&meta.compression)?
+            .find(row_uuid)
             .is_some()
         {
             return Ok(false); // Already exists, skip
         }
 
-        if let Value::Object(obj) = &row {
-            let mut batch = KvBatch::default();
-            let mut uuid_indexes = HashMap::new();
-            self.stage_row(
-                db,
-                &cf,
-                &mut batch,
-                &mut uuid_indexes,
-                &meta,
-                obj,
-                &row,
-                row_uuid,
-            )?;
-            Self::stage_uuid_indexes(&cf, &mut batch, uuid_indexes)?;
+        let Value::Object(obj) = row else {
+            return Err(DbError::BadRequest("Row must be a JSON object".to_string()));
+        };
+        let mut batch = KvBatch::default();
+        let mut new_meta = meta.clone();
+        let sealed = self.stage_rows(
+            &cf,
+            &mut batch,
+            &mut new_meta,
+            vec![(row_uuid.to_string(), obj)],
+        )?;
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
 
-            // Update metadata
-            let mut new_meta = meta.clone();
-            new_meta.row_count += 1;
-            new_meta.last_updated_at = chrono::Utc::now().timestamp();
-            self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        self.keep_blocks(sealed);
 
-            db.write(batch)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
-            *meta = new_meta;
-
-            Ok(true)
-        } else {
-            Err(DbError::BadRequest("Row must be a JSON object".to_string()))
-        }
+        Ok(true)
     }
 
     /// Delete a row by UUID
@@ -624,34 +815,37 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
         self.refresh_meta(db, &cf, &mut meta);
 
-        // Check if row exists
-        let row_key = format!("{}{}", COL_ROW_PREFIX, row_uuid);
-        if db
-            .get_ks(&cf, row_key.as_bytes())
-            .map_err(|e| DbError::InternalError(e.to_string()))?
-            .is_none()
-        {
+        let rows = self.row_set_with(&meta.compression)?;
+        let Some((at, row)) = rows.find(row_uuid) else {
             return Ok(false); // Doesn't exist
-        }
+        };
 
         let mut batch = KvBatch::default();
-
-        // Delete column values
-        for col_def in &meta.columns {
-            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col_def.name, row_uuid);
-            batch.delete_ks(&cf, col_key.as_bytes());
-        }
-
-        // Delete full row
-        batch.delete_ks(&cf, row_key.as_bytes());
+        let mut new_meta = meta.clone();
+        // In the tail: its key goes. In a block: the block is written again
+        // without it, under the same key.
+        let rewritten = match rows.blocks.get(at) {
+            None => {
+                batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, row_uuid).as_bytes());
+                new_meta.tail_rows = new_meta.tail_rows.saturating_sub(1);
+                None
+            }
+            Some(block) => {
+                let smaller = block.without(row);
+                if smaller.len() == 0 {
+                    let key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
+                    batch.delete_ks(&cf, key.as_bytes());
+                } else {
+                    self.stage_block(&cf, &mut batch, &meta.compression, &smaller)?;
+                }
+                Some(smaller)
+            }
+        };
 
         // Update metadata
-        let mut new_meta = meta.clone();
         new_meta.row_count = new_meta.row_count.saturating_sub(1);
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
@@ -659,91 +853,54 @@ impl ColumnarCollection {
         db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
+        if let (Some(smaller), Some(blocks)) = (rewritten, self.store().write().as_mut()) {
+            blocks.retain(|b| b.key != smaller.key);
+            if smaller.len() > 0 {
+                blocks.push(Arc::new(smaller));
+                blocks.sort_by(|a, b| a.key.cmp(&b.key));
+            }
+        }
 
         Ok(true)
     }
 
     /// List all row UUIDs in the collection
     pub fn list_row_uuids(&self) -> DbResult<Vec<String>> {
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        let prefix = COL_ROW_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_ks(&cf, prefix);
-
-        let mut uuids = Vec::new();
-        for item in iter.flatten() {
-            let (key, _) = item;
-            if !key.starts_with(prefix) {
-                break;
-            }
-            let key_str = String::from_utf8_lossy(&key);
-            if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
-                uuids.push(uuid.to_string());
-            }
-        }
-
-        Ok(uuids)
+        let rows = self.row_set()?;
+        Ok(rows
+            .positions()
+            .map(|at| rows.uuid(at).to_string())
+            .collect())
     }
 
-    /// Read a single column for all rows or specific row IDs
-    pub fn read_column(&self, column: &str, row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
+    fn check_column(&self, column: &str) -> DbResult<()> {
         let meta = self
             .meta
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let _cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        // Validate column exists
         if !meta.columns.iter().any(|c| c.name == column) {
             return Err(DbError::BadRequest(format!(
                 "Column '{}' not found",
                 column
             )));
         }
+        Ok(())
+    }
 
-        // Get UUIDs to read
-        let uuids: Vec<String> = match row_uuids {
-            Some(ids) => ids.to_vec(),
-            None => {
-                // List all row UUIDs from col_row: prefix
-                drop(meta);
-                self.list_row_uuids()?
-            }
-        };
-
-        // Re-acquire locks if we had to get UUIDs
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        let mut values = Vec::with_capacity(uuids.len());
-
-        for row_uuid in &uuids {
-            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
-
-            match db.get_ks(&cf, col_key.as_bytes()) {
-                Ok(Some(bytes)) => {
-                    let decompressed = self.decompress_data(&bytes, &meta.compression)?;
-                    let value: Value = serde_json::from_slice(&decompressed)?;
-                    values.push(value);
-                }
-                Ok(None) => values.push(Value::Null),
-                Err(e) => return Err(DbError::InternalError(e.to_string())),
-            }
-        }
-
-        Ok(values)
+    /// Read a single column for all rows or specific row IDs
+    pub fn read_column(&self, column: &str, row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
+        self.check_column(column)?;
+        let rows = self.row_set()?;
+        Ok(match row_uuids {
+            None => rows.positions().map(|at| rows.value(at, column)).collect(),
+            Some(ids) => ids
+                .iter()
+                .map(|id| {
+                    rows.find(id)
+                        .map_or(Value::Null, |at| rows.value(at, column))
+                })
+                .collect(),
+        })
     }
 
     /// Read multiple columns (projection) for all rows or specific row UUIDs
@@ -752,66 +909,25 @@ impl ColumnarCollection {
         columns: &[&str],
         row_uuids: Option<&[String]>,
     ) -> DbResult<Vec<Value>> {
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let _cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        // Validate columns exist
-        for col in columns {
-            if !meta.columns.iter().any(|c| &c.name == col) {
-                return Err(DbError::BadRequest(format!("Column '{}' not found", col)));
-            }
+        for column in columns {
+            self.check_column(column)?;
         }
-
-        // Get UUIDs to read
-        let uuids: Vec<String> = match row_uuids {
-            Some(ids) => ids.to_vec(),
-            None => {
-                // List all row UUIDs from col_row: prefix
-                drop(meta);
-                self.list_row_uuids()?
-            }
+        let rows = self.row_set()?;
+        let object = |at: Option<(usize, usize)>| {
+            Value::Object(
+                columns
+                    .iter()
+                    .map(|column| {
+                        let value = at.map_or(Value::Null, |at| rows.value(at, column));
+                        (column.to_string(), value)
+                    })
+                    .collect(),
+            )
         };
-
-        // Re-acquire locks if we had to get UUIDs
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        let mut results = Vec::with_capacity(uuids.len());
-
-        for row_uuid in &uuids {
-            let mut row_obj = serde_json::Map::new();
-
-            for col in columns {
-                let col_key = format!("{}{}:{}", COL_DATA_PREFIX, col, row_uuid);
-
-                let value = match db.get_ks(&cf, col_key.as_bytes()) {
-                    Ok(Some(bytes)) => {
-                        let decompressed = self.decompress_data(&bytes, &meta.compression)?;
-                        serde_json::from_slice(&decompressed)?
-                    }
-                    Ok(None) => Value::Null,
-                    Err(e) => return Err(DbError::InternalError(e.to_string())),
-                };
-
-                row_obj.insert(col.to_string(), value);
-            }
-
-            results.push(Value::Object(row_obj));
-        }
-
-        Ok(results)
+        Ok(match row_uuids {
+            None => rows.positions().map(|at| object(Some(at))).collect(),
+            Some(ids) => ids.iter().map(|id| object(rows.find(id))).collect(),
+        })
     }
 
     /// Get total row count
@@ -821,26 +937,10 @@ impl ColumnarCollection {
 
     /// Read a single column value for a specific row UUID
     fn read_column_value(&self, column: &str, row_uuid: &str) -> DbResult<Value> {
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
-
-        match db.get_ks(&cf, col_key.as_bytes()) {
-            Ok(Some(bytes)) => {
-                let decompressed = self.decompress_data(&bytes, &meta.compression)?;
-                let value: Value = serde_json::from_slice(&decompressed)?;
-                Ok(value)
-            }
-            Ok(None) => Ok(Value::Null),
-            Err(e) => Err(DbError::InternalError(e.to_string())),
-        }
+        let rows = self.row_set()?;
+        Ok(rows
+            .find(row_uuid)
+            .map_or(Value::Null, |at| rows.value(at, column)))
     }
 
     /// Convert position indices to UUIDs (positions are indices into list_row_uuids result)
@@ -861,142 +961,47 @@ impl ColumnarCollection {
         self.read_column(column, Some(&uuids))
     }
 
-    /// Aggregate a column with the specified operation
-    /// Aggregate a column with the specified operation
+    /// Aggregate a column with the specified operation: over its arrays,
+    /// and the rows of the tail. Count counts rows, nulls included; the
+    /// others take numbers and return floats.
     pub fn aggregate(&self, column: &str, op: AggregateOp) -> DbResult<Value> {
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        // Optimization: Use prefix iterator directly to avoid loading all values into memory
-        // This relies on the fact that aggregation is commutative/associative and order doesn't matter
-        let prefix = format!("{}{}:", COL_DATA_PREFIX, column);
-        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-
-        match op {
-            AggregateOp::Count => {
-                let mut count = 0;
-                for item in iter {
-                    if let Ok((key, _)) = item {
-                        if !key.starts_with(prefix.as_bytes()) {
-                            break;
-                        }
-                        count += 1;
-                    } else {
-                        break;
-                    }
-                }
-                Ok(Value::Number(count.into()))
-            }
-
-            AggregateOp::Sum => {
-                let mut sum = 0.0;
-                for (key, val_bytes) in iter.flatten() {
-                    if !key.starts_with(prefix.as_bytes()) {
-                        break;
-                    }
-                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                            if let Some(n) = value.as_f64() {
-                                sum += n;
-                            }
-                        }
-                    }
-                }
-                Ok(json_number(sum))
-            }
-
+        let rows = self.row_set()?;
+        let numbers = || {
+            let in_blocks = rows.blocks.iter().flat_map(move |block| {
+                let held = block.column(column);
+                (0..block.len()).filter_map(move |row| held.and_then(|c| c.number(row)))
+            });
+            let in_tail = rows
+                .tail
+                .iter()
+                .filter_map(move |(_, row)| row.get(column).and_then(Value::as_f64));
+            in_blocks.chain(in_tail)
+        };
+        Ok(match op {
+            AggregateOp::Count => Value::Number(rows.len().into()),
+            AggregateOp::Sum => json_number(numbers().sum()),
             AggregateOp::Avg => {
-                let mut sum = 0.0;
-                let mut count = 0;
-                for (key, val_bytes) in iter.flatten() {
-                    if !key.starts_with(prefix.as_bytes()) {
-                        break;
-                    }
-                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                            if let Some(n) = value.as_f64() {
-                                sum += n;
-                                count += 1;
-                            }
-                        }
-                    }
-                }
+                let (sum, count) = numbers().fold((0.0, 0u64), |(s, n), x| (s + x, n + 1));
                 if count == 0 {
-                    Ok(Value::Null)
+                    Value::Null
                 } else {
-                    Ok(json_number(sum / count as f64))
+                    json_number(sum / count as f64)
                 }
             }
-
-            AggregateOp::Min => {
-                let mut min_val: Option<f64> = None;
-                for (key, val_bytes) in iter.flatten() {
-                    if !key.starts_with(prefix.as_bytes()) {
-                        break;
-                    }
-                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                            if let Some(n) = value.as_f64() {
-                                match min_val {
-                                    Some(cur_min) => {
-                                        if n < cur_min {
-                                            min_val = Some(n);
-                                        }
-                                    }
-                                    None => min_val = Some(n),
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(min_val.map(json_number).unwrap_or(Value::Null))
-            }
-
-            AggregateOp::Max => {
-                let mut max_val: Option<f64> = None;
-                for (key, val_bytes) in iter.flatten() {
-                    if !key.starts_with(prefix.as_bytes()) {
-                        break;
-                    }
-                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                            if let Some(n) = value.as_f64() {
-                                match max_val {
-                                    Some(cur_max) => {
-                                        if n > cur_max {
-                                            max_val = Some(n);
-                                        }
-                                    }
-                                    None => max_val = Some(n),
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(max_val.map(json_number).unwrap_or(Value::Null))
-            }
-
+            AggregateOp::Min => numbers()
+                .reduce(|a, b| if b < a { b } else { a })
+                .map_or(Value::Null, json_number),
+            AggregateOp::Max => numbers()
+                .reduce(|a, b| if b > a { b } else { a })
+                .map_or(Value::Null, json_number),
             AggregateOp::CountDistinct => {
-                let mut distinct = std::collections::HashSet::new();
-                for (key, val_bytes) in iter.flatten() {
-                    if !key.starts_with(prefix.as_bytes()) {
-                        break;
-                    }
-                    if let Ok(decompressed) = self.decompress_data(&val_bytes, &meta.compression) {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                            distinct.insert(value.to_string());
-                        }
-                    }
-                }
-                Ok(Value::Number(distinct.len().into()))
+                let distinct: std::collections::HashSet<String> = rows
+                    .positions()
+                    .map(|at| rows.value(at, column).to_string())
+                    .collect();
+                Value::Number(distinct.len().into())
             }
-        }
+        })
     }
 
     /// Group by with aggregation
@@ -1193,14 +1198,17 @@ impl ColumnarCollection {
         let mut compressed_size = 0u64;
         let mut uncompressed_size = 0u64;
 
-        // Iterate over all column data to calculate sizes
-        let prefix = COL_DATA_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_ks(&cf, prefix);
-
-        for (_, value) in iter.flatten() {
-            compressed_size += value.len() as u64;
-            if let Ok(decompressed) = self.decompress_data(&value, &meta.compression) {
-                uncompressed_size += decompressed.len() as u64;
+        // What the blocks and the tail take, stored and decompressed.
+        for prefix in [COL_BLOCK_PREFIX, COL_ROW_PREFIX] {
+            let prefix = prefix.as_bytes();
+            for (key, value) in db.prefix_iterator_ks(&cf, prefix).flatten() {
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                compressed_size += value.len() as u64;
+                if let Ok(decompressed) = self.decompress_data(&value, &meta.compression) {
+                    uncompressed_size += decompressed.len() as u64;
+                }
             }
         }
 
@@ -1249,6 +1257,7 @@ impl ColumnarCollection {
         let mut batch = KvBatch::default();
         for prefix in [
             COL_DATA_PREFIX,
+            COL_BLOCK_PREFIX,
             COL_ROW_PREFIX,
             COL_IDX_PREFIX,
             COL_IDX_BITMAP_PREFIX,
@@ -1268,12 +1277,14 @@ impl ColumnarCollection {
         // write a bare `meta` key nothing read back).
         let mut new_meta = meta.clone();
         new_meta.row_count = 0;
+        new_meta.tail_rows = 0;
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
         *meta = new_meta;
+        *self.store().write() = Some(Vec::new());
 
         Ok(())
     }
@@ -1339,51 +1350,32 @@ impl ColumnarCollection {
         // Copy values we need before building index
         let compression = meta.compression.clone();
 
-        // Build index from existing data by iterating over actual row UUIDs
-        // Get all row UUIDs from the col_row: prefix
-        let row_prefix = COL_ROW_PREFIX.as_bytes();
-        let iter = db.prefix_iterator_ks(&cf, row_prefix);
-
-        let mut row_uuids = Vec::new();
-        for (key, _) in iter.flatten() {
-            if !key.starts_with(row_prefix) {
-                break;
-            }
-            let key_str = String::from_utf8_lossy(&key);
-            if let Some(uuid) = key_str.strip_prefix(COL_ROW_PREFIX) {
-                row_uuids.push(uuid.to_string());
-            }
-        }
-
-        // Build index using UUIDs, but storing row position for bitmap
-        for (row_id, row_uuid) in row_uuids.iter().enumerate() {
-            let col_key = format!("{}{}:{}", COL_DATA_PREFIX, column, row_uuid);
-            if let Ok(Some(bytes)) = db.get_ks(&cf, col_key.as_bytes()) {
-                if let Ok(decompressed) = self.decompress_data(&bytes, &compression) {
-                    if let Ok(value) = serde_json::from_slice::<Value>(&decompressed) {
-                        match index_type {
-                            ColumnarIndexType::Bitmap => {
-                                let idx_key = self.encode_bitmap_key(column, &value);
-                                self.append_row_to_bitmap_index(
-                                    db,
-                                    &cf,
-                                    &idx_key,
-                                    row_id as u64,
-                                    &compression,
-                                )?;
-                            }
-                            ColumnarIndexType::MinMax => {
-                                self.update_minmax_index(db, &cf, column, &value, row_id as u64)?;
-                            }
-                            ColumnarIndexType::Bloom => {
-                                self.update_bloom_index(db, &cf, column, &value, row_id as u64)?;
-                            }
-                            _ => {
-                                let idx_key = self.encode_index_key(column, &value);
-                                self.append_row_to_index(db, &cf, &idx_key, row_id as u64)?;
-                            }
-                        }
-                    }
+        // Build index from the existing rows, by their position.
+        let values: Vec<Value> = {
+            let rows = self.row_set_with(&compression)?;
+            rows.positions().map(|at| rows.value(at, column)).collect()
+        };
+        for (row_id, value) in values.iter().enumerate() {
+            match index_type {
+                ColumnarIndexType::Bitmap => {
+                    let idx_key = self.encode_bitmap_key(column, value);
+                    self.append_row_to_bitmap_index(
+                        db,
+                        &cf,
+                        &idx_key,
+                        row_id as u64,
+                        &compression,
+                    )?;
+                }
+                ColumnarIndexType::MinMax => {
+                    self.update_minmax_index(db, &cf, column, value, row_id as u64)?;
+                }
+                ColumnarIndexType::Bloom => {
+                    self.update_bloom_index(db, &cf, column, value, row_id as u64)?;
+                }
+                _ => {
+                    let idx_key = self.encode_index_key(column, value);
+                    self.append_row_to_index(db, &cf, &idx_key, row_id as u64)?;
                 }
             }
         }
@@ -2366,6 +2358,92 @@ mod tests {
 
         // Verify roundtrip
         assert_eq!(data.to_vec(), decompressed);
+    }
+
+    /// A collection stored one key per cell, as 2.10.4 and earlier wrote
+    /// it, is converted when it is loaded: the same rows in the same
+    /// order, in a block, and no cell left.
+    #[test]
+    fn a_collection_stored_by_cell_is_converted_when_loaded() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = crate::storage::StorageEngine::new(tmp.path()).unwrap();
+        engine.create_database("_system".to_string()).unwrap();
+        let db = engine.get_database("_system").unwrap();
+        db.create_collection("_columnar_old".to_string(), None)
+            .unwrap();
+        let columns = ["host", "cpu"]
+            .iter()
+            .map(|name| ColumnDef {
+                name: name.to_string(),
+                data_type: ColumnType::Json,
+                nullable: true,
+                indexed: false,
+                index_type: None,
+            })
+            .collect();
+        let col = ColumnarCollection::new(
+            "old".to_string(),
+            "_system",
+            db.db_arc(),
+            columns,
+            CompressionType::Lz4,
+        )
+        .unwrap();
+        let rows: Vec<Value> = (0..300)
+            .map(|i| serde_json::json!({"host": format!("h{}", i % 7), "cpu": i as f64 / 8.0}))
+            .collect();
+        let ids = col.insert_rows(rows.clone()).unwrap();
+
+        // Back to the old layout: the cells beside the rows, and a format
+        // the metadata does not name.
+        {
+            let cf = col.ks.handle(&col.db).unwrap();
+            let mut batch = KvBatch::default();
+            for (id, row) in ids.iter().zip(&rows) {
+                for name in ["host", "cpu"] {
+                    let key = format!("{}{}:{}", COL_DATA_PREFIX, name, id);
+                    let bytes = serde_json::to_vec(&row[name]).unwrap();
+                    batch.put_ks(
+                        &cf,
+                        key.as_bytes(),
+                        col.compress_data(&bytes, &CompressionType::Lz4),
+                    );
+                }
+            }
+            let mut meta = col.metadata().unwrap();
+            meta.format = 0;
+            col.stage_meta(&cf, &mut batch, &meta).unwrap();
+            col.db.write(batch).unwrap();
+        }
+        drop(col);
+
+        let col = ColumnarCollection::load("old".to_string(), "_system", db.db_arc()).unwrap();
+        let meta = col.metadata().unwrap();
+        assert_eq!(
+            (meta.format, meta.tail_rows, meta.row_count),
+            (BLOCK_FORMAT, 0, 300)
+        );
+        assert_eq!(col.read_columns(&["host", "cpu"], None).unwrap(), rows);
+        assert_eq!(col.list_row_uuids().unwrap(), ids);
+        let cf = col.ks.handle(&col.db).unwrap();
+        let keys_under = |prefix: &str| {
+            col.db
+                .prefix_iterator_ks(&cf, prefix.as_bytes())
+                .flatten()
+                .take_while(|(key, _)| key.starts_with(prefix.as_bytes()))
+                .count()
+        };
+        assert_eq!(keys_under(COL_DATA_PREFIX), 0);
+        assert_eq!(keys_under(COL_ROW_PREFIX), 0);
+        assert_eq!(keys_under(COL_BLOCK_PREFIX), 1);
+        // New rows go on after the converted ones.
+        col.insert_rows(vec![serde_json::json!({"host": "new", "cpu": 1})])
+            .unwrap();
+        assert_eq!(col.count(), 301);
+        assert_eq!(
+            col.read_column("host", None).unwrap().last(),
+            Some(&serde_json::json!("new"))
+        );
     }
 
     #[test]

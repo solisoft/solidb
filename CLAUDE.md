@@ -700,6 +700,51 @@ Rules that keep it sound:
 |---|---|---|
 | `SOLIDB_COLUMN_BLOCKS_MB` | 1024 | What the columns kept in memory may take, for the whole process. Past it a block's columns are read from disk at each use. |
 
+### Columnar collections: rows stored in blocks
+
+A columnar collection (`storage/columnar.rs`) stores a row in exactly one
+place (`storage/columnar_blocks.rs`): the *tail* (`col_row:{uuid}`, one key
+per row, MessagePack) or a sealed *block* (`col_blk:{uuid of its first
+row}`), up to 65,536 rows in row-id order with one array per column of the
+schema — integers, floats, strings as a sorted dictionary and codes,
+booleans, each with a null mask, or JSON text for a column whose values are
+of several kinds. An insert of 4,096 rows or more is sealed at once; smaller
+inserts wait in the tail and are sealed when it reaches that size. Through
+2.10.4 every cell was a key (`col:{column}:{uuid}`) read with a point read;
+a collection in that format (`ColumnarCollectionMeta::format` below 2) is
+converted when it is loaded (`migrate`).
+
+`FOR r IN c [FILTER …] COLLECT … AGGREGATE …` over one is folded from the
+arrays (`sdbql/executor/execution/columnar_scan.rs`) when the FILTERs
+compare columns with constants (`==` with a string, number or boolean, `<`
+`<=` `>` `>=` with a number), the keys are columns and the aggregates are
+`COUNT`, `SUM`, `AVG`, `MIN`, `MAX` of a column: on several threads, into a
+table of groups handed to the same `CollectFold` as rows, with the exact
+state of each sum. Measured on one million rows against 2.10.4: a filtered
+sum 0.4 → 2,500 requests/s, a group-by of 50 groups 0.4 → 400.
+
+Rules that keep it sound:
+
+- **Every write holds the collection's shared write lock** and updates the
+  decoded blocks kept for all handles (`BLOCK_STORES`, by database and
+  collection) after its batch is written, never before. The entry holds a
+  `Weak` on the database so that its address cannot be reused by another.
+- **A value read back is the value inserted.** The array's kind is chosen
+  from the values (not from the declared type), and the tail is MessagePack
+  because JSON text does not always give a float back (`93.33333333333333`
+  came back `…31`). Rows written through 2.10.4 are JSON and are still read.
+- **Rows come back in the order of their ids**, as before: filters and the
+  secondary indexes work on positions in that order. A replicated row may
+  carry an older id; `RowSet` then orders blocks and tail together.
+- A block the arrays cannot answer for (a column with nulls or of several
+  kinds, a constant of another kind) and the tail are read as objects and
+  folded the ordinary way: `tests/columnar_blocks_tests.rs` runs each query
+  both ways.
+- The hint that lets the fold keep only the groups a `SORT … LIMIT` can
+  return (`ExecCaches::collect_top`) carries the address of its query's
+  body: a COLLECT of another body must not take it. It keeps every group
+  tied with the last one, so the SORT that follows decides as it always did.
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a

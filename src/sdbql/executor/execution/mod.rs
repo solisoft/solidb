@@ -20,6 +20,7 @@ mod array_ops;
 mod block_scan;
 mod clauses;
 mod collect;
+mod columnar_scan;
 mod entry;
 mod graph;
 mod graph_rag;

@@ -136,6 +136,13 @@ type ScanProjection = (String, std::sync::Arc<[String]>);
 /// uncontended in practice (a query runs on one thread).
 #[derive(Default)]
 struct ExecCaches {
+    /// When the query's SORT orders by one variable first and a LIMIT
+    /// follows a COLLECT that ends the body: that variable, whether the
+    /// order is ascending, and how many rows survive. A fold that knows
+    /// every group may hand over only those that can be among them.
+    /// The first field is the address of that body's clauses: a subquery
+    /// run meanwhile sets its own, which the outer COLLECT must not take.
+    collect_top: parking_lot::Mutex<Option<(usize, String, bool, usize)>>,
     /// Parsed row-policy gate per collection binding name (audit P10).
     /// `None` = no policy binds this principal on that collection.
     row_policy_gates:

@@ -576,6 +576,30 @@ impl<'a> QueryExecutor<'a> {
 
         // Process body_clauses in order (supports correlated subqueries)
         // If body_clauses is empty, fall back to legacy behavior
+        // What a COLLECT that ends the body may keep of its groups: see
+        // `ExecCaches::collect_top`.
+        *self.caches.collect_top.lock() = match (&query.sort_clause, &query.limit_clause) {
+            (Some(sort), Some(limit))
+                if !return_has_windows
+                    && !late_lets_have_windows
+                    && matches!(query.body_clauses.last(), Some(BodyClause::Collect(_))) =>
+            {
+                let (offset, count) = self.eval_limit(limit, &initial_bindings);
+                match (
+                    sort.fields.first(),
+                    count.and_then(|c| offset.checked_add(c)),
+                ) {
+                    (Some((Expression::Variable(var), ascending)), Some(k)) => Some((
+                        query.body_clauses.as_ptr() as usize,
+                        var.clone(),
+                        *ascending,
+                        k,
+                    )),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         let (rows, mutation_stats) = if !query.body_clauses.is_empty() {
             self.execute_body_clauses(
                 &query.body_clauses,

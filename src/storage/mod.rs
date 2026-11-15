@@ -8,6 +8,7 @@ pub mod codec;
 pub mod collection;
 pub mod collection_registry;
 pub mod columnar;
+pub(crate) mod columnar_blocks;
 pub mod database;
 pub mod document;
 pub mod engine;

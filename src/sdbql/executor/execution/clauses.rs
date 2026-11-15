@@ -279,6 +279,16 @@ impl<'a> QueryExecutor<'a> {
                         true
                     };
 
+                    // A columnar collection: the COLLECT is folded from the
+                    // arrays of its blocks.
+                    if is_collection && scan_limit.is_none() {
+                        if let Some(run) = self.try_columnar_collect(clauses, i, &rows)? {
+                            rows = run.rows;
+                            i += run.consumed;
+                            continue;
+                        }
+                    }
+
                     // A time series collection that keeps column blocks:
                     // the COLLECT is folded from their rows.
                     if is_collection && scan_limit.is_none() {
