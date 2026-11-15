@@ -707,34 +707,37 @@ The exact statements are in each result file (`queries`).
 
 ### Results, 2026-11-15
 
-SoliDB is a build of the `bench/timeseries` branch (2.10.4 plus column
-blocks), not a published image. Requests per second, median of three runs;
-in bold the highest of the row.
+SoliDB is a build of `main` after 2.10.4 (column blocks), not a published
+image; its column is a second pass, later the same day (see "What changed
+between the two passes"). Requests per second, median of three runs; in
+bold the highest of the row.
 
 | scenario | clients | SoliDB | QuestDB | TimescaleDB | p99 µs (S / Q / T) | DB cores (S / Q / T) |
 |---|---|---|---|---|---|---|
-| range | 1 | **42,690** | 21,040 | 6,510 | 25 / 102 / 184 | 0.7 / 7.9 / 0.9 |
-| range | 8 | **211,715** | 62,763 | 27,420 | 65 / 735 / 351 | 3.8 / 7.8 / 7.5 |
-| bucket | 1 | **10,505** | 6,598 | 1,200 | 111 / 258 / 1,019 | 0.9 / 8.0 / 1.0 |
-| bucket | 8 | **57,773** | 14,105 | 6,779 | 250 / 4,613 / 1,403 | 6.0 / 7.9 / 7.8 |
-| last | 1 | **57,616** | 55,114 | 43,336 | 19 / 20 / 26 | 0.5 / 7.8 / 0.6 |
-| last | 8 | 289,577 | **338,912** | 159,400 | 42 / 49 / 62 | 4.2 / 7.0 / 6.0 |
-| window_all | 1 | **38,160** | 35,839 | 306 | 29 / 32 / 3,487 | 0.7 / 7.9 / 1.0 |
-| window_all | 8 | **187,967** | 129,426 | 1,232 | 70 / 571 / 6,866 | 4.3 / 7.5 / 8.0 |
-| insert | 1 | **57,050** | 45,147 | 25,437 | 20 / 29 / 64 | 0.7 / 7.7 / 0.8 |
-| insert | 8 | 204,467 | **250,359** | 82,846 | 137 / 124 / 190 | 3.7 / 7.2 / 6.6 |
+| range | 1 | **40,738** | 21,040 | 6,510 | 27 / 102 / 184 | 0.7 / 7.9 / 0.9 |
+| range | 8 | **204,482** | 62,763 | 27,420 | 67 / 735 / 351 | 3.8 / 7.8 / 7.5 |
+| bucket | 1 | **9,813** | 6,598 | 1,200 | 122 / 258 / 1,019 | 0.9 / 8.0 / 1.0 |
+| bucket | 8 | **54,443** | 14,105 | 6,779 | 265 / 4,613 / 1,403 | 6.1 / 7.9 / 7.8 |
+| last | 1 | **56,817** | 55,114 | 43,336 | 19 / 20 / 26 | 0.5 / 7.8 / 0.6 |
+| last | 8 | 285,331 | **338,912** | 159,400 | 43 / 49 / 62 | 4.1 / 7.0 / 6.0 |
+| window_all | 1 | **36,602** | 35,839 | 306 | 31 / 32 / 3,487 | 0.7 / 7.9 / 1.0 |
+| window_all | 8 | **180,742** | 129,426 | 1,232 | 72 / 571 / 6,866 | 4.5 / 7.5 / 8.0 |
+| insert | 1 | **60,349** | 45,147 | 25,437 | 19 / 29 / 64 | 0.5 / 7.7 / 0.8 |
+| insert | 8 | 218,524 | **250,359** | 82,846 | 131 / 124 / 190 | 3.5 / 7.2 / 6.6 |
 
-Load: QuestDB 6.65 M points/s (1.3 s), TimescaleDB 1.17 M (7.4 s), SoliDB
-1.09 M (7.9 s, of which the sealing of blocks is about a fifth: 6.7 s
-without them). On disk after the run, the points of the `insert` scenario
-included: TimescaleDB 3.2 GB, QuestDB 4.0 GB, SoliDB 9.3 GB. After the
-shorter run below, which inserts nothing: 2.1, 0.6 and 4.6 GB.
+Load: QuestDB 6.65 M points/s (1.3 s), SoliDB 1.20 M (7.2 s, the sealing
+of blocks included), TimescaleDB 1.17 M (7.4 s). On disk after the run, the
+points of the `insert` scenario included: TimescaleDB 3.2 GB, QuestDB
+4.0 GB, SoliDB 5.6 GB (5.0 GB of tables, 0.4 GB of log; `solidb.disk_detail`).
+After the shorter run below, which inserts nothing, and with the first
+pass's build: 2.1, 0.6 and 4.6 GB.
 
 What the table says, and what it does not:
 
 - SoliDB leads eight rows of ten, QuestDB two (`last` and `insert` at 8
-  clients), and QuestDB loads six times faster and takes far less disk.
-- `last` and `window_all` at one client are within 5 to 6%: near ties.
+  clients, by 19% and 15%), and QuestDB loads 5.5 times faster and takes
+  less disk.
+- `last` and `window_all` at one client are within 2 to 3%: ties.
 - Without column blocks SoliDB 2.10.4 answered `range` at 925/s, `bucket`
   at 163/s and `window_all` at 9.7/s (one 10 s run each, same data): the
   blocks are what this table measures on those three rows.
@@ -745,6 +748,27 @@ What the table says, and what it does not:
 - The readings follow a load and a seal: no point arrives while a reading
   runs, so nothing is outside the blocks. Under ingestion the newest points
   (up to about 1,500) are read as documents.
+
+### What changed between the two passes
+
+The first pass had SoliDB at 9.3 GB on disk and 1.09 M points/s loaded
+(`insert` 57,050 and 204,467). Two things were found by looking at what the
+directory held (`<cfg>.disk_detail`, which `ts.sh` now writes):
+
+- 3.1 GB of it was dead log: solistore kept a retired WAL file, at its full
+  length, to write over, and with the 2 GB write buffer of this benchmark a
+  WAL is 1.5 GB. Above a 256 MiB buffer SoliDB no longer keeps one.
+- The index on `ts` alone was only written: with column blocks every
+  question that names no series is answered from the blocks, and what no
+  block covers is read by key. The adapter no longer creates it when blocks
+  are on (`SOLIDB_TS_INDEX=1` does; without blocks it is always created).
+  One 10 s run each way: same answers and rates, load 1.07 → 1.20 M
+  points/s.
+
+The read rows of the second pass are 2 to 7% under the first's on the same
+machine, hours apart; no row changes side. Tried and not kept: workers kept
+awake between requests (insert at 8 clients +13%, the p99 of `range` and
+`window_all` tripled), and smaller write buffers (the load halves).
 
 ### With values that round (`TS_VALUES=thirds`)
 

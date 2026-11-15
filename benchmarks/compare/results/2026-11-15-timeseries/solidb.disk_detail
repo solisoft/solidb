@@ -1,0 +1,12 @@
+    4950.8 MB     90 N.sst
+     408.0 MB      1 N.wal
+       4.0 MB      1 sync_log/N.wal
+       0.1 MB      1 MANIFEST-N
+       0.0 MB      1 transaction.wal
+       0.0 MB      1 sync_log/MANIFEST-N
+       0.0 MB      1 sync_log/LOCK
+       0.0 MB      1 sync_log/ENGINE
+       0.0 MB      1 sync_log/CURRENT
+       0.0 MB      1 LOCK
+       0.0 MB      1 ENGINE
+       0.0 MB      1 CURRENT

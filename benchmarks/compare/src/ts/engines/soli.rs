@@ -1,6 +1,6 @@
 //! SoliDB through its native driver. The points are documents of a
 //! `timeseries` collection, `{series, ts, v}` with `ts` in milliseconds,
-//! indexed on `[series, ts]` and on `ts`.
+//! indexed on `[series, ts]` (and on `ts` when there are no column blocks).
 
 use super::{err, Engine, Res, Settings};
 use crate::{name, Point};
@@ -123,9 +123,16 @@ impl Engine for Soli {
             false,
         )
         .await?;
-        c.create_index(DB, "points", "by_ts", vec!["ts".into()], false, false)
-            .await?;
-        if std::env::var("SOLIDB_TS_BLOCKS").as_deref() != Ok("0") {
+        // The index on the time alone serves the questions that name no
+        // series. With column blocks they are answered from the blocks,
+        // and what no block covers is read by key: the index would only be
+        // written. SOLIDB_TS_INDEX=1 creates it all the same.
+        let blocks_on = std::env::var("SOLIDB_TS_BLOCKS").as_deref() != Ok("0");
+        if !blocks_on || std::env::var("SOLIDB_TS_INDEX").as_deref() == Ok("1") {
+            c.create_index(DB, "points", "by_ts", vec!["ts".into()], false, false)
+                .await?;
+        }
+        if blocks_on {
             let def = json!({"time": "ts", "fields": ["series", "v"]});
             if blocks(&self.s, reqwest::Method::PUT, "", Some(def))
                 .await?

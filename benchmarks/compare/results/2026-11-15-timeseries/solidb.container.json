@@ -1,7 +1,7 @@
 [
      {
-          "Id": "87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f",
-          "Created": "2026-11-15T12:29:54.553994133Z",
+          "Id": "35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60",
+          "Created": "2026-11-15T19:48:25.924198039Z",
           "Path": "sh",
           "Args": [
                "-c",
@@ -15,29 +15,29 @@
                "Restarting": false,
                "OOMKilled": false,
                "Dead": false,
-               "Pid": 2346198,
-               "ConmonPid": 2346196,
+               "Pid": 2545832,
+               "ConmonPid": 2545830,
                "ExitCode": 0,
                "Error": "",
-               "StartedAt": "2026-11-15T12:29:54.588741112Z",
+               "StartedAt": "2026-11-15T19:48:25.951679211Z",
                "FinishedAt": "0001-01-01T00:00:00Z",
-               "CgroupPath": "/machine.slice/libpod-87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f.scope",
+               "CgroupPath": "/machine.slice/libpod-35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60.scope",
                "CheckpointedAt": "0001-01-01T00:00:00Z",
                "RestoredAt": "0001-01-01T00:00:00Z"
           },
-          "Image": "54847211088d9689b4e318696f8f846456abf4f2676575d823bc5fde94c50deb",
-          "ImageDigest": "sha256:803d45cea29404bb43d626903faa23edf6a491a7b7626ca66219b4629bf81187",
-          "ImageName": "localhost/solidb-perf:ts",
+          "Image": "360db58547572c952f25266480a28a9fa2a78754c7e4a1d36a67506e62b82ee9",
+          "ImageDigest": "sha256:b9a707bced48a0c2f166b29d8bb983c708b059ba33cb087973438601c571acce",
+          "ImageName": "localhost/solidb-perf:wal",
           "Rootfs": "",
           "Pod": "",
-          "ResolvConfPath": "/run/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/resolv.conf",
-          "HostnamePath": "/run/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/hostname",
-          "HostsPath": "/run/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/hosts",
-          "StaticDir": "/var/lib/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata",
-          "OCIConfigPath": "/var/lib/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/config.json",
+          "ResolvConfPath": "/run/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/resolv.conf",
+          "HostnamePath": "/run/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/hostname",
+          "HostsPath": "/run/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/hosts",
+          "StaticDir": "/var/lib/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata",
+          "OCIConfigPath": "/var/lib/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/config.json",
           "OCIRuntime": "crun",
-          "ConmonPidFile": "/run/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/conmon.pid",
-          "PidFile": "/run/containers/storage/overlay-containers/87b3a84b65062769dad6d2d65a2ef74e728e5e7aabc4f2cdd1df608e3f53c76f/userdata/pidfile",
+          "ConmonPidFile": "/run/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/conmon.pid",
+          "PidFile": "/run/containers/storage/overlay-containers/35d0788830d2e71202f8907463f361c392f71bc23e480eb27b8f65b3fa963f60/userdata/pidfile",
           "Name": "bench-db",
           "RestartCount": 0,
           "Driver": "overlay",
@@ -62,10 +62,10 @@
           "GraphDriver": {
                "Name": "overlay",
                "Data": {
-                    "LowerDir": "/var/lib/containers/storage/overlay/04a737c5680931c5abc43ba0c3800d834b4d8e78fc74412cc86d4d45e0fbe22b/diff:/var/lib/containers/storage/overlay/642450973266ba64d8ef6190fd45244ad17b30fec4c70530f2c0bbcd358c9d2c/diff:/var/lib/containers/storage/overlay/93c838a9b1e5bdd4b4f2de79e0018545dbf5d8a4a2ef8d4ce2e87f78c28ef74c/diff:/var/lib/containers/storage/overlay/3ba3699c14598e604880318f396f2ed71c92e498ed2fdb739f51735f4ecbe84b/diff:/var/lib/containers/storage/overlay/6ece25492d163915619f205c0ff6c8178bc5c8427c4ef39297771d1b9ea63c06/diff:/var/lib/containers/storage/overlay/47658dbb43926ab87e6ba76b8f4f452b20af307bad8baa099a1ab9cb65dc46fa/diff:/var/lib/containers/storage/overlay/eabcbd3a07058dc68c8a592cc7dd8b043d122c5cccb67cb62a185a77615ee563/diff:/var/lib/containers/storage/overlay/dd57f90311a2567b55ff22eeacff1602fd04ad7566e315957731359eab173b90/diff",
-                    "MergedDir": "/var/lib/containers/storage/overlay/1362b32319eebe6710e4521455a2051d3c609f71e19054f0e92019fbc985f352/merged",
-                    "UpperDir": "/var/lib/containers/storage/overlay/1362b32319eebe6710e4521455a2051d3c609f71e19054f0e92019fbc985f352/diff",
-                    "WorkDir": "/var/lib/containers/storage/overlay/1362b32319eebe6710e4521455a2051d3c609f71e19054f0e92019fbc985f352/work"
+                    "LowerDir": "/var/lib/containers/storage/overlay/97f235d4180c408e7a0f431ce704c5db4e8def9fa2dc7d72dfd4d246b3dbe2a4/diff:/var/lib/containers/storage/overlay/1169121ca07b52034d2b34b937eb6aa9f8888e3aebc7e0a49b9ea4dd1545bfdf/diff:/var/lib/containers/storage/overlay/6ee55f051def8f24f8238910a5f8bfb82b30811eab15de75ed0c2f59348f7da3/diff:/var/lib/containers/storage/overlay/b51156c12a057d88de78b376bb1ed8be8b3db14ef958d5ee1bd465e3c56c07dd/diff:/var/lib/containers/storage/overlay/6ece25492d163915619f205c0ff6c8178bc5c8427c4ef39297771d1b9ea63c06/diff:/var/lib/containers/storage/overlay/47658dbb43926ab87e6ba76b8f4f452b20af307bad8baa099a1ab9cb65dc46fa/diff:/var/lib/containers/storage/overlay/eabcbd3a07058dc68c8a592cc7dd8b043d122c5cccb67cb62a185a77615ee563/diff:/var/lib/containers/storage/overlay/dd57f90311a2567b55ff22eeacff1602fd04ad7566e315957731359eab173b90/diff",
+                    "MergedDir": "/var/lib/containers/storage/overlay/b92d93d06b93967e64517a8d19814a1b4ad1b29922ecfdd37cd86284cbe3680d/merged",
+                    "UpperDir": "/var/lib/containers/storage/overlay/b92d93d06b93967e64517a8d19814a1b4ad1b29922ecfdd37cd86284cbe3680d/diff",
+                    "WorkDir": "/var/lib/containers/storage/overlay/b92d93d06b93967e64517a8d19814a1b4ad1b29922ecfdd37cd86284cbe3680d/work"
                }
           },
           "Mounts": [
@@ -132,16 +132,16 @@
                "OpenStdin": false,
                "StdinOnce": false,
                "Env": [
+                    "SOLIDB_HOST=0.0.0.0",
                     "SOLIDB_LOG_LEVEL=info",
                     "SOLIDB_ENGINE=solistore",
-                    "SOLIDB_WRITE_BUFFER_SIZE=2GB",
-                    "SOLIDB_HOST=0.0.0.0",
                     "SOLIDB_ADMIN_PASSWORD=bench",
                     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                     "container=podman",
+                    "SOLIDB_DATA_DIR=/data",
                     "RUST_LOG=solidb=info,tower_http=info",
                     "SOLIDB_PORT=6800",
-                    "SOLIDB_DATA_DIR=/data",
+                    "SOLIDB_WRITE_BUFFER_SIZE=2GB",
                     "HOME=/home/solidb",
                     "HOSTNAME=ns3445088.ip-213-32-26.eu"
                ],
@@ -150,7 +150,7 @@
                     "-c",
                     "exec solidb --port ${SOLIDB_PORT} --data-dir ${SOLIDB_DATA_DIR}"
                ],
-               "Image": "localhost/solidb-perf:ts",
+               "Image": "localhost/solidb-perf:wal",
                "Volumes": null,
                "WorkingDir": "/",
                "Entrypoint": null,
@@ -200,7 +200,7 @@
                     "SOLIDB_WRITE_BUFFER_SIZE=2GB",
                     "-v",
                     "/home/rocky/bench/data/ts-solidb:/data:Z,U",
-                    "localhost/solidb-perf:ts"
+                    "localhost/solidb-perf:wal"
                ],
                "Umask": "0022",
                "Timeout": 0,
