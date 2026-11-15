@@ -39,16 +39,16 @@
 <section id="results"><h2>The results</h2>
 <p>Requests per second, median of three runs of 20 seconds, with the median latency in parentheses:</p>
 <table>
-  <thead><tr><th>Ten million rows</th><th>SoliDB</th><th>ClickHouse</th></tr></thead>
+  <thead><tr><th>Ten million rows</th><th>SoliDB</th><th>ClickHouse</th><th>DuckDB</th></tr></thead>
   <tbody>
-    <tr><td><code>filter_agg</code>, 1 client</td><td>721 (1.4&nbsp;ms)</td><td>562 (1.7&nbsp;ms)</td></tr>
-    <tr><td><code>filter_agg</code>, 4 clients</td><td>2,683 (1.4&nbsp;ms)</td><td>1,307 (2.9&nbsp;ms)</td></tr>
-    <tr><td><code>group_all</code>, 1 client</td><td>53.1 (18.0&nbsp;ms)</td><td>47.0 (20.8&nbsp;ms)</td></tr>
-    <tr><td><code>group_all</code>, 4 clients</td><td>53.7 (38.0&nbsp;ms)</td><td>50.3 (78.8&nbsp;ms)</td></tr>
-    <tr><td><code>window_group</code>, 1 client</td><td>189 (5.4&nbsp;ms)</td><td>120 (8.3&nbsp;ms)</td></tr>
-    <tr><td><code>window_group</code>, 4 clients</td><td>334 (11.9&nbsp;ms)</td><td>193 (20.2&nbsp;ms)</td></tr>
-    <tr><td><code>top_users</code>, 1 client</td><td>39.2 (25.5&nbsp;ms)</td><td>20.4 (48.6&nbsp;ms)</td></tr>
-    <tr><td><code>top_users</code>, 4 clients</td><td>50.1 (93.7&nbsp;ms)</td><td>21.1 (187.3&nbsp;ms)</td></tr>
+    <tr><td><code>filter_agg</code>, 1 client</td><td>697 (1.4&nbsp;ms)</td><td>562 (1.7&nbsp;ms)</td><td>212 (4.7&nbsp;ms)</td></tr>
+    <tr><td><code>filter_agg</code>, 4 clients</td><td>2,616 (1.5&nbsp;ms)</td><td>1,307 (2.9&nbsp;ms)</td><td>230 (17.9&nbsp;ms)</td></tr>
+    <tr><td><code>group_all</code>, 1 client</td><td>239 (4.0&nbsp;ms)</td><td>47.0 (20.8&nbsp;ms)</td><td>153 (6.5&nbsp;ms)</td></tr>
+    <tr><td><code>group_all</code>, 4 clients</td><td>231 (20.8&nbsp;ms)</td><td>50.3 (79.0&nbsp;ms)</td><td>168 (24.0&nbsp;ms)</td></tr>
+    <tr><td><code>window_group</code>, 1 client</td><td>991 (1.0&nbsp;ms)</td><td>120 (8.3&nbsp;ms)</td><td>640 (1.5&nbsp;ms)</td></tr>
+    <tr><td><code>window_group</code>, 4 clients</td><td>3,196 (1.2&nbsp;ms)</td><td>193 (20.2&nbsp;ms)</td><td>1,397 (2.6&nbsp;ms)</td></tr>
+    <tr><td><code>top_users</code>, 1 client</td><td>39.1 (25.5&nbsp;ms)</td><td>20.4 (48.6&nbsp;ms)</td><td>19.9 (50.2&nbsp;ms)</td></tr>
+    <tr><td><code>top_users</code>, 4 clients</td><td>49.3 (94.5&nbsp;ms)</td><td>21.1 (187.3&nbsp;ms)</td><td>23.4 (169.7&nbsp;ms)</td></tr>
   </tbody>
 </table>
 <figure class="post-figure"><svg viewBox="0 0 680 160" role="img" aria-labelledby="col-top-t">
@@ -63,8 +63,9 @@
 <text x="409" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">20.4</text>
 <text x="20" y="146" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. 10,000,000 rows, 4 cores each.</text>
 </svg><figcaption>Every row is read and a hundred thousand groups are built. On 2.10.4 this question took 2.8 seconds on a tenth of the rows.</figcaption></figure>
-<p>SoliDB has the higher figure in the eight rows, from 7% (<code>group_all</code> at four clients) to 2.4 times (<code>top_users</code> at four clients). <code>group_all</code> is close at both concurrencies: the two databases read ten million strings and add ten million integers, and neither has a shortcut. On the first question ClickHouse reads the rows of one country, which its table is ordered by, and SoliDB reads a list of them it keeps per block; on the last, both build a hundred thousand groups.</p>
-<p>Loading the ten million rows: ClickHouse 7.2 seconds, SoliDB 7.0. The disk is not compared here: when the readings ended SoliDB's rows were still in its write buffer and its log, so the size of its directory said nothing of what the blocks take once flushed.</p>
+<p>SoliDB has the higher figure in the eight rows: over ClickHouse from 24% (<code>filter_agg</code> at one client) to sixteen times (<code>window_group</code> at four), over DuckDB from 38% (<code>group_all</code> at four clients) to eleven times (<code>filter_agg</code> at four). On the first question ClickHouse reads the rows of one country, which its table is ordered by, and SoliDB reads a list of them it keeps per block; on the last, both build a hundred thousand groups.</p>
+<p><strong>Updated the same day.</strong> This post first went out without DuckDB and with <code>group_all</code> at 53 requests per second and <code>window_group</code> at 189. DuckDB, once measured (and once built properly: our harness had compiled it in its debug mode, which made it four to fourteen times slower than it is), answered both faster than that: 153 and 640. SoliDB read a block row by row when the key was a string, and compared every row of every block with the bounds of the window. It now adds a block's columns into arrays indexed by the string's code, and lets the smallest and largest value of a block answer a comparison for the whole block. The table above is the second measurement.</p>
+<p>Loading the ten million rows: DuckDB 1.9 seconds, through its appender and inside the process that queries it; SoliDB 7.1 and ClickHouse 7.2, as JSON over HTTP. The disk is not compared here: when the readings ended SoliDB's rows were still in its write buffer and its log, so the size of its directory said nothing of what the blocks take once flushed.</p>
 </section>
 
 <section id="before"><h2>Where 2.10.4 stood</h2>
@@ -91,7 +92,7 @@
   <span class="tok-kw">RETURN</span> { device, n, bytes }</pre></div>
 <ul>
 <li><strong>A comparison selects rows by reading one array.</strong> An equality on a string column is an equality on a dictionary code, and when it is the first condition the block already lists the rows of each string: nothing is scanned. That is <code>filter_agg</code>.</li>
-<li><strong>Groups are a table filled on several threads</strong>, each thread taking its share of the blocks, and the few groups of each merged at the end. That is <code>group_all</code> and <code>window_group</code>.</li>
+<li><strong>Groups are filled on several threads</strong>, each thread taking its share of the blocks, and the few groups of each merged at the end. When the key is a string, a block's sums go into arrays indexed by its dictionary codes, a column at a time; and a block whose smallest and largest value settle a comparison is taken whole or skipped. That is <code>group_all</code> and <code>window_group</code>.</li>
 <li><strong>A key with many values is shared out differently.</strong> Merging a hundred thousand groups per thread cost more than computing them. For a single numeric key, each thread reads every block and keeps the rows of its own share of the keys: every group is then in one thread's table and nothing is merged. When the key is an integer of small range, the table is a plain array indexed by the key. That is <code>top_users</code>, which went from 3 requests a second to 226 on a million rows along the way.</li>
 <li><strong>A <code>SORT … LIMIT</code> on an aggregate keeps only the groups that can be returned</strong>: those at or past the value of the last one, ties included, so that the sort which follows decides exactly as it did.</li>
 </ul>
@@ -106,7 +107,7 @@
 <li><strong>ClickHouse ordered its table for the first question</strong>, and still reads more than SoliDB lists; ordered by time instead, it would do better on <code>window_group</code> and worse on <code>filter_agg</code>. We did not try other orders, nor projections, nor more than its defaults for threads and memory.</li>
 <li><strong>The values are quarters of whole numbers</strong>, whose sums are exact in floating point, and SoliDB's plain-array path relies on sums that lost nothing. So the four questions were run again with amounts that are thirds, values that round and sums that round (one run of 10 seconds each): <code>filter_agg</code> 717 against 567 at one client, <code>top_users</code> 21.9 against 20.4 and 26.4 against 20.9 at four. The order holds, by less: a first version of that path gave up its plain sums as soon as one rounded, and answered <code>top_users</code> 4.9 times a second. It now keeps, beside each sum, the total of what its additions rounded away, which together are still the exact sum.</li>
 <li><strong>The load is JSON over HTTP on both sides</strong>, which measures parsing as much as storage. ClickHouse's native formats load several times faster than this; SoliDB has no equivalent.</li>
-<li><strong>DuckDB is not here.</strong> It was on the list. It runs inside the process that queries it, which is another comparison, and it is not written yet.</li>
+<li><strong>DuckDB runs inside the harness</strong>, on the cores the other two get in their containers, with 8 threads and 16 GB: no network and no serialization between a question and its answer, and the fastest load by far. Its processor time is not measured.</li>
 <li><strong>This is a build of a branch.</strong> When it is released, the published image will be measured again and its results put beside these.</li>
 </ul>
 </section>
