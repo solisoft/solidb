@@ -534,8 +534,9 @@ impl Database {
     }
 
     pub fn delete_columnar(&self, name: &str) -> DbResult<()> {
-        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
-        coll.drop()
+        // The backing collection, as the HTTP API drops it: `drop` on the
+        // columnar handle left this database's cached handle behind.
+        self.delete_collection(&format!("_columnar_{}", name))
     }
 
     pub fn insert_columnar(&self, name: &str, rows: Vec<Value>) -> DbResult<usize> {

@@ -13,6 +13,7 @@
 //! - Sharded collections route by shard owner with replication_factor copies
 
 pub mod blob_replication;
+pub mod columnar;
 pub mod conflict;
 pub mod conflict_store;
 pub mod crdt;

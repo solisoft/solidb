@@ -729,6 +729,13 @@ Rules that keep it sound:
   decoded blocks kept for all handles (`BLOCK_STORES`, by database and
   collection) after its batch is written, never before. The entry holds a
   `Weak` on the database so that its address cannot be reused by another.
+- **Create, insert, drop and a column's index go through `sync::columnar`**,
+  on every transport: it does the work and appends what a peer applies
+  (the `apply_*` functions, which the replication worker calls and which
+  must stay idempotent: a joining node replays logs from their start).
+  Only the HTTP insert used to be logged, so a peer never had the
+  collection (cards #882, #883). A full sync does not carry columnar
+  collections yet (#884); row deletes and truncate have no origin (#885).
 - **A value read back is the value inserted.** The array's kind is chosen
   from the values (not from the declared type), and the tail is MessagePack
   because JSON text does not always give a float back (`93.33333333333333`

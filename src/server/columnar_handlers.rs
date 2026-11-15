@@ -231,16 +231,13 @@ pub async fn create_columnar_handler(
         }
     };
 
-    // Create column family for columnar collection
-    let cf_name = format!("_columnar_{}", req.name);
-    db.create_collection(cf_name.clone(), None)?;
-
-    // Create the columnar collection
-    let col = ColumnarCollection::new(
-        req.name.clone(),
-        &db_name,
-        db.db_arc(),
-        columns.clone(),
+    // Created here and logged for the peers.
+    let count = columns.len();
+    let col = crate::sync::columnar::create(
+        &db,
+        state.replication_log.as_deref(),
+        &req.name,
+        columns,
         compression,
     )?;
 
@@ -250,7 +247,7 @@ pub async fn create_columnar_handler(
     Ok(Json(CreateColumnarResponse {
         status: "created".to_string(),
         name: col.name,
-        columns: columns.len(),
+        columns: count,
     }))
 }
 
@@ -347,8 +344,7 @@ pub async fn delete_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
-    let cf_name = format!("_columnar_{}", collection);
-    db.delete_collection(&cf_name)?;
+    crate::sync::columnar::drop(&db, state.replication_log.as_deref(), &collection)?;
 
     Ok(Json(serde_json::json!({
         "status": "deleted",
@@ -380,23 +376,12 @@ pub async fn insert_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
-    let col = ColumnarCollection::load(collection.clone(), &db_name, db.db_arc())?;
-    let rows_for_log = req.rows.clone();
-    let inserted_ids = col.insert_rows(req.rows)?;
-
-    // Log to replication sync log
-    if let Some(ref log) = state.replication_log {
-        for (id, row) in inserted_ids.iter().zip(rows_for_log.iter()) {
-            let row_data = serde_json::to_vec(row).ok();
-            log.append_columnar(
-                &db_name,
-                &collection,
-                crate::sync::protocol::Operation::ColumnarInsert,
-                id.clone(),
-                row_data,
-            );
-        }
-    }
+    let inserted_ids = crate::sync::columnar::insert(
+        &db,
+        state.replication_log.as_deref(),
+        &collection,
+        req.rows,
+    )?;
 
     Ok(Json(InsertColumnarResponse {
         status: "ok".to_string(),
@@ -592,8 +577,6 @@ pub async fn create_columnar_index_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
-    let col = ColumnarCollection::load(collection.clone(), &db_name, db.db_arc())?;
-
     let index_type = match req.index_type.as_deref() {
         Some("hash") => crate::storage::columnar::ColumnarIndexType::Hash,
         Some("sorted") | None => crate::storage::columnar::ColumnarIndexType::Sorted,
@@ -608,7 +591,13 @@ pub async fn create_columnar_index_handler(
         }
     };
 
-    col.create_index(&req.column, index_type.clone())?;
+    crate::sync::columnar::create_index(
+        &db,
+        state.replication_log.as_deref(),
+        &collection,
+        &req.column,
+        index_type.clone(),
+    )?;
 
     Ok(Json(CreateIndexResponse {
         status: "created".to_string(),
@@ -667,8 +656,7 @@ pub async fn delete_columnar_index_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
-    let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
-    col.drop_index(&column)?;
+    crate::sync::columnar::drop_index(&db, state.replication_log.as_deref(), &collection, &column)?;
 
     Ok(Json(serde_json::json!({
         "status": "deleted",

@@ -50,6 +50,10 @@ pub enum Operation {
     /// delete cascades into travel as ordinary `Update` / `Delete` entries.
     CreateForeignKey,
     DropForeignKey,
+    /// An index on a column of a columnar collection. The key is the
+    /// column; the payload of a create is the JSON `ColumnarIndexType`.
+    ColumnarCreateIndex,
+    ColumnarDropIndex,
 }
 
 /// A single entry in the sync log

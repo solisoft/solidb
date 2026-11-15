@@ -1089,37 +1089,22 @@ impl SyncWorker {
             }
             Operation::ColumnarInsert => {
                 if let Some(ref data) = entry.document_data {
-                    let row: serde_json::Value = serde_json::from_slice(data).map_err(|e| {
-                        TransportError::DecodeError(format!("Invalid columnar row: {}", e))
-                    })?;
-
                     // Create database if it doesn't exist
                     if self.storage.get_database(&entry.database).is_err() {
                         let _ = self.storage.create_database(entry.database.clone());
                     }
 
                     if let Ok(db) = self.storage.get_database(&entry.database) {
-                        // Load columnar collection and insert with specific UUID
-                        match crate::storage::columnar::ColumnarCollection::load(
-                            entry.collection.clone(),
-                            &entry.database,
-                            db.db_arc(),
+                        if let Err(e) = super::columnar::apply_insert(
+                            &db,
+                            &entry.collection,
+                            &entry.document_key,
+                            data,
                         ) {
-                            Ok(col) => {
-                                // Insert with specific UUID (idempotent)
-                                if let Err(e) = col.insert_row_with_id(&entry.document_key, row) {
-                                    warn!(
-                                        "apply_entry: columnar insert failed for {}: {}",
-                                        entry.document_key, e
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "apply_entry: failed to load columnar collection {}: {}",
-                                    entry.collection, e
-                                );
-                            }
+                            warn!(
+                                "apply_entry: columnar insert failed for {}/{}: {}",
+                                entry.collection, entry.document_key, e
+                            );
                         }
                     }
                 }
@@ -1154,31 +1139,51 @@ impl SyncWorker {
                     let _ = self.storage.create_database(entry.database.clone());
                 }
 
-                if let Ok(db) = self.storage.get_database(&entry.database) {
-                    // Parse column definitions from entry.document_data
-                    if let Some(ref data) = entry.document_data {
-                        if let Ok(columns) =
-                            serde_json::from_slice::<Vec<crate::storage::columnar::ColumnDef>>(data)
-                        {
-                            let _ = crate::storage::columnar::ColumnarCollection::new(
-                                entry.collection.clone(),
-                                &entry.database,
-                                db.db_arc(),
-                                columns,
-                                crate::storage::columnar::CompressionType::Lz4,
-                            );
-                        }
+                if let (Ok(db), Some(data)) = (
+                    self.storage.get_database(&entry.database),
+                    entry.document_data.as_ref(),
+                ) {
+                    if let Err(e) = super::columnar::apply_create(&db, &entry.collection, data) {
+                        warn!(
+                            "apply_entry: columnar create failed for {}: {}",
+                            entry.collection, e
+                        );
                     }
                 }
             }
             Operation::ColumnarDropCollection => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
-                    if let Ok(col) = crate::storage::columnar::ColumnarCollection::load(
-                        entry.collection.clone(),
-                        &entry.database,
-                        db.db_arc(),
-                    ) {
-                        let _ = col.drop();
+                    if let Err(e) = super::columnar::apply_drop(&db, &entry.collection) {
+                        warn!(
+                            "apply_entry: columnar drop failed for {}: {}",
+                            entry.collection, e
+                        );
+                    }
+                }
+            }
+            Operation::ColumnarCreateIndex | Operation::ColumnarDropIndex => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    let applied = match (&entry.operation, entry.document_data.as_ref()) {
+                        (Operation::ColumnarCreateIndex, Some(data)) => {
+                            super::columnar::apply_create_index(
+                                &db,
+                                &entry.collection,
+                                &entry.document_key,
+                                data,
+                            )
+                        }
+                        (Operation::ColumnarCreateIndex, None) => Ok(()),
+                        _ => super::columnar::apply_drop_index(
+                            &db,
+                            &entry.collection,
+                            &entry.document_key,
+                        ),
+                    };
+                    if let Err(e) = applied {
+                        warn!(
+                            "apply_entry: columnar index on {}.{} failed: {}",
+                            entry.collection, entry.document_key, e
+                        );
                     }
                 }
             }
@@ -2103,6 +2108,8 @@ mod tests {
             Operation::ColumnarInsert,
             Operation::ColumnarTruncate,
             Operation::ColumnarDropCollection,
+            Operation::ColumnarCreateIndex,
+            Operation::ColumnarDropIndex,
         ] {
             assert!(!in_full_sync(replayed), "{replayed:?}");
         }

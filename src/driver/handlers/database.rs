@@ -382,6 +382,31 @@ pub fn handle_delete_collection_schema(
 }
 
 // Columnar Operations
+
+/// Create a columnar collection from the driver's column definitions,
+/// logged for the peers like the HTTP create.
+fn create_columnar(
+    handler: &DriverHandler,
+    db: &crate::storage::Database,
+    name: &str,
+    columns: Vec<Value>,
+) -> crate::error::DbResult<()> {
+    let columns = columns
+        .into_iter()
+        .map(serde_json::from_value)
+        .collect::<Result<Vec<crate::storage::columnar::ColumnDef>, _>>()
+        .map_err(|e| {
+            crate::error::DbError::BadRequest(format!("Invalid column definition: {}", e))
+        })?;
+    crate::sync::columnar::create(
+        db,
+        handler.replication.as_deref(),
+        name,
+        columns,
+        crate::storage::columnar::CompressionType::Lz4,
+    )?;
+    Ok(())
+}
 pub fn handle_create_columnar(
     handler: &DriverHandler,
     database: String,
@@ -389,7 +414,7 @@ pub fn handle_create_columnar(
     columns: Vec<Value>,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.create_columnar(name, columns) {
+        Ok(db) => match create_columnar(handler, &db, &name, columns) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
@@ -427,10 +452,12 @@ pub fn handle_delete_columnar(
     collection: String,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.delete_columnar(&collection) {
-            Ok(_) => Response::ok_empty(),
-            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-        },
+        Ok(db) => {
+            match crate::sync::columnar::drop(&db, handler.replication.as_deref(), &collection) {
+                Ok(_) => Response::ok_empty(),
+                Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+            }
+        }
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }
@@ -442,8 +469,13 @@ pub fn handle_insert_columnar(
     rows: Vec<serde_json::Value>,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.insert_columnar(&collection, rows) {
-            Ok(count) => Response::ok_count(count),
+        Ok(db) => match crate::sync::columnar::insert(
+            &db,
+            handler.replication.as_deref(),
+            &collection,
+            rows,
+        ) {
+            Ok(ids) => Response::ok_count(ids.len()),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -493,7 +525,15 @@ pub fn handle_create_columnar_index(
     column: String,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.create_columnar_index(&collection, &column) {
+        // Sorted, as `Database::create_columnar_index`: the command names
+        // no type.
+        Ok(db) => match crate::sync::columnar::create_index(
+            &db,
+            handler.replication.as_deref(),
+            &collection,
+            &column,
+            crate::storage::columnar::ColumnarIndexType::Sorted,
+        ) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
@@ -522,7 +562,12 @@ pub fn handle_delete_columnar_index(
     column: String,
 ) -> Response {
     match handler.storage.get_database(&database) {
-        Ok(db) => match db.delete_columnar_index(&collection, &column) {
+        Ok(db) => match crate::sync::columnar::drop_index(
+            &db,
+            handler.replication.as_deref(),
+            &collection,
+            &column,
+        ) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
