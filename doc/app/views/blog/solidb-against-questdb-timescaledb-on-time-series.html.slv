@@ -99,11 +99,11 @@
 <li><strong>What no block covers is read as documents</strong>: the newest points, and any range whose block was thrown away, until it is sealed again.</li>
 </ul>
 <p>A query is answered from the blocks when it stays within them: filters on the time and on string fields, groups by fields or by <code>TIME_BUCKET</code>, aggregates of declared fields. Nothing changes in how it is written:</p>
-<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre>FOR p IN points
-  FILTER p.series == @s AND p.ts >= @from AND p.ts &lt; @to
-  COLLECT bucket = TIME_BUCKET(p.ts, "5m")
-  AGGREGATE avg = AVG(p.v)
-  RETURN { bucket, avg }</pre></div>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre><span class="tok-kw">FOR</span> p <span class="tok-kw">IN</span> points
+  <span class="tok-kw">FILTER</span> p.series == <span class="tok-bind">@s</span> <span class="tok-kw">AND</span> p.ts &gt;= <span class="tok-bind">@from</span> <span class="tok-kw">AND</span> p.ts &lt; <span class="tok-bind">@to</span>
+  <span class="tok-kw">COLLECT</span> bucket = <span class="tok-fn">TIME_BUCKET</span>(p.ts, <span class="tok-str">"5m"</span>)
+  <span class="tok-kw">AGGREGATE</span> avg = <span class="tok-fn">AVG</span>(p.v)
+  <span class="tok-kw">RETURN</span> { bucket, avg }</pre></div>
 <p>Two things keep a derived structure honest, and both were more work than the arrays. The first is knowing when a block is stale. A time series collection refuses updates, so a block is wrong only if the set of keys in its range changed; every write announces its keys, a block is built from a snapshot taken after its range was registered, and a block read from disk after a restart is not trusted until the keys of its range have been counted and hashed again. The second is returning the same answer. Each query of the test suite is run both ways, from the blocks and from the documents, and the two must agree to the last bit, after late points, deletes, a restart, and four threads writing while blocks are sealed behind them.</p>
 </section>
 
