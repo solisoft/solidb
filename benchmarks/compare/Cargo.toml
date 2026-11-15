@@ -49,3 +49,9 @@ surrealdb = { version = "4", default-features = false, features = ["protocol-ws"
 
 [profile.release]
 debug = 1
+
+# `debug = 1` above reaches build scripts as DEBUG, and libduckdb-sys reads
+# that as "build DuckDB's Debug type": D_ASSERT and its verification passes
+# compiled in, a hash aggregate 50 times slower. Its C++ gets no debug info.
+[profile.release.package.libduckdb-sys]
+debug = false

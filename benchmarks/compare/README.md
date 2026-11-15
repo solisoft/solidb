@@ -786,7 +786,7 @@ InfluxDB 3 Core, on the list of card #795, is not wired in.
 One wide table of events and four analytical questions against SoliDB and
 ClickHouse, one database at a time, in a container with 4 cores (8 threads)
 and 16 GB; the client is `solidb-col` (`src/col/`), pinned to other cores.
-DuckDB runs too, inside the harness (see below).
+DuckDB runs inside the harness, on the databases' cores (see below).
 
 ### The data and the scenarios
 
@@ -820,84 +820,83 @@ Every answer is compared with the generator's; none was wrong.
 SoliDB is a build of `main` after 2.10.4 with columnar blocks, not a
 published image. Requests per second, median of three runs.
 
-| scenario | clients | SoliDB | ClickHouse | p50 ms (S / C) | DB cores (S / C) |
-|---|---|---|---|---|---|
-| filter_agg | 1 | **721** | 562 | 1.4 / 1.7 | 1.0 / 2.0 |
-| filter_agg | 4 | **2,683** | 1,307 | 1.4 / 2.9 | 3.9 / 5.9 |
-| group_all | 1 | **53.1** | 47.0 | 18.0 / 20.8 | 7.4 / 7.2 |
-| group_all | 4 | **53.7** | 50.3 | 38.0 / 78.8 | 7.0 / 7.9 |
-| window_group | 1 | **189** | 120 | 5.4 / 8.3 | 2.9 / 4.1 |
-| window_group | 4 | **334** | 193 | 11.9 / 20.2 | 5.3 / 7.4 |
-| top_users | 1 | **39.2** | 20.4 | 25.5 / 48.6 | 6.5 / 7.4 |
-| top_users | 4 | **50.1** | 21.1 | 93.7 / 187.3 | 6.7 / 7.9 |
+| scenario | clients | SoliDB | ClickHouse | DuckDB | p50 ms (S / C / D) | DB cores (S / C) |
+|---|---|---|---|---|---|---|
+| filter_agg | 1 | **697** | 562 | 212 | 1.4 / 1.7 / 4.7 | 1.0 / 2.0 |
+| filter_agg | 4 | **2,616** | 1,307 | 230 | 1.5 / 2.9 / 17.9 | 3.9 / 5.9 |
+| group_all | 1 | **239** | 47.0 | 153 | 4.0 / 20.8 / 6.5 | 7.2 / 7.2 |
+| group_all | 4 | **231** | 50.3 | 168 | 20.8 / 79.0 / 24.0 | 6.3 / 7.9 |
+| window_group | 1 | **991** | 120 | 640 | 1.0 / 8.3 / 1.5 | 1.4 / 4.1 |
+| window_group | 4 | **3,196** | 193 | 1,397 | 1.2 / 20.2 / 2.6 | 4.3 / 7.4 |
+| top_users | 1 | **39.1** | 20.4 | 19.9 | 25.5 / 48.6 / 50.2 | 6.5 / 7.4 |
+| top_users | 4 | **49.3** | 21.1 | 23.4 | 94.5 / 187.3 / 169.7 | 6.7 / 7.9 |
 
-Load: SoliDB 7.0 s (1.42 M rows/s), ClickHouse 7.2 s (1.38 M rows/s).
-SoliDB 2.10.4 answered each of the four at 0.4 requests/s on one million
-rows (2.4 s a query, one 5 s run each) and loaded 344,000 rows/s.
+Load: DuckDB 1.9 s (5.18 M rows/s, its appender, in process), SoliDB 7.1 s
+(1.41 M rows/s), ClickHouse 7.2 s (1.38 M rows/s), the last two as JSON
+over HTTP. SoliDB 2.10.4 answered each of the four at 0.4 requests/s on one
+million rows (2.4 s a query, one 5 s run each) and loaded 344,000 rows/s.
 
 What the table says, and what it does not:
 
-- SoliDB leads the eight rows, by 7% (`group_all` at 4 clients) to 2.4 times
-  (`top_users` at 4 clients).
+- SoliDB leads the eight rows: over ClickHouse by 24% (`filter_agg` at 1
+  client) to 16 times (`window_group` at 4), over DuckDB by 38%
+  (`group_all` at 4) to 11 times (`filter_agg` at 4).
+- DuckDB loads 3.7 times faster than either server, through an interface
+  the servers do not have.
+- `group_all` and `window_group` were measured twice. The first SoliDB
+  build read a block's rows one by one for a key of strings and compared
+  every row of every block with the bounds of the window: 53 and 189
+  requests/s at one client, behind DuckDB on both. It now adds a block's
+  columns into arrays indexed by the string's code, and lets a block's
+  smallest and largest value answer a comparison for the whole block.
 - Disk is not compared: at the end of the run SoliDB's rows were still in
   its write buffer and log (its directory held 320 MiB of pre-allocated
   log), ClickHouse's directory 1.5 GB with its own log tables.
 - SoliDB keeps every block decoded in memory, with the ids of its rows:
   1.4 GB of resident memory for these ten million rows, and no ceiling on
   it yet.
-- Four questions, one table, one order for ClickHouse's table, its default
+- Four questions, one table, one order for ClickHouse's table, default
   settings. No join, no window function, no table larger than memory.
-  DuckDB is wired in, with figures we do not vouch for yet (below).
 
-### DuckDB (wired in; its figures are not ones we vouch for yet)
+### DuckDB
 
 `./col.sh duckdb` runs DuckDB 2.0.0 inside the harness, through the `duckdb`
 crate's bundled build: no container and no network between a question and
 its answer, the harness pinned to the databases' cores, 8 threads and 16 GB
 set in DuckDB itself, rows loaded with its appender from 8 connections, the
-table checkpointed after the load. Same four questions, same checks, no
-wrong answer. Medians of three runs of 20 s, requests/s:
+table checkpointed after the load, prepared statements. Same four
+questions, same checks, no wrong answer. Its processor time is not
+measured (it is the harness's own process).
 
-| scenario | 1 client | 4 clients |
-|---|---|---|
-| filter_agg | 51.8 | 54.7 |
-| group_all | 17.3 | 18.0 |
-| window_group | 135 | 233 |
-| top_users | 1.4 | 1.4 |
-
-It loads fastest of the three (3.1 s). On the questions it is behind both
-servers, `top_users` by far: 723 ms a query, with its eight threads busy
-(7.7 cores measured). That is much slower than DuckDB is known to be on a
-group-by of this size, and we have not found why: the settings are applied
-(`current_setting('threads')` says 8), the table is checkpointed, the
-statement is the plain `GROUP BY "user" ORDER BY s DESC LIMIT 10`. Until
-someone who knows DuckDB has looked at how it is built and used here — the
-first QuestDB adapter of the time series benchmark was five times off for
-a reason of that kind — these numbers say that the adapter runs and answers
-correctly, not how fast DuckDB is. They are kept out of the comparison
-table above for that reason.
+Its first figures here were 4 to 14 times lower (`top_users` at 1.4
+requests/s) and were published as not vouched for. The cause was this
+benchmark's build: `debug = 1` in `[profile.release]` reaches build scripts
+as `DEBUG`, which `libduckdb-sys` reads as "build DuckDB's Debug type",
+assertions and verification passes included. `Cargo.toml` now turns debug
+info off for that one package; the figures above are from the Release type.
 
 ### With amounts that round (`COL_VALUES=thirds`)
 
-Quarters add up exactly in floating point; thirds do not. One run of 10 s
-each:
+Quarters add up exactly in floating point; thirds do not. Three runs of
+20 s for SoliDB and DuckDB, one of 10 s for ClickHouse:
 
-
-| scenario | clients | SoliDB | ClickHouse |
-|---|---|---|---|
-| filter_agg | 1 | **717** | 567 |
-| filter_agg | 4 | **2,633** | 1,314 |
-| group_all | 1 | **52.3** | 46.9 |
-| group_all | 4 | **53.0** | 50.2 |
-| window_group | 1 | **188** | 121 |
-| window_group | 4 | **334** | 193 |
-| top_users | 1 | **21.9** | 20.4 |
-| top_users | 4 | **26.4** | 20.9 |
+| scenario | clients | SoliDB | ClickHouse | DuckDB |
+|---|---|---|---|---|
+| filter_agg | 1 | **700** | 567 | 173 |
+| filter_agg | 4 | **2,489** | 1,314 | 185 |
+| group_all | 1 | **240** | 46.9 | 153 |
+| group_all | 4 | **232** | 50.2 | 168 |
+| window_group | 1 | **996** | 121 | 640 |
+| window_group | 4 | **3,227** | 193 | 1,357 |
+| top_users | 1 | **21.7** | 20.4 | 18.8 |
+| top_users | 4 | **26.7** | 20.9 | 22.2 |
 
 `top_users` is the row that depends on it: SoliDB keeps a plain sum and the
 total of what its additions rounded away per user, which together are the
 exact sum, and falls back to exact accumulators when that total itself
-rounds. Results in `results/2026-11-15-columnar/thirds/`.
+rounds. A compilation ran on the host for 20 s early in SoliDB's pass
+(during `filter_agg`); its figures there match the pass above. Results in
+`results/2026-11-15-columnar/thirds/`.
 
 ### Running it
 

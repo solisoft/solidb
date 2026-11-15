@@ -276,8 +276,11 @@ impl Engine {
                 let conn = root.lock().map_err(|e| e.to_string())?;
                 // The cores and the memory the other two get from their
                 // containers.
+                // (`COL_DUCK_THREADS` to try another number of threads.)
+                let threads = std::env::var("COL_DUCK_THREADS").unwrap_or_else(|_| "8".into());
+                conn.execute_batch(&format!("SET threads = {threads};"))?;
                 conn.execute_batch(
-                    "SET threads = 8; SET memory_limit = '16GB';
+                    "SET memory_limit = '16GB';
                      DROP TABLE IF EXISTS events;
                      CREATE TABLE events (ts BIGINT, \"user\" UINTEGER, country VARCHAR,
                                           device VARCHAR, amount DOUBLE, bytes BIGINT);",
@@ -576,6 +579,32 @@ async fn main() -> Res<()> {
     let load = began.elapsed().as_secs_f64();
     eprintln!("loaded in {load:.1} s ({:.0} rows/s)", total as f64 / load);
 
+    // `COL_EXPLAIN=1`: DuckDB's own timed plan of the last question, to
+    // see where its time goes.
+    if let (Engine::Duck(root), Ok(_)) = (&engine, std::env::var("COL_EXPLAIN")) {
+        let conn = root.lock().map_err(|e| e.to_string())?.try_clone()?;
+        for sql in [duck_sql(C_TOP), "SELECT count(*), count(DISTINCT \"user\") FROM events".into()] {
+            let mut statement = conn.prepare(&format!("EXPLAIN ANALYZE {sql}"))?;
+            let mut plan = statement.query([])?;
+            while let Some(line) = plan.next()? {
+                eprintln!("{}", line.get::<_, String>(1).unwrap_or_default());
+            }
+        }
+        let mut statement = conn.prepare(
+            "SELECT column_name, compression, count(*), sum(count) FROM pragma_storage_info('events') \
+             WHERE segment_type <> 'VALIDITY' GROUP BY ALL ORDER BY 1, 2",
+        )?;
+        let mut info = statement.query([])?;
+        while let Some(line) = info.next()? {
+            eprintln!(
+                "{} {} segments={} rows={}",
+                line.get::<_, String>(0).unwrap_or_default(),
+                line.get::<_, String>(1).unwrap_or_default(),
+                line.get::<_, i64>(2).unwrap_or_default(),
+                line.get::<_, i64>(3).unwrap_or_default()
+            );
+        }
+    }
     let rows: Vec<Row> = (0..total).map(row).collect();
     let mut results = Vec::new();
     for scenario in SCENARIOS {

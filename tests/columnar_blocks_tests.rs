@@ -341,6 +341,14 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         // Not the arrays' to answer: the ordinary path, same result.
         "FOR r IN sales FILTER r.country != 'c07' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
         "FOR r IN sales COLLECT d = r.device AGGREGATE m = MEDIAN(r.bytes) RETURN [d, m]",
+        // Comparisons a block's smallest and largest value settle: every
+        // row, no row, and one value.
+        "FOR r IN sales FILTER r.ts >= 0 COLLECT c = r.country AGGREGATE lo = MIN(r.amount), hi = MAX(r.bytes), \
+         s = SUM(r.amount), n = COUNT() RETURN [c, lo, hi, s, n]",
+        "FOR r IN sales FILTER r.ts < -5 COLLECT AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [n, s]",
+        "FOR r IN sales FILTER r.ts > 1000000000 COLLECT AGGREGATE n = COUNT() RETURN n",
+        "FOR r IN sales FILTER r.ts == 7000 COLLECT d = r.device AGGREGATE n = COUNT(), b = SUM(r.bytes) RETURN [d, n, b]",
+        "FOR r IN sales FILTER r.ts <= 7000 AND r.ts > 6990 COLLECT c = r.country AGGREGATE a = AVG(r.amount) RETURN [c, a]",
     ];
     for q in queries {
         let run = |fold: bool| {

@@ -362,34 +362,100 @@ impl Flat {
     fn groups(&self, base: i64, keep: impl Fn(usize) -> bool) -> Vec<Group> {
         let mut groups = Vec::new();
         for at in self.present().filter(|at| keep(*at)) {
-            let mut accs = Vec::with_capacity(self.cols.len());
-            for col in &self.cols {
-                let mut acc = Acc::default();
-                match col {
-                    FlatCol::None => {}
-                    FlatCol::Float { sum, err, min, max } => {
-                        acc.sum.add(sum[at]);
-                        if err[at] != 0.0 {
-                            acc.sum.add(err[at]);
-                        }
-                        acc.min = Some((min[at], false));
-                        acc.max = Some((max[at], false));
-                    }
-                    FlatCol::Int { sum, min, max } => {
-                        acc.sum.add_i64(sum[at]);
-                        acc.min = Some((min[at] as f64, true));
-                        acc.max = Some((max[at] as f64, true));
-                    }
-                }
-                accs.push(acc);
-            }
             groups.push(Group {
                 key: vec![Atom::Int(base + at as i64)],
                 count: self.counts[at],
-                accs,
+                accs: self.accs(at),
             });
         }
         groups
+    }
+
+    /// The aggregates of the group at `at`, with exact sums. For a
+    /// [valid](Self::valid) table.
+    fn accs(&self, at: usize) -> Vec<Acc> {
+        let mut accs = Vec::with_capacity(self.cols.len());
+        for col in &self.cols {
+            let mut acc = Acc::default();
+            match col {
+                FlatCol::None => {}
+                FlatCol::Float { sum, err, min, max } => {
+                    acc.sum.add(sum[at]);
+                    if err[at] != 0.0 {
+                        acc.sum.add(err[at]);
+                    }
+                    acc.min = Some((min[at], false));
+                    acc.max = Some((max[at], false));
+                }
+                FlatCol::Int { sum, min, max } => {
+                    acc.sum.add_i64(sum[at]);
+                    acc.min = Some((min[at] as f64, true));
+                    acc.max = Some((max[at] as f64, true));
+                }
+            }
+            accs.push(acc);
+        }
+        accs
+    }
+
+    /// The rows of a block whose key is a column of strings, the group of
+    /// a row being its code: `rows`, or every row. A column at a time,
+    /// under the conditions of [`Self::add`].
+    fn add_coded(&mut self, codes: &[u32], rows: Option<&[u32]>, args: &[Option<&Column>]) {
+        match rows {
+            None => codes.iter().for_each(|c| self.counts[*c as usize] += 1),
+            Some(rows) => rows
+                .iter()
+                .for_each(|r| self.counts[codes[*r as usize] as usize] += 1),
+        }
+        let mut ok = self.ok;
+        for (col, column) in self.cols.iter_mut().zip(args) {
+            match (col, column.map(|c| &c.data)) {
+                (FlatCol::Float { sum, err, min, max }, Some(ColData::Float(values))) => {
+                    let mut one = |at: usize, x: f64| {
+                        let (next, lost) = two_sum(sum[at], x);
+                        sum[at] = next;
+                        if lost != 0.0 {
+                            let (kept, gone) = two_sum(err[at], lost);
+                            err[at] = kept;
+                            ok &= gone == 0.0;
+                        }
+                        min[at] = min[at].min(x);
+                        max[at] = max[at].max(x);
+                    };
+                    match rows {
+                        None => codes
+                            .iter()
+                            .zip(values.iter())
+                            .for_each(|(c, x)| one(*c as usize, *x)),
+                        Some(rows) => rows
+                            .iter()
+                            .for_each(|r| one(codes[*r as usize] as usize, values[*r as usize])),
+                    }
+                }
+                (FlatCol::Int { sum, min, max }, Some(ColData::Int(values))) => {
+                    let mut one = |at: usize, x: i64| {
+                        let (next, over) = sum[at].overflowing_add(x);
+                        sum[at] = next;
+                        ok &= !over & (x.unsigned_abs() <= 1 << 53);
+                        min[at] = min[at].min(x);
+                        max[at] = max[at].max(x);
+                    };
+                    match rows {
+                        None => codes
+                            .iter()
+                            .zip(values.iter())
+                            .for_each(|(c, x)| one(*c as usize, *x)),
+                        Some(rows) => rows
+                            .iter()
+                            .for_each(|r| one(codes[*r as usize] as usize, values[*r as usize])),
+                    }
+                }
+                (FlatCol::None, _) => {}
+                _ => ok = false,
+            }
+        }
+        self.ok = ok;
     }
 }
 
@@ -517,6 +583,30 @@ fn select(column: &Column, cond: &Cond, rows: Option<Vec<u32>>, len: usize) -> O
     }
 }
 
+/// Whether every row of `column` passes `cond`, or none does, when the
+/// extremes of a column of integers compared with an integer tell.
+fn settled(column: &Column, cond: &Cond) -> Option<bool> {
+    use BinaryOperator::*;
+    let c = match &cond.value {
+        Value::Number(n) => n.as_i64()?,
+        _ => return None,
+    };
+    let (lo, hi) = column.int_range()?;
+    let (all, none) = match cond.op {
+        Equal => (lo == c && hi == c, c < lo || c > hi),
+        LessThan => (hi < c, lo >= c),
+        LessThanOrEqual => (hi <= c, lo > c),
+        GreaterThan => (lo > c, hi <= c),
+        GreaterThanOrEqual => (lo >= c, hi < c),
+        _ => return None,
+    };
+    match (all, none) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    }
+}
+
 /// Fold the rows of `block` the plan keeps into `table`; `None` when the
 /// block has to be read as objects.
 fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share) -> Option<()> {
@@ -533,7 +623,13 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
     let len = block.len();
     let mut rows: Option<Vec<u32>> = None;
     for cond in &plan.conds {
-        rows = Some(select(plain(&cond.column)?, cond, rows, len)?);
+        let column = plain(&cond.column)?;
+        // The smallest and largest value of the block may say it all.
+        match settled(column, cond) {
+            Some(true) => {}
+            Some(false) => rows = Some(Vec::new()),
+            None => rows = Some(select(column, cond, rows, len)?),
+        }
     }
     let keys: Vec<&Column> = plan.keys.iter().map(plain).collect::<Option<_>>()?;
     // Numbers for the aggregates that add or compare; a string or a
@@ -631,6 +727,31 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
             None => (0..len).for_each(&mut one),
         }
         return Some(());
+    }
+    // One key of strings: plain sums in arrays indexed by the block's
+    // codes, a column at a time, added to the groups when they are exact.
+    // Otherwise the rows are read below, one by one.
+    if let [Column {
+        data: ColData::Str { dict, codes },
+        ..
+    }] = keys.as_slice()
+    {
+        let mut flat = Flat::new(dict.len(), &args);
+        flat.add_coded(codes, rows.as_deref(), &args);
+        if flat.valid() {
+            for at in flat.present() {
+                let key = vec![Atom::Str(Arc::from(dict[at].as_str()))];
+                let id = table.group(key, accs) as usize;
+                let group = &mut table.groups[id];
+                group.count += flat.counts[at];
+                for (acc, mut more) in group.accs.iter_mut().zip(flat.accs(at)) {
+                    // Settled, a sum goes in at the cost of an addition.
+                    more.sum.settle();
+                    acc.merge(&more);
+                }
+            }
+            return Some(());
+        }
     }
     let mut scratch: Vec<u64> = Vec::with_capacity(keys.len());
 
