@@ -1,0 +1,312 @@
+[
+     {
+          "Id": "0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786",
+          "Created": "2026-11-15T11:58:59.875785576Z",
+          "Path": "/docker-entrypoint.sh",
+          "Args": [
+               "/docker-entrypoint.sh"
+          ],
+          "State": {
+               "OciVersion": "1.2.1",
+               "Status": "running",
+               "Running": true,
+               "Paused": false,
+               "Restarting": false,
+               "OOMKilled": false,
+               "Dead": false,
+               "Pid": 2330652,
+               "ConmonPid": 2330650,
+               "ExitCode": 0,
+               "Error": "",
+               "StartedAt": "2026-11-15T11:58:59.91165862Z",
+               "FinishedAt": "0001-01-01T00:00:00Z",
+               "CgroupPath": "/machine.slice/libpod-0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786.scope",
+               "CheckpointedAt": "0001-01-01T00:00:00Z",
+               "RestoredAt": "0001-01-01T00:00:00Z"
+          },
+          "Image": "5bd6b73d96157501fdaabc6d48509de307bc71e976339377c0fbe82f6776d993",
+          "ImageDigest": "sha256:bbf5b3cb0dfb08ad667a008dbcc48794bf942d18d1ad832cb6ecb7ff87314694",
+          "ImageName": "docker.io/questdb/questdb@sha256:bbf5b3cb0dfb08ad667a008dbcc48794bf942d18d1ad832cb6ecb7ff87314694",
+          "Rootfs": "",
+          "Pod": "",
+          "ResolvConfPath": "/run/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/resolv.conf",
+          "HostnamePath": "/run/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/hostname",
+          "HostsPath": "/run/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/hosts",
+          "StaticDir": "/var/lib/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata",
+          "OCIConfigPath": "/var/lib/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/config.json",
+          "OCIRuntime": "crun",
+          "ConmonPidFile": "/run/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/conmon.pid",
+          "PidFile": "/run/containers/storage/overlay-containers/0e1ca0f807cd968aa4e1dd9cb5bfb52dffd1afe2c20378957d1ec60fbaa52786/userdata/pidfile",
+          "Name": "bench-db",
+          "RestartCount": 0,
+          "Driver": "overlay",
+          "MountLabel": "",
+          "ProcessLabel": "",
+          "AppArmorProfile": "",
+          "EffectiveCaps": [
+               "CAP_CHOWN",
+               "CAP_DAC_OVERRIDE",
+               "CAP_FOWNER",
+               "CAP_FSETID",
+               "CAP_KILL",
+               "CAP_NET_BIND_SERVICE",
+               "CAP_SETFCAP",
+               "CAP_SETGID",
+               "CAP_SETPCAP",
+               "CAP_SETUID",
+               "CAP_SYS_CHROOT"
+          ],
+          "BoundingCaps": [
+               "CAP_CHOWN",
+               "CAP_DAC_OVERRIDE",
+               "CAP_FOWNER",
+               "CAP_FSETID",
+               "CAP_KILL",
+               "CAP_NET_BIND_SERVICE",
+               "CAP_SETFCAP",
+               "CAP_SETGID",
+               "CAP_SETPCAP",
+               "CAP_SETUID",
+               "CAP_SYS_CHROOT"
+          ],
+          "ExecIDs": [],
+          "GraphDriver": {
+               "Name": "overlay",
+               "Data": {
+                    "LowerDir": "/var/lib/containers/storage/overlay/867ade1ed8fd6a258272440ddf9114f4fe5b35bb353a07fe720fed99e37ecebf/diff:/var/lib/containers/storage/overlay/c035fe948f800d1c903a936b0345c6a48cedfb96b71ed10a2321d0c37898781f/diff:/var/lib/containers/storage/overlay/91191567625934a3ca61f6de75bf6bb69a334fdece0b35d977891e828e453865/diff:/var/lib/containers/storage/overlay/7d1ee8150122d2bff67cc70ad92a850569ada6fcdc0a4c1fc7d89a30b9b45099/diff:/var/lib/containers/storage/overlay/abd35d9dfb0fa590648cd5809fbcd1d07a3f452b0dfa5bffe3fef416caba6643/diff:/var/lib/containers/storage/overlay/e89c1c2dde98f879901ebbb441239022a57269ad1851b32ab7c904ea1a515323/diff:/var/lib/containers/storage/overlay/a5c424f5f820e6c2330701e40307009d60cb45968b44feb3a535263b9ef3bfa1/diff:/var/lib/containers/storage/overlay/fffd721863e10899dbf9c15331ed1d48909761d35543fcec76b9f80b70b279a0/diff",
+                    "MergedDir": "/var/lib/containers/storage/overlay/29c6a6a7a4ac2fd0111b6ae627eb87b0ad504c22144289293040d38fd624652c/merged",
+                    "UpperDir": "/var/lib/containers/storage/overlay/29c6a6a7a4ac2fd0111b6ae627eb87b0ad504c22144289293040d38fd624652c/diff",
+                    "WorkDir": "/var/lib/containers/storage/overlay/29c6a6a7a4ac2fd0111b6ae627eb87b0ad504c22144289293040d38fd624652c/work"
+               }
+          },
+          "Mounts": [
+               {
+                    "Type": "bind",
+                    "Source": "/home/rocky/bench/data/ts-questdb",
+                    "Destination": "/var/lib/questdb",
+                    "Driver": "",
+                    "Mode": "",
+                    "Options": [
+                         "rbind"
+                    ],
+                    "RW": true,
+                    "Propagation": "rprivate"
+               }
+          ],
+          "Dependencies": [],
+          "NetworkSettings": {
+               "EndpointID": "",
+               "Gateway": "",
+               "IPAddress": "",
+               "IPPrefixLen": 0,
+               "IPv6Gateway": "",
+               "GlobalIPv6Address": "",
+               "GlobalIPv6PrefixLen": 0,
+               "MacAddress": "",
+               "Bridge": "",
+               "SandboxID": "",
+               "HairpinMode": false,
+               "LinkLocalIPv6Address": "",
+               "LinkLocalIPv6PrefixLen": 0,
+               "Ports": {},
+               "SandboxKey": "",
+               "Networks": {
+                    "host": {
+                         "EndpointID": "",
+                         "Gateway": "",
+                         "IPAddress": "",
+                         "IPPrefixLen": 0,
+                         "IPv6Gateway": "",
+                         "GlobalIPv6Address": "",
+                         "GlobalIPv6PrefixLen": 0,
+                         "MacAddress": "",
+                         "NetworkID": "host",
+                         "DriverOpts": null,
+                         "IPAMConfig": null,
+                         "Links": null
+                    }
+               }
+          },
+          "Namespace": "",
+          "IsInfra": false,
+          "IsService": false,
+          "KubeExitCodePropagation": "invalid",
+          "lockNumber": 28,
+          "Config": {
+               "Hostname": "ns3445088.ip-213-32-26.eu",
+               "Domainname": "",
+               "User": "",
+               "AttachStdin": false,
+               "AttachStdout": false,
+               "AttachStderr": false,
+               "Tty": false,
+               "OpenStdin": false,
+               "StdinOnce": false,
+               "Env": [
+                    "PATH=/usr/local/bin:/usr/bin",
+                    "container=oci",
+                    "HOME=/root",
+                    "HOSTNAME=ns3445088.ip-213-32-26.eu"
+               ],
+               "Cmd": null,
+               "Image": "docker.io/questdb/questdb@sha256:bbf5b3cb0dfb08ad667a008dbcc48794bf942d18d1ad832cb6ecb7ff87314694",
+               "Volumes": null,
+               "WorkingDir": "/var/lib/questdb",
+               "Entrypoint": [
+                    "/docker-entrypoint.sh"
+               ],
+               "OnBuild": null,
+               "Labels": {
+                    "io.buildah.version": "1.43.5",
+                    "org.opencontainers.image.licenses": "MIT",
+                    "org.opencontainers.image.title": "fedora-minimal",
+                    "org.opencontainers.image.url": "https://fedoraproject.org/",
+                    "org.opencontainers.image.vendor": "Fedora Project",
+                    "org.opencontainers.image.version": "44"
+               },
+               "Annotations": {
+                    "io.container.manager": "libpod",
+                    "io.podman.annotations.cpuset": "0-3,16-19",
+                    "org.opencontainers.image.stopSignal": "15",
+                    "org.systemd.property.KillSignal": "15",
+                    "org.systemd.property.TimeoutStopUSec": "uint64 10000000"
+               },
+               "StopSignal": "SIGTERM",
+               "HealthcheckOnFailureAction": "none",
+               "HealthLogDestination": "local",
+               "HealthcheckMaxLogCount": 5,
+               "HealthcheckMaxLogSize": 500,
+               "CreateCommand": [
+                    "podman",
+                    "run",
+                    "-d",
+                    "--name",
+                    "bench-db",
+                    "--network",
+                    "host",
+                    "--cpuset-cpus",
+                    "0-3,16-19",
+                    "--memory",
+                    "16g",
+                    "--memory-swap",
+                    "16g",
+                    "-v",
+                    "/home/rocky/bench/data/ts-questdb:/var/lib/questdb:Z",
+                    "docker.io/questdb/questdb@sha256:bbf5b3cb0dfb08ad667a008dbcc48794bf942d18d1ad832cb6ecb7ff87314694"
+               ],
+               "Umask": "0022",
+               "Timeout": 0,
+               "StopTimeout": 10,
+               "Passwd": true,
+               "sdNotifyMode": "container",
+               "ExposedPorts": {
+                    "8812/tcp": {},
+                    "9000/tcp": {},
+                    "9009/tcp": {}
+               }
+          },
+          "HostConfig": {
+               "Binds": [
+                    "/home/rocky/bench/data/ts-questdb:/var/lib/questdb:rprivate,rbind"
+               ],
+               "CgroupManager": "systemd",
+               "CgroupMode": "private",
+               "ContainerIDFile": "",
+               "LogConfig": {
+                    "Type": "journald",
+                    "Config": null,
+                    "Path": "",
+                    "Tag": "",
+                    "Size": "-1B"
+               },
+               "NetworkMode": "host",
+               "PortBindings": {},
+               "RestartPolicy": {
+                    "Name": "no",
+                    "MaximumRetryCount": 0
+               },
+               "AutoRemove": false,
+               "AutoRemoveImage": false,
+               "Annotations": {
+                    "io.container.manager": "libpod",
+                    "io.podman.annotations.cpuset": "0-3,16-19",
+                    "org.opencontainers.image.stopSignal": "15",
+                    "org.systemd.property.KillSignal": "15",
+                    "org.systemd.property.TimeoutStopUSec": "uint64 10000000"
+               },
+               "VolumeDriver": "",
+               "VolumesFrom": null,
+               "CapAdd": [],
+               "CapDrop": [],
+               "Dns": [],
+               "DnsOptions": [],
+               "DnsSearch": [],
+               "ExtraHosts": [],
+               "HostsFile": "",
+               "GroupAdd": [],
+               "IpcMode": "shareable",
+               "Cgroup": "",
+               "Cgroups": "default",
+               "Links": null,
+               "OomScoreAdj": 0,
+               "PidMode": "private",
+               "Privileged": false,
+               "PublishAllPorts": false,
+               "ReadonlyRootfs": false,
+               "SecurityOpt": [],
+               "Tmpfs": {},
+               "UTSMode": "private",
+               "UsernsMode": "",
+               "ShmSize": 65536000,
+               "Runtime": "oci",
+               "ConsoleSize": [
+                    0,
+                    0
+               ],
+               "Isolation": "",
+               "CpuShares": 0,
+               "Memory": 17179869184,
+               "NanoCpus": 0,
+               "CgroupParent": "",
+               "BlkioWeight": 0,
+               "BlkioWeightDevice": null,
+               "BlkioDeviceReadBps": null,
+               "BlkioDeviceWriteBps": null,
+               "BlkioDeviceReadIOps": null,
+               "BlkioDeviceWriteIOps": null,
+               "CpuPeriod": 0,
+               "CpuQuota": 0,
+               "CpuRealtimePeriod": 0,
+               "CpuRealtimeRuntime": 0,
+               "CpusetCpus": "0-3,16-19",
+               "CpusetMems": "",
+               "Devices": [],
+               "DiskQuota": 0,
+               "KernelMemory": 0,
+               "MemoryReservation": 0,
+               "MemorySwap": 17179869184,
+               "MemorySwappiness": -1,
+               "OomKillDisable": false,
+               "PidsLimit": 2048,
+               "Ulimits": [
+                    {
+                         "Name": "RLIMIT_NOFILE",
+                         "Soft": 1048576,
+                         "Hard": 1048576
+                    },
+                    {
+                         "Name": "RLIMIT_NPROC",
+                         "Soft": 1048576,
+                         "Hard": 1048576
+                    }
+               ],
+               "CpuCount": 0,
+               "CpuPercent": 0,
+               "IOMaximumIOps": 0,
+               "IOMaximumBandwidth": 0,
+               "CgroupConf": null
+          },
+          "UseImageHosts": false,
+          "UseImageHostname": false
+     }
+]

@@ -21,6 +21,12 @@ path = "src/bank/main.rs"
 name = "solidb-graph"
 path = "src/graph/main.rs"
 
+# Time series: range reads, time buckets, last points and ingest against
+# TimescaleDB and QuestDB (ts.sh).
+[[bin]]
+name = "solidb-ts"
+path = "src/ts/main.rs"
+
 [dependencies]
 solidb-client = { path = "../../clients/rust-client" }
 tokio = { version = "1.35", features = ["full"] }

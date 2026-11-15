@@ -662,6 +662,125 @@ The licence texts were read on 2026-11-14, to check that publishing benchmark re
 - **One client library for two servers.** Neo4j and Memgraph are both driven through the `neo4rs` crate. No other Bolt driver was tried.
 - **One size.** The default is a million people with about ten `knows` edges each. Whether that fits each engine's cache within 16 GB was not checked, and nothing here measures a graph known to be larger than the cache.
 
+## Time series (`ts.sh`)
+
+The same points and the same five questions against SoliDB, QuestDB and
+TimescaleDB, one database at a time, in a container with 4 cores (8 threads)
+and 16 GB as everywhere on this page; the client is `solidb-ts`
+(`src/ts/`), pinned to other cores.
+
+### The data and the scenarios
+
+1,000 series, one point every 10 seconds for 24 hours: 8,640,000 points
+`{series, ts, v}`, loaded in time order from 8 connections in batches of
+5,000. Then, at 1 and at 8 clients, 5 s of warm-up and three runs of 20 s
+per scenario (the table gives the median run):
+
+| Scenario | What one request asks |
+|---|---|
+| `range` | count and sum of one series over one hour (360 points) |
+| `bucket` | the five-minute averages of one series over six hours (72 rows from 2,160 points) |
+| `last` | the latest point of one series |
+| `window_all` | count and sum of every series over ten minutes (60,000 points) |
+| `insert` | one new point, acknowledged |
+
+Every answer is compared with what the generator computes for it; a
+scenario whose first answers are wrong is not timed. None was.
+
+### How each database is used
+
+- **SoliDB** (solistore engine): a `timeseries` collection, persistent
+  indexes on `[series, ts]` and `[ts]`, column blocks on `ts`, `series`,
+  `v` (`PUT …/blocks`), sealed before the readings (`POST …/blocks/seal`);
+  SDBQL over the driver with bind variables. `SOLIDB_TS_BLOCKS=0` runs it
+  without the blocks.
+- **QuestDB** 10.2.0: `SYMBOL` series, designated timestamp, partitions by
+  hour, WAL table; writes over the InfluxDB line protocol on HTTP, reads
+  over the PostgreSQL wire with prepared statements, `SAMPLE BY` and
+  `LATEST ON`. The harness waits for the WAL to be applied before reading.
+- **TimescaleDB** 2.32.0 on PostgreSQL 17.11: a hypertable on `ts`, an index
+  on `(series, ts DESC)`, prepared statements, `time_bucket`,
+  `synchronous_commit = off`, 4 GB of shared buffers, `ANALYZE` after the
+  load.
+
+The exact statements are in each result file (`queries`).
+
+### Results, 2026-11-15
+
+SoliDB is a build of the `bench/timeseries` branch (2.10.4 plus column
+blocks), not a published image. Requests per second, median of three runs;
+in bold the highest of the row.
+
+| scenario | clients | SoliDB | QuestDB | TimescaleDB | p99 µs (S / Q / T) | DB cores (S / Q / T) |
+|---|---|---|---|---|---|---|
+| range | 1 | **42,690** | 21,040 | 6,510 | 25 / 102 / 184 | 0.7 / 7.9 / 0.9 |
+| range | 8 | **211,715** | 62,763 | 27,420 | 65 / 735 / 351 | 3.8 / 7.8 / 7.5 |
+| bucket | 1 | **10,505** | 6,598 | 1,200 | 111 / 258 / 1,019 | 0.9 / 8.0 / 1.0 |
+| bucket | 8 | **57,773** | 14,105 | 6,779 | 250 / 4,613 / 1,403 | 6.0 / 7.9 / 7.8 |
+| last | 1 | **57,616** | 55,114 | 43,336 | 19 / 20 / 26 | 0.5 / 7.8 / 0.6 |
+| last | 8 | 289,577 | **338,912** | 159,400 | 42 / 49 / 62 | 4.2 / 7.0 / 6.0 |
+| window_all | 1 | **38,160** | 35,839 | 306 | 29 / 32 / 3,487 | 0.7 / 7.9 / 1.0 |
+| window_all | 8 | **187,967** | 129,426 | 1,232 | 70 / 571 / 6,866 | 4.3 / 7.5 / 8.0 |
+| insert | 1 | **57,050** | 45,147 | 25,437 | 20 / 29 / 64 | 0.7 / 7.7 / 0.8 |
+| insert | 8 | 204,467 | **250,359** | 82,846 | 137 / 124 / 190 | 3.7 / 7.2 / 6.6 |
+
+Load: QuestDB 6.65 M points/s (1.3 s), TimescaleDB 1.17 M (7.4 s), SoliDB
+1.09 M (7.9 s, of which the sealing of blocks is about a fifth: 6.7 s
+without them). On disk after the run, the points of the `insert` scenario
+included: TimescaleDB 3.2 GB, QuestDB 4.0 GB, SoliDB 9.3 GB. After the
+shorter run below, which inserts nothing: 2.1, 0.6 and 4.6 GB.
+
+What the table says, and what it does not:
+
+- SoliDB leads eight rows of ten, QuestDB two (`last` and `insert` at 8
+  clients), and QuestDB loads six times faster and takes far less disk.
+- `last` and `window_all` at one client are within 5 to 6%: near ties.
+- Without column blocks SoliDB 2.10.4 answered `range` at 925/s, `bucket`
+  at 163/s and `window_all` at 9.7/s (one 10 s run each, same data): the
+  blocks are what this table measures on those three rows.
+- QuestDB keeps its workers spinning: it uses its 8 threads at one client.
+  The other two use one core there.
+- A point inserted is in SoliDB's and TimescaleDB's answers at once; in
+  QuestDB's once its WAL is applied.
+- The readings follow a load and a seal: no point arrives while a reading
+  runs, so nothing is outside the blocks. Under ingestion the newest points
+  (up to about 1,500) are read as documents.
+
+### With values that round (`TS_VALUES=thirds`)
+
+The values above are whole numbers, whose sums are exact in floating point
+whatever the method. SoliDB's `SUM` is exact by construction and the blocks
+keep exact subtotals, so the fair question is what happens when sums round.
+Same data with every value divided by three, the three aggregations, three
+runs of 20 s:
+
+| scenario | clients | SoliDB | QuestDB | TimescaleDB |
+|---|---|---|---|---|
+| range | 1 | **40,967** | 18,280 | 6,719 |
+| range | 8 | **204,137** | 50,137 | 28,070 |
+| bucket | 1 | **9,677** | 6,292 | 1,236 |
+| bucket | 8 | **53,547** | 14,698 | 6,883 |
+| window_all | 1 | **36,284** | 36,082 | 308 |
+| window_all | 8 | **180,358** | 127,314 | 1,236 |
+
+`window_all` at one client is a tie; the rest keeps its order. (A version of
+the blocks that kept float subtotals, usable only when exact, answered
+`window_all` at 3,732/s here.) Results in
+`results/2026-11-15-timeseries/thirds/`.
+
+### Running it
+
+```bash
+cargo build --release --bin solidb-ts
+./ts.sh all                       # the three, one after another
+TS_VALUES=thirds ./ts.sh all      # with values whose sums round
+SERIES=100 HOURS=2 WARM=1 SECS=3 RUNS=1 ./ts.sh all    # a smoke pass
+```
+
+Results: `results/2026-11-15-timeseries/` (per database: the JSON with every
+run, the client log, the container's description, the size on disk).
+InfluxDB 3 Core, on the list of card #795, is not wired in.
+
 ## SoliDB 2.7.2, and why its image was rebuilt
 
 The first run also measured SoliDB 2.7.2, before the fixes this benchmark led to in 2.7.3 (the two-sided range read as one interval, the full-scan COLLECT that streams). Those figures are in `results/2026-11-08/solidb-2.7.2/`.
