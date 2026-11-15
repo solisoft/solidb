@@ -114,6 +114,16 @@ pub struct ColumnarCollectionMeta {
     /// Rows in the tail (`col_row:`), not yet sealed into a block.
     #[serde(default)]
     pub tail_rows: u64,
+    /// For each indexed column, how many rows its index holds, counted
+    /// from the first in id order. An index names rows by their position
+    /// in that order and is written once, when it is created: the rows
+    /// after these are read as rows (`apply_filter`), and a write that
+    /// moves a position (a delete, a row with an older id) lowers the
+    /// count to where it landed. A column with no entry is one indexed
+    /// before this was kept: nothing is known of its index, which is not
+    /// used.
+    #[serde(default)]
+    pub index_rows: std::collections::HashMap<String, u64>,
 }
 
 /// The storage format new collections are created in.
@@ -353,6 +363,7 @@ impl ColumnarCollection {
             last_updated_at: now,
             format: BLOCK_FORMAT,
             tail_rows: 0,
+            index_rows: Default::default(),
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -562,6 +573,46 @@ impl ColumnarCollection {
         ))
     }
 
+    /// Before a write that puts a row of id `id` in, or takes it out: no
+    /// index may answer for a position from that row's on, which the write
+    /// moves (`ColumnarCollectionMeta::index_rows`). Rows appended after
+    /// every other change nothing. Reads the rows only when an index holds
+    /// some.
+    fn cap_indexes(
+        &self,
+        current: &ColumnarCollectionMeta,
+        new_meta: &mut ColumnarCollectionMeta,
+        id: &str,
+    ) -> DbResult<()> {
+        if !new_meta.index_rows.values().any(|rows| *rows > 0) {
+            return Ok(());
+        }
+        let rows = self.row_set_with(&current.compression)?;
+        // Ids ascend along the positions.
+        let (mut low, mut high) = (0, rows.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if rows.uuid(rows.locate(middle)) < id {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        for held in new_meta.index_rows.values_mut() {
+            *held = (*held).min(low as u64);
+        }
+        Ok(())
+    }
+
+    /// How many rows the index on `column` answers for.
+    fn index_rows(&self, column: &str) -> u64 {
+        self.meta
+            .read()
+            .ok()
+            .and_then(|meta| meta.index_rows.get(column).copied())
+            .unwrap_or(0)
+    }
+
     /// Stage `block` into `batch`.
     fn stage_block(
         &self,
@@ -735,6 +786,9 @@ impl ColumnarCollection {
 
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
+        if let Some(first) = inserted_ids.first() {
+            self.cap_indexes(&meta, &mut new_meta, first)?;
+        }
         let sealed = match columns {
             Some(columns) => {
                 let mut ids = inserted_ids.iter().cloned();
@@ -802,6 +856,7 @@ impl ColumnarCollection {
 
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
+        self.cap_indexes(&meta, &mut new_meta, &fresh[0].0)?;
         let sealed = self.stage_rows(&cf, &mut batch, &mut new_meta, fresh)?;
         self.stage_meta(&cf, &mut batch, &new_meta)?;
         db.write(batch)
@@ -838,6 +893,7 @@ impl ColumnarCollection {
         };
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
+        self.cap_indexes(&meta, &mut new_meta, row_uuid)?;
         let sealed = self.stage_rows(
             &cf,
             &mut batch,
@@ -873,6 +929,7 @@ impl ColumnarCollection {
 
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
+        self.cap_indexes(&meta, &mut new_meta, row_uuid)?;
         // In the tail: its key goes. In a block: the block is written again
         // without it, under the same key.
         let rewritten = match rows.blocks.get(at) {
@@ -1326,6 +1383,10 @@ impl ColumnarCollection {
         let mut new_meta = meta.clone();
         new_meta.row_count = 0;
         new_meta.tail_rows = 0;
+        // The index entries went with the rows.
+        for held in new_meta.index_rows.values_mut() {
+            *held = 0;
+        }
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
@@ -1439,9 +1500,11 @@ impl ColumnarCollection {
         db.put_ks(&cf, idx_meta_key.as_bytes(), &idx_meta_bytes)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
 
-        // Mark column as indexed
+        // Mark column as indexed, over the rows that were read.
         meta.columns[col_idx].indexed = true;
         meta.columns[col_idx].index_type = Some(index_type.clone());
+        meta.index_rows
+            .insert(column.to_string(), values.len() as u64);
 
         // Update collection metadata
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
@@ -1498,6 +1561,8 @@ impl ColumnarCollection {
 
         // Mark column as not indexed
         meta.columns[col_idx].indexed = false;
+        meta.columns[col_idx].index_type = None;
+        meta.index_rows.remove(column);
 
         // Update collection metadata
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
@@ -2031,15 +2096,56 @@ impl ColumnarCollection {
         }
     }
 
+    /// The positions, among `row_range`, of the rows `filter` keeps.
+    ///
+    /// An index answers only for the rows it holds
+    /// (`ColumnarCollectionMeta::index_rows`): those after them are
+    /// compared as rows. It used to answer for all of them, and a row
+    /// inserted after an index was created was never found (card #901).
     fn apply_filter(
         &self,
         filter: &ColumnFilter,
         row_range: std::ops::Range<u64>,
     ) -> DbResult<Vec<u64>> {
+        let column = match filter {
+            ColumnFilter::Eq(column, _)
+            | ColumnFilter::Ne(column, _)
+            | ColumnFilter::Gt(column, _)
+            | ColumnFilter::Gte(column, _)
+            | ColumnFilter::Lt(column, _)
+            | ColumnFilter::Lte(column, _)
+            | ColumnFilter::In(column, _) => column,
+            // Each side comes back through here.
+            ColumnFilter::And(_) | ColumnFilter::Or(_) => {
+                return self.apply_filter_with(filter, row_range, true)
+            }
+        };
+        if !self.has_index(column) {
+            return self.apply_filter_with(filter, row_range, false);
+        }
+        let held = self.index_rows(column).min(row_range.end);
+        if held <= row_range.start {
+            return self.apply_filter_with(filter, row_range, false);
+        }
+        // An index lookup answers for every position it holds.
+        let mut positions = self.apply_filter_with(filter, row_range.start..held, true)?;
+        positions.retain(|position| (row_range.start..held).contains(position));
+        if held < row_range.end {
+            positions.extend(self.apply_filter_with(filter, held..row_range.end, false)?);
+        }
+        Ok(positions)
+    }
+
+    fn apply_filter_with(
+        &self,
+        filter: &ColumnFilter,
+        row_range: std::ops::Range<u64>,
+        indexed: bool,
+    ) -> DbResult<Vec<u64>> {
         match filter {
             ColumnFilter::Eq(col, val) => {
                 // Check index type
-                if let Some(idx_type) = self.get_index_type(col) {
+                if let Some(idx_type) = self.get_index_type(col).filter(|_| indexed) {
                     match idx_type {
                         ColumnarIndexType::Bitmap => return self.index_lookup_bitmap(col, val),
                         ColumnarIndexType::Sorted | ColumnarIndexType::Hash => {
@@ -2077,13 +2183,15 @@ impl ColumnarCollection {
 
             ColumnFilter::Gt(col, val) => {
                 // Use sorted index if available
-                if self.has_sorted_index(col) {
+                if indexed && self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
 
                 // Use MinMax to get candidates
                 let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
+                if let Some(ColumnarIndexType::MinMax) =
+                    self.get_index_type(col).filter(|_| indexed)
+                {
                     candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
                 }
 
@@ -2135,13 +2243,15 @@ impl ColumnarCollection {
 
             ColumnFilter::Gte(col, val) => {
                 // Use sorted index if available
-                if self.has_sorted_index(col) {
+                if indexed && self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
 
                 // Use MinMax
                 let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
+                if let Some(ColumnarIndexType::MinMax) =
+                    self.get_index_type(col).filter(|_| indexed)
+                {
                     candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
                 }
 
@@ -2173,13 +2283,15 @@ impl ColumnarCollection {
 
             ColumnFilter::Lt(col, val) => {
                 // Use sorted index if available
-                if self.has_sorted_index(col) {
+                if indexed && self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
 
                 // Use MinMax
                 let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
+                if let Some(ColumnarIndexType::MinMax) =
+                    self.get_index_type(col).filter(|_| indexed)
+                {
                     candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
                 }
 
@@ -2211,13 +2323,15 @@ impl ColumnarCollection {
 
             ColumnFilter::Lte(col, val) => {
                 // Use sorted index if available
-                if self.has_sorted_index(col) {
+                if indexed && self.has_sorted_index(col) {
                     return self.index_range_scan(col, filter);
                 }
 
                 // Use MinMax
                 let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) = self.get_index_type(col) {
+                if let Some(ColumnarIndexType::MinMax) =
+                    self.get_index_type(col).filter(|_| indexed)
+                {
                     candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
                 }
 
@@ -2250,7 +2364,7 @@ impl ColumnarCollection {
             ColumnFilter::In(col, vals) => {
                 // Use index if available - lookup each value and union results
                 // Check index type to dispatch correctly
-                if let Some(idx_type) = self.get_index_type(col) {
+                if let Some(idx_type) = self.get_index_type(col).filter(|_| indexed) {
                     match idx_type {
                         ColumnarIndexType::Bitmap
                         | ColumnarIndexType::Hash

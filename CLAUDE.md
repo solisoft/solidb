@@ -759,9 +759,16 @@ Rules that keep it sound:
   `worker::columnar_in_full_sync` operations are not replayed. An older
   serving node sends neither, and the logs are replayed as before. A new
   columnar operation belongs in `columnar_in_full_sync`.
-- **An index is not maintained by inserts** (card #901): it holds the rows
-  that were there when it was created. Do not build on it until that is
-  fixed.
+- **An index answers only for the rows it holds.** It is written once, by
+  `create_index`, and names rows by position in id order; inserts do not
+  add to it. `ColumnarCollectionMeta::index_rows` says how many rows from
+  the first it holds; `apply_filter` asks it for those and compares the
+  rows after them as rows. Every write that moves a position — a delete,
+  a row with an older id (replication), a truncate — must lower that count
+  (`cap_indexes`) in the batch that writes the rows: a new write path that
+  forgets it brings card #901 back (rows missing from filtered results).
+  A column with no entry was indexed by 2.10.4 or earlier: its index is
+  not used.
 - **A value read back is the value inserted.** The array's kind is chosen
   from the values (not from the declared type), and the tail is MessagePack
   because JSON text does not always give a float back (`93.33333333333333`
