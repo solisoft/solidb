@@ -623,6 +623,17 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/schema",
             delete(super::handlers::delete_collection_schema),
         )
+        // Column blocks of a time series collection
+        .route(
+            "/_api/database/{db}/collection/{name}/blocks",
+            get(super::handlers::get_column_blocks)
+                .put(super::handlers::set_column_blocks)
+                .delete(super::handlers::delete_column_blocks),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/blocks/seal",
+            post(super::handlers::seal_column_blocks),
+        )
         // Foreign key routes
         .route(
             "/_api/database/{db}/collection/{name}/foreign-keys",

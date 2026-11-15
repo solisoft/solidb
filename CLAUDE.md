@@ -630,6 +630,76 @@ searches expand a vertex through `EdgeExpander`
 |---|---|---|
 | `SOLIDB_GRAPH_CACHE_MB` | 256 | What one map of kept neighbourhoods or documents may hold; a full map stops taking entries. `0` turns the maps off. |
 
+### Column blocks: time series aggregations that read arrays
+
+A `timeseries` collection may declare a time field and the fields its
+aggregations read (`PUT …/collection/{name}/blocks`, `storage/blocks.rs`,
+stored under `_stats:column_blocks`). Its documents stay the source. Beside
+them, for a range of keys `[lo, hi)`, a *block* (`blk:<lo>`) holds those
+fields as arrays: rows ordered by the string fields then by time (one series
+is a run, found by bisection), a dictionary per string field, the rows' order
+by time, and exact subtotals per 512 rows of it. A
+`FOR p IN c FILTER … COLLECT … AGGREGATE …` that stays within the blocks —
+FILTERs comparing the time with numbers and other fields with strings, keys
+that are fields or `TIME_BUCKET(time, "<fixed interval>")`, aggregates of
+fields — is folded from them (`sdbql/executor/execution/block_scan.rs`) into
+the same `CollectFold` as documents, and whatever no block covers is read as
+documents. Measured on 8.64M points (`benchmarks/compare/ts.sh`): a series'
+hour 925 → 42,700 requests/s, ten minutes of every series 9.7 → 38,200.
+
+Rules that keep it sound:
+
+- **Only a collection that refuses updates.** A block is wrong only if the
+  set of keys in its range changed; `set_column_blocks` refuses anything but
+  `timeseries`. A new way to rewrite a time series document in place would
+  break every block.
+- **Every document write announces its keys**, after the write, through
+  `Collection::publish_change(s)` (which take the key, or a `Wrote` span)
+  or `emit_change`; truncate announces `Wrote::All`. The block holding a
+  key goes (`BlockSet::wrote`). A write path that reaches neither leaves
+  stale blocks, as it leaves stale cached queries.
+- **A seal registers its range before it takes its snapshot.** A write
+  announced before the registration is in the snapshot; one announced after
+  finds the pending range and the block is not kept. Keep that order.
+- **An append announces nothing, and takes no lock**, when its first key
+  is a UUIDv7 generated at or after the set's `frontier` (an instant in
+  milliseconds). That is sound only because a seal raises the frontier to
+  now *before* its snapshot and ends its block before the first key
+  generated from now on, and only while every key in sight is a generated
+  one: the first other key a seal meets turns the frontier off for good
+  (`u64::MAX`), and that seal gives up. A change to how keys are generated
+  or ordered has to be made in `blocks::key_ms` too.
+- **A block read from disk is not trusted** until the keys of its range
+  have been counted and hashed again (`BlockSet::verified`, once per
+  process): the announcement follows the write, so a crash between the two
+  leaves a block that no longer matches.
+- **Values are the documents'.** A numeric column is all integers, all
+  floats, or both with a flag per value (`Column::Mixed`: JSON metrics hold
+  `12` beside `12.5`); a range where one document does not fit (a missing
+  field, a time that is not an integer) gets a block without columns and is
+  read as documents. `SUM` over a slice goes through `ExactSum::add_slice`, which
+  adds the float sum only when no addition lost anything, and what a block
+  keeps of a column or of 512 rows is the exact state of their sum
+  (`Total`, a settled `ExactSum`, merged without loss): results must stay
+  those of the ordinary path, which tests check
+  (`tests/column_blocks_tests.rs` runs each query both ways). The one
+  difference that can show is which of `5` and `5.0` a `MIN` / `MAX`
+  returns when both are the extreme.
+- The fold steps aside at the same guards as `scan_collect` (row policy,
+  a transaction that wrote the collection, columnar, sharded) and calls
+  `note_range_read`.
+- Sealing runs on the writer that crosses the threshold (1,024 documents
+  waiting, the newest 512 left out) and merges adjacent small blocks up to
+  65,536 rows; a commit thread only announces (`seal: false`). There is no
+  background thread: after a restart or a bulk delete, `POST …/blocks/seal`
+  seals what is left.
+- Blocks are local to a node: not replicated, not in a full sync, not
+  dumped. The definition is not replicated either; declare it on each node.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SOLIDB_COLUMN_BLOCKS_MB` | 1024 | What the columns kept in memory may take, for the whole process. Past it a block's columns are read from disk at each use. |
+
 ### Three tiers of protected collections
 
 `src/storage/protected.rs` holds the lists, and the boundary is *a

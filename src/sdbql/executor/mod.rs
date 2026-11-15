@@ -16,7 +16,7 @@ mod const_fold;
 mod data_source;
 mod datum;
 mod evaluate;
-mod exact_sum;
+pub(crate) mod exact_sum;
 mod execution;
 mod explain;
 mod expression;

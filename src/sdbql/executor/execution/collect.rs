@@ -24,7 +24,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::super::aggregation::{AggKind, AggregateAccumulator};
+use super::super::aggregation::{AggKind, AggregateAccumulator, Slice};
 use super::super::datum::{key_hash, value_key_hash, Datum, PreHashedBuild};
 use super::super::types::Context;
 use super::super::{compare_values, QueryExecutor};
@@ -164,6 +164,33 @@ impl<'c> CollectFold<'c> {
         debug_assert!(self.collect.into_var.is_none());
         self.fold_datums(key, args, ordinal)?;
         self.tick(ex)
+    }
+
+    /// Fold in `rows` rows that share the group key `key`, their
+    /// aggregate arguments given as columns (`None`: no argument): what
+    /// [`Self::push_datums`] does with each row, for aggregates that take
+    /// slices ([`AggregateAccumulator::takes_slices`]). Not for a COLLECT
+    /// with `INTO`.
+    pub(super) fn push_slices(
+        &mut self,
+        ex: &QueryExecutor<'_>,
+        key: &[Datum<'_>],
+        rows: usize,
+        args: &[Option<Slice<'_>>],
+    ) -> DbResult<()> {
+        debug_assert!(self.collect.into_var.is_none());
+        if rows == 0 {
+            return Ok(());
+        }
+        let ordinal = self.next_ordinal();
+        let gi = self.fold_datums(key, std::iter::empty(), ordinal)?;
+        let group = &mut self.groups[gi];
+        group.count += rows as i64 - 1;
+        for (acc, values) in group.aggregates.iter_mut().zip(args) {
+            acc.push_slice(rows, values.as_ref(), ordinal);
+        }
+        self.seen += rows;
+        ex.check_budget(if self.check_held { self.held() } else { 0 })
     }
 
     /// The ordinal the next row pushed without one gets: rows are numbered

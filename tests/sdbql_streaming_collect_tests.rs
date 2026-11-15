@@ -1257,3 +1257,77 @@ fn the_row_ceiling_holds_across_key_ranges() {
         vec![json!({"s": "a", "k": 3000}), json!({"s": "b", "k": 3000})]
     );
 }
+
+/// A FOR whose FILTERs a compound index serves, feeding a COLLECT, is folded
+/// from the stored bytes of the documents the index names
+/// (`try_index_collect`): the same answers as reading them as rows, on a
+/// sparse index and on one that holds nulls, for one interval, several, an
+/// IN list, and a FILTER the index only narrows.
+#[test]
+fn a_compound_index_read_is_folded_into_its_collect() {
+    for sparse in [true, false] {
+        let (engine, _tmp) = engine_with(mixed_docs());
+        let coll = engine
+            .get_database(DB)
+            .unwrap()
+            .get_collection("c")
+            .unwrap();
+        coll.create_index_with(
+            "by_t_i".to_string(),
+            vec!["t".to_string(), "i".to_string()],
+            solidb::storage::IndexType::Persistent,
+            false,
+            sparse,
+        )
+        .unwrap();
+        for (q, folded_here) in [
+            (
+                "FOR d IN c FILTER d.t == 'red' AND d.i >= 3 AND d.i < 12 \
+                 COLLECT AGGREGATE n = COUNT(), s = SUM(d.i), m = MAX(d.v) RETURN [n, s, m]",
+                true,
+            ),
+            (
+                "FOR d IN c FILTER d.t IN ['red', 'blue'] AND d.i > 3 \
+                 COLLECT k = d.k AGGREGATE n = COUNT(), a = AVG(d.i) RETURN [k, n, a]",
+                true,
+            ),
+            (
+                "FOR d IN c FILTER d.t == 'blue' AND d.i != 10 AND d.nested.deep == 1 \
+                 COLLECT WITH COUNT INTO n RETURN n",
+                true,
+            ),
+            (
+                "FOR d IN c FILTER d.t == 'red' FILTER d.i <= 10 \
+                 COLLECT i = d.i AGGREGATE lo = MIN(d.v), n = COUNT(d.k) RETURN [i, lo, n]",
+                true,
+            ),
+            (
+                "FOR d IN c FILTER d.t == 'nobody' AND d.i > 0 \
+                 COLLECT AGGREGATE n = COUNT(), s = SUM(d.i) RETURN [n, s]",
+                true,
+            ),
+            // An INTO keeps rows: the ordinary read.
+            (
+                "FOR d IN c FILTER d.t == 'red' AND d.i >= 3 COLLECT i = d.i INTO g = d._key \
+                 RETURN [i, g]",
+                false,
+            ),
+        ] {
+            let binds = BindVars::new();
+            let streamed = run(&engine, q, true, &binds);
+            assert_eq!(
+                streamed,
+                run(&engine, q, false, &binds),
+                "sparse={sparse} {q}"
+            );
+            assert!(!streamed.unwrap().is_empty(), "{q}");
+            let said = executor(&engine, true, &binds)
+                .explain(&parse(q).unwrap())
+                .unwrap()
+                .warnings
+                .iter()
+                .any(|w| w.contains("COLLECT folded into the index read"));
+            assert_eq!(said, folded_here, "sparse={sparse} {q}");
+        }
+    }
+}

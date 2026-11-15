@@ -279,6 +279,16 @@ impl<'a> QueryExecutor<'a> {
                         true
                     };
 
+                    // A time series collection that keeps column blocks:
+                    // the COLLECT is folded from their rows.
+                    if is_collection && scan_limit.is_none() {
+                        if let Some(run) = self.try_block_collect(clauses, i, &rows)? {
+                            rows = run.rows;
+                            i += run.consumed;
+                            continue;
+                        }
+                    }
+
                     // The index read returns unfiltered rows; a collection
                     // under a row policy takes the scan below (audit H2).
                     if is_collection
@@ -286,6 +296,17 @@ impl<'a> QueryExecutor<'a> {
                         && !self.tx_wrote(&for_clause.collection)
                     {
                         if let Some(index_filter) = index_filter.as_deref() {
+                            // A compound-index read that only feeds a
+                            // COLLECT: folded from the stored bytes.
+                            if scan_limit.is_none() {
+                                if let Some(run) =
+                                    self.try_index_collect(clauses, i, &rows, index_filter)?
+                                {
+                                    rows = run.rows;
+                                    i += run.consumed;
+                                    continue;
+                                }
+                            }
                             // Index path only if *every* row's filter is
                             // indexable — mixing index and scan per-row would
                             // silently drop rows whose condition couldn't be

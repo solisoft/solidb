@@ -472,6 +472,10 @@ pub(super) enum PlannedRead {
     Scan,
 }
 
+/// A range of index keys: `(prefix, start, end)`, the keys in
+/// `[start, end)` that start with `prefix`.
+pub(super) type KeyRange = (Vec<u8>, Vec<u8>, Vec<u8>);
+
 /// One way to read a FILTER's candidate rows from indexes, chosen before
 /// anything is read. The rows are a superset of the matches; the FILTER is
 /// re-checked on each.
@@ -1984,6 +1988,55 @@ impl<'a> QueryExecutor<'a> {
         }
         let type_str = format!("{:?}", plan.index.index_type);
         Some((out, plan.index.name, type_str))
+    }
+
+    /// The key ranges of the compound index
+    /// [`Self::lookup_index_for_filter_limited`] would read for `filter`, in
+    /// the order it reads them, as `(prefix, start, end)`; `None` when its
+    /// first choice is anything else, or declines. For a caller that reads
+    /// the candidates' stored bytes itself and re-checks the FILTER on each.
+    pub(super) fn composite_read_ranges(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<Vec<KeyRange>> {
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return None;
+        }
+        let candidates = self.read_candidates(collection, filter, var_name, ctx);
+        let Some(ReadPlan::Composite(plan)) = self
+            .rank_reads(collection, candidates, var_name, ctx)
+            .into_iter()
+            .next()
+        else {
+            return None;
+        };
+        let unbounded = [(None, None)];
+        let intervals: &[(IntervalBound, IntervalBound)] = match &plan.next {
+            Some(intervals) => intervals,
+            None => &unbounded,
+        };
+        let mut out = Vec::new();
+        if plan.eq_lists.iter().any(|l| l.is_empty()) {
+            return Some(out);
+        }
+        for combo in combinations(&plan.eq_lists) {
+            for (lo, hi) in intervals {
+                out.push(collection.composite_key_range(
+                    &plan.index,
+                    &combo,
+                    lo.as_ref().map(|(v, inc)| (v, *inc)),
+                    hi.as_ref().map(|(v, inc)| (v, *inc)),
+                    plan.nulls_rejected,
+                )?);
+            }
+        }
+        Some(out)
     }
 
     /// [`Self::lookup_index_for_filter_limited`] honouring an index hint.

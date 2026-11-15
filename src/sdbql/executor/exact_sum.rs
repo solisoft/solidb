@@ -34,7 +34,7 @@ const ADDS_BEFORE_CARRY: u32 = 1 << 30;
 /// touches, and one above for the carries.
 const SPAN: usize = 4;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ExactSum {
     /// Chunk `i` of the integer is `chunks[i - lo]`; those outside the
     /// window are 0. The window always ends at least one chunk above the
@@ -82,6 +82,40 @@ impl ExactSum {
         }
         if let Some(x) = n.as_f64() {
             self.accumulate(x);
+        }
+    }
+
+    /// [`Self::add_number`] of the integer `i`.
+    #[inline]
+    pub(crate) fn add_i64(&mut self, i: i64) {
+        match self.integers.checked_add(i128::from(i)) {
+            Some(total) if !self.not_integers => self.integers = total,
+            _ => self.not_integers = true,
+        }
+        self.accumulate(i as f64);
+    }
+
+    /// [`Self::add`] of each of `xs`. When their sum in floating point lost
+    /// nothing at any step (the error term of each addition is zero), that
+    /// sum is their exact sum and is added in their place.
+    pub(crate) fn add_slice(&mut self, xs: &[f64]) {
+        let (mut sum, mut exact) = (0.0f64, true);
+        for &x in xs {
+            let next = sum + x;
+            let virtual_x = next - sum;
+            let error = (sum - (next - virtual_x)) + (x - virtual_x);
+            exact &= error == 0.0;
+            sum = next;
+        }
+        if xs.is_empty() {
+            return;
+        }
+        if exact && sum.is_finite() {
+            self.add(sum);
+        } else {
+            for &x in xs {
+                self.add(x);
+            }
         }
     }
 
@@ -172,6 +206,22 @@ impl ExactSum {
         if other.chunks.is_empty() {
             return;
         }
+        // A sum whose carries are propagated ([`Self::settle`]) holds
+        // chunks below 2^32, and a top chunk of about the number of values
+        // added: it goes in as an addition does, with no copy and no carry
+        // until enough of them have piled up.
+        if other.pending == 0 {
+            if self.pending >= ADDS_BEFORE_CARRY {
+                self.carry();
+            }
+            self.widen(other.lo, other.lo + other.chunks.len());
+            let at = other.lo - self.lo;
+            for (a, b) in self.chunks[at..].iter_mut().zip(&other.chunks) {
+                *a += b;
+            }
+            self.pending += 1;
+            return;
+        }
         self.carry();
         let mut other = other.clone();
         other.carry();
@@ -183,6 +233,12 @@ impl ExactSum {
         for (a, b) in self.chunks[at..].iter_mut().zip(&other.chunks) {
             *a += b;
         }
+        self.carry();
+    }
+
+    /// Propagate the carries, so that merging this sum into another costs
+    /// what one addition does. For a sum that is kept.
+    pub(crate) fn settle(&mut self) {
         self.carry();
     }
 
@@ -453,5 +509,68 @@ mod tests {
             s.add(-0.25);
         }
         assert_eq!(s.value(), 1_500_000.0);
+    }
+    /// Settled sums (what a column block keeps of its rows) merged into
+    /// one, and slices added with [`ExactSum::add_slice`], give what adding
+    /// every value gives: the same float, and an integer when all were.
+    #[test]
+    fn settled_parts_and_slices_add_up_to_the_whole() {
+        let mut rng = Lcg(7);
+        for round in 0..40 {
+            let values: Vec<f64> = (0..3_000)
+                .map(|_| {
+                    let n = rng.next();
+                    match round % 4 {
+                        0 => (n % 1000) as f64,
+                        1 => (n % 1000) as f64 / 3.0,
+                        2 => f64::from_bits(n.rotate_left(11)).clamp(-1e300, 1e300),
+                        _ => ((n % 2001) as f64 - 1000.0) * 1e-7,
+                    }
+                })
+                .filter(|v| v.is_finite())
+                .collect();
+            let mut whole = ExactSum::default();
+            let mut ints = ExactSum::default();
+            for &v in &values {
+                whole.add(v);
+                ints.add_i64(v as i64);
+            }
+            let (mut parts, mut int_parts, mut slices) = (
+                ExactSum::default(),
+                ExactSum::default(),
+                ExactSum::default(),
+            );
+            for chunk in values.chunks(97) {
+                let (mut part, mut int_part) = (ExactSum::default(), ExactSum::default());
+                for &v in chunk {
+                    part.add(v);
+                    int_part.add_i64(v as i64);
+                }
+                part.settle();
+                int_part.settle();
+                parts.merge(&part);
+                int_parts.merge(&int_part);
+                slices.add_slice(chunk);
+            }
+            assert_eq!(
+                parts.value().to_bits(),
+                whole.value().to_bits(),
+                "round {round}"
+            );
+            assert_eq!(
+                slices.value().to_bits(),
+                whole.value().to_bits(),
+                "round {round}"
+            );
+            assert_eq!(parts.integer(), None);
+            assert_eq!(int_parts.integer(), ints.integer(), "round {round}");
+            // (An integer sum too large for a JSON integer is `None` both ways.)
+            assert_eq!(ints.integer().is_some(), round % 4 != 2, "round {round}");
+            assert_eq!(
+                int_parts.value().to_bits(),
+                ints.value().to_bits(),
+                "round {round}"
+            );
+        }
     }
 }

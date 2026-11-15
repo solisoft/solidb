@@ -161,6 +161,73 @@ RETURN RESAMPLE(points, "5m")   -- last value + avg per bucket</code></pre>
         </div>
       </section>
 
+      <!-- Column blocks Section -->
+      <section id="blocks" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+               Column Blocks
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300">
+              An aggregation over documents reads documents: one per point. A time series collection can keep, beside its documents, the fields its aggregations read as arrays. Declare the time field (integer milliseconds) and the other fields, strings (a series' name, a tag) or numbers:
+            </p>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/blocks</code>
+               </div>
+              <div class="bg-black/30 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                { "time": "ts", "fields": ["host", "cpu"] }
+              </div>
+            </div>
+
+            <p class="text-gray-300">
+              From then on the documents are sealed into blocks as they arrive (1,024 at a time, the newest 512 left for later; small blocks are merged up to 65,536 points). The documents stay what is stored and what every other query reads; a block is derived from them and is thrown away when a document of its range is written or deleted.
+            </p>
+            <p class="text-gray-300">
+              A query is answered from the blocks when it stays within them: <code>FOR p IN c</code>, FILTERs that compare the time field with numbers (<code>&gt;=</code>, <code>&gt;</code>, <code>&lt;</code>, <code>&lt;=</code>) and other declared fields with strings (<code>==</code>), joined by <code>AND</code>, then a <code>COLLECT</code> whose keys are declared fields or <code>TIME_BUCKET(time, "5m")</code> (a fixed interval, no options) and whose aggregates take a declared field or nothing. The answers are those of the documents, to the last digit: an integer sum stays an integer, a float sum is exact. Anything else runs as before, and EXPLAIN says which: <code>COLLECT folded from the column blocks</code>.
+            </p>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example: answered from the blocks</h4>
+              <pre><code class="language-sql text-sm">FOR p IN metrics
+  FILTER p.host == "web-3" AND p.ts >= @from AND p.ts &lt; @to
+  COLLECT bucket = TIME_BUCKET(p.ts, "5m")
+  AGGREGATE cpu = AVG(p.cpu), peak = MAX(p.cpu)
+  RETURN { bucket, cpu, peak }</code></pre>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs text-gray-300 uppercase bg-white/5">
+                  <tr><th class="px-4 py-2">Method &amp; path</th><th class="px-4 py-2">Effect</th></tr>
+                </thead>
+                <tbody>
+                  <tr class="border-b border-white/5"><td class="px-4 py-2"><code>GET …/collection/:name/blocks</code></td><td class="px-4 py-2">The definition, the number of blocks, and how many documents they cover.</td></tr>
+                  <tr class="border-b border-white/5"><td class="px-4 py-2"><code>PUT …/collection/:name/blocks</code></td><td class="px-4 py-2">Declare or replace the definition. Blocks of an earlier one are deleted.</td></tr>
+                  <tr class="border-b border-white/5"><td class="px-4 py-2"><code>POST …/collection/:name/blocks/seal</code></td><td class="px-4 py-2">Seal everything not yet in a block, the newest points included: after a bulk load, a restart, or a large delete.</td></tr>
+                  <tr><td class="px-4 py-2"><code>DELETE …/collection/:name/blocks</code></td><td class="px-4 py-2">Stop keeping blocks. The documents are untouched.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start">
+              <i class="fas fa-info-circle text-blue-400 mt-1 mr-3"></i>
+               <div>
+                <h4 class="text-blue-400 font-bold text-sm">What to know</h4>
+                <p class="text-sm text-blue-200/70">
+                  A field must hold one kind of value throughout a block: strings, or numbers (integers and floats may be mixed). A range of points where a declared field is missing or null, or the time is not an integer, gets a block without columns and is read as documents (<code>opaque_blocks</code> in the status). Blocks cost about 25 bytes per point in memory, up to <code>SOLIDB_COLUMN_BLOCKS_MB</code> (1024 by default) for the whole server, and as much on disk. A delete or a late point throws away the block it falls in until its range is sealed again, by the next insert or by <code>…/blocks/seal</code>; meanwhile the query runs as it did without blocks. Blocks and their definition are local to a node: declare them on each node of a cluster. Only a <code>timeseries</code> collection takes them, because its documents are never updated.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Pruning Section -->
       <section id="pruning" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">

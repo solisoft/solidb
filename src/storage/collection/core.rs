@@ -739,6 +739,7 @@ impl Collection {
         event: ChangeEvent,
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<ChangeEvent>> {
         self.invalidate_for_write();
+        self.column_blocks_wrote(crate::storage::blocks::Wrote::Key(&event.key), false);
         // One document: traversals forget what they kept of it, and of its
         // ends when it is an edge, rather than everything.
         let is_edge = self.collection_type.read().as_str() == "edge";

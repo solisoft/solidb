@@ -55,14 +55,14 @@ use crate::storage::Collection;
 
 /// The body clauses a streaming COLLECT replaces: the loop, the FILTER and
 /// LET clauses up to the COLLECT, and the COLLECT.
-struct Plan<'q> {
-    for_clause: &'q ForClause,
+pub(super) struct Plan<'q> {
+    pub(super) for_clause: &'q ForClause,
     /// The FILTER and LET clauses between the FOR and the COLLECT, in order.
-    stages: &'q [BodyClause],
-    collect: &'q CollectClause,
+    pub(super) stages: &'q [BodyClause],
+    pub(super) collect: &'q CollectClause,
     /// The loop variable's fields those clauses read; `None` when they need
     /// the whole document.
-    fields: Option<Vec<String>>,
+    pub(super) fields: Option<Vec<String>>,
 }
 
 /// What a streaming COLLECT did, for the pipeline and for EXPLAIN.
@@ -80,7 +80,7 @@ pub(in crate::sdbql::executor) struct ScanCollectRun {
 }
 
 /// The plan for `clauses[i..]`, from the shape of the query alone.
-fn plan(clauses: &[BodyClause], i: usize) -> Option<Plan<'_>> {
+pub(super) fn plan(clauses: &[BodyClause], i: usize) -> Option<Plan<'_>> {
     let BodyClause::For(for_clause) = clauses.get(i)? else {
         return None;
     };
@@ -177,6 +177,15 @@ fn projection(var: &str, stages: &[BodyClause], collect: &CollectClause) -> Opti
     fields.sort_unstable();
     fields.dedup();
     Some(fields)
+}
+
+/// A COLLECT to fold from the documents a compound index names.
+struct IndexCollect<'q> {
+    plan: Plan<'q>,
+    collection: crate::storage::Collection,
+    typed: TypedPlan,
+    /// For each outer row, the index key ranges to read.
+    reads: Vec<Vec<super::super::index_opt::KeyRange>>,
 }
 
 /// What a scan split into key ranges gave: the merged fold, and the counts
@@ -387,10 +396,138 @@ impl QueryExecutor<'_> {
         }))
     }
 
+    /// What [`Self::try_index_collect`] would fold for `clauses[i]`, decided
+    /// without reading a document; `None` when the ordinary index read has
+    /// to run: anything but FILTERs before the COLLECT, an `INTO`, an index
+    /// hint, expressions the typed reader does not compile, or a first
+    /// choice of the planner that is not a compound index, for any of
+    /// `rows`.
+    fn plan_index_collect<'q>(
+        &self,
+        clauses: &'q [BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> Option<IndexCollect<'q>> {
+        if !self.stream_collect || !self.scan.typed {
+            return None;
+        }
+        let plan = plan(clauses, i)?;
+        let for_clause = plan.for_clause;
+        if plan.collect.into_var.is_some()
+            || !plan
+                .stages
+                .iter()
+                .all(|s| matches!(s, BodyClause::Filter(_)))
+            || super::super::index_opt::IndexHint::of(for_clause).is_some()
+            || self.row_policy_gate(&for_clause.collection).is_some()
+        {
+            return None;
+        }
+        let collection = self.scan_collect_source(for_clause, rows)?;
+        let var = &for_clause.variable;
+        let typed = TypedPlan::compile(self, var, plan.stages, plan.collect)?;
+        // Every row's read is planned before any is folded: one the index
+        // cannot serve sends them all to the ordinary path.
+        let reads = rows
+            .iter()
+            .map(|outer| self.composite_read_ranges(&collection, filter, var, outer))
+            .collect::<Option<Vec<_>>>()?;
+        Some(IndexCollect {
+            plan,
+            collection,
+            typed,
+            reads,
+        })
+    }
+
+    /// What EXPLAIN says when [`Self::try_index_collect`] would run
+    /// `clauses[i]`.
+    pub(in crate::sdbql::executor) fn index_collect_note(
+        &self,
+        clauses: &[BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> Option<String> {
+        let found = self.plan_index_collect(clauses, i, rows, filter)?;
+        Some(format!(
+            "optimizer: COLLECT folded into the index read of '{}': the documents the index              names are grouped as they are read, never held as rows (reading only {} from the              stored bytes)",
+            found.plan.for_clause.collection,
+            found.typed.describe()
+        ))
+    }
+
+    /// [`Self::try_scan_collect`] for a FOR whose FILTERs a compound index
+    /// serves: the documents the index names are folded from their stored
+    /// bytes, each checked against every FILTER, none decoded or held as a
+    /// row. `filter` is the conjunction of the FILTERs after `clauses[i]`.
+    /// `Ok(None)` when the ordinary index read has to run
+    /// ([`Self::plan_index_collect`]).
+    pub(in crate::sdbql::executor) fn try_index_collect(
+        &self,
+        clauses: &[BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> DbResult<Option<ScanCollectRun>> {
+        let Some(IndexCollect {
+            plan,
+            collection,
+            typed,
+            reads,
+        }) = self.plan_index_collect(clauses, i, rows, filter)
+        else {
+            return Ok(None);
+        };
+        let var = &plan.for_clause.variable;
+        let mut passes = vec![(0usize, 0usize); plan.stages.len()];
+        let mut fold = CollectFold::new(plan.collect);
+        let mut scanned = 0usize;
+        let doc = TypedDoc {
+            stages: plan.stages,
+            var,
+            fields: plan.fields.as_deref(),
+        };
+        for (outer, ranges) in rows.iter().zip(&reads) {
+            let mut reader = TypedReader::new(&typed);
+            let mut scratch = outer.clone();
+            let mut visited = 0usize;
+            for (prefix, start, end) in ranges {
+                collection.for_each_indexed_doc_bytes(prefix, start, end, |bytes| {
+                    visited += 1;
+                    if visited.is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                        self.check_budget(fold.held())?;
+                    }
+                    if doc.fold(
+                        self,
+                        bytes,
+                        &mut reader,
+                        &mut fold,
+                        &mut scratch,
+                        &mut passes,
+                    )? {
+                        scanned += 1;
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+        let groups = fold.finish()?;
+        self.check_budget(groups.len())?;
+        Ok(Some(ScanCollectRun {
+            rows: groups,
+            consumed: plan.stages.len() + 2,
+            scanned,
+            filters: passes,
+            note: String::new(),
+        }))
+    }
+
     /// The collection a streaming COLLECT would read for `for_clause`, or
     /// `None` when the ordinary scan has to: the same guards, in the same
     /// order, as `get_for_source_docs`.
-    fn scan_collect_source(
+    pub(super) fn scan_collect_source(
         &self,
         for_clause: &ForClause,
         rows: &[Context],
@@ -596,7 +733,7 @@ impl QueryExecutor<'_> {
     /// condition fails to evaluate drops the row, a LET's error is the
     /// query's. Returns whether the row survived; `passes` counts, per
     /// FILTER, the rows it saw and kept.
-    fn run_stages(
+    pub(super) fn run_stages(
         &self,
         stages: &[BodyClause],
         ctx: &mut Context,
@@ -681,7 +818,7 @@ impl QueryExecutor<'_> {
 /// when nothing else refers to it. A binding the subquery memo has recorded
 /// (it holds a `Weak`) is replaced by a new allocation instead, so the memo
 /// never sees a changed value at an unchanged address.
-fn bind_in_place(ctx: &mut Context, var: &str, doc: Value) {
+pub(super) fn bind_in_place(ctx: &mut Context, var: &str, doc: Value) {
     match ctx.get_mut_unique(var) {
         Some(slot) => *slot = doc,
         None => {

@@ -603,7 +603,19 @@ impl Collection {
 
         // Cached results dropped once for the whole commit.
         if !staged.events.is_empty() {
-            self.publish_changes(|| staged.events);
+            // On the thread that writes commits: it announces, and leaves
+            // the sealing to the next write.
+            let keys: Vec<String> = staged.events.iter().map(|e| e.key.clone()).collect();
+            let truncated = staged
+                .events
+                .iter()
+                .any(|e| matches!(e.type_, ChangeType::Truncate));
+            let span = if truncated {
+                crate::storage::blocks::Wrote::All
+            } else {
+                super::crud::key_span(keys.iter().map(String::as_str))
+            };
+            self.publish_changes(span, false, || staged.events);
         }
     }
 

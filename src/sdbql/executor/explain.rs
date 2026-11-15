@@ -535,6 +535,14 @@ impl<'a> QueryExecutor<'a> {
                     // Check if the FILTERs after the FOR can use an index
                     // (all of them, as execution does).
                     let filters = leading_filters(clauses, i + 1);
+                    // The run folds such a COLLECT from the collection's
+                    // column blocks; the rows are the same.
+                    let from_blocks = scan_limit
+                        .is_none()
+                        .then(|| self.block_collect_note(clauses, i, &rows))
+                        .flatten();
+                    let in_blocks = from_blocks.is_some();
+                    warnings.extend(from_blocks);
                     let sorted_here = if collections_info.is_empty() {
                         sorted_read.take()
                     } else {
@@ -621,6 +629,19 @@ impl<'a> QueryExecutor<'a> {
                                     }
                                     index_name = Some(name);
                                     index_type = Some(ty);
+                                    // The run folds such a read into its
+                                    // COLLECT; the rows are the same.
+                                    if scan_limit.is_none()
+                                        && !in_blocks
+                                        && !self.tx_wrote(&for_clause.collection)
+                                    {
+                                        warnings.extend(self.index_collect_note(
+                                            clauses,
+                                            i,
+                                            &rows,
+                                            &index_filter,
+                                        ));
+                                    }
 
                                     let mut new_rows = Vec::new();
                                     for ctx in &rows {
@@ -704,7 +725,11 @@ impl<'a> QueryExecutor<'a> {
                                     time_us: 0,
                                 });
                             }
-                            warnings.push(run.note);
+                            // Said already, when the run takes them from
+                            // the column blocks.
+                            if !in_blocks {
+                                warnings.push(run.note);
+                            }
                             rows = run.rows;
                             total_docs_scanned += run.scanned;
                             i += run.consumed;

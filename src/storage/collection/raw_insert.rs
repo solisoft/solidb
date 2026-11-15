@@ -200,7 +200,7 @@ impl Collection {
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
         self.increment_count();
-        self.publish_change(|| ChangeEvent {
+        self.publish_change(key, || ChangeEvent {
             type_: ChangeType::Insert,
             key: key.to_string(),
             data: Some(event_value(stored)),
@@ -310,7 +310,8 @@ impl Collection {
         self.doc_count.fetch_add(count, Ordering::Relaxed);
         self.count_dirty.store(true, Ordering::Relaxed);
 
-        self.publish_changes(|| {
+        let span = super::crud::key_span(headers.iter().map(|h| h.key.as_str()));
+        self.publish_changes(span, true, || {
             headers
                 .iter()
                 .zip(&stored)
@@ -405,7 +406,7 @@ impl Collection {
         let stored = serialize_doc_raw(doc_key, id, &rev, &created_text, &updated_text, &data)?;
 
         self.write_update_core(key, &old_view, &stored, &new_view)?;
-        self.publish_change(|| ChangeEvent {
+        self.publish_change(key, || ChangeEvent {
             type_: ChangeType::Update,
             key: key.to_string(),
             data: Some(event_value(&stored)),

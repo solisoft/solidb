@@ -2030,21 +2030,8 @@ impl Collection {
         cap: usize,
         nulls_rejected: bool,
     ) -> Option<Vec<Document>> {
-        let n = eq_values.len();
-        let has_range = lower.is_some() || upper.is_some();
-        let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
-        if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
-            || n > index.fields.len()
-            || (n == index.fields.len() && has_range)
-            || (index.sparse && !nulls_rejected && (n == 0 || eq_values.iter().all(Value::is_null)))
-            || eq_values.iter().any(complex)
-            || lower.is_some_and(|(v, _)| complex(v))
-            || upper.is_some_and(|(v, _)| complex(v))
-        {
-            return None;
-        }
         let (prefix, start, end) =
-            Self::index_key_range(&index.name, index.fields.len(), eq_values, lower, upper);
+            self.composite_key_range(index, eq_values, lower, upper, nulls_rejected)?;
         if start >= end {
             return Some(Vec::new());
         }
@@ -2079,6 +2066,94 @@ impl Collection {
             .filter_map(|bytes| deserialize_doc(&bytes).ok())
             .collect();
         Some(docs)
+    }
+
+    /// The key range [`Self::index_scan_composite`] reads, as
+    /// `(prefix, start, end)`, or `None` where it declines: the rules about
+    /// which reads of a compound index return every match are these.
+    pub(crate) fn composite_key_range(
+        &self,
+        index: &crate::storage::index::Index,
+        eq_values: &[Value],
+        lower: Option<(&Value, bool)>,
+        upper: Option<(&Value, bool)>,
+        nulls_rejected: bool,
+    ) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+        let n = eq_values.len();
+        let has_range = lower.is_some() || upper.is_some();
+        let complex = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
+        if !matches!(index.index_type, IndexType::Persistent | IndexType::Hash)
+            || n > index.fields.len()
+            || (n == index.fields.len() && has_range)
+            || (index.sparse && !nulls_rejected && (n == 0 || eq_values.iter().all(Value::is_null)))
+            || eq_values.iter().any(complex)
+            || lower.is_some_and(|(v, _)| complex(v))
+            || upper.is_some_and(|(v, _)| complex(v))
+        {
+            return None;
+        }
+        Some(Self::index_key_range(
+            &index.name,
+            index.fields.len(),
+            eq_values,
+            lower,
+            upper,
+        ))
+    }
+
+    /// The stored bytes of each document an index entry in `[start, end)`
+    /// under `prefix` names, in index order: what
+    /// [`Self::index_scan_composite`] decodes, handed over undecoded. An
+    /// entry whose document is gone is passed over, as there. Returns how
+    /// many documents `f` saw.
+    pub(crate) fn for_each_indexed_doc_bytes(
+        &self,
+        prefix: &[u8],
+        start: &[u8],
+        end: &[u8],
+        mut f: impl FnMut(&[u8]) -> DbResult<()>,
+    ) -> DbResult<usize> {
+        const BATCH: usize = 1024;
+        if start >= end {
+            return Ok(0);
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Ok(0);
+        };
+        let mut seen = 0usize;
+        let mut doc_keys: Vec<Vec<u8>> = Vec::with_capacity(BATCH);
+        let mut flush = |doc_keys: &mut Vec<Vec<u8>>| -> DbResult<()> {
+            for bytes in self
+                .db
+                .multi_get_pinned_ks(&cf, doc_keys)
+                .into_iter()
+                .filter_map(|r| r.ok())
+                .flatten()
+            {
+                seen += 1;
+                f(&bytes)?;
+            }
+            doc_keys.clear();
+            Ok(())
+        };
+        let iter = self.db.iterator_ks_bounded(
+            &cf,
+            IterMode::From(start, Direction::Forward),
+            Some(start),
+            Some(end),
+        );
+        for item in iter {
+            let Ok((k, v)) = item else { continue };
+            if !k.starts_with(prefix) || k.as_ref() >= end {
+                break;
+            }
+            doc_keys.push(Self::doc_key(&String::from_utf8_lossy(&v)));
+            if doc_keys.len() == BATCH {
+                flush(&mut doc_keys)?;
+            }
+        }
+        flush(&mut doc_keys)?;
+        Ok(seen)
     }
 
     /// The keys of `index_name` (an index on `n_fields` fields) whose leading

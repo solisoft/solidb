@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::{DbError, DbResult};
+use crate::storage::blocks::Wrote;
 use crate::storage::kv::KvBatch;
 use crate::storage::kv::{Direction, IterMode, KvReadOptions, KvSnapshot};
 use crate::storage::serializer::{
@@ -345,16 +346,22 @@ impl Collection {
     /// there are any, after a committed write. The event's values are only
     /// built for a subscriber: one that subscribes after this check did so
     /// after the commit, and reads it.
-    pub(super) fn publish_change(&self, event: impl FnOnce() -> ChangeEvent) {
-        self.publish_changes(|| std::iter::once(event()));
+    pub(super) fn publish_change(&self, key: &str, event: impl FnOnce() -> ChangeEvent) {
+        self.publish_changes(Wrote::Key(key), true, || std::iter::once(event()));
     }
 
     /// [`Self::publish_change`] for the events of one batch: the cached
-    /// results are dropped once for them all.
+    /// results are dropped once for them all. `keys` says which documents
+    /// were written, for what is kept by key range (`storage::blocks`);
+    /// `seal` lets this thread seal a block of them, which a thread that
+    /// others wait for must not.
     pub(super) fn publish_changes<I: IntoIterator<Item = ChangeEvent>>(
         &self,
+        keys: Wrote<'_>,
+        seal: bool,
         events: impl FnOnce() -> I,
     ) {
+        self.column_blocks_wrote(keys, seal);
         self.invalidate_cached_queries();
         if self.change_sender.receiver_count() > 0 {
             for event in events() {
@@ -433,7 +440,8 @@ impl Collection {
             Returning::Document => Written::Document(doc),
             Returning::Value => Written::Value(doc.into_value()),
         };
-        self.publish_change(|| ChangeEvent {
+        let written_key = key.clone();
+        self.publish_change(&written_key, || ChangeEvent {
             type_: ChangeType::Insert,
             key,
             data: Some(written.to_value()),
@@ -795,7 +803,7 @@ impl Collection {
 
             self.write_update_core(key, &old_view, &doc_bytes, &new_value)?;
 
-            self.publish_change(|| {
+            self.publish_change(key, || {
                 // The old version: the new one with the replaced fields and
                 // the old `_rev` / `_updated_at` put back.
                 let mut old_value = new_value.clone();
@@ -1559,7 +1567,8 @@ impl Collection {
         self.count_dirty.store(true, Ordering::Relaxed);
 
         // Broadcast change events, after one cache invalidation for them all
-        self.publish_changes(|| {
+        let span = key_span(inserted_docs.iter().map(|doc| doc.key.as_str()));
+        self.publish_changes(span, true, || {
             inserted_docs.iter().map(|doc| ChangeEvent {
                 type_: ChangeType::Insert,
                 key: doc.key.clone(),
@@ -2225,6 +2234,7 @@ impl Collection {
         // documents just removed. The event below goes straight to the
         // channel, since `emit_change` would invalidate a second time.
         self.invalidate_cached_queries();
+        self.column_blocks_wrote(Wrote::All, false);
 
         // One broadcast event instead of one-per-document: subscribers
         // (LiveQuery, stream processors) learn the collection was cleared
@@ -2343,6 +2353,22 @@ impl Collection {
         }
 
         Ok(())
+    }
+}
+
+/// The smallest and largest of `keys`, as what a batch wrote.
+pub(super) fn key_span<'a>(keys: impl Iterator<Item = &'a str>) -> Wrote<'a> {
+    let mut span: Option<(&str, &str)> = None;
+    for key in keys {
+        span = Some(match span {
+            None => (key, key),
+            Some((lo, hi)) => (lo.min(key), hi.max(key)),
+        });
+    }
+    match span {
+        Some((lo, hi)) => Wrote::Span(lo, hi),
+        // Nothing written: a span no key is in.
+        None => Wrote::Span("\u{10ffff}", ""),
     }
 }
 

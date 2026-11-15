@@ -17,6 +17,7 @@
 //! - array_ops: array comparison operators and inline array expressions
 
 mod array_ops;
+mod block_scan;
 mod clauses;
 mod collect;
 mod entry;

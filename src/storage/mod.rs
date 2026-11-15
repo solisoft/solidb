@@ -2,6 +2,7 @@
 /// [`kv::Kv`]; it no longer means RocksDB is underneath.
 pub type RocksDb = kv::Kv;
 
+pub mod blocks;
 pub mod cf_ops;
 pub mod codec;
 pub mod collection;

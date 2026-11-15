@@ -258,6 +258,32 @@ impl DistinctValues {
     }
 }
 
+/// The values of one column for rows that go to one group together.
+pub(super) enum Slice<'a> {
+    Int(&'a [i64]),
+    Float(&'a [f64]),
+    /// Values that are not numbers, none of them null: only counted.
+    Other,
+    /// Numbers known by their exact sum (the state a `SUM` of them would
+    /// hold) and their extremes.
+    Total {
+        sum: &'a ExactSum,
+        min: Option<serde_json::Number>,
+        max: Option<serde_json::Number>,
+    },
+    /// Integers and floats, each as a float, with whether it is an integer.
+    Mixed(&'a [f64], &'a [bool]),
+}
+
+/// `x` as the number a document holds: an integer when `int`.
+fn number_of(x: f64, int: bool) -> Option<serde_json::Number> {
+    if int {
+        Some(serde_json::Number::from(x as i64))
+    } else {
+        serde_json::Number::from_f64(x)
+    }
+}
+
 /// Running state of one `AGGREGATE` function inside one `COLLECT` group.
 ///
 /// `COLLECT` used to keep every row of every group alive until the end of the
@@ -445,6 +471,108 @@ impl AggregateAccumulator {
                 }
                 false
             }
+        }
+    }
+
+    /// Whether [`Self::push_slice`] folds this kind.
+    pub(super) fn takes_slices(kind: AggKind) -> bool {
+        matches!(
+            kind,
+            AggKind::CountRows
+                | AggKind::CountNonNull
+                | AggKind::Sum
+                | AggKind::Avg
+                | AggKind::Min
+                | AggKind::Max
+        )
+    }
+
+    /// Fold `rows` rows at once: what [`Self::push`] does with each of
+    /// `values` in turn (none of them null; `None` for an aggregate without
+    /// an argument). Only for the kinds [`Self::takes_slices`] names.
+    /// `ordinal` is the first row's: of equal extremes met in other rows,
+    /// which is kept may differ from one row at a time.
+    pub(super) fn push_slice(&mut self, rows: usize, values: Option<&Slice<'_>>, ordinal: u64) {
+        match self {
+            Self::CountRows(n) => *n += rows as i64,
+            Self::CountNonNull(n) => {
+                if values.is_some() {
+                    *n += rows as i64;
+                }
+            }
+            Self::Sum(sum) => match values {
+                Some(Slice::Int(xs)) => xs.iter().for_each(|x| sum.add_i64(*x)),
+                Some(Slice::Float(xs)) => sum.add_slice(xs),
+                Some(Slice::Total { sum: total, .. }) => sum.merge(total),
+                Some(Slice::Mixed(xs, ints)) => {
+                    for (x, int) in xs.iter().zip(*ints) {
+                        if *int {
+                            sum.add_i64(*x as i64);
+                        } else {
+                            sum.add(*x);
+                        }
+                    }
+                }
+                Some(Slice::Other) | None => {}
+            },
+            Self::Avg { sum, count } => match values {
+                Some(Slice::Int(xs)) => {
+                    xs.iter().for_each(|x| sum.add(*x as f64));
+                    *count += xs.len() as i64;
+                }
+                Some(Slice::Float(xs)) => {
+                    sum.add_slice(xs);
+                    *count += xs.len() as i64;
+                }
+                // The same bits as adding each value as a float; whether
+                // they were integers does not show in an average.
+                Some(Slice::Total { sum: total, .. }) => {
+                    sum.merge(total);
+                    *count += rows as i64;
+                }
+                Some(Slice::Mixed(xs, _)) => {
+                    sum.add_slice(xs);
+                    *count += xs.len() as i64;
+                }
+                Some(Slice::Other) | None => {}
+            },
+            Self::Min(_) | Self::Max(_) => {
+                let least = matches!(self, Self::Min(_));
+                let extreme = match values {
+                    Some(Slice::Int(xs)) => if least {
+                        xs.iter().min()
+                    } else {
+                        xs.iter().max()
+                    }
+                    .map(|x| serde_json::Number::from(*x)),
+                    Some(Slice::Float(xs)) => xs
+                        .iter()
+                        .copied()
+                        .reduce(|a, b| if (b < a) == least && b != a { b } else { a })
+                        .and_then(serde_json::Number::from_f64),
+                    Some(Slice::Total { min, max, .. }) => {
+                        if least {
+                            min.clone()
+                        } else {
+                            max.clone()
+                        }
+                    }
+                    Some(Slice::Mixed(xs, ints)) => (0..xs.len())
+                        .reduce(|a, b| {
+                            if (xs[b] < xs[a]) == least && xs[b] != xs[a] {
+                                b
+                            } else {
+                                a
+                            }
+                        })
+                        .and_then(|at| number_of(xs[at], ints[at])),
+                    Some(Slice::Other) | None => None,
+                };
+                if let Some(extreme) = extreme {
+                    self.push(Some(Datum::Num(extreme)), ordinal);
+                }
+            }
+            _ => debug_assert!(false, "push_slice on an aggregate that takes rows"),
         }
     }
 
