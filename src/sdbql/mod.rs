@@ -9,4 +9,4 @@ pub use executor::{
     BindVars, MutationStats, QueryExecutionResult, QueryExecutor, QueryExplain, QueryPrincipal,
 };
 pub use parser::parse;
-pub use prepared::{get_prepared_statement_cache, PreparedStatementCache};
+pub use prepared::{get_prepared_statement_cache, Fact, PreparedStatementCache};

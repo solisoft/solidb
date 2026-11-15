@@ -2,7 +2,7 @@ use crate::driver::protocol::{DriverError, Response};
 use crate::driver::DriverHandler;
 use crate::error::DbResult;
 use crate::sdbql::executor::SmallRaw;
-use crate::sdbql::{Query, QueryExecutor};
+use crate::sdbql::{Fact, Query, QueryExecutor};
 // Shared with the HTTP /cursor handler so both protocols cache, invalidate,
 // and decide what needs the blocking pool on exactly the same terms.
 use crate::server::handlers::query::{
@@ -67,7 +67,8 @@ pub async fn handle_query(
 
     // The dispatch check only required Read for Query; upgrade to Write when the
     // parsed query mutates (same as the HTTP /cursor).
-    let mutates = query.has_mutations();
+    let mutates = prepared.mutates();
+    let long_running = prepared.fact(Fact::LongRunning, is_long_running_query);
     if mutates {
         if let Err(e) = crate::server::AuthorizationService::check_permission_raw(
             &handler.session_permissions,
@@ -125,7 +126,7 @@ pub async fn handle_query(
     // thread woken, then this task woken back) cost more than the reads.
     // The index is read first, and anything larger goes on to the pool
     // with nothing fetched.
-    if !mutates && is_long_running_query(query) {
+    if !mutates && long_running {
         let executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database.clone())
         } else {
@@ -154,7 +155,7 @@ pub async fn handle_query(
         // The same for a SORT read in index order whose rows are evaluated
         // (`LET c = DOCUMENT(…) RETURN {…}`), when what each row evaluates
         // is itself cheap.
-        if per_row_work_is_light(query) {
+        if prepared.fact(Fact::LightRows, per_row_work_is_light) {
             match executor.execute_small_sorted(query, INLINE_INDEX_ROWS) {
                 Ok(Some(rows)) => {
                     observed.finish();
@@ -181,7 +182,7 @@ pub async fn handle_query(
     // single-document read, and this handler exists to close a CPU-per-request
     // gap, not to widen it. Everything that scans, loops, or mutates takes the
     // blocking pool under a timeout.
-    if !is_long_running_query(query) || is_small_local_scan(query, &storage, &database) {
+    if !long_running || is_small_local_scan(query, &storage, &database) {
         let mut executor = if bind_vars.is_empty() {
             QueryExecutor::with_database(&storage, database)
         } else {

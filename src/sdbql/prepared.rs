@@ -33,6 +33,42 @@ pub const MAX_CACHED_TEXT_BYTES: usize = 16 << 10;
 /// A parsed query, shared by every request that sends its text.
 pub struct PreparedStatement {
     pub query: Arc<Query>,
+    /// [`Query::has_mutations`], read once: a walk of the tree.
+    mutates: bool,
+    /// What a transport found out about the tree and asks at each request
+    /// (see [`Self::fact`]).
+    facts: [std::sync::OnceLock<bool>; 2],
+}
+
+/// A property of a parsed query that a transport computes from the tree
+/// alone, kept with it.
+#[derive(Clone, Copy)]
+pub enum Fact {
+    /// It may run long: it goes to the blocking pool.
+    LongRunning,
+    /// What each row of an index-ordered read evaluates is cheap.
+    LightRows,
+}
+
+impl PreparedStatement {
+    fn new(query: Query) -> Self {
+        PreparedStatement {
+            mutates: query.has_mutations(),
+            query: Arc::new(query),
+            facts: Default::default(),
+        }
+    }
+
+    /// Whether the query writes.
+    pub fn mutates(&self) -> bool {
+        self.mutates
+    }
+
+    /// `fact`, computed by `find` the first time it is asked. `find` must
+    /// depend on the tree only: every request with this text shares it.
+    pub fn fact(&self, fact: Fact, find: impl FnOnce(&Query) -> bool) -> bool {
+        *self.facts[fact as usize].get_or_init(|| find(&self.query))
+    }
 }
 
 struct Entry {
@@ -107,9 +143,7 @@ impl PreparedStatementCache {
             return Ok(stmt);
         }
         self.misses.fetch_add(1, Ordering::Relaxed);
-        let stmt = Arc::new(PreparedStatement {
-            query: Arc::new(parser::parse(query_text)?),
-        });
+        let stmt = Arc::new(PreparedStatement::new(parser::parse(query_text)?));
         if query_text.len() <= MAX_CACHED_TEXT_BYTES && query_text.len() <= self.max_bytes {
             self.put(query_text, &stmt);
         }
