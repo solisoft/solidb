@@ -499,6 +499,7 @@ pub fn handle_aggregate_columnar(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_query_columnar(
     handler: &DriverHandler,
     database: String,
@@ -507,13 +508,26 @@ pub fn handle_query_columnar(
     filter: Option<String>,
     order_by: Option<String>,
     limit: Option<i32>,
+    offset: Option<i32>,
 ) -> Response {
-    let limit_usize = limit.map(|l| l as usize);
-    match handler.storage.get_database(&database) {
-        Ok(db) => match db.query_columnar(&collection, columns, filter, order_by, limit_usize) {
-            Ok(results) => Response::ok(serde_json::json!(results)),
-            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
-        },
+    let rows = || -> crate::error::DbResult<Vec<Value>> {
+        let db = handler.storage.get_database(&database)?;
+        let filter = match filter.filter(|f| !f.trim().is_empty()) {
+            Some(filter) => {
+                let json: Value = serde_json::from_str(&filter).map_err(|e| {
+                    crate::error::DbError::BadRequest(format!("Invalid filter JSON: {}", e))
+                })?;
+                Some(crate::storage::columnar::ColumnFilter::from_json(&json)?)
+            }
+            None => None,
+        };
+        // A limit of 0, or below, is no limit.
+        let limit = limit.filter(|l| *l > 0).map(|l| l as usize);
+        let offset = offset.map_or(0, |o| o.max(0) as usize);
+        db.query_columnar_rows(&collection, columns, filter, order_by, offset, limit)
+    };
+    match rows() {
+        Ok(results) => Response::ok(serde_json::json!(results)),
         Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
     }
 }

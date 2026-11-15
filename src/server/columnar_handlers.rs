@@ -159,18 +159,20 @@ pub struct AggregateResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct QueryColumnarRequest {
-    pub columns: Vec<String>,
+    /// The columns to return; all of them when left out.
     #[serde(default)]
-    pub filter: Option<FilterRequest>,
+    pub columns: Option<Vec<String>>,
+    /// A comparison `{"column", "op", "value"}`, or `{"and": [..]}` /
+    /// `{"or": [..]}` of filters.
+    #[serde(default)]
+    pub filter: Option<Value>,
+    /// `"column"` or `"column ASC|DESC"`, on a returned column.
+    #[serde(default)]
+    pub order_by: Option<String>,
+    #[serde(default)]
+    pub offset: Option<usize>,
     #[serde(default)]
     pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FilterRequest {
-    pub column: String,
-    pub op: String,
-    pub value: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -578,20 +580,19 @@ pub async fn query_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
-    let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
-    let col_refs: Vec<&str> = req.columns.iter().map(|s| s.as_str()).collect();
-
-    let mut results = if let Some(filter_req) = req.filter {
-        let filter = parse_filter(&filter_req)?;
-        col.scan_filtered(&filter, &col_refs)?
-    } else {
-        col.read_columns(&col_refs, None)?
-    };
-
-    // Apply limit if specified
-    if let Some(limit) = req.limit {
-        results.truncate(limit);
-    }
+    let filter = req
+        .filter
+        .as_ref()
+        .map(ColumnFilter::from_json)
+        .transpose()?;
+    let results = db.query_columnar_rows(
+        &collection,
+        req.columns,
+        filter,
+        req.order_by,
+        req.offset.unwrap_or(0),
+        req.limit,
+    )?;
 
     let count = results.len();
 
@@ -621,30 +622,6 @@ fn parse_column_type(type_str: &str) -> Result<crate::storage::columnar::ColumnT
             )))
         }
     })
-}
-
-fn parse_filter(req: &FilterRequest) -> Result<ColumnFilter, DbError> {
-    match req.op.to_uppercase().as_str() {
-        "EQ" | "=" | "==" => Ok(ColumnFilter::Eq(req.column.clone(), req.value.clone())),
-        "NE" | "!=" | "<>" => Ok(ColumnFilter::Ne(req.column.clone(), req.value.clone())),
-        "GT" | ">" => Ok(ColumnFilter::Gt(req.column.clone(), req.value.clone())),
-        "GTE" | ">=" => Ok(ColumnFilter::Gte(req.column.clone(), req.value.clone())),
-        "LT" | "<" => Ok(ColumnFilter::Lt(req.column.clone(), req.value.clone())),
-        "LTE" | "<=" => Ok(ColumnFilter::Lte(req.column.clone(), req.value.clone())),
-        "IN" => {
-            if let Value::Array(arr) = &req.value {
-                Ok(ColumnFilter::In(req.column.clone(), arr.clone()))
-            } else {
-                Err(DbError::BadRequest(
-                    "IN operator requires an array value".to_string(),
-                ))
-            }
-        }
-        other => Err(DbError::BadRequest(format!(
-            "Unknown filter operator: {}. Supported: EQ, NE, GT, GTE, LT, LTE, IN",
-            other
-        ))),
-    }
 }
 
 // ==================== Index Handlers ====================

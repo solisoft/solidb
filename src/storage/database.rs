@@ -611,8 +611,24 @@ impl Database {
         order_by: Option<String>,
         limit: Option<usize>,
     ) -> DbResult<Vec<Value>> {
-        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
         let filter = parse_columnar_filter(filter)?;
+        // The driver's 0 means no limit.
+        self.query_columnar_rows(name, columns, filter, order_by, 0, limit.filter(|l| *l > 0))
+    }
+
+    /// The rows of a columnar collection `filter` keeps, projected on
+    /// `columns` (all of them when `None`), ordered, then `limit` of them
+    /// from the `offset`-th. One request shape for HTTP and the driver.
+    pub fn query_columnar_rows(
+        &self,
+        name: &str,
+        columns: Option<Vec<String>>,
+        filter: Option<ColumnFilter>,
+        order_by: Option<String>,
+        offset: usize,
+        limit: Option<usize>,
+    ) -> DbResult<Vec<Value>> {
+        let coll = ColumnarCollection::load(name.to_string(), &self.name, self.db.clone())?;
 
         let cols_to_read = if let Some(cols) = columns {
             cols
@@ -656,10 +672,11 @@ impl Database {
             });
         }
 
-        if let Some(l) = limit {
-            if l > 0 {
-                results.truncate(l);
-            }
+        if offset > 0 {
+            results.drain(..offset.min(results.len()));
+        }
+        if let Some(limit) = limit {
+            results.truncate(limit);
         }
 
         Ok(results)

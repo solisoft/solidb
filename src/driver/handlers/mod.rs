@@ -1221,8 +1221,9 @@ impl DriverHandler {
                 filter,
                 order_by,
                 limit,
+                offset,
             } => database::handle_query_columnar(
-                self, database, collection, columns, filter, order_by, limit,
+                self, database, collection, columns, filter, order_by, limit, offset,
             ),
 
             Command::CreateColumnarIndex {

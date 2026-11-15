@@ -647,3 +647,82 @@ fn driver_deletes_and_truncate_reach_a_peer() {
     apply(&b, &logged[logged.len() - 1..]);
     assert!(values(&a).is_empty() && values(&b).is_empty());
 }
+
+/// `POST …/query` takes what the driver's query takes, and an offset
+/// (card #895): columns left out, a filter with `and`, an order, a page.
+#[tokio::test]
+async fn http_query_orders_and_pages() {
+    let (a, _, _da) = node(false);
+    let app = create_router(
+        a.clone(),
+        None,
+        None,
+        None,
+        None,
+        Arc::new(ScriptStats::default()),
+        None,
+        None,
+        0,
+    );
+    let token = common::seed_user_token(&a, "test_admin", &["admin"]);
+    let db = a.get_database("app").unwrap();
+    columnar::create(&db, None, "metrics", load_columns(), CompressionType::Lz4).unwrap();
+    columnar::insert(&db, None, "metrics", rows(20)).unwrap();
+    let query = |body: Value| {
+        let (app, token) = (app.clone(), token.clone());
+        async move {
+            call(
+                &app,
+                &token,
+                "POST",
+                "/_api/database/app/columnar/metrics/query",
+                Some(body),
+            )
+            .await
+        }
+    };
+    let values = |body: &Value| -> Vec<i64> {
+        body["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["value"].as_i64().unwrap())
+            .collect()
+    };
+
+    // No columns: all of them.
+    let (status, body) = query(json!({"limit": 1})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["result"], json!([{"sensor": "s0", "value": 0}]));
+
+    let (_, body) =
+        query(json!({"columns": ["value"], "order_by": "value DESC", "limit": 3})).await;
+    assert_eq!(values(&body), [19, 18, 17]);
+    let (_, body) = query(json!({
+        "columns": ["value"], "order_by": "value DESC", "offset": 3, "limit": 3
+    }))
+    .await;
+    assert_eq!(values(&body), [16, 15, 14]);
+    // Past the end: nothing, and no error.
+    let (_, body) = query(json!({"columns": ["value"], "offset": 50})).await;
+    assert_eq!(body["count"], 0);
+
+    let (_, body) = query(json!({
+        "columns": ["value"],
+        "filter": {"and": [
+            {"column": "sensor", "op": "EQ", "value": "s1"},
+            {"column": "value", "op": "GT", "value": 9},
+        ]},
+        "order_by": "value",
+        "offset": 1,
+    }))
+    .await;
+    assert_eq!(values(&body), [13, 16, 19]);
+
+    let (status, _) = query(json!({"columns": ["value"], "order_by": "sensor"})).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "an order on a column not returned"
+    );
+}

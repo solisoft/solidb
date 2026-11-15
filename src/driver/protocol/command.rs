@@ -534,6 +534,9 @@ pub enum Command {
         filter: Option<String>,
         order_by: Option<String>,
         limit: Option<i32>,
+        /// Rows to skip, after the order. Left out by older clients.
+        #[serde(default)]
+        offset: Option<i32>,
     },
     CreateColumnarIndex {
         database: String,
