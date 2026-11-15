@@ -82,7 +82,10 @@ run_one() {
     solidb)
       engine=solidb port=6800 image=$SOLIDB_IMAGE
       run=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$port -e SOLIDB_ENGINE=solistore
-        -e SOLIDB_WRITE_BUFFER_SIZE="${SOLIDB_WRITE_BUFFER_SIZE:-2GB}" -v "$data:/data:Z,U" "$image")
+        -e SOLIDB_WRITE_BUFFER_SIZE="${SOLIDB_WRITE_BUFFER_SIZE:-2GB}")
+      # SOLIDB_ENV="A=1 B=2": more settings for the server, for a trial.
+      for kv in ${SOLIDB_ENV:-}; do run+=(-e "$kv"); done
+      run+=(-v "$data:/data:Z,U" "$image")
       ;;
     timescale)
       engine=timescale port=5432 image=$TIMESCALE_IMAGE settle=10
