@@ -143,6 +143,9 @@ impl Engine for Soli {
 
     /// Seal the column blocks of what was loaded, where the server has them.
     async fn after_load(&self, _: u64) -> Res<()> {
+        if std::env::var("SOLIDB_TS_BLOCKS").as_deref() == Ok("0") {
+            return Ok(());
+        }
         if let Some(said) = blocks(&self.s, reqwest::Method::POST, "/seal", None).await? {
             eprintln!("column blocks: {said}");
         }

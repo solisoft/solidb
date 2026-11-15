@@ -1,5 +1,9 @@
 //! The columnar benchmark: one wide table of events and four analytical
-//! questions, against SoliDB and ClickHouse (col.sh).
+//! questions, against SoliDB, ClickHouse and DuckDB (col.sh).
+//!
+//! SoliDB and ClickHouse are servers the harness talks to. DuckDB is a
+//! library: it runs in this process, on the threads it is given, with no
+//! network between a question and its answer.
 //!
 //! Row `i` is a function of `i`, so the harness computes every answer
 //! itself and compares it with the database's, before the timing and during
@@ -148,11 +152,50 @@ fn close(a: f64, b: f64) -> bool {
 enum Engine {
     Soli { addr: String, password: String },
     ClickHouse { addr: String },
+    /// The database file's first connection; the others are cloned from it.
+    Duck(Arc<std::sync::Mutex<duckdb::Connection>>),
 }
 
 enum Conn {
     Soli(solidb_client::SoliDBClient),
     ClickHouse(reqwest::Client, String),
+    Duck(duckdb::Connection),
+}
+
+/// Run `sql` on DuckDB and give the numeric columns of each row.
+fn duck_rows(conn: &duckdb::Connection, sql: &str) -> Res<Vec<Vec<f64>>> {
+    use duckdb::types::ValueRef;
+    let mut statement = conn.prepare(sql)?;
+    let mut rows = statement.query([])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let mut values = Vec::new();
+        let mut at = 0;
+        while let Ok(value) = row.get_ref(at) {
+            values.push(match value {
+                ValueRef::TinyInt(v) => v as f64,
+                ValueRef::SmallInt(v) => v as f64,
+                ValueRef::Int(v) => v as f64,
+                ValueRef::BigInt(v) => v as f64,
+                ValueRef::HugeInt(v) => v as f64,
+                ValueRef::UTinyInt(v) => v as f64,
+                ValueRef::USmallInt(v) => v as f64,
+                ValueRef::UInt(v) => v as f64,
+                ValueRef::UBigInt(v) => v as f64,
+                ValueRef::Float(v) => v as f64,
+                ValueRef::Double(v) => v,
+                _ => f64::NAN,
+            });
+            at += 1;
+        }
+        out.push(values);
+    }
+    Ok(out)
+}
+
+/// ClickHouse's SQL as DuckDB reads it.
+fn duck_sql(sql: &str) -> String {
+    sql.replace("count()", "count(*)").replace("user", "\"user\"")
 }
 
 const DB: &str = "bench";
@@ -229,6 +272,18 @@ impl Engine {
                 }
                 Ok(())
             }
+            Engine::Duck(root) => {
+                let conn = root.lock().map_err(|e| e.to_string())?;
+                // The cores and the memory the other two get from their
+                // containers.
+                conn.execute_batch(
+                    "SET threads = 8; SET memory_limit = '16GB';
+                     DROP TABLE IF EXISTS events;
+                     CREATE TABLE events (ts BIGINT, \"user\" UINTEGER, country VARCHAR,
+                                          device VARCHAR, amount DOUBLE, bytes BIGINT);",
+                )?;
+                Ok(())
+            }
             Engine::ClickHouse { addr } => {
                 let http = reqwest::Client::new();
                 clickhouse(&http, addr, "DROP TABLE IF EXISTS events", None).await?;
@@ -249,6 +304,15 @@ impl Engine {
     async fn version(&self) -> Res<String> {
         match self {
             Engine::Soli { .. } => Ok("see the image".into()),
+            Engine::Duck(root) => {
+                let conn = root.lock().map_err(|e| e.to_string())?;
+                Ok(conn.query_row(
+                    "SELECT version() || ', threads ' || current_setting('threads') \
+                     || ', memory limit ' || current_setting('memory_limit')",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )?)
+            }
             Engine::ClickHouse { addr } => {
                 let http = reqwest::Client::new();
                 Ok(clickhouse(&http, addr, "SELECT version()", None).await?.trim().to_string())
@@ -273,6 +337,25 @@ impl Engine {
                 }
                 Ok(())
             }
+            Engine::Duck(root) => {
+                let conn = root.lock().map_err(|e| e.to_string())?.try_clone()?;
+                tokio::task::block_in_place(|| -> Res<()> {
+                    let mut appender = conn.appender("events")?;
+                    for i in from..to {
+                        let r = row(i);
+                        appender.append_row(duckdb::params![
+                            r.ts,
+                            r.user,
+                            country(r.country),
+                            DEVICES[r.device as usize],
+                            r.amount,
+                            r.bytes
+                        ])?;
+                    }
+                    appender.flush()?;
+                    Ok(())
+                })
+            }
             Engine::ClickHouse { addr } => {
                 let http = reqwest::Client::new();
                 let mut body = String::new();
@@ -287,9 +370,16 @@ impl Engine {
     }
 
     async fn after_load(&self) -> Res<()> {
-        if let Engine::ClickHouse { addr } = self {
-            let http = reqwest::Client::new();
-            clickhouse(&http, addr, "OPTIMIZE TABLE events FINAL", None).await?;
+        match self {
+            Engine::ClickHouse { addr } => {
+                let http = reqwest::Client::new();
+                clickhouse(&http, addr, "OPTIMIZE TABLE events FINAL", None).await?;
+            }
+            Engine::Duck(root) => {
+                let conn = root.lock().map_err(|e| e.to_string())?;
+                conn.execute_batch("CHECKPOINT;")?;
+            }
+            Engine::Soli { .. } => {}
         }
         Ok(())
     }
@@ -304,7 +394,12 @@ impl Engine {
                     .await
                     .map_err(|e| e.to_string())?,
             )),
-            Engine::ClickHouse { addr } => Ok(Conn::ClickHouse(reqwest::Client::new(), addr.clone())),
+            Engine::ClickHouse { addr } => {
+                Ok(Conn::ClickHouse(reqwest::Client::new(), addr.clone()))
+            }
+            Engine::Duck(root) => Ok(Conn::Duck(
+                root.lock().map_err(|e| e.to_string())?.try_clone()?,
+            )),
         }
     }
 
@@ -314,6 +409,9 @@ impl Engine {
                 "window_group": S_WINDOW, "top_users": S_TOP}),
             Engine::ClickHouse { .. } => json!({"filter_agg": c_filter(7), "group_all": C_GROUP,
                 "window_group": c_window(0, 1), "top_users": C_TOP}),
+            Engine::Duck(_) => json!({"filter_agg": duck_sql(&c_filter(7)),
+                "group_all": duck_sql(C_GROUP), "window_group": duck_sql(&c_window(0, 1)),
+                "top_users": duck_sql(C_TOP)}),
         }
     }
 }
@@ -331,7 +429,11 @@ async fn ask(conn: &mut Conn, soli: (&str, Vec<(&str, Value)>), sql: String) -> 
         Value::String(s) => s.parse().unwrap_or(f64::NAN),
         _ => f64::NAN,
     };
+    if let Conn::Duck(conn) = conn {
+        return tokio::task::block_in_place(|| duck_rows(conn, &duck_sql(&sql)));
+    }
     let rows: Vec<Value> = match conn {
+        Conn::Duck(_) => Vec::new(),
         Conn::Soli(client) => {
             let vars: HashMap<String, Value> =
                 soli.1.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
@@ -439,6 +541,8 @@ async fn main() -> Res<()> {
     let engine = match get("engine", "").as_str() {
         "solidb" => Engine::Soli { addr, password: get("password", "bench") },
         "clickhouse" => Engine::ClickHouse { addr },
+        // `--addr` is the database file.
+        "duckdb" => Engine::Duck(Arc::new(std::sync::Mutex::new(duckdb::Connection::open(&addr)?))),
         other => panic!("unknown engine {other}"),
     };
     let total: u64 = get("rows", "10000000").parse()?;

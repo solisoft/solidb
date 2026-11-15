@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The columnar benchmark: one wide table of events and four analytical
-# questions against SoliDB and ClickHouse, one database at a time, each in a
-# container with the same cores and memory as run.sh gives.
+# questions against SoliDB, ClickHouse and DuckDB, one at a time, on the
+# same cores and with the same memory as run.sh gives a database.
 #
 #   ./col.sh all                   every configuration, one after another
 #   ROWS=1000000 WARM=1 SECS=5 RUNS=1 ./col.sh all    a smaller pass
@@ -9,6 +9,9 @@
 # Configurations:
 #   solidb      SoliDB (solistore engine), a columnar collection, SDBQL
 #   clickhouse  ClickHouse, a MergeTree table ordered by (country, ts)
+#   duckdb      DuckDB, inside the harness: no container and no network.
+#               The harness is pinned to the databases' cores, with 8
+#               threads and 16 GB set in DuckDB itself.
 #
 # Every answer is checked against the generator's own (src/col/main.rs).
 set -euo pipefail
@@ -31,7 +34,7 @@ SOLIDB_IMAGE=${SOLIDB_IMAGE:-ghcr.io/solisoft/solidb:v2.10.4}
 # Pinned by digest; the tag is for the reader.
 CLICKHOUSE_IMAGE=${CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server@sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035} # latest, 2026-11-15: 26.10.4
 
-ALL=(solidb clickhouse)
+ALL=(solidb clickhouse duckdb)
 mkdir -p "$OUT"
 NAME=bench-db
 
@@ -66,6 +69,19 @@ run_one() {
   local cfg=$1
   local data=$ROOT/data/col-$cfg
   local engine port image settle=5 run=()
+  # DuckDB is a library: the harness holds the database, on the cores the
+  # other two get.
+  if [ "$cfg" = duckdb ]; then
+    $SUDO rm -rf "$data"
+    mkdir -p "$data"
+    local status=0
+    echo "== duckdb: in the harness, on cpus $DB_CPUS"
+    taskset -c "$DB_CPUS" "$BIN" --engine duckdb --addr "$data/events.duckdb" "${ARGS[@]}" \
+      --out "$OUT/$cfg.json" 2>&1 | tee "$OUT/$cfg.log" || status=$?
+    du -sb "$data" 2>/dev/null | cut -f1 >"$OUT/$cfg.disk_bytes" || true
+    rm -rf "$data"
+    return $status
+  fi
   $SUDO rm -rf "$data"
   mkdir -p "$data"
   # shellcheck disable=SC2206
@@ -109,7 +125,7 @@ run_one() {
   return $status
 }
 
-[ $# -gt 0 ] || { sed -n '2,13p' "$0"; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,16p' "$0"; exit 1; }
 configs=("$@")
 [ "$1" = all ] && configs=("${ALL[@]}")
 failed=()

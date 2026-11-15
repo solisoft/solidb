@@ -786,6 +786,7 @@ InfluxDB 3 Core, on the list of card #795, is not wired in.
 One wide table of events and four analytical questions against SoliDB and
 ClickHouse, one database at a time, in a container with 4 cores (8 threads)
 and 16 GB; the client is `solidb-col` (`src/col/`), pinned to other cores.
+DuckDB runs too, inside the harness (see below).
 
 ### The data and the scenarios
 
@@ -846,7 +847,35 @@ What the table says, and what it does not:
   it yet.
 - Four questions, one table, one order for ClickHouse's table, its default
   settings. No join, no window function, no table larger than memory.
-  DuckDB, on the list of card #795, is not wired in.
+  DuckDB is wired in, with figures we do not vouch for yet (below).
+
+### DuckDB (wired in; its figures are not ones we vouch for yet)
+
+`./col.sh duckdb` runs DuckDB 2.0.0 inside the harness, through the `duckdb`
+crate's bundled build: no container and no network between a question and
+its answer, the harness pinned to the databases' cores, 8 threads and 16 GB
+set in DuckDB itself, rows loaded with its appender from 8 connections, the
+table checkpointed after the load. Same four questions, same checks, no
+wrong answer. Medians of three runs of 20 s, requests/s:
+
+| scenario | 1 client | 4 clients |
+|---|---|---|
+| filter_agg | 51.8 | 54.7 |
+| group_all | 17.3 | 18.0 |
+| window_group | 135 | 233 |
+| top_users | 1.4 | 1.4 |
+
+It loads fastest of the three (3.1 s). On the questions it is behind both
+servers, `top_users` by far: 723 ms a query, with its eight threads busy
+(7.7 cores measured). That is much slower than DuckDB is known to be on a
+group-by of this size, and we have not found why: the settings are applied
+(`current_setting('threads')` says 8), the table is checkpointed, the
+statement is the plain `GROUP BY "user" ORDER BY s DESC LIMIT 10`. Until
+someone who knows DuckDB has looked at how it is built and used here — the
+first QuestDB adapter of the time series benchmark was five times off for
+a reason of that kind — these numbers say that the adapter runs and answers
+correctly, not how fast DuckDB is. They are kept out of the comparison
+table above for that reason.
 
 ### With amounts that round (`COL_VALUES=thirds`)
 
