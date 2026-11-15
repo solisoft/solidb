@@ -174,6 +174,10 @@
             Insertions should ideally be batched for maximum performance. The engine automatically handles decomposition into columns and compression.
           </p>
 
+          <p class="text-gray-300 mb-6">
+            Every row is checked against the columns before anything is written. A value of the wrong type, a missing or <code>null</code> value in a column that is not <code>nullable</code>, a column the collection does not have, or a row that is not an object refuses the whole insert with <code>400</code> and names the row: <code>row 1: column 'cpu_usage' is float64, got a string</code>. An integer in a <code>float64</code> column is stored as a float. A <code>timestamp</code> takes a string or an integer; a <code>json</code> column takes anything. Columns are not nullable unless their definition says <code>"nullable": true</code>.
+          </p>
+
           <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
              <div class="flex items-center gap-3 mb-4">
                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>

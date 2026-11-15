@@ -771,8 +771,14 @@ Rules that keep it sound:
   forgets it brings card #901 back (rows missing from filtered results).
   A column with no entry was indexed by 2.10.4 or earlier: its index is
   not used.
-- **A value read back is the value inserted.** The array's kind is chosen
-  from the values (not from the declared type), and the tail is MessagePack
+- **A client's rows are checked against the schema** (`conform`, in
+  `insert_rows`): type, nullability, unknown columns; an integer in a
+  `float64` column becomes a float, so the column stays one array. The
+  paths that take a row under a given id (`insert_row_with_id`,
+  `insert_rows_with_ids`: replication, full sync) do not check: the origin
+  accepted the row, and a replica that refused it would diverge.
+- **A value read back is the value inserted** (but for that float). The
+  array's kind is chosen from the values, and the tail is MessagePack
   because JSON text does not always give a float back (`93.33333333333333`
   came back `…31`). Rows written through 2.10.4 are JSON and are still read.
 - **Rows come back in the order of their ids**, as before: filters and the

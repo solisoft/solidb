@@ -210,14 +210,18 @@ pub async fn create_columnar_handler(
     let columns: Vec<ColumnDef> = req
         .columns
         .into_iter()
-        .map(|c| ColumnDef {
-            name: c.name,
-            data_type: parse_column_type(&c.data_type),
-            nullable: c.nullable,
-            indexed: c.indexed,
-            index_type: None, // Default to None when creating from API (will be set when creating index)
+        .map(|c| {
+            Ok(ColumnDef {
+                data_type: parse_column_type(&c.data_type)?,
+                name: c.name,
+                nullable: c.nullable,
+                // An index is made by `POST …/index`: marking the column
+                // here made none, and then refused to make one.
+                indexed: false,
+                index_type: None,
+            })
         })
-        .collect();
+        .collect::<Result<_, DbError>>()?;
 
     // Parse compression type
     let compression = match req.compression.as_deref() {
@@ -599,18 +603,24 @@ pub async fn query_columnar_handler(
 
 // ==================== Helper Functions ====================
 
-fn parse_column_type(type_str: &str) -> crate::storage::columnar::ColumnType {
+fn parse_column_type(type_str: &str) -> Result<crate::storage::columnar::ColumnType, DbError> {
     use crate::storage::columnar::ColumnType;
 
-    match type_str.to_uppercase().as_str() {
+    Ok(match type_str.to_uppercase().as_str() {
         "INT64" | "INTEGER" | "INT" | "BIGINT" => ColumnType::Int64,
         "FLOAT64" | "FLOAT" | "DOUBLE" | "NUMBER" => ColumnType::Float64,
         "STRING" | "TEXT" | "VARCHAR" => ColumnType::String,
         "BOOL" | "BOOLEAN" => ColumnType::Bool,
         "TIMESTAMP" | "DATETIME" | "DATE" => ColumnType::Timestamp,
         "JSON" | "OBJECT" | "ARRAY" => ColumnType::Json,
-        _ => ColumnType::String, // Default to string
-    }
+        // It used to become a string column without a word.
+        _ => {
+            return Err(DbError::BadRequest(format!(
+                "Unknown column type: {}. Supported: int64, float64, string, bool, timestamp, json",
+                type_str
+            )))
+        }
+    })
 }
 
 fn parse_filter(req: &FilterRequest) -> Result<ColumnFilter, DbError> {

@@ -935,7 +935,7 @@ fn rows_are_deleted_in_bulk_across_blocks_and_tail() {
     .unwrap();
     let rows = |from: i64, to: i64| -> Vec<serde_json::Value> {
         (from..to)
-            .map(|i| json!({"name": format!("n{i}"), "age": i}))
+            .map(|i| json!({"name": format!("n{i}"), "age": i, "active": true}))
             .collect()
     };
     // Three blocks (two inserts large enough to seal, the first over one
@@ -1010,10 +1010,10 @@ fn an_and_keeps_rows_past_what_its_first_side_kept() {
     )
     .unwrap();
     col.insert_rows(vec![
-        json!({"name": "a", "age": 3}),
-        json!({"name": "c", "age": 4}),
-        json!({"name": "c", "age": 5}),
-        json!({"name": "d", "age": 6}),
+        json!({"name": "a", "age": 3, "active": true}),
+        json!({"name": "c", "age": 4, "active": true}),
+        json!({"name": "c", "age": 5, "active": true}),
+        json!({"name": "d", "age": 6, "active": true}),
     ])
     .unwrap();
     let filter = ColumnFilter::And(vec![
@@ -1026,4 +1026,112 @@ fn an_and_keeps_rows_past_what_its_first_side_kept() {
     );
     assert_eq!(col.delete_where(&filter).unwrap().len(), 1);
     assert_eq!(col.count(), 3);
+}
+
+/// A row is checked against the schema before anything is written (card
+/// #889): a wrong type, a missing value, an unknown column or a row that
+/// is not an object refuses the whole insert, naming the row.
+#[test]
+fn an_insert_is_checked_against_the_schema() {
+    let (engine, _dir) = create_test_engine();
+    let db = engine.get_database("_system").unwrap();
+    db.create_collection("_columnar_typed".to_string(), None)
+        .unwrap();
+    let column = |name: &str, data_type: ColumnType, nullable: bool| ColumnDef {
+        name: name.to_string(),
+        data_type,
+        nullable,
+        indexed: false,
+        index_type: None,
+    };
+    let col = ColumnarCollection::new(
+        "typed".to_string(),
+        "_system",
+        db.db_arc(),
+        vec![
+            column("host", ColumnType::String, false),
+            column("n", ColumnType::Int64, false),
+            column("cpu", ColumnType::Float64, false),
+            column("up", ColumnType::Bool, true),
+            column("at", ColumnType::Timestamp, true),
+            column("extra", ColumnType::Json, true),
+        ],
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    let good = json!({"host": "a", "n": 1, "cpu": 1.5});
+
+    for (row, why) in [
+        (
+            json!({"host": 7, "n": 1, "cpu": 1.5}),
+            "column 'host' is string, got an integer",
+        ),
+        (
+            json!({"host": "a", "n": "1", "cpu": 1.5}),
+            "column 'n' is int64, got a string",
+        ),
+        (
+            json!({"host": "a", "n": 1.5, "cpu": 1.5}),
+            "column 'n' is int64, got a float",
+        ),
+        (
+            json!({"host": "a", "n": 1, "cpu": "x"}),
+            "column 'cpu' is float64, got a string",
+        ),
+        (
+            json!({"host": "a", "n": 1, "cpu": 1.5, "up": "yes"}),
+            "column 'up' is bool, got a string",
+        ),
+        (
+            json!({"host": "a", "n": 1, "cpu": 1.5, "at": true}),
+            "column 'at' is timestamp",
+        ),
+        (
+            json!({"host": "a", "n": 1}),
+            "column 'cpu' is not nullable and has no value",
+        ),
+        (
+            json!({"host": "a", "n": null, "cpu": 1.5}),
+            "column 'n' is not nullable and has no value",
+        ),
+        (
+            json!({"host": "a", "n": 1, "cpu": 1.5, "nope": 1}),
+            "unknown column 'nope'",
+        ),
+        (json!([1, 2]), "must be an object, got an array"),
+    ] {
+        // After a good row: nothing of the insert is kept.
+        let error = col
+            .insert_rows(vec![good.clone(), row.clone()])
+            .expect_err(&row.to_string())
+            .to_string();
+        assert!(error.contains("row 1: "), "{error}");
+        assert!(error.contains(why), "{row}: {error}");
+        assert_eq!(col.count(), 0, "{row}");
+    }
+
+    // What fits: nullable columns left out or null, a timestamp as text
+    // or as a number, anything in a json column, and an integer in a float
+    // column, which is stored as the float it is.
+    col.insert_rows(vec![
+        good.clone(),
+        json!({"host": "b", "n": 2, "cpu": 3, "up": null, "at": "2026-11-15T10:00:00Z", "extra": {"k": [1, "x"]}}),
+        json!({"host": "c", "n": 3, "cpu": 2.5, "up": true, "at": 1794755051}),
+    ])
+    .unwrap();
+    assert_eq!(col.count(), 3);
+    assert_eq!(
+        col.read_column("cpu", None).unwrap(),
+        vec![json!(1.5), json!(3.0), json!(2.5)]
+    );
+    assert_eq!(col.aggregate("cpu", AggregateOp::Sum).unwrap(), json!(7.0));
+
+    // A row from another node was accepted there: it is taken as it is.
+    assert!(col
+        .insert_row_with_id(
+            "00000000-0000-7000-8000-000000000001",
+            json!({"host": 7, "n": "x"})
+        )
+        .unwrap());
+    assert_eq!(col.count(), 4);
 }

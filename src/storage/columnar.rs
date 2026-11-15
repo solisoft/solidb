@@ -746,14 +746,19 @@ impl ColumnarCollection {
         if rows.is_empty() {
             return Ok(Vec::new());
         }
-        // Anything but an object is passed over.
+        // Every row against the schema, before anything is written: one
+        // that does not fit refuses the whole insert.
+        let schema: Vec<ColumnDef> = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .columns
+            .clone();
         let objects: Vec<serde_json::Map<String, Value>> = rows
             .into_iter()
-            .filter_map(|row| match row {
-                Value::Object(obj) => Some(obj),
-                _ => None,
-            })
-            .collect();
+            .enumerate()
+            .map(|(at, row)| conform(&schema, at, row))
+            .collect::<DbResult<_>>()?;
         // Enough rows for blocks of their own: their columns are built
         // here, before the lock every writer of the collection waits for.
         // The schema's columns do not change once the collection exists.
@@ -2497,6 +2502,81 @@ impl ColumnarCollection {
 }
 
 /// Helper to create JSON number from f64
+/// A row as the schema takes it, or why it does not fit (`at` is its place
+/// in the insert, from 0).
+///
+/// Rows used to be stored whatever they held: a string in an `int64`
+/// column, a value missing from a column that is not nullable, a column
+/// the schema does not have, and a row that was not an object was passed
+/// over without a word. A column holding values of several kinds is also
+/// stored as JSON text, which no aggregation reads as an array.
+///
+/// Only for rows a client inserts: a replicated row was accepted by its
+/// origin and is taken as it is.
+fn conform(
+    schema: &[ColumnDef],
+    at: usize,
+    row: Value,
+) -> DbResult<serde_json::Map<String, Value>> {
+    let refuse = |why: String| DbError::BadRequest(format!("row {at}: {why}"));
+    let kind = |value: &Value| match value {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(n) if n.is_f64() => "a float",
+        Value::Number(_) => "an integer",
+        Value::String(_) => "a string",
+        Value::Array(_) => "an array",
+        Value::Object(_) => "an object",
+    };
+    let Value::Object(mut row) = row else {
+        return Err(refuse(format!("must be an object, got {}", kind(&row))));
+    };
+    if let Some(unknown) = row
+        .keys()
+        .find(|key| !schema.iter().any(|column| column.name == **key))
+    {
+        return Err(refuse(format!("unknown column '{unknown}'")));
+    }
+    for column in schema {
+        let name = &column.name;
+        let Some(value) = row.get_mut(name).filter(|value| !value.is_null()) else {
+            if column.nullable {
+                continue;
+            }
+            return Err(refuse(format!(
+                "column '{name}' is not nullable and has no value"
+            )));
+        };
+        let (fits, expected) = match column.data_type {
+            ColumnType::Int64 => (value.is_i64(), "int64"),
+            ColumnType::Float64 => {
+                // An integer is a float here: `12` beside `12.5` would
+                // otherwise make a column of two kinds.
+                let float = value.as_f64().and_then(serde_json::Number::from_f64);
+                if let (true, Some(float)) = (value.is_number(), float) {
+                    *value = Value::Number(float);
+                }
+                (value.is_f64(), "float64")
+            }
+            ColumnType::String => (value.is_string(), "string"),
+            ColumnType::Bool => (value.is_boolean(), "bool"),
+            // ISO 8601 text, or a number of (milli)seconds.
+            ColumnType::Timestamp => (
+                value.is_string() || value.is_i64(),
+                "timestamp (a string or an integer)",
+            ),
+            ColumnType::Json => (true, "json"),
+        };
+        if !fits {
+            return Err(refuse(format!(
+                "column '{name}' is {expected}, got {}",
+                kind(value)
+            )));
+        }
+    }
+    Ok(row)
+}
+
 fn json_number(n: f64) -> Value {
     serde_json::Number::from_f64(n)
         .map(Value::Number)
