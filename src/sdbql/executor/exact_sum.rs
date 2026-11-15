@@ -95,23 +95,30 @@ impl ExactSum {
         self.accumulate(i as f64);
     }
 
-    /// [`Self::add`] of each of `xs`. When their sum in floating point lost
-    /// nothing at any step (the error term of each addition is zero), that
-    /// sum is their exact sum and is added in their place.
+    /// [`Self::add`] of each of `xs`. Their sum in floating point, and
+    /// the total of what its additions rounded away, are two floats that
+    /// add up to their exact sum for as long as adding the errors rounds
+    /// nothing itself: those two are then added in their place.
     pub(crate) fn add_slice(&mut self, xs: &[f64]) {
-        let (mut sum, mut exact) = (0.0f64, true);
+        if xs.is_empty() {
+            return;
+        }
+        let (mut sum, mut lost, mut exact) = (0.0f64, 0.0f64, true);
         for &x in xs {
             let next = sum + x;
             let virtual_x = next - sum;
             let error = (sum - (next - virtual_x)) + (x - virtual_x);
-            exact &= error == 0.0;
             sum = next;
+            let kept = lost + error;
+            let virtual_e = kept - lost;
+            exact &= (lost - (kept - virtual_e)) + (error - virtual_e) == 0.0;
+            lost = kept;
         }
-        if xs.is_empty() {
-            return;
-        }
-        if exact && sum.is_finite() {
+        if exact && sum.is_finite() && lost.is_finite() {
             self.add(sum);
+            if lost != 0.0 {
+                self.add(lost);
+            }
         } else {
             for &x in xs {
                 self.add(x);

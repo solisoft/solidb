@@ -174,11 +174,13 @@ enum Share {
 /// the extremes. A row then touches a few adjacent numbers, not a group
 /// with its own exact sum somewhere in memory.
 ///
-/// The sums are plain: a float sum is kept only while no addition lost
-/// anything (the error term of each is zero), an integer sum while it and
-/// its values are integers a float holds exactly. Then the plain sum is
-/// the exact one. Otherwise `ok` goes false and the thread starts again
-/// with exact sums.
+/// The sums are plain numbers that still say the exact sum. A float sum
+/// goes with the total of what its additions rounded away (each such
+/// error is itself a float, exactly): the two together are the exact sum
+/// for as long as adding the errors up rounds nothing. An integer sum is
+/// kept while it and its values are integers a float holds exactly. When
+/// one of those conditions fails, `ok` goes false and the rows are read
+/// again with exact accumulators.
 struct Flat {
     counts: Vec<u64>,
     cols: Vec<FlatCol>,
@@ -190,6 +192,9 @@ enum FlatCol {
     None,
     Float {
         sum: Vec<f64>,
+        /// What the additions of `sum` rounded away, added up: `sum + err`
+        /// is the exact sum while adding to `err` rounds nothing itself.
+        err: Vec<f64>,
         min: Vec<f64>,
         max: Vec<f64>,
     },
@@ -207,6 +212,7 @@ impl Flat {
             .map(|column| match column.map(|c| &c.data) {
                 Some(ColData::Float(_)) => FlatCol::Float {
                     sum: vec![0.0; groups],
+                    err: vec![0.0; groups],
                     min: vec![f64::INFINITY; groups],
                     max: vec![f64::NEG_INFINITY; groups],
                 },
@@ -230,12 +236,15 @@ impl Flat {
         self.counts[at] += 1;
         for (col, column) in self.cols.iter_mut().zip(args) {
             match (col, column.map(|c| &c.data)) {
-                (FlatCol::Float { sum, min, max }, Some(ColData::Float(values))) => {
-                    let (x, held) = (values[row], sum[at]);
-                    let next = held + x;
-                    let virtual_x = next - held;
-                    self.ok &= (held - (next - virtual_x)) + (x - virtual_x) == 0.0;
+                (FlatCol::Float { sum, err, min, max }, Some(ColData::Float(values))) => {
+                    let x = values[row];
+                    let (next, lost) = two_sum(sum[at], x);
                     sum[at] = next;
+                    if lost != 0.0 {
+                        let (kept, gone) = two_sum(err[at], lost);
+                        err[at] = kept;
+                        self.ok &= gone == 0.0;
+                    }
                     min[at] = min[at].min(x);
                     max[at] = max[at].max(x);
                 }
@@ -255,30 +264,118 @@ impl Flat {
         }
     }
 
-    /// The groups, with exact sums, when every plain sum is one.
-    fn groups(&self, base: i64) -> Option<Vec<Group>> {
-        if !self.ok {
-            return None;
+    /// Add the groups of `other`, a table of the same keys filled from
+    /// other rows: sums are added as the rows were, under the same
+    /// conditions.
+    fn absorb(&mut self, other: &Flat) {
+        self.ok &= other.ok && self.cols.len() == other.cols.len();
+        for (mine, theirs) in self.counts.iter_mut().zip(&other.counts) {
+            *mine += theirs;
         }
+        for (mine, theirs) in self.cols.iter_mut().zip(&other.cols) {
+            match (mine, theirs) {
+                (FlatCol::None, FlatCol::None) => {}
+                (
+                    FlatCol::Float { sum, err, min, max },
+                    FlatCol::Float {
+                        sum: more,
+                        err: rest,
+                        min: lower,
+                        max: higher,
+                    },
+                ) => {
+                    for at in 0..sum.len().min(more.len()) {
+                        let (next, lost) = two_sum(sum[at], more[at]);
+                        sum[at] = next;
+                        let (kept, gone) = two_sum(err[at], rest[at]);
+                        let (kept, gone_too) = two_sum(kept, lost);
+                        err[at] = kept;
+                        self.ok &= gone == 0.0 && gone_too == 0.0;
+                        min[at] = min[at].min(lower[at]);
+                        max[at] = max[at].max(higher[at]);
+                    }
+                }
+                (
+                    FlatCol::Int { sum, min, max },
+                    FlatCol::Int {
+                        sum: more,
+                        min: lower,
+                        max: higher,
+                    },
+                ) => {
+                    for at in 0..sum.len().min(more.len()) {
+                        match sum[at].checked_add(more[at]) {
+                            Some(next) => sum[at] = next,
+                            None => self.ok = false,
+                        }
+                        min[at] = min[at].min(lower[at]);
+                        max[at] = max[at].max(higher[at]);
+                    }
+                }
+                _ => self.ok = false,
+            }
+        }
+    }
+
+    /// Whether every plain sum is the exact one: no addition lost
+    /// anything, and each sum is a number its exact form holds.
+    fn valid(&self) -> bool {
+        self.ok
+            && self.cols.iter().all(|col| match col {
+                FlatCol::None => true,
+                FlatCol::Float { sum, err, .. } => {
+                    sum.iter().all(|s| s.is_finite()) && err.iter().all(|e| e.is_finite())
+                }
+                FlatCol::Int { sum, .. } => sum.iter().all(|s| s.unsigned_abs() <= 1 << 53),
+            })
+    }
+
+    /// The positions that hold a group.
+    fn present(&self) -> impl Iterator<Item = usize> + '_ {
+        self.counts
+            .iter()
+            .enumerate()
+            .filter(|(_, count)| **count > 0)
+            .map(|(at, _)| at)
+    }
+
+    /// What aggregate `agg`, of kind `kind`, is worth for the group at
+    /// `at`, as a float: what a SORT on it compares.
+    fn score(&self, at: usize, agg: usize, kind: AggKind) -> f64 {
+        let (sum, min, max) = match &self.cols[agg] {
+            FlatCol::None => (0.0, f64::NAN, f64::NAN),
+            // Rounded once: the exact sum is `sum + err`.
+            FlatCol::Float { sum, err, min, max } => (sum[at] + err[at], min[at], max[at]),
+            FlatCol::Int { sum, min, max } => (sum[at] as f64, min[at] as f64, max[at] as f64),
+        };
+        match kind {
+            AggKind::Sum => sum,
+            AggKind::Avg => sum / self.counts[at] as f64,
+            AggKind::Min => min,
+            AggKind::Max => max,
+            _ => self.counts[at] as f64,
+        }
+    }
+
+    /// The groups `keep` wants, with exact sums. For a [valid](Self::valid)
+    /// table.
+    fn groups(&self, base: i64, keep: impl Fn(usize) -> bool) -> Vec<Group> {
         let mut groups = Vec::new();
-        for (at, count) in self.counts.iter().enumerate().filter(|(_, c)| **c > 0) {
+        for at in self.present().filter(|at| keep(*at)) {
             let mut accs = Vec::with_capacity(self.cols.len());
             for col in &self.cols {
                 let mut acc = Acc::default();
                 match col {
                     FlatCol::None => {}
-                    FlatCol::Float { sum, min, max } => {
-                        if !sum[at].is_finite() {
-                            return None;
-                        }
+                    FlatCol::Float { sum, err, min, max } => {
                         acc.sum.add(sum[at]);
+                        if err[at] != 0.0 {
+                            acc.sum.add(err[at]);
+                        }
                         acc.min = Some((min[at], false));
                         acc.max = Some((max[at], false));
                     }
                     FlatCol::Int { sum, min, max } => {
-                        if sum[at].unsigned_abs() > 1 << 53 {
-                            return None;
-                        }
                         acc.sum.add_i64(sum[at]);
                         acc.min = Some((min[at] as f64, true));
                         acc.max = Some((max[at] as f64, true));
@@ -288,12 +385,21 @@ impl Flat {
             }
             groups.push(Group {
                 key: vec![Atom::Int(base + at as i64)],
-                count: *count,
+                count: self.counts[at],
                 accs,
             });
         }
-        Some(groups)
+        groups
     }
+}
+
+/// `a + b` as a float, and what that addition rounded away: the two add up
+/// to `a + b` exactly (unless it overflows).
+#[inline]
+fn two_sum(a: f64, b: f64) -> (f64, f64) {
+    let sum = a + b;
+    let virtual_b = sum - a;
+    (sum, (a - (sum - virtual_b)) + (b - virtual_b))
 }
 
 /// A number below `of` from the bits of a key.
@@ -821,8 +927,9 @@ impl QueryExecutor<'_> {
                 (table, left)
             };
             let (mut table, left) = pass(share);
-            // Plain sums that are exact become the groups; one that is not
-            // sends the thread through its rows again, with exact sums.
+            // Plain sums that are exact stay as they are, for the caller to
+            // make groups of; one that is not sends the thread through its
+            // rows again, with exact sums.
             if let (
                 Some(flat),
                 Share::Ranged {
@@ -834,25 +941,70 @@ impl QueryExecutor<'_> {
                 },
             ) = (table.flat.take(), share)
             {
-                match flat.groups(base) {
-                    Some(groups) => table.groups.extend(groups),
-                    None => {
-                        return pass(Share::Ranged {
-                            mine,
-                            scale,
-                            base,
-                            span,
-                            flat: false,
-                        })
-                    }
+                // (A scale of zero: the blocks are shared out, not the
+                // keys, and the caller decides once the tables are added.)
+                if scale != 0 && !flat.valid() {
+                    return pass(Share::Ranged {
+                        mine,
+                        scale,
+                        base,
+                        span,
+                        flat: false,
+                    });
                 }
+                table.flat = Some(flat);
             }
             (table, left)
         };
         let (mut table, mut left) = (Table::default(), Vec::new());
+        let mut flats: Vec<Flat> = Vec::new();
         let all: &[Arc<ColBlock>] = &set.blocks;
         std::thread::scope(|scope| {
             let work = &work;
+            // An integer key of small range: first with the blocks shared
+            // out and plain sums in arrays indexed by the key, added
+            // together at the end. Each row is read once. If a sum turns
+            // out not to be exact, the keys are shared out below, with
+            // exact sums where needed.
+            if let Some((lo, hi)) = ranged {
+                let plain = Share::Ranged {
+                    mine: 0,
+                    scale: 0,
+                    base: lo,
+                    span: (hi - lo) as u64,
+                    flat: true,
+                };
+                let mut chunks = all.chunks(per).enumerate();
+                let mine = chunks.next();
+                let others: Vec<_> = chunks
+                    .map(|(n, chunk)| scope.spawn(move || work(chunk, n * per, plain)))
+                    .collect();
+                let mut added: Option<Flat> = None;
+                let mut lefts = Vec::new();
+                let mut whole = true;
+                let mut take = |(mut theirs, more): (Table, Vec<usize>)| {
+                    lefts.extend(more);
+                    match (theirs.flat.take(), added.as_mut()) {
+                        (Some(flat), None) => added = Some(flat),
+                        (Some(flat), Some(sum)) => sum.absorb(&flat),
+                        (None, _) => {}
+                    }
+                };
+                if let Some((_, chunk)) = mine {
+                    take(work(chunk, 0, plain));
+                }
+                for other in others {
+                    match other.join() {
+                        Ok(result) => take(result),
+                        Err(_) => whole = false,
+                    }
+                }
+                if whole && added.as_ref().is_none_or(Flat::valid) {
+                    flats.extend(added);
+                    left = lefts;
+                    return;
+                }
+            }
             // (On one thread too when the key is ranged: the arrays are
             // what makes it fast, not the sharing.)
             if by_key && (threads > 1 || ranged.is_some()) {
@@ -863,8 +1015,10 @@ impl QueryExecutor<'_> {
                 // A block that is not read as arrays is so for every
                 // thread: this one names them.
                 (table, left) = work(all, 0, share_of(0, of));
+                flats.extend(table.flat.take());
                 for other in others {
-                    if let Ok((theirs, _)) = other.join() {
+                    if let Ok((mut theirs, _)) = other.join() {
+                        flats.extend(theirs.flat.take());
                         table.groups.extend(theirs.groups);
                     }
                 }
@@ -897,11 +1051,59 @@ impl QueryExecutor<'_> {
             .lock()
             .clone()
             .filter(|(body, ..)| *body == clauses.as_ptr() as usize)
-            .map(|(_, var, ascending, k)| (var, ascending, k));
+            .map(|(_, var, ascending, k)| (var, ascending, k))
+            .filter(|_| last && left.is_empty() && set.tail.is_empty());
+        // The plain tables become groups: all of them, or, for such a
+        // query and when every thread kept its sums plain, only those that
+        // can be returned.
+        if let Some((base, _)) = ranged.filter(|_| !flats.is_empty()) {
+            let aim =
+                top.as_ref()
+                    .filter(|_| table.groups.is_empty())
+                    .and_then(|(var, ascending, k)| {
+                        let agg = found
+                            .collect
+                            .aggregates
+                            .iter()
+                            .position(|a| &a.variable == var)?;
+                        let kind = col_plan.kinds[agg];
+                        let mut scores: Vec<f64> = flats
+                            .iter()
+                            .flat_map(|flat| {
+                                flat.present().map(move |at| flat.score(at, agg, kind))
+                            })
+                            .collect();
+                        let usable =
+                            *k > 0 && *k < scores.len() && scores.iter().all(|s| s.is_finite());
+                        usable.then(|| {
+                            let order = |a: &f64, b: &f64| {
+                                let by = a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal);
+                                if *ascending {
+                                    by
+                                } else {
+                                    by.reverse()
+                                }
+                            };
+                            let (_, limit, _) = scores.select_nth_unstable_by(*k - 1, order);
+                            (agg, kind, *ascending, *limit)
+                        })
+                    });
+            for flat in &flats {
+                table.groups.extend(flat.groups(base, |at| match aim {
+                    None => true,
+                    Some((agg, kind, ascending, limit)) => {
+                        let score = flat.score(at, agg, kind);
+                        if ascending {
+                            score <= limit
+                        } else {
+                            score >= limit
+                        }
+                    }
+                }));
+            }
+        }
         let mut kept: Option<Vec<bool>> = None;
-        if let (true, true, Some((var, ascending, k))) =
-            (last, left.is_empty() && set.tail.is_empty(), top)
-        {
+        if let Some((var, ascending, k)) = top {
             let at = found
                 .collect
                 .aggregates

@@ -334,6 +334,10 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
          RETURN [n, s]",
         "FOR r IN sales FILTER r.user == 42 COLLECT WITH COUNT INTO n RETURN n",
         "FOR r IN sales COLLECT a = r.amount AGGREGATE n = COUNT() SORT n DESC, a LIMIT 5 RETURN [a, n]",
+        "FOR r IN sales COLLECT u = r.user AGGREGATE b = SUM(r.bytes), n = COUNT(), hi = MAX(r.bytes) \
+         SORT b DESC, u LIMIT 7 RETURN [u, b, n, hi]",
+        "FOR r IN sales FILTER r.ts < 9000 COLLECT u = r.user AGGREGATE n = COUNT() SORT n, u LIMIT 4 \
+         RETURN [u, n]",
         // Not the arrays' to answer: the ordinary path, same result.
         "FOR r IN sales FILTER r.country != 'c07' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
         "FOR r IN sales COLLECT d = r.device AGGREGATE m = MEDIAN(r.bytes) RETURN [d, m]",
