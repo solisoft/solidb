@@ -72,6 +72,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-against-questdb-timescaledb-on-time-series",
+        "title": "SoliDB against QuestDB and TimescaleDB on time series",
+        "date": "2026-11-15",
+        "display_date": "November 15, 2026",
+        "summary": "8.6 million points, five questions, three databases on 4 cores each. SoliDB 2.10.4 "
+        + "summed ten minutes of every series in a tenth of a second, QuestDB in 27 microseconds. "
+        + "The build that came out of it keeps column blocks beside its documents and leads eight "
+        + "rows of ten: how they work, why their sums stay exact, and where QuestDB is still ahead.",
+        "tags": ["Time series", "Performance", "Benchmarks"],
+        "read_minutes": 10
+      },
+      {
         "slug": "solidb-against-neo4j-memgraph-arangodb-on-a-graph",
         "title": "SoliDB against Neo4j, Memgraph and ArangoDB on a graph",
         "date": "2026-11-14",

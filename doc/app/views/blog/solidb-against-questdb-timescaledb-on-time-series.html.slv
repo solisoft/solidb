@@ -1,0 +1,149 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Time series · Benchmarks</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">After graphs, time series. We loaded 8,640,000 points into SoliDB, QuestDB and TimescaleDB and asked each the same five questions. SoliDB 2.10.4 answered two of them well and the three aggregations badly: ten minutes of every series took it a tenth of a second, where QuestDB takes 27 microseconds. This post gives the figures of the build that came out of that, what a time series collection now keeps beside its documents, and where QuestDB is still ahead.</p>
+  <p class="post-note">Every figure on this page was measured on November 15, 2026 on one machine, each database alone in a container with 4 cores and 16 GB, the harness on other cores. SoliDB is a build of the branch that follows 2.10.4, not a published release. The harness, the settings and the raw results are in the repository, under <code>benchmarks/compare</code> (<code>ts.sh</code>, <code>results/2026-11-15-timeseries</code>).</p>
+</header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#what">What was measured</a></li>
+    <li><a href="#results">The results</a></li>
+    <li><a href="#before">Where 2.10.4 stood</a></li>
+    <li><a href="#blocks">What changed: column blocks</a></li>
+    <li><a href="#exact">Exact sums, and values that round</a></li>
+    <li><a href="#limits">Where QuestDB is ahead, and what this does not show</a></li>
+    <li><a href="#run">Running it</a></li>
+  </ol>
+</nav>
+
+<section id="what"><h2>What was measured</h2>
+<p>The data is generated: 1,000 series, one point every ten seconds for 24 hours, 8,640,000 points of the form <code>{series, ts, v}</code>. They are loaded in time order from eight connections, in batches of 5,000. Every value is a function of its series and its instant, so the harness computes each answer itself.</p>
+<table>
+  <thead><tr><th>Scenario</th><th>What one request asks</th></tr></thead>
+  <tbody>
+    <tr><td><code>range</code></td><td>The count and the sum of one series over one hour: 360 points.</td></tr>
+    <tr><td><code>bucket</code></td><td>The five-minute averages of one series over six hours: 72 rows from 2,160 points.</td></tr>
+    <tr><td><code>last</code></td><td>The latest point of one series.</td></tr>
+    <tr><td><code>window_all</code></td><td>The count and the sum of every series over ten minutes: 60,000 points.</td></tr>
+    <tr><td><code>insert</code></td><td>One new point, acknowledged.</td></tr>
+  </tbody>
+</table>
+<p>SoliDB receives SDBQL over its native driver, on a <code>timeseries</code> collection with indexes on <code>[series, ts]</code> and <code>[ts]</code>. QuestDB 10.2.0 is written to over the InfluxDB line protocol and read over the PostgreSQL wire protocol with prepared statements, on a table partitioned by hour with a <code>SYMBOL</code> column for the series, using <code>SAMPLE BY</code> and <code>LATEST ON</code>. TimescaleDB 2.32.0, on PostgreSQL 17.11, is a hypertable with an index on <code>(series, ts DESC)</code> and prepared statements. Every answer is compared with the harness's own, before the timing and during it; no timed request returned a wrong answer on any of the three.</p>
+<p>One thing we got wrong first is worth telling. Our first QuestDB adapter sent SQL with the values written in it, inserts included. QuestDB loaded at 49,000 points a second and was killed for memory at 16 GB during the readings. Used the way its documentation asks, it loads at 6.6 million points a second. The figures taken the first way were thrown away; the lesson is the usual one about benchmarking a database one does not know.</p>
+</section>
+
+<section id="results"><h2>The results</h2>
+<p>Requests per second, median of three runs of 20 seconds, with the median latency in parentheses. One client first:</p>
+<table>
+  <thead><tr><th>One client</th><th>SoliDB</th><th>QuestDB</th><th>TimescaleDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>range</code></td><td>42,690 (23&nbsp;µs)</td><td>21,040 (44&nbsp;µs)</td><td>6,510 (153&nbsp;µs)</td></tr>
+    <tr><td><code>bucket</code></td><td>10,505 (95&nbsp;µs)</td><td>6,598 (138&nbsp;µs)</td><td>1,200 (833&nbsp;µs)</td></tr>
+    <tr><td><code>last</code></td><td>57,616 (17&nbsp;µs)</td><td>55,114 (18&nbsp;µs)</td><td>43,336 (22&nbsp;µs)</td></tr>
+    <tr><td><code>window_all</code></td><td>38,160 (26&nbsp;µs)</td><td>35,839 (27&nbsp;µs)</td><td>306 (3.2&nbsp;ms)</td></tr>
+    <tr><td><code>insert</code></td><td>57,050 (16&nbsp;µs)</td><td>45,147 (21&nbsp;µs)</td><td>25,437 (38&nbsp;µs)</td></tr>
+  </tbody>
+</table>
+<figure class="post-figure"><svg viewBox="0 0 680 198" role="img" aria-labelledby="ts-range-t">
+<title id="ts-range-t">One hour of one series, one client, requests per second: SoliDB 42,690, QuestDB 21,040, TimescaleDB 6,510.</title>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Count and sum of one series over one hour, one client (requests per second)</text>
+<line x1="170" y1="46" x2="170" y2="158" stroke="#29322f"/>
+<text x="20" y="72" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB</text>
+<rect x="170" y="56" width="440" height="24" rx="3" fill="#f5a623"/>
+<text x="620" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">42,690</text>
+<text x="20" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">QuestDB</text>
+<rect x="170" y="94" width="217" height="24" rx="3" fill="#6b746c"/>
+<text x="397" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">21,040</text>
+<text x="20" y="148" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">TimescaleDB</text>
+<rect x="170" y="132" width="67" height="24" rx="3" fill="#6b746c"/>
+<text x="247" y="149" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">6,510</text>
+<text x="20" y="184" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. 8,640,000 points in 1,000 series, 4 cores each.</text>
+</svg><figcaption>Three hundred and sixty points of one series among a thousand. SoliDB reads them as one run of rows in a block; before the blocks it read 360 documents and answered 925 times a second.</figcaption></figure>
+<p>And eight clients:</p>
+<table>
+  <thead><tr><th>Eight clients</th><th>SoliDB</th><th>QuestDB</th><th>TimescaleDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>range</code></td><td>211,715</td><td>62,763</td><td>27,420</td></tr>
+    <tr><td><code>bucket</code></td><td>57,773</td><td>14,105</td><td>6,779</td></tr>
+    <tr><td><code>last</code></td><td>289,577</td><td>338,912</td><td>159,400</td></tr>
+    <tr><td><code>window_all</code></td><td>187,967</td><td>129,426</td><td>1,232</td></tr>
+    <tr><td><code>insert</code></td><td>204,467</td><td>250,359</td><td>82,846</td></tr>
+  </tbody>
+</table>
+<p>SoliDB has the highest figure in eight rows of ten, QuestDB in two: the latest point and the insert at eight clients. Two of SoliDB's leads are narrow: the latest point at one client (5%) and <code>window_all</code> at one client (6%). Against TimescaleDB it leads every row.</p>
+<p>The figures hide one difference that matters to whoever pays for the cores. QuestDB keeps its worker threads spinning: it used its eight threads in every series, with one client as with eight. SoliDB and TimescaleDB used about one core at one client. The tables compare answers per second, not answers per core.</p>
+<p>Loading the 8,640,000 points: QuestDB 1.3 seconds, TimescaleDB 7.4, SoliDB 7.9. QuestDB appends to columns; SoliDB writes a document per point, two index entries, and the blocks described below, which are about a fifth of its time.</p>
+</section>
+
+<section id="before"><h2>Where 2.10.4 stood</h2>
+<p>The released 2.10.4, on the same data, one client: the latest point at 56,900 requests a second and an insert at 60,000, both ahead of the two others. And then <code>range</code> at 925, <code>bucket</code> at 163 and <code>window_all</code> at 9.7, where QuestDB was at 20,000, 6,600 and 34,000.</p>
+<p>The reason is not subtle. A point is a document. To sum an hour of one series, SoliDB found 360 entries in an index and read 360 documents, scattered through the collection in the order they arrived, among those of the 999 other series. Ten minutes of every series are 60,000 documents. QuestDB reads 60,000 numbers that sit next to each other.</p>
+<p>A first change kept the documents and stopped decoding them whole: a <code>COLLECT</code> served by a compound index now folds the documents from their stored bytes. It took <code>range</code> from 925 to 1,353. That is in the build too, and it helps any collection, but it was never going to be enough.</p>
+</section>
+
+<section id="blocks"><h2>What changed: column blocks</h2>
+<p>A time series collection can now declare a time field and the fields its aggregations read:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> http</div><pre>PUT /_api/database/metrics/collection/points/blocks
+{ "time": "ts", "fields": ["series", "v"] }</pre></div>
+<p>The documents stay what is stored, and what every other query reads. Beside them, SoliDB keeps the declared fields of each range of points as arrays, in <em>blocks</em>:</p>
+<ul>
+<li><strong>A block is derived from the documents of a range of keys</strong>, and thrown away when one of them is written or deleted. Points are sealed into blocks as they arrive, 1,024 at a time, and small blocks are merged up to 65,536 points.</li>
+<li><strong>Inside a block the rows are ordered by series, then by time.</strong> A string field is a sorted dictionary and one small number per row, so the points of one series are one run of rows, found by bisection and already in time order. That is what <code>range</code> and <code>bucket</code> read.</li>
+<li><strong>A block also keeps its rows' order by time, and a subtotal for every 512 rows of it.</strong> A span of time over every series is then a few hundred subtotals and two partial stretches. That is what <code>window_all</code> reads.</li>
+<li><strong>What no block covers is read as documents</strong>: the newest points, and any range whose block was thrown away, until it is sealed again.</li>
+</ul>
+<p>A query is answered from the blocks when it stays within them: filters on the time and on string fields, groups by fields or by <code>TIME_BUCKET</code>, aggregates of declared fields. Nothing changes in how it is written:</p>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> sdbql</div><pre>FOR p IN points
+  FILTER p.series == @s AND p.ts >= @from AND p.ts &lt; @to
+  COLLECT bucket = TIME_BUCKET(p.ts, "5m")
+  AGGREGATE avg = AVG(p.v)
+  RETURN { bucket, avg }</pre></div>
+<p>Two things keep a derived structure honest, and both were more work than the arrays. The first is knowing when a block is stale. A time series collection refuses updates, so a block is wrong only if the set of keys in its range changed; every write announces its keys, a block is built from a snapshot taken after its range was registered, and a block read from disk after a restart is not trusted until the keys of its range have been counted and hashed again. The second is returning the same answer. Each query of the test suite is run both ways, from the blocks and from the documents, and the two must agree to the last bit, after late points, deletes, a restart, and four threads writing while blocks are sealed behind them.</p>
+</section>
+
+<section id="exact"><h2>Exact sums, and values that round</h2>
+<p>SoliDB's <code>SUM</code> is exact: it adds without rounding and rounds once at the end, so the result does not depend on the order of the rows. That is what lets a subtotal stand for its rows. A subtotal kept as a plain float would be right only when no addition rounded; so what a block keeps for every 512 rows is the exact state of their sum, a handful of integers, and merging two of them loses nothing.</p>
+<p>It matters for an honest comparison. The values of the main tables are whole numbers, and sums of whole numbers are exact in floating point whatever one does. So we ran the three aggregations again with every value divided by three, values that round and sums that round:</p>
+<table>
+  <thead><tr><th>Values that round</th><th>SoliDB</th><th>QuestDB</th><th>TimescaleDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>range</code>, 1 client</td><td>40,967 (24&nbsp;µs)</td><td>18,280 (51&nbsp;µs)</td><td>6,719 (149&nbsp;µs)</td></tr>
+    <tr><td><code>bucket</code>, 1 client</td><td>9,677 (103&nbsp;µs)</td><td>6,292 (150&nbsp;µs)</td><td>1,236 (811&nbsp;µs)</td></tr>
+    <tr><td><code>window_all</code>, 1 client</td><td>36,284 (27&nbsp;µs)</td><td>36,082 (27&nbsp;µs)</td><td>308 (3.3&nbsp;ms)</td></tr>
+    <tr><td><code>window_all</code>, 8 clients</td><td>180,358</td><td>127,314</td><td>1,236</td></tr>
+  </tbody>
+</table>
+<p>The order is the same. <code>window_all</code> at one client is a tie (36,284 against 36,082), and SoliDB keeps its lead at eight clients and on the two per-series questions. An earlier version of the blocks kept float subtotals and used them only when they were exact: on this data it answered <code>window_all</code> at 3,700 requests a second, a tenth of QuestDB, and the main tables would not have shown it.</p>
+</section>
+
+<section id="limits"><h2>Where QuestDB is ahead, and what this does not show</h2>
+<ul>
+<li><strong>The insert at eight clients</strong>: QuestDB 250,359, SoliDB 204,467. Before the blocks SoliDB was at about 250,000 there. Sealing and merging run on the thread of the write that crosses the threshold, and on a server with no core to spare that is taken from the inserts.</li>
+<li><strong>The latest point at eight clients</strong>: QuestDB 338,912, SoliDB 289,577. The blocks have nothing to do with it; it is the index read it always was.</li>
+<li><strong>The load</strong>, six times faster in QuestDB, and <strong>the disk</strong>: after the run, inserts included, TimescaleDB holds 3.2 GB, QuestDB 4.0 and SoliDB 9.3. SoliDB holds each point three times: the document, two index entries, the block.</li>
+<li><strong>The newest points are not in a block.</strong> Up to about 1,500 of them, and any range whose block a delete or a late point threw away, are read as documents, one by one. The readings here follow a load and a seal: nothing was arriving while they ran.</li>
+<li><strong>Blocks are local to a node.</strong> Neither they nor their definition are replicated or dumped; each node of a cluster builds its own. And only a <code>timeseries</code> collection takes them, because they rely on documents that are never updated.</li>
+<li><strong>Five questions.</strong> No join between series, no downsampling into another table, no compression, no retention policy at work, no query over a year. QuestDB and TimescaleDB are built for all of that, and a table of five rows says nothing about it.</li>
+<li><strong>The queries are ours</strong>, each in the form its own documentation suggests. The first QuestDB adapter shows what a different form may be worth.</li>
+<li><strong>This is a build of a branch.</strong> When it is released, the published image will be measured again and its results put beside these, as for the graph benchmark.</li>
+</ul>
+</section>
+
+<section id="run"><h2>Running it</h2>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>cd benchmarks/compare
+cargo build --release --bin solidb-ts
+./ts.sh all                          <span class="tok-com"># the three databases, one after another</span>
+TS_VALUES=thirds ./ts.sh all         <span class="tok-com"># with values that round</span>
+SOLIDB_TS_BLOCKS=0 ./ts.sh solidb    <span class="tok-com"># SoliDB without column blocks</span>
+SERIES=100 HOURS=2 WARM=1 SECS=3 RUNS=1 ./ts.sh all   <span class="tok-com"># a smoke pass</span></pre></div>
+<p>The README of <code>benchmarks/compare</code> describes the data, the five scenarios, how each database is set up and what is checked; the exact statements sent to each are in the result files. If one of them is not the one you would have written for your database, that is the place to say so.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

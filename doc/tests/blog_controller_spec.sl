@@ -45,8 +45,8 @@ describe("BlogController", fn() {
 
   test("the index links every post, newest first", fn() {
     body = res_body(get("/blog"))
-    expect(body.split("class=\"post-card\"").length()).to_equal(21)
-    newest = body.index_of("/blog/solidb-against-neo4j-memgraph-arangodb-on-a-graph")
+    expect(body.split("class=\"post-card\"").length()).to_equal(22)
+    newest = body.index_of("/blog/solidb-against-questdb-timescaledb-on-time-series")
     oldest = body.index_of("/blog/backups-checkpoints-vs-dumps")
     expect(newest > 0 && newest < oldest).to_equal(true)
   })
