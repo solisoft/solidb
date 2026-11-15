@@ -1,0 +1,132 @@
+{
+  "engine": "solidb",
+  "server_version": "see the image",
+  "rows": 10000000,
+  "load": {
+    "secs": 7.008790272,
+    "rows_per_sec": 1426779.74542195
+  },
+  "warm_secs": 5,
+  "measure_secs": 10,
+  "runs": 1,
+  "queries": {
+    "filter_agg": "FOR r IN events FILTER r.country == @c COLLECT AGGREGATE n = COUNT(), s = SUM(r.amount) RETURN [n, s]",
+    "group_all": "FOR r IN events COLLECT c = r.country AGGREGATE n = COUNT(), b = SUM(r.bytes) RETURN [c, n, b]",
+    "window_group": "FOR r IN events FILTER r.ts >= @lo AND r.ts < @hi COLLECT d = r.device AGGREGATE n = COUNT(), b = SUM(r.bytes) RETURN [d, n, b]",
+    "top_users": "FOR r IN events COLLECT u = r.user AGGREGATE s = SUM(r.amount) SORT s DESC LIMIT 10 RETURN [u, s]"
+  },
+  "series_results": [
+    {
+      "ops": 7167,
+      "secs": 10.001575507,
+      "ops_per_sec": 716.5871012005948,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 0.9920412032140048,
+      "p50_us": 1390,
+      "p99_us": 1476,
+      "max_us": 2057,
+      "scenario": "filter_agg",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 26338,
+      "secs": 10.002339983,
+      "ops_per_sec": 2633.183839457979,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 3.943753568369382,
+      "p50_us": 1445,
+      "p99_us": 2329,
+      "max_us": 2985,
+      "scenario": "filter_agg",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 524,
+      "secs": 10.011392284,
+      "ops_per_sec": 52.34037236133939,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.332657128751466,
+      "p50_us": 18897,
+      "p99_us": 26370,
+      "max_us": 27019,
+      "scenario": "group_all",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 531,
+      "secs": 10.02716917,
+      "ops_per_sec": 52.95612261022619,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 6.877799788831126,
+      "p50_us": 39866,
+      "p99_us": 150798,
+      "max_us": 165114,
+      "scenario": "group_all",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 1879,
+      "secs": 10.003473583,
+      "ops_per_sec": 187.83475403915605,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 2.93073938335006,
+      "p50_us": 5409,
+      "p99_us": 6283,
+      "max_us": 7093,
+      "scenario": "window_group",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 3344,
+      "secs": 10.01305898,
+      "ops_per_sec": 333.9638772406392,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 5.275475966486315,
+      "p50_us": 12007,
+      "p99_us": 22123,
+      "max_us": 28093,
+      "scenario": "window_group",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 219,
+      "secs": 10.012740166,
+      "ops_per_sec": 21.872134537521763,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 6.92498615268671,
+      "p50_us": 45904,
+      "p99_us": 48130,
+      "max_us": 48393,
+      "scenario": "top_users",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 267,
+      "secs": 10.120286499,
+      "ops_per_sec": 26.382652311906647,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.08343869583963,
+      "p50_us": 182853,
+      "p99_us": 265049,
+      "max_us": 276176,
+      "scenario": "top_users",
+      "concurrency": 4,
+      "run": 0
+    }
+  ]
+}

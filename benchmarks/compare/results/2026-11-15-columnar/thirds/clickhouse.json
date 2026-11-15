@@ -1,0 +1,132 @@
+{
+  "engine": "clickhouse",
+  "server_version": "26.10.4.207",
+  "rows": 10000000,
+  "load": {
+    "secs": 7.300259928,
+    "rows_per_sec": 1369814.2393047132
+  },
+  "warm_secs": 5,
+  "measure_secs": 10,
+  "runs": 1,
+  "queries": {
+    "filter_agg": "SELECT count(), sum(amount) FROM events WHERE country = 'c07'",
+    "group_all": "SELECT country, count(), sum(bytes) FROM events GROUP BY country",
+    "window_group": "SELECT device, count(), sum(bytes) FROM events WHERE ts >= 0 AND ts < 1 GROUP BY device",
+    "top_users": "SELECT user, sum(amount) AS s FROM events GROUP BY user ORDER BY s DESC LIMIT 10"
+  },
+  "series_results": [
+    {
+      "ops": 5670,
+      "secs": 10.003644234,
+      "ops_per_sec": 566.7934472048719,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 1.9690525311818086,
+      "p50_us": 1705,
+      "p99_us": 2108,
+      "max_us": 6902,
+      "scenario": "filter_agg",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 13157,
+      "secs": 10.009955624,
+      "ops_per_sec": 1314.3914413021578,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 5.906477233350021,
+      "p50_us": 2922,
+      "p99_us": 5099,
+      "max_us": 14634,
+      "scenario": "filter_agg",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 469,
+      "secs": 10.002850973,
+      "ops_per_sec": 46.886632747597574,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.241362407129406,
+      "p50_us": 20717,
+      "p99_us": 25312,
+      "max_us": 43347,
+      "scenario": "group_all",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 505,
+      "secs": 10.057883296,
+      "ops_per_sec": 50.2093716081233,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.8836296531233865,
+      "p50_us": 77933,
+      "p99_us": 119473,
+      "max_us": 150991,
+      "scenario": "group_all",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 1207,
+      "secs": 10.010072884,
+      "ops_per_sec": 120.57854263271716,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 4.085474948475913,
+      "p50_us": 8230,
+      "p99_us": 10091,
+      "max_us": 12067,
+      "scenario": "window_group",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 1931,
+      "secs": 10.023613248,
+      "ops_per_sec": 192.64510234224073,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.320539628226482,
+      "p50_us": 20155,
+      "p99_us": 32702,
+      "max_us": 36937,
+      "scenario": "window_group",
+      "concurrency": 4,
+      "run": 0
+    },
+    {
+      "ops": 204,
+      "secs": 10.01630804,
+      "ops_per_sec": 20.36678576430842,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.358810722039258,
+      "p50_us": 48551,
+      "p99_us": 54899,
+      "max_us": 56181,
+      "scenario": "top_users",
+      "concurrency": 1,
+      "run": 0
+    },
+    {
+      "ops": 211,
+      "secs": 10.096178717,
+      "ops_per_sec": 20.898996136500344,
+      "errors": 0,
+      "wrong": 0,
+      "db_cpu_cores": 7.901487308824542,
+      "p50_us": 187268,
+      "p99_us": 307870,
+      "max_us": 313935,
+      "scenario": "top_users",
+      "concurrency": 4,
+      "run": 0
+    }
+  ]
+}

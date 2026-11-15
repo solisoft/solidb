@@ -28,7 +28,8 @@ ARGS=(--rows "${ROWS:-10000000}" --concurrency "${CONCURRENCY:-1,4}"
 [[ -n ${ONLY:-} ]] && ARGS+=(--only "$ONLY")
 
 SOLIDB_IMAGE=${SOLIDB_IMAGE:-ghcr.io/solisoft/solidb:v2.10.4}
-CLICKHOUSE_IMAGE=${CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server:latest}
+# Pinned by digest; the tag is for the reader.
+CLICKHOUSE_IMAGE=${CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server@sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035} # latest, 2026-11-15: 26.10.4
 
 ALL=(solidb clickhouse)
 mkdir -p "$OUT"

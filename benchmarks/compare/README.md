@@ -781,6 +781,104 @@ Results: `results/2026-11-15-timeseries/` (per database: the JSON with every
 run, the client log, the container's description, the size on disk).
 InfluxDB 3 Core, on the list of card #795, is not wired in.
 
+## Columnar (`col.sh`)
+
+One wide table of events and four analytical questions against SoliDB and
+ClickHouse, one database at a time, in a container with 4 cores (8 threads)
+and 16 GB; the client is `solidb-col` (`src/col/`), pinned to other cores.
+
+### The data and the scenarios
+
+10,000,000 rows `{ts, user, country, device, amount, bytes}`: one row every
+100 ms, 100,000 users, 50 countries, 5 devices, amounts that are quarters of
+whole numbers. Loaded from 8 connections, 20,000 rows at a time, as JSON
+over HTTP on both sides. Then, at 1 and at 4 clients, 5 s of warm-up and
+three runs of 20 s per scenario (the table gives the median run):
+
+| Scenario | What one request asks |
+|---|---|
+| `filter_agg` | count and sum of the amounts of one country (200,000 rows) |
+| `group_all` | per country, the count and the sum of bytes (every row, 50 groups) |
+| `window_group` | per device, the count and the sum of bytes over a twentieth of the time span (500,000 rows) |
+| `top_users` | the ten users with the largest total amount (every row, 100,000 groups) |
+
+Every answer is compared with the generator's; none was wrong.
+
+### How each database is used
+
+- **SoliDB** (solistore engine): a columnar collection created over HTTP,
+  rows inserted through `…/columnar/events/insert`, SDBQL over the driver
+  with bind variables.
+- **ClickHouse** 26.10.4: `MergeTree ORDER BY (country, ts)`, the two string
+  columns `LowCardinality`, `INSERT … FORMAT JSONEachRow` over HTTP,
+  `OPTIMIZE TABLE … FINAL` after the load, SQL over HTTP with the values
+  written in it, defaults otherwise. The order suits `filter_agg`.
+
+### Results, 2026-11-15
+
+SoliDB is a build of `main` after 2.10.4 with columnar blocks, not a
+published image. Requests per second, median of three runs.
+
+| scenario | clients | SoliDB | ClickHouse | p50 ms (S / C) | DB cores (S / C) |
+|---|---|---|---|---|---|
+| filter_agg | 1 | **721** | 562 | 1.4 / 1.7 | 1.0 / 2.0 |
+| filter_agg | 4 | **2,683** | 1,307 | 1.4 / 2.9 | 3.9 / 5.9 |
+| group_all | 1 | **53.1** | 47.0 | 18.0 / 20.8 | 7.4 / 7.2 |
+| group_all | 4 | **53.7** | 50.3 | 38.0 / 78.8 | 7.0 / 7.9 |
+| window_group | 1 | **189** | 120 | 5.4 / 8.3 | 2.9 / 4.1 |
+| window_group | 4 | **334** | 193 | 11.9 / 20.2 | 5.3 / 7.4 |
+| top_users | 1 | **39.2** | 20.4 | 25.5 / 48.6 | 6.5 / 7.4 |
+| top_users | 4 | **50.1** | 21.1 | 93.7 / 187.3 | 6.7 / 7.9 |
+
+Load: SoliDB 7.0 s (1.42 M rows/s), ClickHouse 7.2 s (1.38 M rows/s).
+SoliDB 2.10.4 answered each of the four at 0.4 requests/s on one million
+rows (2.4 s a query, one 5 s run each) and loaded 344,000 rows/s.
+
+What the table says, and what it does not:
+
+- SoliDB leads the eight rows, by 7% (`group_all` at 4 clients) to 2.4 times
+  (`top_users` at 4 clients).
+- Disk is not compared: at the end of the run SoliDB's rows were still in
+  its write buffer and log (its directory held 320 MiB of pre-allocated
+  log), ClickHouse's directory 1.5 GB with its own log tables.
+- SoliDB keeps every block decoded in memory, with the ids of its rows:
+  1.4 GB of resident memory for these ten million rows, and no ceiling on
+  it yet.
+- Four questions, one table, one order for ClickHouse's table, its default
+  settings. No join, no window function, no table larger than memory.
+  DuckDB, on the list of card #795, is not wired in.
+
+### With amounts that round (`COL_VALUES=thirds`)
+
+Quarters add up exactly in floating point; thirds do not. One run of 10 s
+each:
+
+
+| scenario | clients | SoliDB | ClickHouse |
+|---|---|---|---|
+| filter_agg | 1 | **717** | 567 |
+| filter_agg | 4 | **2,633** | 1,314 |
+| group_all | 1 | **52.3** | 46.9 |
+| group_all | 4 | **53.0** | 50.2 |
+| window_group | 1 | **188** | 121 |
+| window_group | 4 | **334** | 193 |
+| top_users | 1 | **21.9** | 20.4 |
+| top_users | 4 | **26.4** | 20.9 |
+
+`top_users` is the row that depends on it: SoliDB keeps a plain sum and the
+total of what its additions rounded away per user, which together are the
+exact sum, and falls back to exact accumulators when that total itself
+rounds. Results in `results/2026-11-15-columnar/thirds/`.
+
+### Running it
+
+```bash
+cargo build --release --bin solidb-col
+./col.sh all
+COL_VALUES=thirds ./col.sh all
+ROWS=1000000 WARM=1 SECS=5 RUNS=1 ./col.sh all    # a smaller pass
+```
+
 ## SoliDB 2.7.2, and why its image was rebuilt
 
 The first run also measured SoliDB 2.7.2, before the fixes this benchmark led to in 2.7.3 (the two-sided range read as one interval, the full-scan COLLECT that streams). Those figures are in `results/2026-11-08/solidb-2.7.2/`.
