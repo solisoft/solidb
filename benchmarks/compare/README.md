@@ -708,36 +708,36 @@ The exact statements are in each result file (`queries`).
 ### Results, 2026-11-15
 
 SoliDB is a build of `main` after 2.10.4 (column blocks), not a published
-image; its column is a third pass, the next day (see "What changed
+image; its column is a fourth pass, the next day (see "What changed
 between the passes"). Requests per second, median of three runs; in
 bold the highest of the row.
 
 | scenario | clients | SoliDB | QuestDB | TimescaleDB | p99 µs (S / Q / T) | DB cores (S / Q / T) |
 |---|---|---|---|---|---|---|
-| range | 1 | **44,385** | 21,040 | 6,510 | 25 / 102 / 184 | 1.1 / 7.9 / 0.9 |
-| range | 8 | **215,136** | 62,763 | 27,420 | 88 / 735 / 351 | 5.1 / 7.8 / 7.5 |
-| bucket | 1 | **10,029** | 6,598 | 1,200 | 115 / 258 / 1,019 | 0.9 / 8.0 / 1.0 |
-| bucket | 8 | **54,753** | 14,105 | 6,779 | 266 / 4,613 / 1,403 | 6.0 / 7.9 / 7.8 |
-| last | 1 | **58,940** | 55,114 | 43,336 | 22 / 20 / 26 | 1.1 / 7.8 / 0.6 |
-| last | 8 | 306,936 | **338,912** | 159,400 | 35 / 49 / 62 | 6.8 / 7.0 / 6.0 |
-| window_all | 1 | **39,523** | 35,839 | 306 | 28 / 32 / 3,487 | 1.1 / 7.9 / 1.0 |
-| window_all | 8 | **183,648** | 129,426 | 1,232 | 103 / 571 / 6,866 | 5.3 / 7.5 / 8.0 |
-| insert | 1 | **63,040** | 45,147 | 25,437 | 21 / 29 / 64 | 1.1 / 7.7 / 0.8 |
-| insert | 8 | **271,524** | 250,359 | 82,846 | 111 / 124 / 190 | 6.1 / 7.2 / 6.6 |
+| range | 1 | **43,553** | 21,040 | 6,510 | 26 / 102 / 184 | 1.1 / 7.9 / 0.9 |
+| range | 8 | **206,615** | 62,763 | 27,420 | 88 / 735 / 351 | 5.2 / 7.8 / 7.5 |
+| bucket | 1 | **9,646** | 6,598 | 1,200 | 123 / 258 / 1,019 | 0.9 / 8.0 / 1.0 |
+| bucket | 8 | **54,426** | 14,105 | 6,779 | 267 / 4,613 / 1,403 | 6.0 / 7.9 / 7.8 |
+| last | 1 | **59,453** | 55,114 | 43,336 | 22 / 20 / 26 | 1.1 / 7.8 / 0.6 |
+| last | 8 | 308,119 | **338,912** | 159,400 | 35 / 49 / 62 | 6.8 / 7.0 / 6.0 |
+| window_all | 1 | **39,490** | 35,839 | 306 | 28 / 32 / 3,487 | 1.1 / 7.9 / 1.0 |
+| window_all | 8 | **181,529** | 129,426 | 1,232 | 103 / 571 / 6,866 | 5.3 / 7.5 / 8.0 |
+| insert | 1 | **67,944** | 45,147 | 25,437 | 18 / 29 / 64 | 1.2 / 7.7 / 0.8 |
+| insert | 8 | **285,095** | 250,359 | 82,846 | 112 / 124 / 190 | 5.8 / 7.2 / 6.6 |
 
-Load: QuestDB 6.65 M points/s (1.3 s), SoliDB 1.17 M (7.4 s, the sealing
+Load: QuestDB 6.65 M points/s (1.3 s), SoliDB 1.57 M (5.5 s, the sealing
 of blocks included), TimescaleDB 1.17 M (7.4 s). On disk after the run, the
 points of the `insert` scenario included: TimescaleDB 3.2 GB, QuestDB
-4.0 GB, SoliDB 7.0 GB (4.7 GB of tables, 2.0 GB of log not yet flushed;
+4.0 GB, SoliDB 6.6 GB (5.3 GB of tables, 1.0 GB of log not yet flushed;
 `solidb.disk_detail`). Each inserted what its rate allowed: about 28 M
-points in QuestDB's directory, 30 M in SoliDB's, 16 M in TimescaleDB's.
+points in QuestDB's directory, 32 M in SoliDB's, 16 M in TimescaleDB's.
 After the shorter run below, which inserts nothing, and with the first
 pass's build: 2.1, 0.6 and 4.6 GB.
 
 What the table says, and what it does not:
 
 - SoliDB leads nine rows of ten, QuestDB one (`last` at 8 clients, by
-  10%), and QuestDB loads 5.7 times faster and takes less disk.
+  10%), and QuestDB loads 4.2 times faster and takes less disk.
 - SoliDB's processor use went up with the third pass: a connection that
   was just answered stays awake for its next request, so one client keeps
   a core busy (1.1) where it used half of one.
@@ -778,6 +778,19 @@ behind QuestDB on `last` and `insert` at 8 clients (289,577 and 204,467).
   connections outnumber workers, is unchanged within a run's noise (one
   10 s run per row: get 822k both ways, index reads and joins −2 to −5%,
   inserts and updates +4 to +16%).
+
+- **The load.** Three things. A `timeseries` collection now takes the
+  write path that stores documents without decoding them, which only
+  plain collections took; a document given no key gets one made for it,
+  and the write no longer reads that key back first; and the blocks are
+  sealed several at a time, on several threads, when whole blocks wait:
+  1.9 of the load's 6.5 s were spent waiting for one sealing thread after
+  the last insert. Load 1.17 → 1.57 M points/s, `insert` at one client
+  63,040 → 67,944, at 8 clients 271,524 → 285,095.
+
+Not in these figures: solistore applying a batch's entries to its memtable
+in key order (its pull request 17, not released), measured at +18% on the
+load before the sealing change.
 
 Tried and not kept: tasks that only yield, one per worker (the p99 of
 `range` and `window_all` tripled); fewer workers as a default
