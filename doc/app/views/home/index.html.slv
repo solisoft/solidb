@@ -362,8 +362,7 @@ Full sync complete, final sequence: 5
       <p class="perf-note">
         <b>Durability.</b> These are reads. The rows were loaded with SoliDB at its default: a write is
         acknowledged once handed to the operating system and fsynced within 100&nbsp;ms. Medians of three
-        20-second runs, November 15, 2026. SoliDB is a build of the branch that follows 2.10.4, not a
-        published release. ClickHouse 26.10.4 reads a <code>MergeTree</code> table ordered by
+        20-second runs, November 15, 2026. SoliDB is a build of the branch that became 2.11.0. ClickHouse 26.10.4 reads a <code>MergeTree</code> table ordered by
         <code>(country, ts)</code>, the order that suits the first question.
       </p>
     </div>
@@ -493,7 +492,7 @@ Full sync complete, final sequence: 5
         write is acknowledged once handed to the operating system and fsynced within 100&nbsp;ms),
         TimescaleDB with <code>synchronous_commit=off</code>, QuestDB with its write-ahead log at its
         defaults. Medians of three 20-second runs, November 15, 2026. SoliDB is a build of the branch that
-        follows 2.10.4, not a published release. QuestDB keeps its worker threads busy with one client as
+        became 2.11.0. QuestDB keeps its worker threads busy with one client as
         with eight: the charts compare answers per second, not answers per core.
       </p>
     </div>
