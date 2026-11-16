@@ -110,6 +110,19 @@ fn queries() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         ("FOR r IN $c FILTER r.ms > 2499.5 SORT r.v RETURN r.ms", vec![]),
         ("FOR r IN $c FILTER r.ms >= 100 AND r.ms <= 101 SORT r.v RETURN r.ms", vec![]),
         ("FOR r IN $c FILTER r.ms >= 2499 SORT r.v RETURN r.v", vec![]),
+        // Counts, which the collection answers without building a row
+        // when every comparison is its own; and one it must leave.
+        ("FOR r IN $c FILTER r.v >= 5000 AND r.v < 15000 COLLECT WITH COUNT INTO n RETURN n", vec![]),
+        ("FOR r IN $c FILTER r.host == 'h3' COLLECT WITH COUNT INTO n RETURN {n}", vec![]),
+        ("RETURN LENGTH(FOR r IN $c FILTER r.n < 100 RETURN 1)", vec![]),
+        ("RETURN LENGTH(FOR r IN $c FILTER r.ms >= 10.5 AND r.ms < 2000 RETURN r)", vec![]),
+        ("RETURN LENGTH(FOR r IN $c FILTER r.ok == true OR r.v > 19990 RETURN r.v)", vec![]),
+        ("RETURN LENGTH(FOR r IN $c FILTER r.v < @n AND r.v % 2 == 0 RETURN 1)", vec![("n", json!(100))]),
+        ("FOR x IN [10, 1000] RETURN LENGTH(FOR r IN $c FILTER r.v < x RETURN 1)", vec![]),
+        // Ranges of floats that a block's bounds rule out or take whole.
+        ("FOR r IN $c FILTER r.ms > 5000 RETURN r.v", vec![]),
+        ("FOR r IN $c FILTER r.ms >= 1100.5 AND r.ms < 1101.5 SORT r.v RETURN r.v", vec![]),
+        ("RETURN LENGTH(FOR r IN $c FILTER r.ms >= 0 RETURN 1)", vec![]),
         // A range no block holds, one that takes whole blocks, and both ends.
         ("FOR r IN $c FILTER r.v > 50000 RETURN r.v", vec![]),
         ("FOR r IN $c FILTER r.v >= 0 COLLECT WITH COUNT INTO n RETURN n", vec![]),
@@ -215,6 +228,39 @@ fn explain_says_how_a_columnar_collection_is_read() {
     assert_eq!(
         plan.collections[0].index_used.as_deref(),
         Some("host (hash)")
+    );
+
+    // A count the collection answers is not a scan; an aggregate folded
+    // from the arrays is one.
+    let plan =
+        explain("FOR r IN m FILTER r.v >= 100 AND r.v < 200 COLLECT WITH COUNT INTO n RETURN n");
+    assert_eq!(plan.collections[0].access_type, "columnar_count");
+    assert_eq!(
+        plan.warnings,
+        ["`m` is columnar: the rows are counted in the column arrays, none is built"]
+    );
+    let plan = explain("RETURN LENGTH(FOR r IN m FILTER r.v < 50 RETURN 1)");
+    assert_eq!(plan.collections[0].access_type, "columnar_count");
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| w.contains("counted in the column arrays"))
+            && !plan
+                .warnings
+                .iter()
+                .any(|w| w.contains("columns are built")),
+        "{:?}",
+        plan.warnings
+    );
+    let plan = explain("FOR r IN m COLLECT h = r.host AGGREGATE s = SUM(r.v) RETURN [h, s]");
+    assert_eq!(plan.collections[0].access_type, "columnar_scan");
+    assert!(
+        !plan
+            .warnings
+            .iter()
+            .any(|w| w.contains("columns are built")),
+        "{:?}",
+        plan.warnings
     );
 
     // Nothing the collection answers: every row, the columns read only.

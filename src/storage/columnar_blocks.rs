@@ -56,6 +56,9 @@ pub(crate) struct Column {
     /// For a column of integers: the smallest and the largest.
     #[serde(skip)]
     range: std::sync::OnceLock<Option<(i64, i64)>>,
+    /// For a column of floats: the smallest and the largest.
+    #[serde(skip)]
+    float_range: std::sync::OnceLock<Option<(f64, f64)>>,
 }
 
 /// The ids of a block's rows, ascending. Almost always UUIDs in their
@@ -344,6 +347,20 @@ impl Column {
         })
     }
 
+    /// The smallest and largest of a column of floats; `None` for any
+    /// other column, and for no row. As for integers, a null's placeholder
+    /// counts: the bounds are only ever wider than the values.
+    pub(crate) fn float_range(&self) -> Option<(f64, f64)> {
+        *self.float_range.get_or_init(|| match &self.data {
+            ColData::Float(values) => {
+                let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                (low <= high).then_some((low, high))
+            }
+            _ => None,
+        })
+    }
+
     /// The value of the row at `at`, as it was inserted.
     pub(crate) fn value(&self, at: usize) -> Value {
         if self.nulls.as_ref().is_some_and(|nulls| nulls[at]) {
@@ -448,6 +465,7 @@ fn column_of<'a>(values: impl Iterator<Item = Option<&'a Value>> + Clone) -> Col
         nulls,
         lists: Default::default(),
         range: Default::default(),
+        float_range: Default::default(),
     }
 }
 

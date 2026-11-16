@@ -74,6 +74,14 @@ impl QueryExecutor<'_> {
         Ok(Some(rows))
     }
 
+    /// Whether `name` is a columnar collection of the query's database.
+    pub(in crate::sdbql::executor) fn is_columnar_name(&self, name: &str) -> bool {
+        self.database
+            .as_ref()
+            .and_then(|db| self.storage.get_database(db).ok())
+            .is_some_and(|database| self.is_columnar(&database, name))
+    }
+
     /// What EXPLAIN says of a `FOR` over a columnar collection, and the
     /// indexes that read uses: `None` when the source is not columnar.
     /// Follows `columnar_for_rows`.
@@ -174,35 +182,48 @@ impl QueryExecutor<'_> {
         for filter in filters {
             push_conjuncts(filter, &mut conjuncts);
         }
-        let pushed: Vec<ColumnFilter> = conjuncts
-            .into_iter()
-            .filter_map(|conjunct| self.pushed_term(variable, conjunct, schema, ctx))
-            .collect();
-        // A column another conjunct bounds from below, or compares with a
-        // value, holds no null among the rows kept: its `<` stays a plain
-        // range, which lets a range bounded on both sides pass over the
-        // blocks outside it.
-        let bounded: Vec<String> = pushed
-            .iter()
-            .filter_map(|term| match term {
-                ColumnFilter::Gt(column, _)
-                | ColumnFilter::Gte(column, _)
-                | ColumnFilter::Eq(column, _) => Some(column.clone()),
-                _ => None,
-            })
-            .collect();
-        let mut pushed: Vec<ColumnFilter> = pushed
-            .into_iter()
-            .map(|term| match term.column() {
-                Some(column) if bounded.iter().any(|b| b == column) => term,
-                _ => or_null(term),
-            })
-            .collect();
-        match pushed.len() {
-            0 => None,
-            1 => pushed.pop(),
-            _ => Some(ColumnFilter::And(pushed)),
+        joined(
+            conjuncts
+                .into_iter()
+                .filter_map(|conjunct| self.pushed_term(variable, conjunct, schema, ctx))
+                .collect(),
+        )
+    }
+
+    /// How many rows `FOR v IN c FILTER filter` gives when `c` is a
+    /// columnar collection and the collection answers the whole FILTER:
+    /// counted in the arrays, no row built. `None` when it is not
+    /// columnar, or when one conjunct is not the collection's to answer
+    /// (the count would then be of too many rows).
+    pub(in crate::sdbql::executor) fn columnar_count(
+        &self,
+        for_clause: &ForClause,
+        filter: &Expression,
+        ctx: &Context,
+    ) -> DbResult<Option<u64>> {
+        let name = for_clause.collection.as_str();
+        // A LET-bound array of that name is iterated, not the collection.
+        if ctx.contains_key(name) {
+            return Ok(None);
         }
+        let Some(columnar) = self.columnar_source(name)? else {
+            return Ok(None);
+        };
+        let meta = columnar.metadata()?;
+        let mut conjuncts = Vec::new();
+        push_conjuncts(filter, &mut conjuncts);
+        let mut terms = Vec::with_capacity(conjuncts.len());
+        for conjunct in conjuncts {
+            let Some(term) = self.pushed_term(&for_clause.variable, conjunct, &meta.columns, ctx)
+            else {
+                return Ok(None);
+            };
+            terms.push(term);
+        }
+        let Some(filter) = joined(terms) else {
+            return Ok(None);
+        };
+        Ok(Some(columnar.count_filtered(&filter)?))
     }
 
     /// One conjunct as a filter of the collection, when it is a comparison
@@ -267,6 +288,35 @@ impl QueryExecutor<'_> {
             BinaryOperator::LessThanOrEqual => ColumnFilter::Lte(column, value),
             _ => return None,
         })
+    }
+}
+
+/// The conjuncts the collection answers, as one filter.
+fn joined(pushed: Vec<ColumnFilter>) -> Option<ColumnFilter> {
+    // A column another conjunct bounds from below, or compares with a
+    // value, holds no null among the rows kept: its `<` stays a plain
+    // range, which lets a range bounded on both sides pass over the
+    // blocks outside it.
+    let bounded: Vec<String> = pushed
+        .iter()
+        .filter_map(|term| match term {
+            ColumnFilter::Gt(column, _)
+            | ColumnFilter::Gte(column, _)
+            | ColumnFilter::Eq(column, _) => Some(column.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut pushed: Vec<ColumnFilter> = pushed
+        .into_iter()
+        .map(|term| match term.column() {
+            Some(column) if bounded.iter().any(|b| b == column) => term,
+            _ => or_null(term),
+        })
+        .collect();
+    match pushed.len() {
+        0 => None,
+        1 => pushed.pop(),
+        _ => Some(ColumnFilter::And(pushed)),
     }
 }
 

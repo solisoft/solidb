@@ -25,6 +25,11 @@ use crate::sdbql::ast::*;
 /// Subqueries nested deeper than this are not explained.
 const MAX_EXPLAIN_DEPTH: usize = 4;
 
+/// What EXPLAIN says of a count a columnar collection answers.
+fn counted_in_arrays(name: &str) -> String {
+    format!("`{name}` is columnar: the rows are counted in the column arrays, none is built")
+}
+
 /// The subqueries under `expr` (not inside another subquery), each with
 /// whether it is the argument of `LENGTH` / `COUNT`, which may count it from
 /// an index without running it.
@@ -192,17 +197,40 @@ impl<'a> QueryExecutor<'a> {
                 under_length && matches!(self.try_index_count_rows(&sub, ctx), Ok(Some(_)));
             match self.explain_in(&sub, ctx, depth + 1) {
                 Ok(plan) => {
+                    let mut counted_columnar: Option<String> = None;
                     for (n, mut access) in plan.collections.into_iter().enumerate() {
                         access.subquery = Some(match access.subquery.take() {
                             Some(inner) => format!("{label} > {inner}"),
                             None => label.to_string(),
                         });
                         if counted && n == 0 {
-                            access.access_type = "index_count".to_string();
+                            // Counted in the arrays of a columnar
+                            // collection, or in an index's entries.
+                            access.access_type = if self.is_columnar_name(&access.name) {
+                                access.index_used = None;
+                                access.index_type = None;
+                                counted_columnar = Some(access.name.clone());
+                                "columnar_count".to_string()
+                            } else {
+                                "index_count".to_string()
+                            };
                         }
                         out.push(access);
                     }
-                    warnings.extend(plan.warnings.into_iter().map(|w| format!("{label}: {w}")));
+                    // The plan above ran the subquery as a scan; the run
+                    // counts instead, and builds no row.
+                    let scan_note = counted_columnar
+                        .as_ref()
+                        .map(|name| format!("`{name}` is columnar:"));
+                    warnings.extend(
+                        plan.warnings
+                            .into_iter()
+                            .filter(|w| scan_note.as_ref().is_none_or(|note| !w.starts_with(note)))
+                            .map(|w| format!("{label}: {w}")),
+                    );
+                    if let Some(name) = counted_columnar {
+                        warnings.push(format!("{label}: {}", counted_in_arrays(&name)));
+                    }
                 }
                 Err(e) => warnings.push(format!("{label}: subquery not explained: {e}")),
             }
@@ -737,6 +765,39 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A columnar collection whose COLLECT the run folds
+                    // from the arrays of its blocks: the same call.
+                    if !used_index && !streamed && scan_limit.is_none() {
+                        if let Some(run) = self.try_columnar_collect(clauses, i, &rows)? {
+                            let folded = &clauses[i + 1..i + run.consumed - 1];
+                            let folded_filters = folded.iter().filter_map(|c| match c {
+                                BodyClause::Filter(f) => Some(&f.expression),
+                                _ => None,
+                            });
+                            for (expr, (before, after)) in folded_filters.zip(run.filters) {
+                                filters_info.push(FilterInfo {
+                                    expression: format_expression(expr),
+                                    index_candidate: None,
+                                    can_use_index: false,
+                                    documents_before: before,
+                                    documents_after: after,
+                                    time_us: 0,
+                                });
+                            }
+                            // A count the run reads from the arrays
+                            // before it gets here says so itself.
+                            warnings.push(if counted && collections_info.is_empty() {
+                                counted_in_arrays(&for_clause.collection)
+                            } else {
+                                run.note
+                            });
+                            rows = run.rows;
+                            total_docs_scanned += run.scanned;
+                            i += run.consumed;
+                            streamed = true;
+                        }
+                    }
+
                     // A columnar collection, read as the run reads it: the
                     // columns the query reads, for the rows the FILTERs that
                     // follow keep (they still run on them next).
@@ -759,7 +820,11 @@ impl<'a> QueryExecutor<'a> {
                                     self.columnar_for_rows(for_clause, &filters, first, scan_limit)?
                                 {
                                     columnar_read = true;
-                                    warnings.push(note);
+                                    warnings.push(if counted && collections_info.is_empty() {
+                                        counted_in_arrays(&for_clause.collection)
+                                    } else {
+                                        note
+                                    });
                                     if !indexes.is_empty() {
                                         index_name = Some(indexes.join(", "));
                                         index_type = Some("Columnar".to_string());
@@ -835,6 +900,10 @@ impl<'a> QueryExecutor<'a> {
                         index_name = sort_index.clone();
                     }
 
+                    // A columnar collection is read from its arrays, by
+                    // whichever path took it.
+                    let columnar = self.is_columnar_name(&for_clause.collection);
+
                     // Record Collection Info
                     collections_info.push(CollectionAccess {
                         name: access_name,
@@ -843,13 +912,15 @@ impl<'a> QueryExecutor<'a> {
                             "geo_near".to_string()
                         } else if geo_sorted {
                             "geo_index_sort".to_string()
+                        } else if first && counted && columnar {
+                            "columnar_count".to_string()
                         } else if first && counted {
                             "index_count".to_string()
                         } else if sorted_by_index {
                             "index_sort".to_string()
                         } else if used_index {
                             "index_lookup".to_string()
-                        } else if columnar_read {
+                        } else if columnar_read || (streamed && columnar) {
                             "columnar_scan".to_string()
                         } else if scan_limit.is_some() {
                             "limited_scan".to_string()

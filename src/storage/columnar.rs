@@ -1932,6 +1932,14 @@ impl ColumnarCollection {
         Ok(results)
     }
 
+    /// How many rows `filter` keeps: no row is built.
+    pub fn count_filtered(&self, filter: &ColumnFilter) -> DbResult<u64> {
+        let rows = self.row_set()?;
+        Ok(self
+            .filter_positions(&rows, filter, 0..rows.len() as u64)?
+            .len() as u64)
+    }
+
     /// The rows `filter` keeps, with these columns, in the order of their
     /// ids. The rows are read once, for the filter and for what is
     /// returned.
@@ -2914,17 +2922,35 @@ fn parts<'r>(
 /// the comparison `filter` keeps none of its rows. Only a column of
 /// integers knows them; `false` is always a safe answer.
 fn block_rules_out(column: &Column, filter: &ColumnFilter) -> bool {
-    let Some((low, high)) = column.int_range() else {
-        return false;
+    // Whether the comparison keeps the smallest value, and the largest.
+    let ends = match (column.int_range(), column.float_range()) {
+        (Some((low, high)), _) => {
+            let keeps = |value: i64| leaf_keeps(filter, &Value::from(value));
+            (keeps(low), keeps(high))
+        }
+        (_, Some((low, high))) => {
+            let keeps = |value: f64| leaf_keeps(filter, &Value::from(value));
+            (keeps(low), keeps(high))
+        }
+        _ => return false,
     };
-    let keeps = |value: i64| leaf_keeps(filter, &Value::from(value));
     match filter {
-        // What keeps neither end keeps nothing between them.
+        // What keeps neither end keeps nothing between them. A bound that
+        // is not a number is not compared as one (`against`).
         ColumnFilter::Gt(_, bound)
         | ColumnFilter::Gte(_, bound)
         | ColumnFilter::Lt(_, bound)
-        | ColumnFilter::Lte(_, bound) => bound.as_i64().is_some() && !keeps(low) && !keeps(high),
-        ColumnFilter::Eq(_, wanted) => wanted.as_i64().is_some_and(|w| w < low || high < w),
+        | ColumnFilter::Lte(_, bound) => bound.is_number() && ends == (false, false),
+        ColumnFilter::Eq(_, wanted) => {
+            let (low, high) = match (column.int_range(), column.float_range()) {
+                (Some((low, high)), _) => (low as f64, high as f64),
+                (_, Some(ends)) => ends,
+                _ => return false,
+            };
+            // As floats, where an integer past 2^53 may round onto a
+            // bound: then the block is read, which is always right.
+            wanted.as_f64().is_some_and(|w| w < low || high < w)
+        }
         _ => false,
     }
 }
@@ -3058,9 +3084,20 @@ fn scan_block(
         }
         (ColData::Float(values), _, Some((bound, keeps))) if bound.is_number() => {
             let bound = bound.as_f64().unwrap_or(0.0);
+            let keeps = |value: f64| value.partial_cmp(&bound).is_some_and(keeps);
+            if let Some((low, high)) = column.float_range() {
+                match (keeps(low), keeps(high)) {
+                    (false, false) => return,
+                    (true, true) if column.nulls.is_none() => {
+                        kept.extend(inside.map(|row| base + row as u64));
+                        return;
+                    }
+                    _ => {}
+                }
+            }
             kept.extend(
                 inside
-                    .filter(|&row| !null(row) && values[row].partial_cmp(&bound).is_some_and(keeps))
+                    .filter(|&row| !null(row) && keeps(values[row]))
                     .map(|row| base + row as u64),
             );
         }

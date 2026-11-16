@@ -922,15 +922,24 @@ Rules that keep it sound:
   pushes no filter (the limit counts rows before the FILTERs). A filter
   whose constant names an outer row is not pushed. EXPLAIN follows the
   same code (`columnar_note`, `columnar_scan`).
+- **A count is read from the arrays only when the collection answers the
+  whole FILTER** (`columnar_count`, called from `index_count.rs` for
+  `COLLECT WITH COUNT INTO` and `LENGTH(FOR … RETURN 1)`): no row is
+  built and no FILTER runs afterwards, so there a pushed comparison must
+  keep exactly the rows SDBQL keeps, not merely never too few. One
+  conjunct that is not pushed sends the query down the ordinary path. A
+  comparison pushed down that may keep too many rows would be wrong for
+  counts only: keep `pushed_term` exact, or make it say which it is.
 - **A filter is answered from the arrays, block by block**
   (`columnar.rs`: `filter_positions`, `scan_leaf`, `scan_block`), for
   SDBQL and the HTTP / driver query alike. `scan_block`'s typed arms
   (integers, floats, a string equality, null) must keep exactly the rows
   `leaf_keeps` keeps value by value, which is what the tail, a column
   stored as JSON and rows out of id order go through. A block of integers
-  is passed over, or taken whole, from its smallest and largest value
-  (`Column::int_range`, which counts the placeholder of a null: bounds
-  only ever wider, and a block with nulls is never taken whole); an `AND`
+  or of floats is passed over, or taken whole, from its smallest and
+  largest value (`Column::int_range` / `float_range`, which count the
+  placeholder of a null: bounds only ever wider, and a block with nulls
+  is never taken whole); an `AND`
   goes block by block so that one side ruling a block out spares the
   others (`block_rules_out`). An index answers an equality or an `IN`
   (`index_for`), for the rows it holds; a range against a number is never

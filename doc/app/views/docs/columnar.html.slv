@@ -600,9 +600,10 @@
           <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-5 mb-6">
             <h4 class="text-blue-300 font-semibold mb-2 text-sm">What needs no index</h4>
             <ul class="text-sm text-gray-300 space-y-2 list-disc list-inside">
-              <li>A filter is compared in the arrays of the blocks, in SDBQL (<code>FOR r IN metrics FILTER &hellip;</code>) and in <code>/query</code> alike. Each block of an integer column knows its smallest and largest value, and a block they rule out is passed over: a range of timestamps or of sequential ids reads the blocks that hold it. On a million rows, a hundred rows of a range come back in under a millisecond with no index.</li>
+              <li>A filter is compared in the arrays of the blocks, in SDBQL (<code>FOR r IN metrics FILTER &hellip;</code>) and in <code>/query</code> alike. Each block of an integer or float column knows its smallest and largest value, and a block they rule out is passed over: a range of timestamps or of sequential ids reads the blocks that hold it. On a million rows, a hundred rows of a range come back in under a millisecond with no index.</li>
               <li>A range against a number (<code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>) is always answered that way: a <code>sorted</code> or <code>minmax</code> index is not consulted for it.</li>
               <li>An equality or an <code>IN</code> uses a <code>hash</code>, <code>sorted</code>, <code>bitmap</code> or <code>bloom</code> index when the column has one, for the rows the index holds; rows inserted after the index was created are compared in the arrays.</li>
+              <li>A count whose <code>FILTER</code> compares columns with constants (<code>FOR r IN metrics FILTER r.t &gt;= @from AND r.t &lt; @to COLLECT WITH COUNT INTO n RETURN n</code>, or <code>LENGTH(FOR &hellip; RETURN 1)</code>) is counted in the arrays and builds no row: half a million rows of a range are counted in about a millisecond. <code>EXPLAIN</code> reports it as <code>columnar_count</code>.</li>
               <li><code>EXPLAIN</code> reports <code>columnar_scan</code>, the index an equality used (<code>"index_used": "host (hash)"</code>), and a note: <em>`metrics` is columnar: 3 of its 6 columns are built, for the rows its FILTER on `host`, `v` keeps, found in the column arrays and the index on host (hash)</em>.</li>
             </ul>
           </div>
@@ -627,7 +628,7 @@
                  <i class="fas fa-sort-numeric-down mr-2"></i> Min/Max Index
                </h4>
                <p class="text-sm text-gray-400 mb-3">
-                 Records the smallest and largest value of each chunk of 1,000 rows. <strong>No longer consulted</strong>: every block of an integer column carries its own bounds, and a range passes over the blocks they rule out with no index declared. It can still be created, and costs almost nothing.
+                 Records the smallest and largest value of each chunk of 1,000 rows. <strong>No longer consulted</strong>: every block of an integer or float column carries its own bounds, and a range passes over the blocks they rule out with no index declared. It can still be created, and costs almost nothing.
                </p>
                <div class="flex items-center gap-2 text-xs text-gray-500 font-mono bg-black/30 p-2 rounded">
                  <span>Type: <code>"minmax"</code></span>

@@ -36,8 +36,8 @@ fn bare(query: &Query) -> bool {
         && query.limit_clause.is_none()
 }
 
-/// `FOR v IN c FILTER <one equality>` over a collection, no options.
-fn indexed_loop(for_clause: &ForClause, filter: &Expression) -> bool {
+/// `FOR v IN c` over a collection, no options.
+fn plain_loop(for_clause: &ForClause) -> bool {
     for_clause.source_expression.is_none()
         && for_clause.system_time.is_none()
         && for_clause.valid_time.is_none()
@@ -46,9 +46,13 @@ fn indexed_loop(for_clause: &ForClause, filter: &Expression) -> bool {
             .source_variable
             .as_ref()
             .is_none_or(|s| s == &for_clause.collection)
-        // Equalities and nothing else: the index entries are then exactly
-        // the rows the FILTER accepts.
-        && equalities(filter).is_some()
+}
+
+/// `FOR v IN c FILTER <equalities>` over a collection, no options.
+fn indexed_loop(for_clause: &ForClause, filter: &Expression) -> bool {
+    // Equalities and nothing else: the index entries are then exactly
+    // the rows the FILTER accepts.
+    plain_loop(for_clause) && equalities(filter).is_some()
 }
 
 /// The conjuncts of `a == x AND b == y AND …`, or `None` when one of them
@@ -71,7 +75,9 @@ fn equalities(filter: &Expression) -> Option<Vec<&Expression>> {
 }
 
 /// The loop, the FILTER expression and the count variable of
-/// `FOR … FILTER … COLLECT WITH COUNT INTO n RETURN …`.
+/// `FOR … FILTER … COLLECT WITH COUNT INTO n RETURN …`. Whether the FILTER
+/// is one a count can be read from is the caller's to say: an index wants
+/// equalities (`indexed_loop`), a columnar collection takes ranges too.
 fn count_plan(query: &Query) -> Option<(&ForClause, &Expression, &str)> {
     if !bare(query) {
         return None;
@@ -81,7 +87,7 @@ fn count_plan(query: &Query) -> Option<(&ForClause, &Expression, &str)> {
     else {
         return None;
     };
-    if !indexed_loop(for_clause, &filter.expression)
+    if !plain_loop(for_clause)
         || !collect.group_vars.is_empty()
         || collect.into_var.is_some()
         || !collect.keep_vars.is_empty()
@@ -107,7 +113,7 @@ fn rows_plan(query: &Query) -> Option<(&ForClause, &Expression)> {
     else {
         return None;
     };
-    if !indexed_loop(for_clause, &filter.expression) {
+    if !plain_loop(for_clause) {
         return None;
     }
     let ret = query.return_clause.as_ref()?;
@@ -186,6 +192,14 @@ impl QueryExecutor<'_> {
         filter: &Expression,
         bindings: &Context,
     ) -> DbResult<Option<u64>> {
+        // A columnar collection counts in its arrays whatever comparisons
+        // it answers, ranges included.
+        if let Some(count) = self.columnar_count(for_clause, filter, bindings)? {
+            return Ok(Some(count));
+        }
+        if !indexed_loop(for_clause, filter) {
+            return Ok(None);
+        }
         let name = &for_clause.collection;
         // A LET-bound array of that name is iterated, not the collection.
         if bindings.contains_key(name) || self.row_policy_applies(name) || self.tx_wrote(name) {
@@ -278,11 +292,13 @@ mod tests {
     use crate::sdbql::parser::parse;
 
     fn plans(q: &str) -> bool {
-        count_plan(&parse(q).unwrap()).is_some()
+        count_plan(&parse(q).unwrap())
+            .is_some_and(|(for_clause, filter, _)| indexed_loop(for_clause, filter))
     }
 
     fn counts_rows(q: &str) -> bool {
-        rows_plan(&parse(q).unwrap()).is_some()
+        rows_plan(&parse(q).unwrap())
+            .is_some_and(|(for_clause, filter)| indexed_loop(for_clause, filter))
     }
 
     #[test]
