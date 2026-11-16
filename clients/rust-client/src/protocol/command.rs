@@ -139,6 +139,40 @@ pub enum Command {
         #[serde(default)]
         by: Option<String>,
     },
+    /// The counter fields of a collection, each with its state.
+    ListCounters {
+        database: String,
+        collection: String,
+    },
+    /// Declare that the database numbers a field on insert. `counter` is
+    /// what `POST …/collection/{name}/counters` takes: `field`, and
+    /// optionally `start`, `reset`, `timezone`, `prefix`, `suffix`,
+    /// `padding`, `durable`, `node`.
+    CreateCounter {
+        database: String,
+        collection: String,
+        counter: Value,
+    },
+    DeleteCounter {
+        database: String,
+        collection: String,
+        field: String,
+    },
+    /// Make `next` the number the next insert gets.
+    SetCounterNext {
+        database: String,
+        collection: String,
+        field: String,
+        next: u64,
+    },
+    /// Hand the numbering to `node`.
+    MoveCounter {
+        database: String,
+        collection: String,
+        field: String,
+        #[serde(default)]
+        node: Option<String>,
+    },
     BeginTransaction {
         database: String,
         #[serde(default)]

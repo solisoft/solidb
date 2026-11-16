@@ -164,6 +164,115 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
     }
 
+    /// The counter fields of `collection`: `{"counters": [...]}`, each with
+    /// its `state` (`next` is the next number).
+    pub async fn list_counters(
+        &mut self,
+        database: &str,
+        collection: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::ListCounters {
+                database: database.to_string(),
+                collection: collection.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Declare that the database numbers `field` of `collection` on insert:
+    /// 1, 2, 3…, never the same number twice and with no gap. `options` is
+    /// an object with any of `start`, `reset` ("day", "week", "month",
+    /// "year"), `timezone`, `prefix`, `suffix`, `padding`, `durable` and
+    /// `node`, or `Value::Null` for a plain count from 1. Returns the
+    /// counter as declared, with its state. An insert then leaves the field
+    /// out and reads it from the answer; in a transaction the number is
+    /// given at commit.
+    pub async fn create_counter(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+        options: Value,
+    ) -> Result<Value, DriverError> {
+        let mut counter = match options {
+            Value::Object(map) => map,
+            _ => serde_json::Map::new(),
+        };
+        counter.insert("field".to_string(), Value::String(field.to_string()));
+        let response = self
+            .send_command(Command::CreateCounter {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                counter: Value::Object(counter),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Stop numbering `field`. The stored numbers and their unique index
+    /// stay.
+    pub async fn delete_counter(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+    ) -> Result<(), DriverError> {
+        let response = self
+            .send_command(Command::DeleteCounter {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?;
+        Ok(())
+    }
+
+    /// Make `next` the number the next insert gets. Refused when a document
+    /// already holds it. Returns the counter with its state.
+    pub async fn set_counter_next(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+        next: u64,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::SetCounterNext {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+                next,
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Hand the numbering of `field` to `node` (in a cluster, one node
+    /// numbers). Asked of the node that numbers now.
+    pub async fn move_counter(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+        node: Option<&str>,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::MoveCounter {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+                node: node.map(str::to_string),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
     /// Combined vector + fulltext search with score fusion.
     ///
     /// Optional weights default to 0.5/0.5, `limit` to 10 and `fusion` to

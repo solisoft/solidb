@@ -848,3 +848,117 @@ fn foreign_keys_over_a_real_connection() {
         assert_eq!(listed["foreign_keys"], json!([]));
     });
 }
+
+/// Counter fields through the driver and the Rust client: declared, listed,
+/// set and dropped by commands; the driver's own inserts are numbered.
+#[test]
+fn counters_over_a_real_connection() {
+    use solidb::storage::StorageEngine;
+
+    const DB: &str = "numbers";
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "reads-password");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let engine = std::sync::Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database(DB.to_string()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("invoices".to_string(), None).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let listener = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let storage = engine.clone();
+    rt.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = solidb::driver::DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+
+    rt.block_on(async {
+        let mut c = SoliDBClientBuilder::new(&addr)
+            .auth(DB, "admin", "reads-password")
+            .build()
+            .await
+            .unwrap();
+
+        let declared = c
+            .create_counter(
+                DB,
+                "invoices",
+                "number",
+                json!({"start": 41, "prefix": "INV-", "padding": 4}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(declared["field"], json!("number"));
+        assert_eq!(declared["state"]["next"], json!(41));
+        let again = c
+            .create_counter(DB, "invoices", "number", serde_json::Value::Null)
+            .await;
+        assert!(again.is_err(), "one counter per field");
+
+        // The driver's inserts are numbered, one at a time and in bulk.
+        let first = c
+            .insert(DB, "invoices", Some("a"), json!({"total": 10}))
+            .await
+            .unwrap();
+        assert_eq!(first["number"], json!("INV-0041"));
+        c.bulk_insert(
+            DB,
+            "invoices",
+            vec![json!({"total": 1}), json!({"total": 2})],
+        )
+        .await
+        .unwrap();
+        let given = c
+            .insert(DB, "invoices", Some("b"), json!({"number": "INV-0001"}))
+            .await
+            .unwrap_err();
+        assert!(
+            given.to_string().contains("the database assigns it"),
+            "{given}"
+        );
+
+        let listed = c.list_counters(DB, "invoices").await.unwrap();
+        assert_eq!(listed["counters"][0]["state"]["next"], json!(44));
+
+        let set = c
+            .set_counter_next(DB, "invoices", "number", 1288)
+            .await
+            .unwrap();
+        assert_eq!(set["state"]["next"], json!(1288));
+        let next = c
+            .insert(DB, "invoices", Some("c"), json!({}))
+            .await
+            .unwrap();
+        assert_eq!(next["number"], json!("INV-1288"));
+
+        // An instance that runs alone has no node to name.
+        let moved = c
+            .move_counter(DB, "invoices", "number", None)
+            .await
+            .unwrap();
+        assert_eq!(moved["node"], serde_json::Value::Null);
+
+        c.delete_counter(DB, "invoices", "number").await.unwrap();
+        let listed = c.list_counters(DB, "invoices").await.unwrap();
+        assert_eq!(listed["counters"], json!([]));
+        // Without the counter the field is the client's again.
+        let free = c
+            .insert(DB, "invoices", Some("d"), json!({"number": "mine"}))
+            .await
+            .unwrap();
+        assert_eq!(free["number"], json!("mine"));
+    });
+}
