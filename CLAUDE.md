@@ -882,17 +882,48 @@ Rules that keep it sound:
   serving node sends neither, and the logs are replayed as before. A new
   columnar operation belongs in `columnar_in_full_sync`.
 - **An index answers only for the rows it holds.** It is written once, by
-  `create_index`, and names rows by position in id order; inserts do not
-  add to it. Its entries are built in memory and written in one batch with
-  the schema: written a row at a time, each row rewrote the list of its
-  value, which was quadratic (11.7 s for 80,000 rows, card #916). `ColumnarCollectionMeta::index_rows` says how many rows from
-  the first it holds; `apply_filter` asks it for those and compares the
-  rows after them as rows. Every write that moves a position — a delete,
-  a row with an older id (replication), a truncate — must lower that count
-  (`cap_indexes`) in the batch that writes the rows: a new write path that
-  forgets it brings card #901 back (rows missing from filtered results).
-  A column with no entry was indexed by 2.10.4 or earlier: its index is
-  not used.
+  a build, and names rows by position in id order; inserts do not add to
+  it. Its entries are built in memory and written in one batch with the
+  schema: written a row at a time, each row rewrote the list of its
+  value, which was quadratic (11.7 s for 80,000 rows, card #916). A list
+  of positions is stored packed (`encode_positions`: a marker byte, then
+  LEB128 distances); `decode_positions` still reads the JSON array of
+  2.12.0 and earlier, and is the one place that reads a list.
+  `ColumnarCollectionMeta::index_rows` says how many rows it holds, and
+  `index_base` how many rows left the front since it was written: a
+  stored position is the row's position now plus that base
+  (`filter_positions` subtracts it, for every kind of index). Every write
+  that moves a position must say so in the batch that writes the rows: a
+  delete of exactly the first rows (`delete_found` checks, `prune_before`
+  when the rows are in id order) raises the base (`shift_indexes`); any
+  other — a delete in the middle, a row with an older id (replication) —
+  lowers the count (`cap_indexes`); a truncate zeroes both. A new write
+  path that forgets it brings card #901 back (rows missing from filtered
+  results). Each of them also calls `note_moved`, which is what makes a
+  build that read the rows before it start again. A column with no entry
+  in `index_rows` was indexed by 2.10.4 or earlier: its index is not
+  used.
+- **An index is built outside the write lock** (`build_index`): the lock
+  is held to take the rows as they stand and again to write, and the
+  write goes ahead only if no position moved in between (`Kept::moved`);
+  the third attempt holds the lock throughout. Rows appended meanwhile
+  are simply after those the index holds. A background build
+  (`start_index_build`, `POST …/index?wait=false`) is written in the
+  metadata (`index_builds`) before its thread starts and removed by the
+  batch that stores the index, so `ColumnarCollection::load` starts again
+  one that a restart interrupted (`resume_index_builds`: no read for a
+  collection with none pending). The build gives up when its mark is gone
+  (`drop_index` removes it) and when the database closes:
+  `StorageEngine`'s `Drop` stops and joins the threads
+  (`stop_index_builds`), as it joins the sealer. The index is logged for
+  the peers when the build is accepted, not when it ends: a resumed build
+  has no log at hand. `?rebuild=true` is local and not logged.
+- **The HTTP aggregate and the driver's go through one pass**
+  (`group_by_rows`, `aggregate_rows`, `each_row`): the rows a filter
+  keeps, by `filter_positions` as `/query`, each read in its block's
+  arrays. A group is still the text of its keys joined by `|`, and a key
+  that reads as a number comes back as a float: results must stay those
+  of 2.12.0, which read each row by id (two minutes for 3.65 million).
 - **A block names its columns**, so the schema can change
   (`add_column`, `drop_column`, `rename_column`, all through
   `change_schema`). An add writes the schema only: a block sealed before
@@ -967,8 +998,8 @@ Rules that keep it sound:
   first blocks. A block wholly older than the cutoff goes as one key; the
   one the cutoff falls in is sealed again from the rows it keeps. The TTL
   worker calls it for every `_columnar_` collection (`ttl::TtlWorker`),
-  and `POST …/prune` on demand. It lowers the indexes' counts like any
-  delete (`cap_indexes`). The setting is replicated
+  and `POST …/prune` on demand. It raises the indexes' base
+  (`shift_indexes`), so they go on answering. The setting is replicated
   (`ColumnarSetRetention`, and the definition a full sync sends); what a
   node removes is not logged, since each node removes by the same rule.
   A new way to give a row an id that is not the instant it was inserted

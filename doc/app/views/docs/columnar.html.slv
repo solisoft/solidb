@@ -350,7 +350,7 @@
 
           <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
             <li>In a cluster the retention is replicated and each node removes its own old rows; the removals are not.</li>
-            <li>Removing the oldest rows moves every row that stays, so an index on a column answers for none of them afterwards: filters are still answered right, by comparing rows. Create the index again to have it used.</li>
+            <li>An index on a column goes on answering after the oldest rows are removed (from 2.12.1; before, it answered for none of the rows that stayed until it was created again).</li>
             <li>A row replicated or restored under an older id is as old as that id says.</li>
           </ul>
         </div>
@@ -397,6 +397,9 @@
 
           <p class="text-gray-300 mb-6">
             Perform fast aggregations on single columns or with grouping. The engine reads only the necessary columns and uses streaming processing for minimal memory footprint (O(1)).
+          </p>
+          <p class="text-sm text-gray-400 mb-6">
+            <code class="text-cyan-400">POST &hellip;/columnar/:collection/aggregate</code> takes a <code>filter</code>, the one <code>/query</code> takes (a comparison, or <code>{"and": [&hellip;]}</code> / <code>{"or": [&hellip;]}</code>): only the rows it keeps are aggregated, found the way <code>/query</code> finds them. <code>{"column": "value", "operation": "AVG", "group_by": ["metric_id"], "filter": {"column": "day", "op": "GTE", "value": 1764547200000}}</code> is the average per metric since that day: 32&nbsp;ms for 500 groups over the last 30 days of 3.65 million rows. Through 2.12.0 the endpoint ignored <code>filter</code> and answered for every row.
           </p>
 
           <div class="space-y-8">
@@ -602,7 +605,8 @@
             <ul class="text-sm text-gray-300 space-y-2 list-disc list-inside">
               <li>A filter is compared in the arrays of the blocks, in SDBQL (<code>FOR r IN metrics FILTER &hellip;</code>) and in <code>/query</code> alike. Each block of an integer or float column knows its smallest and largest value, and a block they rule out is passed over: a range of timestamps or of sequential ids reads the blocks that hold it. On a million rows, a hundred rows of a range come back in under a millisecond with no index.</li>
               <li>A range against a number (<code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>) is always answered that way, with no index: a <code>sorted</code> index is not consulted for it. The <code>minmax</code> index type that existed for ranges through 2.11 was removed: creating one answers <code>400</code>, and one a collection still holds is dropped the first time the collection is loaded.</li>
-              <li>An equality or an <code>IN</code> uses a <code>hash</code>, <code>sorted</code>, <code>bitmap</code> or <code>bloom</code> index when the column has one, for the rows the index holds; rows inserted after the index was created are compared in the arrays.</li>
+              <li>An equality or an <code>IN</code> uses a <code>hash</code>, <code>sorted</code>, <code>bitmap</code> or <code>bloom</code> index when the column has one, for the rows the index holds; rows inserted after the index was built are compared in the arrays. Removing the oldest rows (a retention, a delete of everything before a date) leaves the index in use; deleting rows from the middle leaves it answering for the rows before them. <code>GET &hellip;/indexes</code> says how many rows each index holds (<code>rows</code>), and <code>POST &hellip;/index?rebuild=true</code> builds one again over every row.</li>
+              <li>An index is a modest gain here: the arrays are compared fast. On 3.65 million rows, the 7,300 rows of one value of an integer column come back in 6.6&nbsp;ms with a sorted index and 8.3&nbsp;ms without; an index on a column whose values follow the insertion order (a day, a sequence) brings nothing, the blocks' bounds already skip what is out of range.</li>
               <li>A count whose <code>FILTER</code> compares columns with constants (<code>FOR r IN metrics FILTER r.t &gt;= @from AND r.t &lt; @to COLLECT WITH COUNT INTO n RETURN n</code>, or <code>LENGTH(FOR &hellip; RETURN 1)</code>) is counted in the arrays and builds no row: half a million rows of a range are counted in about a millisecond. <code>EXPLAIN</code> reports it as <code>columnar_count</code>.</li>
               <li><code>EXPLAIN</code> reports <code>columnar_scan</code>, the index an equality used (<code>"index_used": "host (hash)"</code>), and a note: <em>`metrics` is columnar: 3 of its 6 columns are built, for the rows its FILTER on `host`, `v` keeps, found in the column arrays and the index on host (hash)</em>.</li>
             </ul>
@@ -673,6 +677,36 @@
   "column": "status",
   "index_type": "bitmap"
 }</code></pre>
+
+            <p class="text-sm text-gray-400 mt-4">
+              The answer comes once the index is built: <code>{"status": "created", "column": "status", "index_type": "bitmap"}</code>. Two sorted indexes on 3.65 million rows take 1.2 seconds; inserts are not held up meanwhile.
+            </p>
+          </div>
+
+          <div class="mt-6 bg-gray-950/50 rounded-xl border border-white/5 p-6">
+            <h4 class="text-white font-bold mb-3 text-sm uppercase tracking-wider">Building in the background</h4>
+            <p class="text-sm text-gray-400 mb-4">
+              With <code>?wait=false</code> the request answers at once, <code>202</code>, with the id of the build, and the index is built on a thread of the server. <code>GET &hellip;/index/:column</code> follows it.
+            </p>
+            <pre><code class="language-bash text-sm">curl -X POST "$URL/_api/database/app/columnar/metrics/index?wait=false" \
+  -d '{"column": "metric_id", "index_type": "sorted"}'
+# 202
+# {"status": "building", "job": "0193a1…", "column": "metric_id", "index_type": "sorted",
+#  "rows_done": 0, "rows_total": 3650000, "started_at": 1794300000}
+
+curl "$URL/_api/database/app/columnar/metrics/index/metric_id"
+# {"status": "building", "job": "0193a1…", "rows_done": 1310720, "rows_total": 3650000, …}
+# then
+# {"status": "created", "job": "0193a1…", "column": "metric_id", "index_type": "sorted",
+#  "created_at": 1794300001, "rows": 3650000, "size_bytes": 3912345}</code></pre>
+            <ul class="list-disc pl-6 mt-4 space-y-2 text-gray-400 text-sm">
+              <li><code>status</code> is <code>building</code>, <code>created</code>, or <code>failed</code> with an <code>error</code>. A column with neither an index nor a build answers <code>404</code>.</li>
+              <li>A build is written down before it starts: if the server stops before it ends, it is started again when the server next reads the collection, under the same <code>job</code>.</li>
+              <li><code>DELETE &hellip;/index/:column</code> calls off a build that is still running.</li>
+              <li><code>GET &hellip;/indexes</code> lists, for each index, the rows it holds and its size, and under <code>builds</code> the builds that have not ended in an index.</li>
+              <li><code>?rebuild=true</code>, with or without <code>wait=false</code>, builds the index again from the rows as they are now, in place of the one the column has.</li>
+              <li>In a cluster the index is announced to the other nodes when the build is accepted; each builds its own.</li>
+            </ul>
           </div>
         </div>
 
