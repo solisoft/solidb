@@ -329,6 +329,14 @@ Rules for code that touches storage:
 | `SOLIDB_SCAN_THREADS` | the CPUs the process may use (cgroup `cpu.max`, else `available_parallelism`) | Threads a full-scan `COLLECT` may split into, and a process-wide cap on scan threads (`execution/scan_threads.rs`). `1` turns parallel scans off. Only engines with snapshots run them, which both have (solistore since 0.3); a collection under 65,536 documents stays on one thread. |
 | `SOLIDB_MAX_TOTAL_WAL_SIZE` | 2GB prod / 256MB `--dev` | Total WAL budget. This is a **flush trigger**, not a disk cap. Lowering it to save disk is a false economy — it produces thousands of tiny SSTs. Bound memory with `--memtable-budget`. |
 
+A driver connection answered within 40 µs waits that long for its next
+request without letting its worker park (`driver/handlers/mod.rs`,
+`stay_awake_for_request`), while the connections active lately are no more
+than the workers (`transaction::connections_are_few`, the same count as
+`off_the_worker`). It yields, which looks at the sockets; it must never
+spin without yielding, and never when connections outnumber workers:
+there a worker has requests waiting and the yield only delays them.
+
 Per-collection `disk_usage` of a shared collection is RocksDB's approximate
 size of its key range (flushed data only; memtable and SST count read 0).
 `/metrics` carries `solidb_keyspace_creates_total`,

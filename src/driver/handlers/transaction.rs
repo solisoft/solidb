@@ -210,6 +210,9 @@ struct Handoff {
     average: AtomicUsize,
     /// Read by every commit, written when the answer changes.
     leaving: OwnCacheLines<AtomicBool>,
+    /// No more active connections than workers: read by every connection
+    /// between two requests (see [`connections_are_few`]).
+    few: OwnCacheLines<AtomicBool>,
 }
 
 static HANDOFF: Handoff = Handoff {
@@ -217,7 +220,14 @@ static HANDOFF: Handoff = Handoff {
     seen: OwnCacheLines(AtomicUsize::new(0)),
     average: AtomicUsize::new(0),
     leaving: OwnCacheLines(AtomicBool::new(false)),
+    few: OwnCacheLines(AtomicBool::new(false)),
 };
+
+/// Whether the connections that sent requests lately are no more than the
+/// async workers: each can then have a worker to itself.
+pub(super) fn connections_are_few() -> bool {
+    HANDOFF.few.0.load(Ordering::Relaxed)
+}
 
 /// Count the connection whose last counted window is `counted` as active
 /// now. Called once per request; all but the first of a window in each
@@ -265,6 +275,10 @@ impl Handoff {
         let old = self.average.load(Ordering::Relaxed);
         let average = old - old / 4 + active.min(1 << 20) * 64;
         self.average.store(average, Ordering::Relaxed);
+        let few = average <= workers * 256;
+        if few != self.few.0.load(Ordering::Relaxed) {
+            self.few.0.store(few, Ordering::Relaxed);
+        }
         let leaving = self.leaving.0.load(Ordering::Relaxed);
         let now = if leaving {
             average * 2 >= workers * 3 * 256
@@ -670,6 +684,7 @@ mod tests {
             seen: super::OwnCacheLines(AtomicUsize::new(0)),
             average: AtomicUsize::new(0),
             leaving: super::OwnCacheLines(AtomicBool::new(false)),
+            few: super::OwnCacheLines(AtomicBool::new(false)),
         };
         let workers = 8;
         let settle = |h: &super::Handoff, active| {

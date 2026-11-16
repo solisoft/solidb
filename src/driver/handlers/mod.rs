@@ -79,6 +79,45 @@ pub(crate) fn peer_ip_of(addr: &str) -> String {
         .unwrap_or_else(|_| addr.to_string())
 }
 
+/// A request answered within this long is worth staying awake for the
+/// next one; and that is also how long the connection stays awake.
+const STAY_AWAKE_AFTER: std::time::Duration = std::time::Duration::from_micros(40);
+
+/// Wait for the connection's next request without letting the worker park,
+/// for at most [`STAY_AWAKE_AFTER`]; the read that follows waits as usual.
+///
+/// A worker with nothing to run parks, and the request that arrives next
+/// pays for its wake-up: a futex call from the worker that noticed it, then
+/// the hand-over (counted on single inserts from 8 clients: one futex call
+/// per request, the server at 3.5 of 8 CPUs). A client that has just been
+/// answered quickly usually asks again within microseconds. While the
+/// active connections are no more than the workers, each yields instead of
+/// sleeping: a yield looks at the sockets and comes back. Past that many
+/// connections the workers do not run out of requests, and a connection
+/// that yielded would only delay the others.
+async fn stay_awake_for_request<S>(stream: &mut tokio::io::BufReader<S>)
+where
+    S: tokio::io::AsyncRead + Unpin,
+{
+    use std::task::Poll;
+    use tokio::io::AsyncBufRead;
+    let until = std::time::Instant::now() + STAY_AWAKE_AFTER;
+    loop {
+        let arrived = std::future::poll_fn(|cx| {
+            Poll::Ready(
+                std::pin::Pin::new(&mut *stream)
+                    .poll_fill_buf(cx)
+                    .is_ready(),
+            )
+        })
+        .await;
+        if arrived || std::time::Instant::now() >= until {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+}
+
 impl DriverHandler {
     /// The session's identity as the query executor sees it.
     ///
@@ -222,7 +261,14 @@ impl DriverHandler {
         // The magic header has already been consumed by the multiplexer
         // Start processing commands immediately
 
+        // How long the last request took to answer; `None` before the first.
+        let mut last_took: Option<std::time::Duration> = None;
         loop {
+            if last_took.is_some_and(|took| took <= STAY_AWAKE_AFTER)
+                && transaction::connections_are_few()
+            {
+                stay_awake_for_request(&mut stream).await;
+            }
             // Read message length (4 bytes, big-endian)
             let mut len_buf = [0u8; 4];
             match stream.read_exact(&mut len_buf).await {
@@ -319,6 +365,7 @@ impl DriverHandler {
             }
 
             // Execute command
+            let began = std::time::Instant::now();
             transaction::note_request(&mut self.active_window);
             let raw_response = raw.and_then(|write| document::run_raw(self, write));
             let response = match (raw_response, command) {
@@ -330,7 +377,9 @@ impl DriverHandler {
                 },
             };
             // Send response
-            if let Err(e) = self.send_response(&mut stream, &response).await {
+            let sent = self.send_response(&mut stream, &response).await;
+            last_took = Some(began.elapsed());
+            if let Err(e) = sent {
                 tracing::warn!("Failed to send response to {}: {}", addr, e);
                 break;
             }
