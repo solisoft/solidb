@@ -471,6 +471,27 @@ async fn accept_failed(e: &std::io::Error) {
 /// go from 745,000 to 843,000 a second. The price is a longer tail on
 /// reads at 32 clients (p99 of an index read 240 -> 350 µs) and under 1%
 /// at one client.
+/// Async worker threads (`SOLIDB_WORKER_THREADS`); unset, tokio's default
+/// of one per CPU.
+///
+/// With as many workers as CPUs and fewer busy connections than that, a
+/// worker that finishes a request finds nothing to run and parks; the next
+/// request pays for its wake-up, and each wake-up is a futex call from the
+/// worker that noticed it. Counted on single inserts from 8 clients on 8
+/// hardware threads: one futex call per request, the server at 3.5 CPUs.
+/// Measured there, 8 workers against 6: inserts 219,000 -> 275,000 a
+/// second, the latest point of a series 285,000 -> 297,000. And at 32
+/// clients, where every worker is busy and each one fewer is a CPU not
+/// used: point reads 822,000 -> 717,000, index reads and joins 17% down,
+/// inserts and updates 9% up. So it is a setting for a server with few,
+/// busy connections, not a default.
+fn worker_threads() -> Option<usize> {
+    std::env::var("SOLIDB_WORKER_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+}
+
 fn io_poll_interval() -> u32 {
     std::env::var("SOLIDB_IO_POLL_INTERVAL")
         .ok()
@@ -611,10 +632,12 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Start the async runtime
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .event_interval(io_poll_interval())
-        .build()?;
+    let mut runtime = tokio::runtime::Builder::new_multi_thread();
+    runtime.enable_all().event_interval(io_poll_interval());
+    if let Some(workers) = worker_threads() {
+        runtime.worker_threads(workers);
+    }
+    let runtime = runtime.build()?;
     runtime.block_on(async_main(args))
 }
 

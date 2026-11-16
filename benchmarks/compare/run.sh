@@ -102,6 +102,8 @@ run_one() {
       run=("${base[@]}" -e SOLIDB_ADMIN_PASSWORD=$PASSWORD -e SOLIDB_PORT=$port -v "$data:/data:Z,U")
       [[ $cfg == solidb-solistore* ]] && run+=(-e SOLIDB_ENGINE=solistore)
       [[ $cfg == *-durable ]] && run+=(-e SOLIDB_DURABILITY=full)
+      # SOLIDB_ENV="A=1 B=2": more settings for the server, for a trial.
+      for kv in ${SOLIDB_ENV:-}; do run+=(-e "$kv"); done
       run+=("$image")
       ;;
     postgres | postgres-typed | postgres-durable | postgres-typed-fk)

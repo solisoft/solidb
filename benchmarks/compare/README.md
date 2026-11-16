@@ -765,6 +765,16 @@ directory held (`<cfg>.disk_detail`, which `ts.sh` now writes):
   One 10 s run each way: same answers and rates, load 1.07 → 1.20 M
   points/s.
 
+`SOLIDB_WORKER_THREADS=6` (8 is the default on this machine) puts SoliDB
+ahead on `insert` at 8 clients, 274,975 against QuestDB's 250,359, and
+brings `last` at 8 clients to 296,999 against 338,912; the other rows do
+not move (three runs of 20 s, `SOLIDB_ENV` passes the setting). It is not
+in the table: the same setting costs 13 to 17% on the reads of the main
+benchmark at 32 clients, so it is not a default, and the table is of
+defaults. What it shows is where those two rows are lost: with as many
+workers as hardware threads and 8 connections, the workers sleep between
+requests and each request pays for a wake-up.
+
 The read rows of the second pass are 2 to 7% under the first's on the same
 machine, hours apart; no row changes side. Tried and not kept: workers kept
 awake between requests (insert at 8 clients +13%, the p99 of `range` and
