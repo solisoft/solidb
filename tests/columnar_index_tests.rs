@@ -83,7 +83,7 @@ async fn test_bitmap_index_correctness() {
 }
 
 #[tokio::test]
-async fn test_minmax_index_correctness() {
+async fn a_range_needs_no_index() {
     let dir = tempdir().unwrap();
     let storage = StorageEngine::new(dir.path().to_str().unwrap()).unwrap();
     storage.create_database("test_db".to_string()).unwrap();
@@ -117,11 +117,8 @@ async fn test_minmax_index_correctness() {
     // Batch insert to ensure chunks are filled
     col.insert_rows(rows).unwrap();
 
-    // Create MinMax Index
-    col.create_index("val", ColumnarIndexType::MinMax).unwrap();
-
-    // Query Gt 1500. Should prune Chunk 0 completely (Max 999 < 1500).
-    // Should scan Chunk 1 and filter.
+    // No index: a range is answered from the arrays (there used to be a
+    // `minmax` index for it, which was removed).
     let filter = ColumnFilter::Gt("val".to_string(), json!(1500));
     let results = col.scan_filtered(&filter, &["val"]).unwrap();
 
@@ -231,7 +228,6 @@ fn an_index_answers_as_no_index_does_after_writes() {
         ColumnarIndexType::Sorted,
         ColumnarIndexType::Hash,
         ColumnarIndexType::Bitmap,
-        ColumnarIndexType::MinMax,
         ColumnarIndexType::Bloom,
     ] {
         // The same writes on both; only one is indexed.
@@ -319,4 +315,57 @@ fn what_an_index_holds_is_kept_across_loads() {
     assert_eq!(again.metadata().unwrap().index_rows.get("s"), Some(&100));
     let filter = ColumnFilter::Eq("s".to_string(), json!("k3"));
     assert_eq!(again.scan_filtered(&filter, &["v"]).unwrap().len(), 20);
+}
+
+/// Dropping a bitmap or a bloom index left its entries behind: only those
+/// of a sorted or hash index were deleted. A bitmap index created again on
+/// the column then answered from the entry of a value no row held any
+/// more, and named rows that hold another.
+#[test]
+fn a_dropped_index_leaves_nothing_for_the_next_one() {
+    let dir = tempdir().unwrap();
+    let storage = StorageEngine::new(dir.path().to_str().unwrap()).unwrap();
+    storage.create_database("test_db".to_string()).unwrap();
+    let db = storage.get_database("test_db").unwrap();
+    db.create_collection("_columnar_stale".to_string(), None)
+        .unwrap();
+    let columns = vec![ColumnDef {
+        name: "host".to_string(),
+        data_type: ColumnType::String,
+        nullable: false,
+        indexed: false,
+        index_type: None,
+    }];
+    let col = ColumnarCollection::new(
+        "stale".to_string(),
+        "test_db",
+        db.db_arc(),
+        columns,
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    for kind in [ColumnarIndexType::Bitmap, ColumnarIndexType::Bloom] {
+        col.truncate().unwrap();
+        let ids = col
+            .insert_rows(
+                (0..3000)
+                    .map(|i| json!({"host": if i < 1500 { "gone" } else { "kept" }}))
+                    .collect(),
+            )
+            .unwrap();
+        col.create_index("host", kind.clone()).unwrap();
+        // Every row of "gone" goes, then the index, then it is made again.
+        col.delete_rows(&ids[..1500]).unwrap();
+        col.drop_index("host").unwrap();
+        col.create_index("host", kind.clone()).unwrap();
+        let gone = ColumnFilter::Eq("host".to_string(), json!("gone"));
+        assert_eq!(
+            col.scan_filtered(&gone, &["host"]).unwrap(),
+            Vec::<serde_json::Value>::new(),
+            "{kind:?}"
+        );
+        let kept = ColumnFilter::Eq("host".to_string(), json!("kept"));
+        assert_eq!(col.scan_filtered(&kept, &["host"]).unwrap().len(), 1500);
+        col.drop_index("host").unwrap();
+    }
 }

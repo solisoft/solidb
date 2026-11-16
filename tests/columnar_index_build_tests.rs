@@ -80,7 +80,6 @@ fn an_index_built_over_many_rows_answers_as_no_index_does() {
         ("hash", ColumnarIndexType::Hash),
         ("sorted", ColumnarIndexType::Sorted),
         ("bitmap", ColumnarIndexType::Bitmap),
-        ("minmax", ColumnarIndexType::MinMax),
         ("bloom", ColumnarIndexType::Bloom),
     ] {
         for indexed in ["host", "v"] {

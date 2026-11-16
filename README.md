@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 ### Core Database
 - 🚀 **Fast & Efficient** — Built with Rust for maximum performance
 - 📄 **JSON Document Storage** — Store and query JSON documents with ease
-- 📊 **Columnar Storage** — Column-oriented storage for analytics workloads with LZ4 compression and specialized indexes (Sorted, Hash, Bitmap, MinMax, Bloom)
+- 📊 **Columnar Storage** — Column-oriented storage for analytics workloads with LZ4 compression and specialized indexes (Sorted, Hash, Bitmap, Bloom)
 - 🗃️ **Blob Storage** — Native support for storing and retrieving binary files
 - 💾 **RocksDB Storage** — Production-grade persistence with automatic crash recovery; all collections share one keyspace, so creating or dropping a collection costs the same at ten collections or ten thousand
 

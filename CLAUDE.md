@@ -943,7 +943,13 @@ Rules that keep it sound:
   goes block by block so that one side ruling a block out spares the
   others (`block_rules_out`). An index answers an equality or an `IN`
   (`index_for`), for the rows it holds; a range against a number is never
-  an index's. Positions come back ascending from every branch: `in_both`
+  an index's. The `minmax` kind that existed for ranges was removed:
+  `ColumnarCollection::load` drops one a collection still holds
+  (`retire_minmax`, on the raw JSON: the kind no longer deserializes) and
+  `sync::columnar::index_kind` takes one from an older peer as no index.
+  `drop_index` deletes the entries of every kind of index for the column;
+  a new kind with its own key prefix has to be added there, to truncate
+  and to drop. Positions come back ascending from every branch: `in_both`
   relies on it.
 - **Compacting merges runs of neighbouring blocks** that fit in one
   (`ColumnarCollection::compact`, `POST …/compact`): the rows of a run are

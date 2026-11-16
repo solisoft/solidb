@@ -464,13 +464,30 @@ pub fn drop_index(db: &Database, log: Option<&SyncLog>, name: &str, column: &str
     Ok(())
 }
 
+/// The kind of index a peer names, `None` for `minmax`: a node older than
+/// the removal of that kind may still log one, and it is not an error
+/// here. Ranges are answered from the blocks' bounds, with no index.
+fn index_kind(data: &[u8]) -> DbResult<Option<ColumnarIndexType>> {
+    if serde_json::from_slice::<String>(data).is_ok_and(|kind| kind == "minmax") {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_slice(data)?))
+}
+
 /// Apply a peer's `ColumnarCreateIndex`: the index is built here from the
 /// rows this node has. A column that already has an index of that type is
 /// left alone; one of another type is replaced, the origin's being the one
 /// every node should end with.
 pub fn apply_create_index(db: &Database, name: &str, column: &str, data: &[u8]) -> DbResult<()> {
-    let index_type: ColumnarIndexType = serde_json::from_slice(data)?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    let Some(index_type) = index_kind(data)? else {
+        // The origin replaced whatever index the column had with one this
+        // node has no use for: no index here.
+        if col.has_index(column) {
+            col.drop_index(column)?;
+        }
+        return Ok(());
+    };
     if col.get_index_type(column).as_ref() == Some(&index_type) {
         return Ok(());
     }
@@ -616,11 +633,13 @@ pub fn apply_full_sync_part(
         ColumnarPart::Indexes(indexes) => {
             let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
             for (column, index_type) in indexes {
-                let index_type: ColumnarIndexType = serde_json::from_slice(&index_type)?;
+                let index_type = index_kind(&index_type)?;
                 if col.has_index(&column) {
                     col.drop_index(&column)?;
                 }
-                col.create_index(&column, index_type)?;
+                if let Some(index_type) = index_type {
+                    col.create_index(&column, index_type)?;
+                }
             }
             Ok(())
         }

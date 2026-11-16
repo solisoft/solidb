@@ -160,8 +160,8 @@ fn a_columnar_collection_answers_as_documents_do() {
     col.drop_index("host").unwrap();
     col.drop_index("v").unwrap();
     col.create_index("host", ColumnarIndexType::Bitmap).unwrap();
-    col.create_index("v", ColumnarIndexType::MinMax).unwrap();
-    compare(&engine, "bitmap index on host, minmax index on v");
+    col.create_index("v", ColumnarIndexType::Bloom).unwrap();
+    compare(&engine, "bitmap index on host, bloom index on v");
 
     // Rows written after the indexes are read too.
     col.insert_rows(vec![json!({"host": "h3", "v": 100, "ms": 1.0, "ok": true})])

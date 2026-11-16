@@ -810,11 +810,18 @@ pub async fn create_columnar_index_handler(
         Some("hash") => crate::storage::columnar::ColumnarIndexType::Hash,
         Some("sorted") | None => crate::storage::columnar::ColumnarIndexType::Sorted,
         Some("bitmap") => crate::storage::columnar::ColumnarIndexType::Bitmap,
-        Some("minmax") => crate::storage::columnar::ColumnarIndexType::MinMax,
+        Some("minmax") => {
+            return Err(DbError::BadRequest(
+                "The minmax index type was removed: a range is answered from the bounds \
+                 each block keeps of its column, and needs no index. Supported: sorted, \
+                 hash, bitmap, bloom"
+                    .to_string(),
+            ))
+        }
         Some("bloom") => crate::storage::columnar::ColumnarIndexType::Bloom,
         Some(other) => {
             return Err(DbError::BadRequest(format!(
-                "Unknown index type: {}. Supported: sorted, hash, bitmap, minmax, bloom",
+                "Unknown index type: {}. Supported: sorted, hash, bitmap, bloom",
                 other
             )))
         }

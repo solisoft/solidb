@@ -29,10 +29,13 @@ const COL_ROW_PREFIX: &str = "col_row:"; // col_row:{row_id} -> full row for rec
 const COL_IDX_PREFIX: &str = "col_idx:"; // col_idx:{column}:{encoded_value} -> [row_ids]
 const COL_IDX_META_PREFIX: &str = "col_idx_meta:"; // col_idx_meta:{column} -> ColumnarIndexMeta
 const COL_IDX_BITMAP_PREFIX: &str = "col_idx_bmp:"; // col_idx_bmp:{column}:{encoded_value} -> [compressed_bitset]
-const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:"; // col_idx_mm:{column}:{chunk_id} -> {min, max}
+                                                    // What a `minmax` index stored, through 2.11: nothing writes it any more,
+                                                    // and whatever is left under it is deleted (`retire_minmax`, drop, truncate).
+const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:";
 const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:"; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
-const MINMAX_CHUNK_SIZE: u64 = 1000;
+/// The rows one bloom filter of a bloom index answers for.
+const BLOOM_CHUNK_ROWS: u64 = 1000;
 
 /// One writer lock per (RocksDB instance, columnar CF), shared by every handle.
 type WriteLockMap = dashmap::DashMap<(usize, String), Arc<parking_lot::Mutex<()>>>;
@@ -375,15 +378,7 @@ pub enum ColumnarIndexType {
     Sorted, // Supports equality + range queries (binary-comparable keys)
     Hash,   // Equality-only (faster for high-cardinality)
     Bitmap, // Low cardinality, fast boolean ops, compressed
-    MinMax, // Range pruning for high cardinality/time-series
     Bloom,  // Probabilistic existence check per chunk
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MinMaxChunk {
-    pub min: Value,
-    pub max: Value,
-    pub count: u64,
 }
 
 /// Metadata for a columnar index
@@ -533,6 +528,7 @@ impl ColumnarCollection {
                 })?
         };
 
+        let meta_bytes = retire_minmax(&db, &ks, &cf_name, &name, meta_bytes)?;
         let meta = serde_json::from_slice::<ColumnarCollectionMeta>(&meta_bytes)?;
 
         let format = meta.format;
@@ -2166,34 +2162,8 @@ impl ColumnarCollection {
                     );
                 }
             }
-            ColumnarIndexType::MinMax => {
-                for (chunk_id, chunk) in values.chunks(MINMAX_CHUNK_SIZE as usize).enumerate() {
-                    let Some(first) = chunk.first() else {
-                        continue;
-                    };
-                    let mut summary = MinMaxChunk {
-                        min: first.clone(),
-                        max: first.clone(),
-                        count: 0,
-                    };
-                    for value in chunk {
-                        if compare_values(value, &summary.min) == std::cmp::Ordering::Less {
-                            summary.min = value.clone();
-                        }
-                        if compare_values(value, &summary.max) == std::cmp::Ordering::Greater {
-                            summary.max = value.clone();
-                        }
-                        summary.count += 1;
-                    }
-                    batch.put_ks(
-                        &cf,
-                        self.encode_minmax_key(column, chunk_id as u64).as_bytes(),
-                        serde_json::to_vec(&summary)?,
-                    );
-                }
-            }
             ColumnarIndexType::Bloom => {
-                for (chunk_id, chunk) in values.chunks(MINMAX_CHUNK_SIZE as usize).enumerate() {
+                for (chunk_id, chunk) in values.chunks(BLOOM_CHUNK_ROWS as usize).enumerate() {
                     let mut filter = BloomFilter::with_num_bits(10_000).expected_items(1000);
                     for value in chunk {
                         filter.insert(&value.to_string());
@@ -2272,15 +2242,26 @@ impl ColumnarCollection {
             )));
         }
 
-        // Delete all index entries for this column
-        let prefix = format!("{}{}:", COL_IDX_PREFIX, column);
-        let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-        for (key, _) in iter.flatten() {
-            if !key.starts_with(prefix.as_bytes()) {
-                break;
+        // Delete the column's entries, whatever kind of index wrote them.
+        // Only those of a sorted or hash index used to go: a bitmap or a
+        // bloom index left its entries behind, and one created again on
+        // the column answered from the entry of a value no row holds any
+        // more.
+        for kind in [
+            COL_IDX_PREFIX,
+            COL_IDX_BITMAP_PREFIX,
+            COL_IDX_MINMAX_PREFIX,
+            COL_IDX_BLOOM_PREFIX,
+        ] {
+            let prefix = format!("{}{}:", kind, column);
+            let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
+            for (key, _) in iter.flatten() {
+                if !key.starts_with(prefix.as_bytes()) {
+                    break;
+                }
+                db.delete_ks(&cf, &key)
+                    .map_err(|e| DbError::InternalError(e.to_string()))?;
             }
-            db.delete_ks(&cf, &key)
-                .map_err(|e| DbError::InternalError(e.to_string()))?;
         }
 
         // Delete index metadata
@@ -2403,7 +2384,7 @@ impl ColumnarCollection {
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let row_count = meta.row_count;
-        let chunk_count = row_count.div_ceil(MINMAX_CHUNK_SIZE);
+        let chunk_count = row_count.div_ceil(BLOOM_CHUNK_ROWS);
 
         let mut candidate_ids = Vec::new();
         let val_str = value.to_string(); // Use consistent stringification
@@ -2420,8 +2401,8 @@ impl ColumnarCollection {
             }
 
             if matches {
-                let start = chunk_id * MINMAX_CHUNK_SIZE;
-                let end = (start + MINMAX_CHUNK_SIZE).min(row_count);
+                let start = chunk_id * BLOOM_CHUNK_ROWS;
+                let end = (start + BLOOM_CHUNK_ROWS).min(row_count);
                 candidate_ids.extend(start..end);
             }
         }
@@ -2511,11 +2492,6 @@ impl ColumnarCollection {
     fn encode_bitmap_key(&self, column: &str, value: &Value) -> String {
         let encoded = self.encode_value_for_key(value);
         format!("{}{}:{}", COL_IDX_BITMAP_PREFIX, column, encoded)
-    }
-
-    /// Encode key for MinMax index chunk
-    fn encode_minmax_key(&self, column: &str, chunk_id: u64) -> String {
-        format!("{}{}:{}", COL_IDX_MINMAX_PREFIX, column, chunk_id)
     }
 
     /// Encode key for Bloom index chunk
@@ -2789,12 +2765,13 @@ impl ColumnarCollection {
     /// against a number is never an index's: the arrays answer it in one
     /// pass and skip the blocks out of range, where a sorted index reads
     /// one entry per distinct value (0.5 s against 0.2 s for a hundred
-    /// rows out of a million, card #891), and a minmax index only knows
-    /// what each block already does.
+    /// rows out of a million, card #891). There used to be a `minmax`
+    /// index for ranges; it knew only what each block already does, and
+    /// was removed.
     fn index_for(&self, filter: &ColumnFilter, column: &str) -> Option<ColumnarIndexType> {
         let index = self.get_index_type(column)?;
         let answers = match filter {
-            ColumnFilter::Eq(..) | ColumnFilter::In(..) => index != ColumnarIndexType::MinMax,
+            ColumnFilter::Eq(..) | ColumnFilter::In(..) => true,
             ColumnFilter::Gt(_, bound)
             | ColumnFilter::Gte(_, bound)
             | ColumnFilter::Lt(_, bound)
@@ -2842,6 +2819,82 @@ impl ColumnarCollection {
         }
         Ok(positions)
     }
+}
+
+/// The stored metadata of a collection without its `minmax` indexes.
+///
+/// That kind of index (min and max per 1,000 rows, for ranges) was removed
+/// after 2.11: every block carries its own bounds, and a range was no
+/// longer answered from it. A collection that still has one loses it here,
+/// the first time it is loaded: its entries are deleted and its column is
+/// left with no index, which is how it has answered since. Without this
+/// the metadata would not be read at all, the kind being unknown.
+fn retire_minmax(
+    db: &DB,
+    ks: &Keyspace,
+    cf_name: &str,
+    name: &str,
+    meta_bytes: Vec<u8>,
+) -> DbResult<Vec<u8>> {
+    const KIND: &[u8] = b"\"minmax\"";
+    if !meta_bytes.windows(KIND.len()).any(|at| at == KIND) {
+        return Ok(meta_bytes);
+    }
+    let lock = COLUMNAR_WRITE_LOCKS
+        .entry((db as *const DB as usize, cf_name.to_string()))
+        .or_default()
+        .clone();
+    let _held = lock.lock();
+    let cf = ks.handle(db).ok_or_else(|| {
+        DbError::CollectionNotFound(format!("Columnar collection '{}' not found", name))
+    })?;
+    // As another handle may have left it meanwhile.
+    let meta_key = format!("{}{}", COL_META_PREFIX, name);
+    let stored = db
+        .get_ks(&cf, meta_key.as_bytes())
+        .map_err(|e| DbError::InternalError(e.to_string()))?
+        .unwrap_or(meta_bytes);
+    let mut meta: Value = serde_json::from_slice(&stored)?;
+    let mut retired = Vec::new();
+    if let Some(columns) = meta.get_mut("columns").and_then(Value::as_array_mut) {
+        for column in columns {
+            if column.get("index_type").and_then(Value::as_str) != Some("minmax") {
+                continue;
+            }
+            column["indexed"] = Value::Bool(false);
+            column["index_type"] = Value::Null;
+            if let Some(name) = column.get("name").and_then(Value::as_str) {
+                retired.push(name.to_string());
+            }
+        }
+    }
+    if retired.is_empty() {
+        return Ok(stored);
+    }
+    let mut batch = KvBatch::default();
+    for column in &retired {
+        if let Some(held) = meta.get_mut("index_rows").and_then(Value::as_object_mut) {
+            held.remove(column);
+        }
+        batch.delete_ks(&cf, format!("{}{}", COL_IDX_META_PREFIX, column).as_bytes());
+        let prefix = format!("{}{}:", COL_IDX_MINMAX_PREFIX, column);
+        for (key, _) in db.prefix_iterator_ks(&cf, prefix.as_bytes()).flatten() {
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
+            batch.delete_ks(&cf, &key);
+        }
+    }
+    let bytes = serde_json::to_vec(&meta)?;
+    batch.put_ks(&cf, meta_key.as_bytes(), &bytes);
+    db.write(batch)
+        .map_err(|e| DbError::InternalError(e.to_string()))?;
+    tracing::info!(
+        "columnar collection '{}': minmax index removed from {} (the kind no longer exists; ranges are answered from the blocks' bounds)",
+        name,
+        retired.join(", ")
+    );
+    Ok(bytes)
 }
 
 /// Whether the comparison `filter` keeps a row holding `value`.
@@ -3287,6 +3340,90 @@ mod tests {
     /// A collection stored one key per cell, as 2.10.4 and earlier wrote
     /// it, is converted when it is loaded: the same rows in the same
     /// order, in a block, and no cell left.
+    /// A collection that holds a `minmax` index, a kind that no longer
+    /// exists: loading it removes the index and leaves the column plain.
+    #[test]
+    fn a_minmax_index_is_removed_when_its_collection_is_loaded() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = crate::storage::StorageEngine::new(tmp.path()).unwrap();
+        engine.create_database("_system".to_string()).unwrap();
+        let db = engine.get_database("_system").unwrap();
+        db.create_collection("_columnar_mm".to_string(), None)
+            .unwrap();
+        let columns = ["v", "w"]
+            .iter()
+            .map(|name| ColumnDef {
+                name: name.to_string(),
+                data_type: ColumnType::Int64,
+                nullable: false,
+                indexed: false,
+                index_type: None,
+            })
+            .collect();
+        let col = ColumnarCollection::new(
+            "mm".to_string(),
+            "_system",
+            db.db_arc(),
+            columns,
+            CompressionType::Lz4,
+        )
+        .unwrap();
+        col.insert_rows(
+            (0..5000)
+                .map(|i| serde_json::json!({"v": i, "w": i % 9}))
+                .collect(),
+        )
+        .unwrap();
+        col.create_index("w", ColumnarIndexType::Hash).unwrap();
+
+        // As 2.11 stored it: the column marked, the index's own record,
+        // and a chunk of bounds.
+        {
+            let cf = col.ks.handle(&col.db).unwrap();
+            let meta_key = format!("{}{}", COL_META_PREFIX, "mm");
+            let stored = col.db.get_ks(&cf, meta_key.as_bytes()).unwrap().unwrap();
+            let mut meta: Value = serde_json::from_slice(&stored).unwrap();
+            meta["columns"][0]["indexed"] = Value::Bool(true);
+            meta["columns"][0]["index_type"] = Value::String("minmax".to_string());
+            meta["index_rows"]["v"] = serde_json::json!(5000);
+            let mut batch = KvBatch::default();
+            batch.put_ks(&cf, meta_key.as_bytes(), serde_json::to_vec(&meta).unwrap());
+            batch.put_ks(
+                &cf,
+                format!("{}v", COL_IDX_META_PREFIX).as_bytes(),
+                br#"{"column":"v","index_type":"minmax","created_at":0}"#,
+            );
+            batch.put_ks(
+                &cf,
+                format!("{}v:0", COL_IDX_MINMAX_PREFIX).as_bytes(),
+                br#"{"min":0,"max":999,"count":1000}"#,
+            );
+            col.db.write(batch).unwrap();
+        }
+
+        let loaded = ColumnarCollection::load("mm".to_string(), "_system", db.db_arc()).unwrap();
+        assert!(!loaded.has_index("v"));
+        assert_eq!(loaded.get_index_type("w"), Some(ColumnarIndexType::Hash));
+        let indexes = loaded.list_indexes().unwrap();
+        assert_eq!(indexes.len(), 1);
+        assert_eq!(indexes[0].column, "w");
+        let cf = loaded.ks.handle(&loaded.db).unwrap();
+        let left = loaded
+            .db
+            .prefix_iterator_ks(&cf, COL_IDX_MINMAX_PREFIX.as_bytes())
+            .flatten()
+            .filter(|(key, _)| key.starts_with(COL_IDX_MINMAX_PREFIX.as_bytes()))
+            .count();
+        assert_eq!(left, 0);
+        // The column answers, and takes an index again.
+        let range = ColumnFilter::Gte("v".to_string(), serde_json::json!(4990));
+        assert_eq!(loaded.scan_filtered(&range, &["v"]).unwrap().len(), 10);
+        loaded.create_index("v", ColumnarIndexType::Sorted).unwrap();
+        // And a second load finds nothing to do.
+        let again = ColumnarCollection::load("mm".to_string(), "_system", db.db_arc()).unwrap();
+        assert_eq!(again.get_index_type("v"), Some(ColumnarIndexType::Sorted));
+    }
+
     #[test]
     fn a_collection_stored_by_cell_is_converted_when_loaded() {
         let tmp = tempfile::TempDir::new().unwrap();
