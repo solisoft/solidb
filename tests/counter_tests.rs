@@ -378,6 +378,50 @@ fn a_counter_on_documents_that_are_already_numbered() {
 }
 
 #[test]
+fn edges_are_numbered_too() {
+    let s = shop(json!({"field": "number"}));
+    let db = s.engine.get_database("app").unwrap();
+    db.create_collection("links".to_string(), Some("edge".to_string()))
+        .unwrap();
+    let links = db.get_collection("links").unwrap();
+    links
+        .add_counter(spec(json!({"field": "seq", "prefix": "L"})))
+        .unwrap();
+    let a = links
+        .insert(json!({"_from": "invoices/a", "_to": "invoices/b"}))
+        .unwrap();
+    assert_eq!(a.data["seq"], json!("L1"));
+    let batch = links
+        .insert_batch(vec![
+            json!({"_from": "invoices/b", "_to": "invoices/c"}),
+            json!({"_from": "invoices/c", "_to": "invoices/a"}),
+        ])
+        .unwrap();
+    assert_eq!(batch[1].data["seq"], json!("L3"));
+    // An edge that is not one is refused, and takes no number.
+    assert!(links.insert(json!({"_from": "invoices/a"})).is_err());
+    assert_eq!(
+        links
+            .insert(json!({"_from": "invoices/a", "_to": "invoices/c"}))
+            .unwrap()
+            .data["seq"],
+        json!("L4")
+    );
+    // A time series collection has no counter.
+    db.create_collection("points".to_string(), Some("timeseries".to_string()))
+        .unwrap();
+    let refused = db
+        .get_collection("points")
+        .unwrap()
+        .add_counter(spec(json!({"field": "n"})));
+    assert!(
+        matches!(refused, Err(DbError::BadRequest(_))),
+        "{:?}",
+        refused
+    );
+}
+
+#[test]
 fn what_cannot_be_a_counter() {
     let s = shop(json!({"field": "number"}));
     let again = s.invoices.add_counter(spec(json!({"field": "number"})));

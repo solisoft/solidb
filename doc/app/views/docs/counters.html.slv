@@ -29,7 +29,7 @@
           </div>
           <div class="p-8 space-y-4">
             <p class="text-gray-300 leading-relaxed">
-              A counter is declared on a <code class="text-indigo-300">document</code> collection and names one of its top-level fields. From then on every document inserted gets the next number in that field: 1, 2, 3&hellip; The database gives each number once, and leaves no gap: a number is taken only by an insert that is stored.
+              A counter is declared on a document or edge collection and names one of its top-level fields. From then on every document inserted gets the next number in that field: 1, 2, 3&hellip; The database gives each number once, and leaves no gap: a number is taken only by an insert that is stored.
             </p>
             <ul class="list-disc pl-6 space-y-2 text-gray-300">
               <li>an insert that is refused (a key or a unique value already there, a schema, a foreign key), a transaction that is rolled back and a commit that is refused take no number;</li>
@@ -181,7 +181,7 @@
           <div class="p-8 space-y-4">
             <ul class="list-disc pl-6 space-y-2 text-gray-300">
               <li><strong class="text-white">No sharded collections.</strong> A counter cannot be declared on a sharded collection, and a collection with a counter cannot be sharded: each shard would count on its own.</li>
-              <li><strong class="text-white">Document collections only</strong>, and no system collection.</li>
+              <li><strong class="text-white">Document and edge collections</strong>; no time series, blob or system collection.</li>
               <li><strong class="text-white">No takeover from a dead node.</strong> The numbering is handed over by the node that holds it. If that node is lost, the counter has to be dropped and declared again on another, with the next number set by hand.</li>
               <li><strong class="text-white">Merges by key.</strong> An import in upsert mode and an offline client's sync merge documents into what is stored: a document whose key is there keeps its number, and one whose key is not is numbered like an insert. Neither may carry a value for the field.</li>
               <li><strong class="text-white">A deleted document's number is not given again.</strong> Without a gap means no number is skipped when it is given, not that the stored numbers stay contiguous after deletes.</li>

@@ -452,9 +452,9 @@ impl Collection {
             )));
         }
         let kind = self.get_type();
-        if kind != "document" {
+        if kind != "document" && kind != "edge" {
             return Err(DbError::BadRequest(format!(
-                "A counter is declared on a document collection; '{}' is a {} collection",
+                "A counter is declared on a document or edge collection; '{}' is a {} collection",
                 bare, kind
             )));
         }

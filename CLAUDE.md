@@ -577,8 +577,8 @@ Rules that keep it sound:
 
 ### Counter fields
 
-A `document` collection declares that a top-level field is numbered by the
-database on insert (`storage/counters.rs` for the definition and the rules,
+A `document` or `edge` collection declares that a top-level field is
+numbered by the database on insert (`storage/counters.rs` for the definition and the rules,
 `storage/collection/counters.rs` for the collection side, `sync/counters.rs`
 for what is logged; endpoints in `server/handlers/counters.rs`). Each insert
 gets the next number, never twice the same and with no gap; the number may
