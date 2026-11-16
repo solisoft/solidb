@@ -7,7 +7,8 @@
 //! - LZ4 compression for efficient storage
 
 use super::columnar_blocks::{
-    ColBlock, ColData, Column, RowSet, BLOCK_ROWS, COL_BLOCK_PREFIX, SEAL_ROWS,
+    Bounds, ColBlock, ColData, ColStats, Column, RowSet, BLOCK_ROWS, COL_BLOCK_PREFIX,
+    DECODED_MORE, SEAL_ROWS,
 };
 use super::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
 use crate::storage::kv::KvBatch;
@@ -236,6 +237,16 @@ fn keep_within_budget() {
         total -= bytes;
     }
 }
+
+/// A block read from disk decodes its ids and its columns as they are
+/// asked for, after the budget was looked at: once a read is over, and
+/// before the next one, what it decoded is counted.
+fn budget_after_read() {
+    if DECODED_MORE.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        keep_within_budget();
+    }
+}
+
 /// By (database, backing collection), shared by every handle.
 static BLOCK_STORES: once_cell::sync::Lazy<dashmap::DashMap<(usize, String), BlockStore>> =
     once_cell::sync::Lazy::new(dashmap::DashMap::new);
@@ -642,7 +653,7 @@ impl ColumnarCollection {
             let block = self
                 .decompress_data(&bytes, &compression)
                 .ok()
-                .and_then(|plain| ColBlock::decode(&plain))
+                .and_then(ColBlock::decode)
                 .ok_or_else(|| {
                     DbError::InternalError(format!(
                         "columnar block '{}' of '{}' cannot be read",
@@ -680,6 +691,7 @@ impl ColumnarCollection {
             USES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
             std::sync::atomic::Ordering::Relaxed,
         );
+        budget_after_read();
         if let Some(blocks) = store.blocks.read().as_ref() {
             return Ok(blocks.clone());
         }
@@ -696,7 +708,7 @@ impl ColumnarCollection {
             let block = self
                 .decompress_data(&bytes, compression)
                 .ok()
-                .and_then(|plain| ColBlock::decode(&plain))
+                .and_then(ColBlock::decode)
                 .ok_or_else(|| {
                     DbError::InternalError(format!(
                         "columnar block '{}' of '{}' cannot be read",
@@ -758,10 +770,10 @@ impl ColumnarCollection {
 
     fn row_set_with(&self, compression: &CompressionType) -> DbResult<RowSet> {
         let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
-        Ok(RowSet::new(
-            self.blocks(&cf, compression)?,
-            self.tail(&cf, compression)?,
-        ))
+        Ok(
+            RowSet::new(self.blocks(&cf, compression)?, self.tail(&cf, compression)?)
+                .then(budget_after_read),
+        )
     }
 
     /// Before a write that puts a row of id `id` in, or takes it out: no
@@ -813,7 +825,7 @@ impl ColumnarCollection {
         block: &ColBlock,
     ) -> DbResult<()> {
         let bytes = block
-            .encode()
+            .encode(matches!(compression, CompressionType::Lz4))
             .ok_or_else(|| DbError::InternalError("columnar block: encoding".to_string()))?;
         let key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
         batch.put_ks(cf, key.as_bytes(), self.compress_data(&bytes, compression));
@@ -1179,7 +1191,7 @@ impl ColumnarCollection {
                 let gone: std::collections::HashSet<usize> = gone.into_iter().collect();
                 let kept: Vec<(String, serde_json::Map<String, Value>)> = (0..block.len())
                     .filter(|row| !gone.contains(row))
-                    .map(|row| (block.uuids.text(row), block.row(row)))
+                    .map(|row| (block.uuids().text(row), block.row(row)))
                     .collect();
                 Some(ColBlock::seal(&names, &kept))
             };
@@ -1274,7 +1286,7 @@ impl ColumnarCollection {
         let mut rows: Vec<(String, serde_json::Map<String, Value>)> = merged_from
             .iter()
             .flat_map(|block| {
-                (0..block.len()).map(move |row| (block.uuids.text(row), block.row(row)))
+                (0..block.len()).map(move |row| (block.uuids().text(row), block.row(row)))
             })
             .collect();
         // Blocks follow each other by their first id; a row that came by
@@ -1420,7 +1432,7 @@ impl ColumnarCollection {
                 let mut block = self
                     .decompress_data(&bytes, &meta.compression)
                     .ok()
-                    .and_then(|plain| ColBlock::decode(&plain))
+                    .and_then(ColBlock::decode)
                     .ok_or_else(|| {
                         DbError::InternalError(format!(
                             "columnar block '{}' of '{}' cannot be read",
@@ -1432,11 +1444,8 @@ impl ColumnarCollection {
                     continue;
                 };
                 match renamed {
-                    Some(to) => block.names[at] = to.clone(),
-                    None => {
-                        block.names.remove(at);
-                        block.cols.remove(at);
-                    }
+                    Some(to) => block.rename_column(at, to),
+                    None => block.remove_column(at),
                 }
                 self.stage_block(&cf, &mut batch, &meta.compression, &block)?;
             }
@@ -1545,7 +1554,7 @@ impl ColumnarCollection {
             let (mut low, mut high) = (0, len);
             while low < high {
                 let mid = (low + high) / 2;
-                if block.uuids.text(mid).as_str() < cutoff.as_str() {
+                if block.uuids().text(mid).as_str() < cutoff.as_str() {
                     low = mid + 1;
                 } else {
                     high = mid;
@@ -1561,7 +1570,7 @@ impl ColumnarCollection {
                 None
             } else {
                 let kept: Vec<(String, serde_json::Map<String, Value>)> = (old..len)
-                    .map(|row| (block.uuids.text(row), block.row(row)))
+                    .map(|row| (block.uuids().text(row), block.row(row)))
                     .collect();
                 let smaller = ColBlock::seal(&names, &kept);
                 self.stage_block(&cf, &mut batch, &meta.compression, &smaller)?;
@@ -1928,12 +1937,31 @@ impl ColumnarCollection {
         Ok(results)
     }
 
-    /// How many rows `filter` keeps: no row is built.
+    /// How many rows `filter` keeps: no row is built, and where the
+    /// arrays answer every comparison the positions of one block at a time
+    /// are counted, not gathered (two million of them took most of the
+    /// time of counting them).
     pub fn count_filtered(&self, filter: &ColumnFilter) -> DbResult<u64> {
         let rows = self.row_set()?;
-        Ok(self
-            .filter_positions(&rows, filter, 0..rows.len() as u64)?
-            .len() as u64)
+        let range = 0..rows.len() as u64;
+        let sides: Vec<&ColumnFilter> = match filter {
+            ColumnFilter::And(sides) => sides.iter().collect(),
+            leaf => vec![leaf],
+        };
+        let from_arrays = sides
+            .iter()
+            .all(|side| side.column().is_some() && self.index_answering(side).is_none());
+        if !from_arrays {
+            return Ok(self.filter_positions(&rows, filter, range)?.len() as u64);
+        }
+        for side in &sides {
+            if let Some(column) = side.column() {
+                self.check_column(column)?;
+            }
+        }
+        let mut count = 0;
+        self.by_block(&rows, &sides, &range, |here| count += here.len() as u64)?;
+        Ok(count)
     }
 
     /// The rows `filter` keeps, with these columns, in the order of their
@@ -2672,32 +2700,7 @@ impl ColumnarCollection {
                 let mut kept: Option<Vec<u64>> = None;
                 if !scanned.is_empty() {
                     let mut found = Vec::new();
-                    for (block, part) in parts(rows, &row_range) {
-                        let ruled_out = block.is_some_and(|block| {
-                            scanned.iter().any(|side| {
-                                side.column()
-                                    .and_then(|column| block.column(column))
-                                    .is_some_and(|values| block_rules_out(values, side))
-                            })
-                        });
-                        if ruled_out {
-                            continue;
-                        }
-                        let mut here: Option<Vec<u64>> = None;
-                        for side in &scanned {
-                            let positions = self.filter_positions(rows, side, part.clone())?;
-                            let both = match here {
-                                None => positions,
-                                Some(here) => in_both(here, &positions),
-                            };
-                            let none = both.is_empty();
-                            here = Some(both);
-                            if none {
-                                break;
-                            }
-                        }
-                        found.extend(here.unwrap_or_default());
-                    }
+                    self.by_block(rows, &scanned, &row_range, |here| found.extend(here))?;
                     kept = Some(found);
                 }
                 for side in whole {
@@ -2755,6 +2758,46 @@ impl ColumnarCollection {
         let column = filter.column()?;
         self.index_for(filter, column)
             .filter(|_| self.index_rows(column) > 0)
+    }
+
+    /// The rows every comparison of `sides` keeps, among `row_range`, a
+    /// block at a time and then the tail: `each` is given the positions
+    /// found in one, ascending. A block one comparison rules out from what
+    /// the block says of its column is passed over for all of them.
+    fn by_block(
+        &self,
+        rows: &RowSet,
+        sides: &[&ColumnFilter],
+        row_range: &std::ops::Range<u64>,
+        mut each: impl FnMut(Vec<u64>),
+    ) -> DbResult<()> {
+        for (block, part) in parts(rows, row_range) {
+            let ruled_out = block.is_some_and(|block| {
+                sides.iter().any(|side| {
+                    side.column()
+                        .and_then(|column| block.stats(column))
+                        .is_some_and(|stats| block_rules_out(stats, side))
+                })
+            });
+            if ruled_out {
+                continue;
+            }
+            let mut here: Option<Vec<u64>> = None;
+            for side in sides {
+                let positions = self.filter_positions(rows, side, part.clone())?;
+                let both = match here {
+                    None => positions,
+                    Some(here) => in_both(here, &positions),
+                };
+                let none = both.is_empty();
+                here = Some(both);
+                if none {
+                    break;
+                }
+            }
+            each(here.unwrap_or_default());
+        }
+        Ok(())
     }
 
     /// The index on `column` that answers the comparison `filter`, if one
@@ -2971,34 +3014,50 @@ fn parts<'r>(
     parts
 }
 
-/// Whether the smallest and largest value of a block's column say that
-/// the comparison `filter` keeps none of its rows. Only a column of
-/// integers knows them; `false` is always a safe answer.
-fn block_rules_out(column: &Column, filter: &ColumnFilter) -> bool {
-    // Whether the comparison keeps the smallest value, and the largest.
-    let ends = match (column.int_range(), column.float_range()) {
-        (Some((low, high)), _) => {
-            let keeps = |value: i64| leaf_keeps(filter, &Value::from(value));
-            (keeps(low), keeps(high))
-        }
-        (_, Some((low, high))) => {
-            let keeps = |value: f64| leaf_keeps(filter, &Value::from(value));
-            (keeps(low), keeps(high))
-        }
-        _ => return false,
-    };
-    match filter {
-        // What keeps neither end keeps nothing between them. A bound that
-        // is not a number is not compared as one (`against`).
+/// Whether the comparison `filter` keeps the smallest value of a column
+/// in a block, and the largest: `None` when the bounds are not known, or
+/// do not decide for the values between them (anything but a range
+/// against a number).
+fn ends_kept(bounds: Bounds, filter: &ColumnFilter) -> Option<(bool, bool)> {
+    let bound = match filter {
         ColumnFilter::Gt(_, bound)
         | ColumnFilter::Gte(_, bound)
         | ColumnFilter::Lt(_, bound)
-        | ColumnFilter::Lte(_, bound) => bound.is_number() && ends == (false, false),
+        | ColumnFilter::Lte(_, bound) => bound,
+        _ => return None,
+    };
+    // A bound that is not a number is not compared as one (`against`).
+    if !bound.is_number() {
+        return None;
+    }
+    match bounds {
+        Bounds::Int(low, high) => {
+            let keeps = |value: i64| leaf_keeps(filter, &Value::from(value));
+            Some((keeps(low), keeps(high)))
+        }
+        Bounds::Float(low, high) => {
+            let keeps = |value: f64| leaf_keeps(filter, &Value::from(value));
+            Some((keeps(low), keeps(high)))
+        }
+        Bounds::Unknown => None,
+    }
+}
+
+/// Whether what a block says of its column, without decoding it, shows
+/// that the comparison `filter` keeps none of its rows. `false` is always
+/// a safe answer.
+fn block_rules_out(stats: ColStats, filter: &ColumnFilter) -> bool {
+    // What keeps neither end of a range keeps nothing between them.
+    if let Some(ends) = ends_kept(stats.bounds, filter) {
+        return ends == (false, false);
+    }
+    match filter {
+        ColumnFilter::Eq(_, Value::Null) => !stats.nulls,
         ColumnFilter::Eq(_, wanted) => {
-            let (low, high) = match (column.int_range(), column.float_range()) {
-                (Some((low, high)), _) => (low as f64, high as f64),
-                (_, Some(ends)) => ends,
-                _ => return false,
+            let (low, high) = match stats.bounds {
+                Bounds::Int(low, high) => (low as f64, high as f64),
+                Bounds::Float(low, high) => (low, high),
+                Bounds::Unknown => return false,
             };
             // As floats, where an integer past 2^53 may round onto a
             // bound: then the block is read, which is always right.
@@ -3006,6 +3065,12 @@ fn block_rules_out(column: &Column, filter: &ColumnFilter) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether it shows that the comparison keeps every row: a range that
+/// keeps both ends of a column with no null.
+fn block_taken_whole(stats: ColStats, filter: &ColumnFilter) -> bool {
+    !stats.nulls && ends_kept(stats.bounds, filter) == Some((true, true))
 }
 
 /// The positions, among `range`, of the rows the comparison `filter` on
@@ -3034,10 +3099,16 @@ fn scan_leaf(
         if from >= to {
             continue;
         }
-        match block.column(column) {
-            Some(values) => {
-                let inside = (from - start) as usize..(to - start) as usize;
-                scan_block(values, filter, inside, start, &mut kept)
+        // What the block says of the column, before any of it is decoded:
+        // it may be passed over, or taken whole.
+        match block.stats(column) {
+            Some(stats) if block_rules_out(stats, filter) => {}
+            Some(stats) if block_taken_whole(stats, filter) => kept.extend(from..to),
+            Some(_) => {
+                if let Some(values) = block.column(column) {
+                    let inside = (from - start) as usize..(to - start) as usize;
+                    scan_block(values, filter, inside, start, &mut kept)
+                }
             }
             // Sealed before the column was added: null for every row.
             None => {
@@ -3340,6 +3411,110 @@ mod tests {
     /// A collection stored one key per cell, as 2.10.4 and earlier wrote
     /// it, is converted when it is loaded: the same rows in the same
     /// order, in a block, and no cell left.
+    /// A collection whose blocks are read from disk decodes, of each
+    /// block, the columns a query reads, and nothing of a block the head
+    /// rules out.
+    #[test]
+    fn a_query_decodes_the_columns_it_reads() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = crate::storage::StorageEngine::new(tmp.path()).unwrap();
+        engine.create_database("_system".to_string()).unwrap();
+        let db = engine.get_database("_system").unwrap();
+        db.create_collection("_columnar_lazy".to_string(), None)
+            .unwrap();
+        let columns = [
+            ("host", ColumnType::String),
+            ("v", ColumnType::Int64),
+            ("ms", ColumnType::Float64),
+            ("note", ColumnType::String),
+        ]
+        .into_iter()
+        .map(|(name, data_type)| ColumnDef {
+            name: name.to_string(),
+            data_type,
+            nullable: false,
+            indexed: false,
+            index_type: None,
+        })
+        .collect();
+        let col = ColumnarCollection::new(
+            "lazy".to_string(),
+            "_system",
+            db.db_arc(),
+            columns,
+            CompressionType::Lz4,
+        )
+        .unwrap();
+        // Three blocks of 5,000 rows.
+        for block in 0..3 {
+            col.insert_rows(
+                (block * 5000..(block + 1) * 5000)
+                    .map(|i| {
+                        serde_json::json!({"host": format!("h{}", i % 7), "v": i,
+                            "ms": i as f64 / 2.0, "note": format!("n{i}")})
+                    })
+                    .collect(),
+            )
+            .unwrap();
+        }
+        let decoded = |col: &ColumnarCollection| -> Vec<(bool, usize)> {
+            let store = col.store();
+            let held = store.blocks.read();
+            held.as_ref()
+                .unwrap()
+                .iter()
+                .map(|block| block.decoded())
+                .collect()
+        };
+        // As after a start, or after the budget took the blocks back.
+        let forget = |col: &ColumnarCollection| *col.store().blocks.write() = None;
+
+        // A range the second block holds: the others are passed over from
+        // their heads, and the second gives the column compared and the
+        // one returned.
+        forget(&col);
+        let range = ColumnFilter::And(vec![
+            ColumnFilter::Gte("v".to_string(), serde_json::json!(7000)),
+            ColumnFilter::Lt("v".to_string(), serde_json::json!(7010)),
+        ]);
+        let rows = col.scan_filtered(&range, &["host"]).unwrap();
+        assert_eq!(rows.len(), 10);
+        assert_eq!(rows[3], serde_json::json!({"host": "h3"}));
+        assert_eq!(decoded(&col), [(false, 0), (false, 2), (false, 0)]);
+
+        // A range that takes whole blocks decodes nothing to count them.
+        forget(&col);
+        let all = ColumnFilter::Gte("ms".to_string(), serde_json::json!(2500.0));
+        assert_eq!(col.count_filtered(&all).unwrap(), 10_000);
+        assert_eq!(decoded(&col), [(false, 0), (false, 0), (false, 0)]);
+        let none = ColumnFilter::Eq("v".to_string(), serde_json::json!(99_999));
+        assert_eq!(col.count_filtered(&none).unwrap(), 0);
+        assert_eq!(decoded(&col), [(false, 0), (false, 0), (false, 0)]);
+
+        // An equality on a string decodes that column, in every block.
+        let host = ColumnFilter::Eq("host".to_string(), serde_json::json!("h2"));
+        assert_eq!(col.count_filtered(&host).unwrap(), 15_000 / 7 + 1);
+        assert_eq!(decoded(&col), [(false, 1), (false, 1), (false, 1)]);
+
+        // Listing the ids decodes them, and what is kept counts what was
+        // decoded and what is still as it is stored.
+        let ids = col.list_row_uuids().unwrap();
+        assert_eq!(ids.len(), 15_000);
+        assert_eq!(decoded(&col), [(true, 1), (true, 1), (true, 1)]);
+        let kept: usize = {
+            let store = col.store();
+            let held = store.blocks.read();
+            held.as_ref().unwrap().iter().map(|b| b.bytes()).sum()
+        };
+        // The ids and a column of strings decoded, the three other columns
+        // as they are stored: more than the ids, less than everything.
+        assert!(kept >= 15_000 * 16, "{kept}");
+        assert!(kept < 15_000 * (16 + 8 + 8 + 8 + 30), "{kept}");
+        assert!(col.delete_row(&ids[12_000]).unwrap());
+        // (Row 12,000 held "h2".)
+        assert_eq!(col.count_filtered(&host).unwrap(), 15_000 / 7);
+    }
+
     /// A collection that holds a `minmax` index, a kind that no longer
     /// exists: loading it removes the index and leaves the column plain.
     #[test]

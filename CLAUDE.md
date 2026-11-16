@@ -1010,9 +1010,31 @@ Rules that keep it sound:
   sets the store goes on treating `None` as "read the disk"; `keep_blocks`
   drops a block of the same key before adding one.
   The ids of a block are its rows' UUIDs as 16 bytes each when every one
-  is a UUID in its usual text (`columnar_blocks::Ids`), texts otherwise;
-  they are stored as texts either way, so the format did not change.
+  is a UUID in its usual text (`columnar_blocks::Ids`), texts otherwise.
   Compare ids through `IdRef`, which orders them as their texts.
+- **A block is stored in parts and decoded as it is read**
+  (`columnar_blocks.rs`, `FORMAT_PARTS`): a head — the ids of its first
+  and last row, the names, where each part is, and for each column its
+  bounds and whether it holds nulls — then the ids and each column as a
+  part of its own, LZ4-compressed when the collection is. A block read
+  from disk decodes its ids and a column the first time they are asked
+  for (`ColBlock::uuids()`, `column()`), and gives that part's stored
+  bytes back: it takes what is left to decode plus what was decoded.
+  `ColBlock::stats` answers from the head with nothing decoded, which is
+  how a filter passes a block over or takes it whole
+  (`block_rules_out`, `block_taken_whole`), and `ends()` is what orders
+  the blocks. Blocks written through 2.11 are one bincode value
+  (`FORMAT_WHOLE`): still read, decoded whole, rewritten in parts when a
+  write seals them again. A block written in parts is not read by 2.11.
+  Rules: what the head says of a column must be what the column says
+  decoded (`Column::stats` is what `encode` writes); bounds count the
+  placeholder of a null, so they are only ever wider; anything that
+  changes `names` changes the columns and their heads with them
+  (`rename_column`, `remove_column`). A read ends by counting what it
+  decoded against the budget (`RowSet`'s drop, `budget_after_read`): a
+  new way to hold blocks across a query should go through `row_set()`.
+  A count goes block by block and gathers no positions
+  (`count_filtered`, `by_block`).
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.
