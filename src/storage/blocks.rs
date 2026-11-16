@@ -1218,12 +1218,24 @@ fn columns_from_bytes<'a>(
                     Cell::Str(s) => s,
                     _ => "",
                 };
-                let mut dict: Vec<&str> = column.iter().map(text).collect();
+                // The distinct strings first (a series has thousands of
+                // points for one name), then their ranks: a row's code is
+                // its string's rank in the sorted dictionary.
+                let mut ranks: std::collections::HashMap<&str, u32, foldhash::fast::RandomState> =
+                    std::collections::HashMap::default();
+                for c in column {
+                    ranks.entry(text(c)).or_insert(0);
+                }
+                let mut dict: Vec<&str> = ranks.keys().copied().collect();
                 dict.sort_unstable();
-                dict.dedup();
+                for (rank, s) in dict.iter().enumerate() {
+                    if let Some(held) = ranks.get_mut(s) {
+                        *held = rank as u32;
+                    }
+                }
                 let codes = column
                     .iter()
-                    .map(|c| dict.binary_search(&text(c)).unwrap_or(0) as u32)
+                    .map(|c| ranks.get(text(c)).copied().unwrap_or(0))
                     .collect();
                 Some(Column::Str {
                     dict: dict.into_iter().map(str::to_string).collect(),
