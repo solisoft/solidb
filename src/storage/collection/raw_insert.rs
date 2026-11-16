@@ -109,15 +109,21 @@ fn event_value(stored: &[u8]) -> Value {
 }
 
 /// The key a document gets: the one given, else its `_key`, else a new one
-/// (`take_key`). `None` for a `_key` that is not a string, which the
-/// decoded path reports.
-fn document_key(given: Option<&str>, doc: &CanonicalDoc) -> Option<String> {
+/// (`take_key`), and whether it is a new one. `None` for a `_key` that is
+/// not a string, which the decoded path reports.
+///
+/// A new key is a UUIDv7 made here: a millisecond and 74 random bits. No
+/// stored document can hold it, so the write that follows does not look
+/// for one — a read of the key through every level of the tree, per
+/// document, which was 5% of a bulk load's processor.
+fn document_key(given: Option<&str>, doc: &CanonicalDoc) -> Option<(String, bool)> {
     Some(match (given, &doc.key) {
-        (Some(key), _) => key.to_owned(),
-        (None, KeyField::Str(key)) => key.clone(),
-        (None, KeyField::Absent) => {
-            uuid_text(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)))
-        }
+        (Some(key), _) => (key.to_owned(), false),
+        (None, KeyField::Str(key)) => (key.clone(), false),
+        (None, KeyField::Absent) => (
+            uuid_text(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext))),
+            true,
+        ),
         (None, KeyField::Other) => return None,
     })
 }
@@ -128,8 +134,20 @@ impl Collection {
     /// validated), with no schema (it validates a decoded document), no
     /// versioning (its record holds one) and no vector index (it reads and
     /// writes beside the document).
+    /// Whether this collection refuses every update of a document: a time
+    /// series.
+    pub(crate) fn refuses_updates(&self) -> bool {
+        self.collection_type.read().as_str() == "timeseries"
+    }
+
     pub(crate) fn raw_write_ready(&self) -> Option<Arc<IndexMetaSnapshot>> {
-        if self.collection_type.read().as_str() != "document" {
+        // A time series collection stores what a document collection
+        // stores; what it refuses is an update, which the caller sends the
+        // decoded way for its error (`refuses_updates`).
+        if !matches!(
+            self.collection_type.read().as_str(),
+            "document" | "timeseries"
+        ) {
             return None;
         }
         if self.stored_schema().is_some() || self.is_versioned() {
@@ -156,14 +174,15 @@ impl Collection {
         key: Option<&str>,
         doc: &CanonicalDoc,
     ) -> Option<DbResult<(String, Vec<u8>)>> {
-        let header = NewHeader::new(&self.name, document_key(key, doc)?);
+        let (key, fresh) = document_key(key, doc)?;
+        let header = NewHeader::new(&self.name, key);
         let view = indexed_view(&header.view(), &doc.data, &meta.read_fields)?;
         let stored = match header.stored(&doc.data) {
             Ok(stored) => stored,
             Err(e) => return Some(Err(e)),
         };
         let written = self.with_key_locked(&header.key, || {
-            self.insert_raw_locked(&header.key, &stored, &view)
+            self.insert_raw_locked(&header.key, &stored, &view, fresh)
         });
         Some(
             written
@@ -173,7 +192,14 @@ impl Collection {
     }
 
     /// `insert_locked` for stored bytes; the caller holds the key's lock.
-    fn insert_raw_locked(&self, key: &str, stored: &[u8], view: &Value) -> DbResult<()> {
+    /// `fresh`: the key was made for this document (see `document_key`).
+    fn insert_raw_locked(
+        &self,
+        key: &str,
+        stored: &[u8],
+        view: &Value,
+        fresh: bool,
+    ) -> DbResult<()> {
         let tokens = self.unique_tokens(view);
         let _unique_guard = self.lock_unique_tokens(&tokens);
 
@@ -181,10 +207,13 @@ impl Collection {
         let cf = self.live_cf()?;
 
         // Audit D1: an existing key is a conflict, never an overwrite.
-        if db
-            .get_pinned_ks(&cf, Self::doc_key(key))
-            .map_err(|e| DbError::InternalError(format!("Failed to check existing key: {}", e)))?
-            .is_some()
+        if !fresh
+            && db
+                .get_pinned_ks(&cf, Self::doc_key(key))
+                .map_err(|e| {
+                    DbError::InternalError(format!("Failed to check existing key: {}", e))
+                })?
+                .is_some()
         {
             return Err(key_exists_error(key));
         }
@@ -223,8 +252,10 @@ impl Collection {
         // Pass 1: keys in batch order, the first problem reported.
         let mut headers: Vec<NewHeader> = Vec::with_capacity(docs.len());
         let mut batch_keys: HashSet<String> = HashSet::with_capacity(docs.len());
+        let mut all_fresh = true;
         for doc in docs {
-            let key = document_key(None, doc)?;
+            let (key, fresh) = document_key(None, doc)?;
+            all_fresh &= fresh;
             if !batch_keys.insert(key.clone()) {
                 return Some(Err(DbError::InvalidDocument(format!(
                     "Duplicate _key '{}' within batch",
@@ -238,7 +269,7 @@ impl Collection {
             .zip(docs)
             .map(|(header, doc)| indexed_view(&header.view(), &doc.data, &meta.read_fields))
             .collect::<Option<_>>()?;
-        Some(self.insert_batch_raw_checked(docs, &headers, &views))
+        Some(self.insert_batch_raw_checked(docs, &headers, &views, all_fresh))
     }
 
     fn insert_batch_raw_checked(
@@ -246,6 +277,7 @@ impl Collection {
         docs: &[CanonicalDoc],
         headers: &[NewHeader],
         views: &[Value],
+        all_fresh: bool,
     ) -> DbResult<usize> {
         let tokens: Vec<String> = views.iter().flat_map(|v| self.unique_tokens(v)).collect();
 
@@ -275,7 +307,12 @@ impl Collection {
             }
         }
 
-        let existing = db.multi_get_ks(&cf, &doc_keys);
+        // Keys made for this batch are in no stored document.
+        let existing = if all_fresh {
+            doc_keys.iter().map(|_| Ok(None)).collect()
+        } else {
+            db.multi_get_ks(&cf, &doc_keys)
+        };
         let mut claimed: HashSet<String> = HashSet::new();
         for ((header, view), found) in headers.iter().zip(views).zip(existing) {
             let key = &header.key;

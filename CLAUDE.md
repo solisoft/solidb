@@ -436,10 +436,16 @@ tests check (`raw_write`, the fuzzed `codec` tests, `driver/handlers/document.rs
 the decoded value. A change to either, to the stored format, to
 `Document::with_key`/`update` (keys, revisions, timestamps, system fields) or
 to what `insert`/`merge_update` check has to be made there too. Collections
-whose writes need a decoded document — not a plain `document` collection, a
-schema, versioning, a vector index — an active replication log, and any
-document it refuses go the decoded way (`Collection::raw_write_ready`,
-`document::prepare_raw`).
+whose writes need a decoded document — neither a plain `document` nor a
+`timeseries` collection, a schema, versioning, a vector index — an active
+replication log, and any document it refuses go the decoded way
+(`Collection::raw_write_ready`, `document::prepare_raw`). A `timeseries`
+collection takes the raw path for inserts only: its update is sent the
+decoded way, which refuses it (`Collection::refuses_updates`). A document
+that arrives without a key gets a UUIDv7 made in `raw_insert::document_key`,
+and the write does not look for a stored document under it; a new way to
+give a document a key that a client could have chosen must not report it as
+made here.
 
 ### Reads a transaction has checked at commit (2.9.4)
 

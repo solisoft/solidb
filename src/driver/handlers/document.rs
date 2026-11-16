@@ -240,6 +240,10 @@ pub(crate) fn prepare_raw(handler: &DriverHandler, write: RawWrite<'_>) -> Optio
         .get_collection_for_write(&database, &collection)
         .ok()?;
     let meta = coll.raw_write_ready()?;
+    // The decoded path is the one that refuses it, with its message.
+    if matches!(write, RawWrite::MergeUpdate { .. }) && coll.refuses_updates() {
+        return None;
+    }
     // Documents sit at the frame's nesting level 1 in an insert or update,
     // inside the array at level 2 in a bulk insert, as the decoder counts.
     let kind = match write {
@@ -500,6 +504,100 @@ mod tests {
             }
         }
         text
+    }
+
+    /// A time series collection takes the raw path for its inserts, with
+    /// what the decoded path stores and answers, and refuses an update the
+    /// decoded way.
+    #[test]
+    fn a_time_series_collection_is_written_raw_and_refuses_updates() {
+        let points = |from: u32| -> Vec<serde_json::Value> {
+            (from..from + 40)
+                .map(|i| json!({"_key": format!("p{i:03}"), "series": format!("s{}", i % 3), "ts": i, "v": i as f64 / 3.0}))
+                .collect()
+        };
+        let build = || {
+            let tmp = tempfile::TempDir::new().unwrap();
+            let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+            engine.create_database("d".to_string()).unwrap();
+            let db = engine.get_database("d").unwrap();
+            db.create_collection("c".to_string(), Some("timeseries".to_string()))
+                .unwrap();
+            let coll = db.get_collection("c").unwrap();
+            coll.create_index(
+                "by_series_ts".to_string(),
+                vec!["series".to_string(), "ts".to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+            let mut h = DriverHandler::new(engine.clone(), None);
+            h.authenticated_db = Some("d".into());
+            h.session_permissions
+                .insert(crate::server::Permission::global_admin());
+            (tmp, engine, h)
+        };
+        let bulk = |from| Command::BulkInsert {
+            database: "d".into(),
+            collection: "c".into(),
+            documents: points(from),
+        };
+        let one = |i: u32| Command::Insert {
+            database: "d".into(),
+            collection: "c".into(),
+            key: None,
+            document: json!({"_key": format!("q{i}"), "series": "s9", "ts": i, "v": 0.25}),
+        };
+
+        let (_a, raw_engine, raw_h) = build();
+        let (_b, dec_engine, dec_h) = build();
+        let went_raw = raw(&raw_h, &bulk(0)).expect("a bulk insert goes raw");
+        assert_eq!(reply(went_raw), reply(decoded(&dec_h, bulk(0))));
+        let went_raw = raw(&raw_h, &one(7)).expect("an insert goes raw");
+        assert_eq!(reply(went_raw), reply(decoded(&dec_h, one(7))));
+        // A key already there is refused the same way.
+        let again = raw(&raw_h, &one(7)).expect("still raw");
+        assert_eq!(reply(again), reply(decoded(&dec_h, one(7))));
+        assert_eq!(contents(&raw_engine), contents(&dec_engine));
+        assert_eq!(
+            contents(&raw_engine)
+                .iter()
+                .filter(|(k, _)| k.starts_with(b"doc:"))
+                .count(),
+            41
+        );
+
+        // Documents without a key get one, and are all stored.
+        let keyless = Command::BulkInsert {
+            database: "d".into(),
+            collection: "c".into(),
+            documents: (0..25)
+                .map(|i| json!({"series": "s1", "ts": 1000 + i, "v": 1.5}))
+                .collect(),
+        };
+        assert!(raw(&raw_h, &keyless).is_some());
+        assert_eq!(
+            contents(&raw_engine)
+                .iter()
+                .filter(|(k, _)| k.starts_with(b"doc:"))
+                .count(),
+            66
+        );
+
+        // An update is not prepared raw; decoded, it is refused.
+        let update = Command::Update {
+            database: "d".into(),
+            collection: "c".into(),
+            key: "p001".into(),
+            document: json!({"v": 9.0}),
+            merge: true,
+        };
+        assert!(raw(&raw_h, &update).is_none());
+        let refused = decoded(&raw_h, update);
+        assert!(
+            matches!(&refused, Response::Error { error } if error.to_string().contains("not allowed on timeseries")),
+            "{refused:?}"
+        );
     }
 
     fn orders() -> Vec<serde_json::Value> {
