@@ -927,6 +927,158 @@ impl QueryExecutor<'_> {
         Some(plan)
     }
 
+    /// Each group into the fold the ordinary path fills, with the state of
+    /// its sums; `kept`, when given, says which groups go.
+    fn push_groups(
+        &self,
+        fold: &mut CollectFold<'_>,
+        col_plan: &ColPlan,
+        groups: &[Group],
+        kept: Option<&[bool]>,
+    ) -> DbResult<()> {
+        for (n, group) in groups.iter().enumerate() {
+            if kept.is_some_and(|kept| !kept[n]) {
+                continue;
+            }
+            let key: Vec<Datum<'_>> = group
+                .key
+                .iter()
+                .map(|atom| match atom {
+                    Atom::Int(v) => Datum::Num((*v).into()),
+                    Atom::Float(bits) => serde_json::Number::from_f64(f64::from_bits(*bits))
+                        .map_or(Datum::Null, Datum::Num),
+                    Atom::Str(s) => Datum::Str(s.as_ref()),
+                    Atom::Bool(b) => Datum::Bool(*b),
+                })
+                .collect();
+            let args: Vec<Option<Slice<'_>>> = col_plan
+                .args
+                .iter()
+                .zip(&group.accs)
+                .map(|(arg, acc)| {
+                    arg.as_ref().map(|_| match (acc.min, acc.max) {
+                        (Some(min), Some(max)) => Slice::Total {
+                            sum: &acc.sum,
+                            min: number(min),
+                            max: number(max),
+                        },
+                        // A column of strings or booleans: counted.
+                        _ => Slice::Other,
+                    })
+                })
+                .collect();
+            fold.push_slices(self, &key, group.count as usize, &args)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::try_columnar_collect`] for a collection whose blocks are not
+    /// kept decoded because they would not fit the budget
+    /// (`ColumnarCollection::larger_than_kept`): the blocks are read and
+    /// decoded as many at a time as there are threads, each folded into a
+    /// table of its own and the tables merged, so that the query holds a
+    /// few blocks and its groups, not the collection. The same groups as
+    /// the other way; what it gives up is the arrays indexed by an integer
+    /// key, which need every block's range first.
+    fn columnar_collect_in_windows(
+        &self,
+        columnar: &crate::storage::ColumnarCollection,
+        found: &Plan<'_>,
+        col_plan: &ColPlan,
+        known: &[String],
+        outer: &Context,
+        name: &str,
+    ) -> DbResult<ScanCollectRun> {
+        let wanted = self.scan.wanted(columnar.count() / 8);
+        let helpers = Helpers::take(wanted.saturating_sub(1));
+        let threads = helpers.count() + 1;
+        let mut table = Table::default();
+        // Blocks the arrays cannot answer for, by key: read again below.
+        let mut left: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut scanned = 0usize;
+        columnar.for_each_blocks(threads, None, |blocks| {
+            scanned += blocks.iter().map(|b| b.len()).sum::<usize>();
+            let work = |block: &Arc<ColBlock>| {
+                let mut table = Table::default();
+                fold_block(col_plan, block, &mut table, Share::All).map(|()| table)
+            };
+            let folded: Vec<Option<Table>> = std::thread::scope(|scope| {
+                let work = &work;
+                let others: Vec<_> = blocks[1..]
+                    .iter()
+                    .map(|block| scope.spawn(move || work(block)))
+                    .collect();
+                let mut folded = vec![work(&blocks[0])];
+                // (A thread that died: its block is read again, as rows.)
+                folded.extend(others.into_iter().map(|other| other.join().ok().flatten()));
+                folded
+            });
+            for (block, theirs) in blocks.iter().zip(folded) {
+                match theirs {
+                    Some(theirs) => table.merge(theirs),
+                    None => {
+                        left.insert(block.key.clone());
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        drop(helpers);
+
+        let mut fold = CollectFold::new(found.collect);
+        self.push_groups(&mut fold, col_plan, &table.groups, None)?;
+        let var = found.for_clause.variable.as_str();
+        let fields: &[String] = found.fields.as_deref().unwrap_or(known);
+        let mut passes = vec![(0usize, 0usize); found.stages.len()];
+        let mut scratch = outer.clone();
+        let mut one = |row: serde_json::Map<String, Value>, fold: &mut CollectFold<'_>| {
+            bind_in_place(&mut scratch, var, Value::Object(row));
+            if self.run_stages(found.stages, &mut scratch, &mut passes)? {
+                fold.push_ref(self, &scratch)?;
+            }
+            DbResult::Ok(())
+        };
+        if !left.is_empty() {
+            columnar.for_each_blocks(1, Some(&left), |blocks| {
+                for block in blocks {
+                    for row in 0..block.len() {
+                        let object = fields
+                            .iter()
+                            .map(|f| {
+                                let value = block.column(f).map_or(Value::Null, |c| c.value(row));
+                                (f.clone(), value)
+                            })
+                            .collect();
+                        one(object, &mut fold)?;
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        let tail = columnar.tail_rows()?;
+        scanned += tail.len();
+        for (_, row) in &tail {
+            let object = fields
+                .iter()
+                .map(|f| (f.clone(), row.get(f).cloned().unwrap_or(Value::Null)))
+                .collect();
+            one(object, &mut fold)?;
+        }
+        let groups = fold.finish()?;
+        self.check_budget(groups.len())?;
+        Ok(ScanCollectRun {
+            rows: groups,
+            consumed: found.stages.len() + 2,
+            scanned,
+            filters: passes,
+            note: format!(
+                "optimizer: COLLECT folded from the blocks of the columnar collection '{}', \
+                 read a few at a time: they are larger than what is kept in memory",
+                name
+            ),
+        })
+    }
+
     /// Run `clauses[i]`, a FOR over a columnar collection, and the clauses
     /// up to its COLLECT from the collection's blocks; `Ok(None)` when the
     /// ordinary path has to run them (see the module's notes).
@@ -974,6 +1126,12 @@ impl QueryExecutor<'_> {
             return Ok(None);
         };
         self.refuse_untracked_read("a columnar collection")?;
+        // Too large to be kept decoded: a few blocks at a time.
+        if columnar.larger_than_kept() {
+            return self
+                .columnar_collect_in_windows(&columnar, &found, &col_plan, &known, outer, name)
+                .map(Some);
+        }
         let set = columnar.row_set()?;
 
         // The blocks, on as many threads as the scan may have: each fills
@@ -1273,39 +1431,7 @@ impl QueryExecutor<'_> {
         // Each group goes into the fold the ordinary path fills, with the
         // state of its sums.
         let mut fold = CollectFold::new(found.collect);
-        for (n, group) in table.groups.iter().enumerate() {
-            if kept.as_ref().is_some_and(|kept| !kept[n]) {
-                continue;
-            }
-            let key: Vec<Datum<'_>> = group
-                .key
-                .iter()
-                .map(|atom| match atom {
-                    Atom::Int(v) => Datum::Num((*v).into()),
-                    Atom::Float(bits) => serde_json::Number::from_f64(f64::from_bits(*bits))
-                        .map_or(Datum::Null, Datum::Num),
-                    Atom::Str(s) => Datum::Str(s.as_ref()),
-                    Atom::Bool(b) => Datum::Bool(*b),
-                })
-                .collect();
-            let args: Vec<Option<Slice<'_>>> = col_plan
-                .args
-                .iter()
-                .zip(&group.accs)
-                .map(|(arg, acc)| {
-                    arg.as_ref().map(|_| match (acc.min, acc.max) {
-                        (Some(min), Some(max)) => Slice::Total {
-                            sum: &acc.sum,
-                            min: number(min),
-                            max: number(max),
-                        },
-                        // A column of strings or booleans: counted.
-                        _ => Slice::Other,
-                    })
-                })
-                .collect();
-            fold.push_slices(self, &key, group.count as usize, &args)?;
-        }
+        self.push_groups(&mut fold, &col_plan, &table.groups, kept.as_deref())?;
 
         // What the arrays did not answer, as objects: the blocks left, and
         // the tail.

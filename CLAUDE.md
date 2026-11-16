@@ -830,8 +830,14 @@ Rules that keep it sound:
   longest ago give their blocks back (`Kept::blocks` goes back to `None`,
   as after a start) and read and decode them at their next use. A
   collection that alone is past the budget keeps nothing between two
-  queries; a query still holds all of its blocks while it runs, so the
-  budget bounds what is kept, not what a full scan needs. Every place that
+  queries, and its `COLLECT … AGGREGATE` is folded a few blocks at a time
+  (`columnar_scan::columnar_collect_in_windows`, when
+  `ColumnarCollection::larger_than_kept`): as many blocks as threads are
+  read, decoded, folded into tables that are merged, and dropped, so the
+  query holds a few blocks and its groups. It must give the groups of the
+  other way (`columnar_memory_tests` runs both). Any other read of such a
+  collection (rows returned, the HTTP query) still loads every block for
+  its duration. Every place that
   sets the store goes on treating `None` as "read the disk"; `keep_blocks`
   drops a block of the same key before adding one.
   The ids of a block are its rows' UUIDs as 16 bytes each when every one

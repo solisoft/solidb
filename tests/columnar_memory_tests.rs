@@ -101,4 +101,44 @@ fn decoded_blocks_are_held_to_the_budget() {
         "{} bytes kept",
         decoded_blocks_kept()
     );
+
+    // An aggregation over it reads its blocks a few at a time, and gives
+    // what the rows give: rows with a null (their block is read as rows),
+    // rows still in the tail, a filter, several kinds of key.
+    let mut odd = rows("big", 4 * ROWS, 4 * ROWS + 6_000);
+    for (i, row) in odd.iter_mut().enumerate() {
+        if i % 7 == 0 {
+            row["score"] = Value::Null;
+        }
+    }
+    big.insert_rows(odd).unwrap();
+    big.insert_rows(rows("big", 5 * ROWS, 5 * ROWS + 100))
+        .unwrap();
+    let run = |q: &str, fold: bool| {
+        solidb::QueryExecutor::with_database_and_bind_vars(
+            &engine,
+            "_system".to_string(),
+            solidb::BindVars::new(),
+        )
+        .with_streaming_collect(fold)
+        .execute(&solidb::parse(q).unwrap())
+        .map_err(|e| e.to_string())
+    };
+    for q in [
+        "FOR r IN big COLLECT AGGREGATE n = COUNT(), s = SUM(r.score), lo = MIN(r.id), hi = MAX(r.id) RETURN [n, s, lo, hi]",
+        "FOR r IN big COLLECT name = r.name AGGREGATE n = COUNT(), s = SUM(r.score) SORT name RETURN [name, n, s]",
+        "FOR r IN big FILTER r.id >= 20000 AND r.id < 50500 COLLECT name = r.name AGGREGATE a = AVG(r.score) SORT name RETURN [name, a]",
+        "FOR r IN big FILTER r.name == 'big-007' COLLECT AGGREGATE n = COUNT(), s = SUM(r.id) RETURN [n, s]",
+        "FOR r IN big COLLECT id = r.id AGGREGATE n = COUNT() SORT id LIMIT 5 RETURN [id, n]",
+    ] {
+        let before = solidb::storage::columnar::WINDOWED_READS.load(std::sync::atomic::Ordering::Relaxed);
+        let folded = run(q, true);
+        assert!(
+            solidb::storage::columnar::WINDOWED_READS.load(std::sync::atomic::Ordering::Relaxed) > before,
+            "{q}: not read a few blocks at a time"
+        );
+        assert!(folded.as_ref().is_ok_and(|rows| !rows.is_empty()), "{q}: {folded:?}");
+        assert_eq!(folded, run(q, false), "{q}");
+        assert!(decoded_blocks_kept() <= 1 << 20, "{q}: {} bytes kept", decoded_blocks_kept());
+    }
 }

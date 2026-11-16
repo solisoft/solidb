@@ -165,6 +165,11 @@ fn decoded_budget() -> usize {
     *BUDGET
 }
 
+/// Reads of a whole collection a few blocks at a time
+/// ([`ColumnarCollection::for_each_blocks`]) since the process started: for
+/// tests, which must know that way was taken.
+pub static WINDOWED_READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Bytes of decoded blocks kept for every columnar collection of the
 /// process, as [`ColBlock::bytes`] counts them.
 pub fn decoded_blocks_kept() -> usize {
@@ -570,6 +575,83 @@ impl ColumnarCollection {
 
     fn not_found(&self) -> DbError {
         DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
+    }
+
+    /// Whether a read of the whole collection should take its blocks a few
+    /// at a time ([`Self::for_each_blocks`]) rather than all at once: they
+    /// are not in memory, and by the count of rows they would not fit the
+    /// budget of what is kept.
+    pub(crate) fn larger_than_kept(&self) -> bool {
+        // What a row of a few columns takes decoded, at the least.
+        const ROW: usize = 48;
+        self.store().blocks.read().is_none() && self.count().saturating_mul(ROW) > decoded_budget()
+    }
+
+    /// The blocks in the order of their keys, `at_once` at a time, read
+    /// and decoded for `f` and not kept: what a collection larger than the
+    /// budget is read with. `only`, when given, names the blocks wanted by
+    /// their keys; the others are not decoded.
+    pub(crate) fn for_each_blocks(
+        &self,
+        at_once: usize,
+        only: Option<&std::collections::HashSet<String>>,
+        mut f: impl FnMut(Vec<Arc<ColBlock>>) -> DbResult<()>,
+    ) -> DbResult<()> {
+        let compression = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .compression
+            .clone();
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        if only.is_none() {
+            WINDOWED_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        let prefix = COL_BLOCK_PREFIX.as_bytes();
+        let mut blocks = Vec::with_capacity(at_once.max(1));
+        for (key, bytes) in self.db.prefix_iterator_ks(&cf, prefix).flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if let Some(only) = only {
+                let wanted = std::str::from_utf8(&key[prefix.len()..])
+                    .is_ok_and(|block| only.contains(block));
+                if !wanted {
+                    continue;
+                }
+            }
+            let block = self
+                .decompress_data(&bytes, &compression)
+                .ok()
+                .and_then(|plain| ColBlock::decode(&plain))
+                .ok_or_else(|| {
+                    DbError::InternalError(format!(
+                        "columnar block '{}' of '{}' cannot be read",
+                        String::from_utf8_lossy(&key),
+                        self.name
+                    ))
+                })?;
+            blocks.push(Arc::new(block));
+            if blocks.len() >= at_once.max(1) {
+                f(std::mem::take(&mut blocks))?;
+            }
+        }
+        if !blocks.is_empty() {
+            f(blocks)?;
+        }
+        Ok(())
+    }
+
+    /// The rows of the tail, ascending by id, as a query reads them.
+    pub(crate) fn tail_rows(&self) -> DbResult<Vec<(String, serde_json::Map<String, Value>)>> {
+        let compression = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .compression
+            .clone();
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        self.tail(&cf, &compression)
     }
 
     /// The blocks, in the order of their keys: from memory, or read once.
