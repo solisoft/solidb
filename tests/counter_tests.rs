@@ -257,6 +257,44 @@ fn concurrent_inserts_get_every_number_once() {
     assert_eq!(found.len(), 8 * (40 + 30) + 1);
 }
 
+/// Durable inserts leave the counter's lock before their write is synced
+/// and share the sync: the numbers must still be every one, once.
+#[test]
+fn durable_inserts_that_wait_together_get_every_number_once() {
+    let s = shop(json!({"field": "number"}));
+    assert!(s.invoices.counter_defs()[0].durable);
+    let invoices = Arc::new(s.invoices.clone());
+    let threads: Vec<_> = (0..8)
+        .map(|t| {
+            let invoices = Arc::clone(&invoices);
+            std::thread::spawn(move || {
+                for i in 0..40 {
+                    let doc = match i % 4 {
+                        0 => invoices
+                            .insert_batch(vec![json!({"t": t}), json!({"t": t})])
+                            .unwrap()
+                            .remove(1),
+                        1 => invoices
+                            .insert_or_replace(json!({"_key": format!("r{t}-{i}")}))
+                            .unwrap(),
+                        _ => invoices.insert(json!({"t": t})).unwrap(),
+                    };
+                    // What was acknowledged is stored under that number.
+                    let stored = invoices.get(&doc.key).unwrap();
+                    assert_eq!(stored.data["number"], doc.data["number"]);
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    let found = numbers(&s.invoices);
+    let expected: Vec<u64> = (1..=found.len() as u64).collect();
+    assert_eq!(found, expected);
+    assert_eq!(found.len(), 8 * 50);
+}
+
 #[test]
 fn the_count_goes_on_after_a_restart_and_a_truncate() {
     let s = shop(json!({"field": "number"}));

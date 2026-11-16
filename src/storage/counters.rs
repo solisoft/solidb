@@ -314,6 +314,68 @@ pub fn set_clock(at: Option<DateTime<Utc>>) {
 }
 
 // ---------------------------------------------------------------------------
+// One fsync for the durable inserts that wait together.
+// ---------------------------------------------------------------------------
+
+/// The durable numbered writes of one storage instance, so that those
+/// waiting to be synced share an fsync.
+///
+/// A durable insert used to sync its own write under the counter's lock:
+/// one fsync per insert whatever the number of clients (453 inserts a
+/// second from eight). It now writes without syncing, under the lock, takes
+/// a stamp, releases the lock and waits here: the first to arrive syncs the
+/// log, which covers every write stamped so far, and the others find theirs
+/// covered. The order of the numbers is the order of the writes in the log,
+/// and a log is durable up to a point: what a power loss takes is the
+/// latest numbers, never one in the middle.
+#[derive(Default)]
+pub(crate) struct WalSync {
+    /// Stamps given so far: one per write that has returned.
+    written: std::sync::atomic::AtomicU64,
+    /// The highest stamp known durable; held while the log is synced.
+    synced: parking_lot::Mutex<u64>,
+}
+
+impl WalSync {
+    /// A stamp for a write that has just returned.
+    pub(crate) fn wrote(&self) -> u64 {
+        self.written
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1
+    }
+
+    /// Return once the write stamped `stamp` is durable.
+    pub(crate) fn wait(&self, db: &DB, stamp: u64) -> DbResult<()> {
+        let mut synced = self.synced.lock();
+        if *synced >= stamp {
+            return Ok(());
+        }
+        // Every write stamped up to here has returned, and is in the log
+        // this sync covers.
+        let covered = self.written.load(std::sync::atomic::Ordering::SeqCst);
+        match db.sync_wal() {
+            Some(Ok(())) => {
+                *synced = covered;
+                Ok(())
+            }
+            Some(Err(e)) => Err(DbError::InternalError(format!(
+                "Failed to sync a numbered write: {}",
+                e
+            ))),
+            None => Err(DbError::InternalError(
+                "This engine does not sync its log apart from a write".to_string(),
+            )),
+        }
+    }
+}
+
+static WAL_SYNCS: Lazy<DashMap<usize, Arc<WalSync>>> = Lazy::new(DashMap::new);
+
+pub(crate) fn wal_sync(db: &Arc<DB>) -> Arc<WalSync> {
+    Arc::clone(&WAL_SYNCS.entry(id_of(db)).or_default())
+}
+
+// ---------------------------------------------------------------------------
 // Which node this is.
 // ---------------------------------------------------------------------------
 
@@ -340,6 +402,7 @@ pub fn set_local(db: &Arc<DB>, local: Local) {
 
 pub(crate) fn forget_local(db: &Arc<DB>) {
     LOCALS.remove(&id_of(db));
+    WAL_SYNCS.remove(&id_of(db));
 }
 
 pub(crate) fn local(db: &Arc<DB>) -> Local {

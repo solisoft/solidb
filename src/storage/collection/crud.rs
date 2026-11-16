@@ -363,6 +363,7 @@ impl Collection {
         let written = self.with_key_locked(&key, || {
             self.insert_locked(doc, true, returning, Some(&numbering))
         })?;
+        numbering.settle(self)?;
         Ok((key, written))
     }
 
@@ -537,7 +538,7 @@ impl Collection {
         };
         let mut doc = Document::with_key(&self.name, key.clone(), data);
 
-        self.with_key_locked(&key, || {
+        let written = self.with_key_locked(&key, || {
             let old_doc = match self.get(&key) {
                 Ok(old) => old,
                 Err(DbError::DocumentNotFound(_)) => {
@@ -565,7 +566,11 @@ impl Collection {
             let old_value = old_doc.to_value();
             let new_value = doc.to_value();
             self.write_update_locked(&key, old_value, doc, new_value)
-        })
+        })?;
+        if let Some((numbering, _)) = numbering {
+            numbering.settle(self)?;
+        }
+        Ok(written)
     }
 
     /// Replace an existing document wholesale, optionally only if its `_rev`
@@ -1243,7 +1248,9 @@ impl Collection {
         // Write all documents in one batch operation
         self.write_numbered(batch, &cf, numbering.as_ref())
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
-        drop(numbering);
+        if let Some(numbering) = numbering {
+            numbering.settle(self)?;
+        }
 
         // Update document count (only for new inserts)
         if insert_count > 0 {
@@ -1681,7 +1688,6 @@ impl Collection {
         // Atomic write: all documents + indexes together
         self.write_numbered(batch, &cf, numbering.as_ref().map(|(_, n)| n))
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
-        drop(numbering);
 
         // Update vector indexes in-memory (separate from KvBatch)
         for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
@@ -1690,6 +1696,10 @@ impl Collection {
         // Persist vector indexes after batch, outside the stripes.
         drop(_unique_guard);
         drop(_key_guard);
+        if let Some((gate, numbering)) = numbering {
+            drop(gate);
+            numbering.settle(self)?;
+        }
         self.persist_vector_indexes_throttled();
 
         // Update document count

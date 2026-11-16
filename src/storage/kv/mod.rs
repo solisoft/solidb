@@ -705,6 +705,22 @@ impl Kv {
         }
     }
 
+    /// Make every write that has returned durable, where the engine can do
+    /// it apart from a write: `None` where it cannot (solistore), and the
+    /// caller syncs its own write instead.
+    pub fn sync_wal(&self) -> Option<Result<(), KvError>> {
+        match &self.engine {
+            Engine::Rocks(db) => Some(db.flush_wal(true).map_err(Into::into)),
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(_) => None,
+        }
+    }
+
+    /// Whether [`Self::sync_wal`] does anything on this engine.
+    pub fn syncs_wal_apart(&self) -> bool {
+        matches!(&self.engine, Engine::Rocks(_))
+    }
+
     pub fn flush(&self) -> Result<(), KvError> {
         match &self.engine {
             Engine::Rocks(db) => Ok(db.flush()?),

@@ -29,6 +29,9 @@ pub(crate) struct Numbering {
     _lock: HeldCounterLock,
     states: Vec<(String, Vec<u8>)>,
     durable: bool,
+    /// The stamp of the write when it was left to be synced with others
+    /// (`counters::WalSync`); 0 when there is nothing to wait for.
+    unsynced: std::sync::atomic::AtomicU64,
 }
 
 impl Numbering {
@@ -43,6 +46,18 @@ impl Numbering {
     /// Whether the batch must be synced before the insert is acknowledged.
     pub(crate) fn durable(&self) -> bool {
         self.durable
+    }
+
+    /// After the write: give the counters' lock back, then wait until the
+    /// write is durable if it was left to be synced with others. The
+    /// insert is acknowledged only after this returns.
+    pub(crate) fn settle(self, collection: &Collection) -> DbResult<()> {
+        let stamp = self.unsynced.load(std::sync::atomic::Ordering::Acquire);
+        drop(self);
+        if stamp == 0 {
+            return Ok(());
+        }
+        counters::wal_sync(&collection.db).wait(&collection.db, stamp)
     }
 }
 
@@ -305,11 +320,15 @@ impl Collection {
             _lock: lock,
             states: staged,
             durable: defs.iter().any(|d| d.durable),
+            unsynced: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
     /// Write `batch`, with the states of `numbering` when the write is a
-    /// numbered insert, synced when a counter asks for it.
+    /// numbered insert. When a counter asks for a durable write, it is
+    /// synced here, or, where the engine syncs its log apart from a write,
+    /// left for [`Numbering::settle`], which the caller runs once its
+    /// locks are released, so that the inserts waiting share an fsync.
     pub(crate) fn write_numbered(
         &self,
         mut batch: KvBatch,
@@ -320,10 +339,17 @@ impl Collection {
             None => self.db.write(batch),
             Some(numbering) => {
                 numbering.stage(&mut batch, cf);
-                if numbering.durable() {
-                    self.db.write_opt(batch, &KvWriteOptions::synced())
-                } else {
+                if !numbering.durable() {
                     self.db.write(batch)
+                } else if self.db.syncs_wal_apart() {
+                    self.db.write(batch)?;
+                    numbering.unsynced.store(
+                        counters::wal_sync(&self.db).wrote(),
+                        std::sync::atomic::Ordering::Release,
+                    );
+                    Ok(())
+                } else {
+                    self.db.write_opt(batch, &KvWriteOptions::synced())
                 }
             }
         }
