@@ -750,7 +750,8 @@ pub fn create_router(
         )
         .route(
             "/_api/database/{db}/columnar/{collection}/index/{column}",
-            delete(super::columnar_handlers::delete_columnar_index_handler),
+            get(super::columnar_handlers::get_columnar_index_handler)
+                .delete(super::columnar_handlers::delete_columnar_index_handler),
         )
         // Transaction routes
         .route(

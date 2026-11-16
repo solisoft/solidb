@@ -448,6 +448,48 @@ pub fn create_index(
     Ok(())
 }
 
+/// Start building an index in the background on this node, and log it
+/// for the peers, which each build theirs from the rows they have. It is
+/// logged when the build is accepted, not when it ends: a build a restart
+/// interrupts is started again with no log at hand.
+pub fn start_index_build(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    column: &str,
+    index_type: ColumnarIndexType,
+    replace: bool,
+) -> DbResult<std::sync::Arc<crate::storage::columnar::IndexBuild>> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    let build = col.start_index_build(column, index_type.clone(), replace)?;
+    if let Some(log) = writing(log) {
+        log.append(LogEntry::new_op(
+            db.name.as_str(),
+            name,
+            Operation::ColumnarCreateIndex,
+            column,
+            serde_json::to_vec(&index_type).ok(),
+        ));
+    }
+    Ok(build)
+}
+
+/// Build a column's index again on this node, from the rows as they are.
+/// Local: a peer that has the index keeps its own.
+pub fn rebuild_index(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    column: &str,
+    index_type: ColumnarIndexType,
+) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    if !col.has_index(column) {
+        return create_index(db, log, name, column, index_type);
+    }
+    col.rebuild_index(column, index_type)
+}
+
 /// Drop a column's index on this node and log it for the peers.
 pub fn drop_index(db: &Database, log: Option<&SyncLog>, name: &str, column: &str) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;

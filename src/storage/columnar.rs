@@ -130,12 +130,34 @@ pub struct ColumnarCollectionMeta {
     /// used.
     #[serde(default)]
     pub index_rows: std::collections::HashMap<String, u64>,
+    /// For each indexed column, how many rows were removed from the front
+    /// of the collection since its index was written: the index names a
+    /// row by the position it had then, which is its position now plus
+    /// this. A delete that takes exactly the first rows (a retention, a
+    /// delete of everything before a date) leaves every other row behind
+    /// the same neighbours, so the index keeps answering for them.
+    #[serde(default)]
+    pub index_base: std::collections::HashMap<String, u64>,
+    /// The indexes being built in the background, by column: written when
+    /// a build is accepted and removed by the write that stores the index,
+    /// so a build a restart interrupted is started again
+    /// ([`ColumnarCollection::resume_index_builds`]).
+    #[serde(default)]
+    pub index_builds: std::collections::HashMap<String, PendingBuild>,
     /// How long a row is kept, in seconds, counted from the instant in its
     /// id (a UUIDv7): rows older than that are removed by
     /// [`ColumnarCollection::prune_expired`], which the TTL worker calls.
     /// `None`: rows are kept until they are deleted.
     #[serde(default)]
     pub retention_secs: Option<u64>,
+}
+
+/// An index build that was accepted and has not finished.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingBuild {
+    pub id: String,
+    pub index_type: ColumnarIndexType,
+    pub started_at: i64,
 }
 
 /// The storage format new collections are created in.
@@ -152,6 +174,10 @@ struct Kept {
     blocks: parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>,
     /// [`USES`] at the last read.
     used: std::sync::atomic::AtomicU64,
+    /// Counts the writes that moved a row's position (a delete, a row
+    /// with an older id, a truncate): an index build that read the rows
+    /// before one of them starts again.
+    moved: std::sync::atomic::AtomicU64,
 }
 
 /// Counts the reads of decoded blocks, to tell which collection was read
@@ -405,6 +431,151 @@ pub struct ColumnarIndexMeta {
     pub column: String,
     pub index_type: ColumnarIndexType,
     pub created_at: i64,
+    /// What its entries take, keys and values, as they were written.
+    #[serde(default)]
+    pub size_bytes: u64,
+}
+
+/// An index being built in the background, or one that was since this
+/// process started.
+pub struct IndexBuild {
+    pub id: String,
+    pub column: String,
+    pub index_type: ColumnarIndexType,
+    pub started_at: i64,
+    rows_done: std::sync::atomic::AtomicU64,
+    rows_total: std::sync::atomic::AtomicU64,
+    state: parking_lot::Mutex<BuildState>,
+    /// Set when the database closes: the build stops, and is started
+    /// again by the next process.
+    cancel: std::sync::atomic::AtomicBool,
+}
+
+/// Where a background build is.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BuildState {
+    Building,
+    Done,
+    Failed(String),
+}
+
+impl IndexBuild {
+    fn new(id: String, column: &str, index_type: ColumnarIndexType, started_at: i64) -> Self {
+        IndexBuild {
+            id,
+            column: column.to_string(),
+            index_type,
+            started_at,
+            rows_done: Default::default(),
+            rows_total: Default::default(),
+            state: parking_lot::Mutex::new(BuildState::Building),
+            cancel: Default::default(),
+        }
+    }
+
+    pub fn state(&self) -> BuildState {
+        self.state.lock().clone()
+    }
+
+    /// Rows read so far, and how many there are to read.
+    pub fn progress(&self) -> (u64, u64) {
+        use std::sync::atomic::Ordering::Relaxed;
+        (self.rows_done.load(Relaxed), self.rows_total.load(Relaxed))
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancel.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+/// The background builds of every collection, by database, collection and
+/// column, with the database they belong to (as [`BLOCK_STORES`]).
+type BuildEntry = (std::sync::Weak<DB>, Arc<IndexBuild>);
+static INDEX_BUILDS: once_cell::sync::Lazy<dashmap::DashMap<(usize, String, String), BuildEntry>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+/// The threads building them, by database: joined before it closes.
+static INDEX_THREADS: once_cell::sync::Lazy<
+    dashmap::DashMap<usize, Vec<std::thread::JoinHandle<()>>>,
+> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+/// Stop the index builds of `db` and wait for their threads: called when
+/// the last handle on the engine goes, before the database is closed, as
+/// the sealing thread is. A build stopped here left its mark in the
+/// collection's metadata and is started again by the next process.
+pub(crate) fn stop_index_builds(db: &Arc<DB>) {
+    let address = Arc::as_ptr(db) as usize;
+    for entry in INDEX_BUILDS.iter() {
+        if entry.key().0 == address {
+            entry
+                .value()
+                .1
+                .cancel
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    if let Some((_, threads)) = INDEX_THREADS.remove(&address) {
+        for thread in threads {
+            let _ = thread.join();
+        }
+    }
+    INDEX_BUILDS.retain(|key, _| key.0 != address);
+}
+
+/// The positions of an index entry as they are stored: a marker, their
+/// count, then each one as its distance from the one before, all as
+/// LEB128 integers. They used to be a JSON array (`[0,500,1000,…]`), about
+/// eight bytes a row: an index took four times the rows it was built on.
+const POSITIONS_PACKED: u8 = 1;
+
+fn push_varint(out: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        out.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    out.push(value as u8);
+}
+
+fn encode_positions(positions: &[u64]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(2 + positions.len() * 2);
+    out.push(POSITIONS_PACKED);
+    push_varint(&mut out, positions.len() as u64);
+    let mut last = 0;
+    for position in positions {
+        push_varint(&mut out, position - last);
+        last = *position;
+    }
+    out
+}
+
+/// The positions of an entry, ascending: packed, or the JSON array an
+/// index written through 2.12.0 holds.
+fn decode_positions(bytes: &[u8]) -> DbResult<Vec<u64>> {
+    if bytes.first() != Some(&POSITIONS_PACKED) {
+        return Ok(serde_json::from_slice(bytes)?);
+    }
+    let corrupt = || DbError::InternalError("a columnar index entry cannot be read".to_string());
+    let mut at = 1;
+    let mut next = || -> DbResult<u64> {
+        let mut value = 0u64;
+        for shift in (0..64).step_by(7) {
+            let byte = *bytes.get(at).ok_or_else(corrupt)?;
+            at += 1;
+            value |= u64::from(byte & 0x7f) << shift;
+            if byte < 0x80 {
+                return Ok(value);
+            }
+        }
+        Err(corrupt())
+    };
+    let count = next()?;
+    let mut positions = Vec::with_capacity((count as usize).min(bytes.len()));
+    let mut last = 0u64;
+    for _ in 0..count {
+        last = last.checked_add(next()?).ok_or_else(corrupt)?;
+        positions.push(last);
+    }
+    Ok(positions)
 }
 
 /// Column grouping definition
@@ -488,6 +659,8 @@ impl ColumnarCollection {
             format: BLOCK_FORMAT,
             tail_rows: 0,
             index_rows: Default::default(),
+            index_base: Default::default(),
+            index_builds: Default::default(),
             retention_secs: None,
         };
 
@@ -560,6 +733,7 @@ impl ColumnarCollection {
         if format < BLOCK_FORMAT {
             loaded.migrate()?;
         }
+        loaded.resume_index_builds();
         Ok(loaded)
     }
 
@@ -812,6 +986,42 @@ impl ColumnarCollection {
             *held = (*held).min(low as u64);
         }
         Ok(())
+    }
+
+    /// Before a write that removes exactly the first `removed` rows: every
+    /// row left keeps its neighbours and moves down by as many, so an
+    /// index goes on answering for the rows it held, from that base
+    /// (`ColumnarCollectionMeta::index_base`). An index used to be capped
+    /// at the first row removed, here the first of all: after a retention
+    /// or a delete of the oldest rows no index answered for anything.
+    fn shift_indexes(new_meta: &mut ColumnarCollectionMeta, removed: u64) {
+        for (column, held) in new_meta.index_rows.iter_mut() {
+            if *held <= removed {
+                *held = 0;
+                new_meta.index_base.remove(column);
+            } else {
+                *held -= removed;
+                *new_meta.index_base.entry(column.clone()).or_default() += removed;
+            }
+        }
+    }
+
+    /// A write moved a row's position: a build that read the rows before
+    /// it starts again.
+    fn note_moved(&self) {
+        self.store()
+            .moved
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// How many rows were removed from the front since the index on
+    /// `column` was written.
+    fn index_base(&self, column: &str) -> u64 {
+        self.meta
+            .read()
+            .ok()
+            .and_then(|meta| meta.index_base.get(column).copied())
+            .unwrap_or(0)
     }
 
     /// How many rows the index on `column` answers for.
@@ -1076,6 +1286,7 @@ impl ColumnarCollection {
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
         self.cap_indexes(&meta, &mut new_meta, &fresh[0].0)?;
+        self.note_moved();
         let sealed = self.stage_rows(&cf, &mut batch, &mut new_meta, fresh)?;
         self.stage_meta(&cf, &mut batch, &new_meta)?;
         db.write(batch)
@@ -1113,6 +1324,7 @@ impl ColumnarCollection {
         let mut batch = KvBatch::default();
         let mut new_meta = meta.clone();
         self.cap_indexes(&meta, &mut new_meta, row_uuid)?;
+        self.note_moved();
         let sealed = self.stage_rows(
             &cf,
             &mut batch,
@@ -1143,44 +1355,94 @@ impl ColumnarCollection {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
+        self.delete_found(|rows| {
+            let mut seen = std::collections::HashSet::new();
+            Ok(ids
+                .iter()
+                .filter(|id| seen.insert(id.as_str()))
+                .filter_map(|id| rows.find(id))
+                .collect())
+        })
+    }
+
+    /// Delete the rows `filter` keeps. Returns their ids.
+    ///
+    /// The rows are found and removed under the lock writers share, by
+    /// where they are: their ids used to be listed first, and each one
+    /// then looked for again among the blocks (9.5 s for 1.8 million
+    /// rows, most of it looking).
+    pub fn delete_where(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
+        self.delete_found(|rows| {
+            Ok(self
+                .filter_positions(rows, filter, 0..rows.len() as u64)?
+                .into_iter()
+                .map(|position| rows.locate(position as usize))
+                .collect())
+        })
+    }
+
+    /// Delete the rows `find` names, each by its block and its row there
+    /// (the tail is the block after the last), without one twice. Returns
+    /// their ids in that order.
+    fn delete_found(
+        &self,
+        find: impl FnOnce(&RowSet) -> DbResult<Vec<(usize, usize)>>,
+    ) -> DbResult<Vec<String>> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        {
+            let mut meta = self
+                .meta
+                .write()
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            self.refresh_meta(db, &cf, &mut meta);
+        }
+        // Found before the schema is locked for writing: a filter reads
+        // it. No other writer can come between the two.
+        let rows = self.row_set()?;
+        let found = find(&rows)?;
         let mut meta = self
             .meta
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
-        self.refresh_meta(db, &cf, &mut meta);
 
-        let rows = self.row_set_with(&meta.compression)?;
         // Where each row is: by block, or in the tail.
         let mut in_blocks: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
         let mut in_tail = 0u64;
-        let mut seen = std::collections::HashSet::new();
-        let mut deleted = Vec::new();
+        let mut deleted = Vec::with_capacity(found.len());
         let mut batch = KvBatch::default();
-        for id in ids {
-            if !seen.insert(id.as_str()) {
-                continue;
-            }
-            let Some((at, row)) = rows.find(id) else {
-                continue;
-            };
+        // Whether the rows that go are exactly the first ones.
+        let from_the_front = rows.in_order() && {
+            let mut positions: Vec<usize> = found
+                .iter()
+                .map(|(at, row)| rows.start(*at) + row)
+                .collect();
+            positions.sort_unstable();
+            positions.iter().enumerate().all(|(at, held)| at == *held)
+        };
+        for (at, row) in found {
+            let id = rows.uuid((at, row)).into_owned();
             if at < rows.blocks.len() {
                 in_blocks.entry(at).or_default().push(row);
             } else {
                 batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, id).as_bytes());
                 in_tail += 1;
             }
-            deleted.push(id.clone());
+            deleted.push(id);
         }
         let Some(first) = deleted.iter().min() else {
             return Ok(deleted);
         };
 
         let mut new_meta = meta.clone();
-        self.cap_indexes(&meta, &mut new_meta, first)?;
+        if from_the_front {
+            Self::shift_indexes(&mut new_meta, deleted.len() as u64);
+        } else {
+            self.cap_indexes(&meta, &mut new_meta, first)?;
+        }
+        self.note_moved();
         new_meta.tail_rows = new_meta.tail_rows.saturating_sub(in_tail);
 
         // Each block written again without its rows: under its key when a
@@ -1605,9 +1867,15 @@ impl ColumnarCollection {
         };
 
         let mut new_meta = meta.clone();
-        // The rows that stay all move down: no index answers for them any
-        // more, until it is created again.
-        self.cap_indexes(&meta, &mut new_meta, &first)?;
+        // The rows that stay all move down by as many: an index answers
+        // for them from that base. Out of id order (a replicated row with
+        // an older id sits among the blocks), no index answers any more.
+        if rows.in_order() {
+            Self::shift_indexes(&mut new_meta, removed);
+        } else {
+            self.cap_indexes(&meta, &mut new_meta, &first)?;
+        }
+        self.note_moved();
         new_meta.tail_rows = new_meta.tail_rows.saturating_sub(from_tail);
         new_meta.row_count = new_meta.row_count.saturating_sub(removed);
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
@@ -1627,12 +1895,6 @@ impl ColumnarCollection {
             }
         }
         Ok(removed)
-    }
-
-    /// Delete the rows `filter` keeps. Returns their ids.
-    pub fn delete_where(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
-        let ids = self.filtered_row_uuids(filter)?;
-        self.delete_rows(&ids)
     }
 
     /// List all row UUIDs in the collection
@@ -1731,58 +1993,13 @@ impl ColumnarCollection {
         self.meta.read().map(|m| m.row_count as usize).unwrap_or(0)
     }
 
-    /// Read a single column value for a specific row UUID
-    fn read_column_value(&self, column: &str, row_uuid: &str) -> DbResult<Value> {
-        let rows = self.row_set()?;
-        Ok(rows
-            .find(row_uuid)
-            .map_or(Value::Null, |at| rows.value(at, column)))
-    }
-
-    /// Aggregate a column with the specified operation: over its arrays,
-    /// and the rows of the tail. Count counts rows, nulls included; the
-    /// others take numbers and return floats.
+    /// Aggregate a column with the specified operation, over every row.
+    /// Count counts rows, nulls included; the others take numbers and
+    /// return floats.
     pub fn aggregate(&self, column: &str, op: AggregateOp) -> DbResult<Value> {
-        let rows = self.row_set()?;
-        let numbers = || {
-            let in_blocks = rows.blocks.iter().flat_map(move |block| {
-                let held = block.column(column);
-                (0..block.len()).filter_map(move |row| held.and_then(|c| c.number(row)))
-            });
-            let in_tail = rows
-                .tail
-                .iter()
-                .filter_map(move |(_, row)| row.get(column).and_then(Value::as_f64));
-            in_blocks.chain(in_tail)
-        };
-        Ok(match op {
-            AggregateOp::Count => Value::Number(rows.len().into()),
-            AggregateOp::Sum => json_number(numbers().sum()),
-            AggregateOp::Avg => {
-                let (sum, count) = numbers().fold((0.0, 0u64), |(s, n), x| (s + x, n + 1));
-                if count == 0 {
-                    Value::Null
-                } else {
-                    json_number(sum / count as f64)
-                }
-            }
-            AggregateOp::Min => numbers()
-                .reduce(|a, b| if b < a { b } else { a })
-                .map_or(Value::Null, json_number),
-            AggregateOp::Max => numbers()
-                .reduce(|a, b| if b > a { b } else { a })
-                .map_or(Value::Null, json_number),
-            AggregateOp::CountDistinct => {
-                let distinct: std::collections::HashSet<String> = rows
-                    .positions()
-                    .map(|at| rows.value(at, column).to_string())
-                    .collect();
-                Value::Number(distinct.len().into())
-            }
-        })
+        self.aggregate_rows(column, op, None)
     }
 
-    /// Group by with aggregation
     /// Group by with aggregation
     pub fn group_by(
         &self,
@@ -1801,8 +2018,7 @@ impl ColumnarCollection {
         agg_column: &str,
         op: AggregateOp,
     ) -> DbResult<Vec<Value>> {
-        let rows = self.filtered_row_uuids(filter)?;
-        self.group_by_rows(group_columns, agg_column, op, Some(rows))
+        self.group_by_rows(group_columns, agg_column, op, Some(filter))
     }
 
     /// [`Self::aggregate`] restricted to the rows matching `filter`.
@@ -1812,135 +2028,121 @@ impl ColumnarCollection {
         column: &str,
         op: AggregateOp,
     ) -> DbResult<Value> {
-        let rows = self.filtered_row_uuids(filter)?;
-        let values = self.read_column(column, Some(&rows))?;
-        Ok(self.compute_aggregate(&values, op))
+        self.aggregate_rows(column, op, Some(filter))
     }
 
-    fn filtered_row_uuids(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
+    fn aggregate_rows(
+        &self,
+        column: &str,
+        op: AggregateOp,
+        filter: Option<&ColumnFilter>,
+    ) -> DbResult<Value> {
+        self.check_column(column)?;
         let rows = self.row_set()?;
-        let positions = self.filter_positions(&rows, filter, 0..rows.len() as u64)?;
-        Ok(positions
-            .into_iter()
-            .map(|position| rows.uuid(rows.locate(position as usize)).to_string())
-            .collect())
+        let positions = match filter {
+            Some(filter) => Some(self.filter_positions(&rows, filter, 0..rows.len() as u64)?),
+            None => None,
+        };
+        let mut all = Folded::default();
+        each_row(&rows, positions.as_deref(), &[column], |cells| {
+            all.add(&cells[0], op)
+        });
+        Ok(all.result(op))
     }
 
+    /// One pass over the rows `filter` keeps (all of them without one),
+    /// read from the arrays of their blocks: each row is added to the
+    /// group of its key.
+    ///
+    /// The rows used to be listed by id, then each one found again by id
+    /// in a set of rows built for it alone, once per group column, and the
+    /// column aggregated read once more per group: two minutes for 500
+    /// groups of 3.65 million rows, which this does in a fraction of a
+    /// second. The result is the same: a group is the text of its keys
+    /// joined by `|`, a key that reads as a number comes back as a float.
     fn group_by_rows(
         &self,
         group_columns: &[GroupByColumn],
         agg_column: &str,
         op: AggregateOp,
-        rows: Option<Vec<String>>,
+        filter: Option<&ColumnFilter>,
     ) -> DbResult<Vec<Value>> {
-        let all_uuids = match rows {
-            Some(rows) => rows,
-            None => self.list_row_uuids()?,
+        self.check_column(agg_column)?;
+        for column in group_columns {
+            self.check_column(column.name())?;
+        }
+        let rows = self.row_set()?;
+        let positions = match filter {
+            Some(filter) => Some(self.filter_positions(&rows, filter, 0..rows.len() as u64)?),
+            None => None,
         };
+        let mut columns: Vec<&str> = group_columns.iter().map(|c| c.name()).collect();
+        columns.push(agg_column);
 
-        // Read group columns and aggregation column
-        let mut group_data: HashMap<String, Vec<String>> = HashMap::new();
-
-        for row_uuid in &all_uuids {
-            // Build group key
-            let mut group_key_parts = Vec::new();
-            for col_def in group_columns {
-                let v = self.read_column_value(col_def.name(), row_uuid)?;
-                match col_def {
-                    GroupByColumn::Simple(_) => {
-                        // `Value::to_string` JSON-encodes, so a string column
-                        // yielded `"\"a\""` — the quotes then survived into the
-                        // result because the key is split and re-wrapped in
-                        // `Value::String` below. Use the string's contents.
-                        group_key_parts.push(match &v {
-                            Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        });
-                    }
+        // The groups in the order their first row comes, found by the
+        // values of their keys.
+        let mut found: HashMap<Vec<KeyPart>, usize> = HashMap::new();
+        let mut groups: Vec<(Vec<KeyPart>, Folded)> = Vec::new();
+        let mut key: Vec<KeyPart> = Vec::with_capacity(group_columns.len());
+        each_row(&rows, positions.as_deref(), &columns, |cells| {
+            key.clear();
+            for (cell, column) in cells.iter().zip(group_columns) {
+                key.push(match column {
+                    GroupByColumn::Simple(_) => cell.key_part(),
                     GroupByColumn::TimeBucket(_, interval) => {
-                        // Try to parse timestamp and bucket it
-                        let s = v.as_str().unwrap_or("");
-                        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-                            // Simple bucketing logic (naive implementation for POC)
-                            // Parse interval
-                            let (num, unit) = parsers::parse_interval(interval).unwrap_or((1, "h")); // Default to 1h if invalid
-
-                            let timestamp = dt.timestamp();
-                            let bucket_size = match unit {
-                                "s" => num,
-                                "m" => num * 60,
-                                "h" => num * 3600,
-                                "d" => num * 86400,
-                                _ => num,
-                            };
-
-                            let bucketed = (timestamp / bucket_size) * bucket_size;
-                            // Convert back to ISO string
-                            if let Some(dt_utc) = chrono::DateTime::from_timestamp(bucketed, 0) {
-                                group_key_parts.push(dt_utc.to_rfc3339());
-                            } else {
-                                group_key_parts.push(v.to_string());
-                            }
-                        } else {
-                            group_key_parts.push(v.to_string());
-                        }
+                        KeyPart::Text(time_bucket(&cell.value(), interval))
                     }
+                });
+            }
+            let at = match found.get(&key) {
+                Some(at) => *at,
+                None => {
+                    found.insert(key.clone(), groups.len());
+                    groups.push((key.clone(), Folded::default()));
+                    groups.len() - 1
+                }
+            };
+            groups[at].1.add(&cells[group_columns.len()], op);
+        });
+
+        // Two keys of different kinds with the same text (`1` and `"1"`)
+        // are one group, as they always were.
+        let mut by_text: HashMap<String, usize> = HashMap::new();
+        let mut merged: Vec<(String, Folded)> = Vec::new();
+        for (key, folded) in groups {
+            let text = key.iter().map(KeyPart::text).collect::<Vec<_>>().join("|");
+            match by_text.get(&text) {
+                Some(at) => merged[*at].1.merge(folded),
+                None => {
+                    by_text.insert(text.clone(), merged.len());
+                    merged.push((text, folded));
                 }
             }
-            let group_key = group_key_parts.join("|");
-
-            group_data
-                .entry(group_key)
-                .or_default()
-                .push(row_uuid.clone());
         }
 
-        // Compute aggregates for each group
-        let mut results = Vec::new();
-
-        for (group_key, row_uuids) in group_data {
-            let agg_values = self.read_column(agg_column, Some(&row_uuids))?;
-            let agg_result = self.compute_aggregate(&agg_values, op);
-
-            // Build result object
+        let mut results = Vec::with_capacity(merged.len());
+        for (group_key, folded) in merged {
             let mut result_obj = serde_json::Map::new();
-
-            // Parse group key back into parts
             let key_parts: Vec<&str> = group_key.split('|').collect();
             for (i, col_def) in group_columns.iter().enumerate() {
-                if let Some(part) = key_parts.get(i) {
-                    // Try to parse as number first if it's not a TimeBucket (TimeBucket produced string)
-                    let use_number = match col_def {
-                        GroupByColumn::TimeBucket(_, _) => false,
-                        _ => part.parse::<f64>().is_ok(),
-                    };
-
-                    if use_number {
-                        if let Ok(n) = part.parse::<f64>() {
-                            result_obj.insert(
-                                col_def.name().to_string(),
-                                Value::Number(
-                                    serde_json::Number::from_f64(n)
-                                        .unwrap_or(serde_json::Number::from(0)),
-                                ),
-                            );
-                        } else {
-                            result_obj.insert(
-                                col_def.name().to_string(),
-                                Value::String(part.to_string()),
-                            );
-                        }
-                    } else {
-                        result_obj
-                            .insert(col_def.name().to_string(), Value::String(part.to_string()));
-                    }
-                }
+                let Some(part) = key_parts.get(i) else {
+                    continue;
+                };
+                let number = match col_def {
+                    GroupByColumn::TimeBucket(_, _) => None,
+                    _ => part.parse::<f64>().ok(),
+                };
+                let value = match number {
+                    Some(n) => Value::Number(
+                        serde_json::Number::from_f64(n).unwrap_or(serde_json::Number::from(0)),
+                    ),
+                    None => Value::String(part.to_string()),
+                };
+                result_obj.insert(col_def.name().to_string(), value);
             }
-
-            result_obj.insert("_agg".to_string(), agg_result);
+            result_obj.insert("_agg".to_string(), folded.result(op));
             results.push(Value::Object(result_obj));
         }
-
         Ok(results)
     }
 
@@ -2092,6 +2294,8 @@ impl ColumnarCollection {
         for held in new_meta.index_rows.values_mut() {
             *held = 0;
         }
+        new_meta.index_base.clear();
+        self.note_moved();
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         self.stage_meta(&cf, &mut batch, &new_meta)?;
 
@@ -2133,8 +2337,43 @@ impl ColumnarCollection {
 
     // ==================== Index Methods ====================
 
-    /// Create an index on a column
+    /// Create an index on a column, and return once it is built.
     pub fn create_index(&self, column: &str, index_type: ColumnarIndexType) -> DbResult<()> {
+        self.build_index(column, index_type, None, false)
+    }
+
+    /// Build the index of a column again from the rows as they are, in
+    /// place of the one it has: what brings back under the index the rows
+    /// inserted since it was built.
+    pub fn rebuild_index(&self, column: &str, index_type: ColumnarIndexType) -> DbResult<()> {
+        self.build_index(column, index_type, None, true)
+    }
+
+    /// Start building an index in the background and return at once: the
+    /// build is followed with [`Self::index_build`]. `replace` builds it
+    /// in place of the index the column has; without it a column that has
+    /// one is refused. A column whose index is already being built gets
+    /// that build back.
+    ///
+    /// The build is written down in the metadata before the thread
+    /// starts, so that a process that stops before it ends starts it
+    /// again ([`Self::resume_index_builds`]).
+    pub fn start_index_build(
+        &self,
+        column: &str,
+        index_type: ColumnarIndexType,
+        replace: bool,
+    ) -> DbResult<Arc<IndexBuild>> {
+        self.accept_index_build(column, index_type, replace, false)
+    }
+
+    fn accept_index_build(
+        &self,
+        column: &str,
+        index_type: ColumnarIndexType,
+        replace: bool,
+        mark_only: bool,
+    ) -> DbResult<Arc<IndexBuild>> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
         let mut meta = self
@@ -2142,114 +2381,446 @@ impl ColumnarCollection {
             .write()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
         self.refresh_meta(db, &cf, &mut meta);
-
-        // Validate column exists and check if already indexed
-        let col_idx = meta
+        if let Some(running) = self.index_build(column) {
+            if running.state() == BuildState::Building && meta.index_builds.contains_key(column) {
+                if running.index_type == index_type {
+                    return Ok(running);
+                }
+                return Err(DbError::BadRequest(format!(
+                    "An index on column '{}' is being built",
+                    column
+                )));
+            }
+        }
+        let held = meta
             .columns
             .iter()
-            .position(|c| c.name == column)
+            .find(|c| c.name == column)
             .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", column)))?;
-
-        if meta.columns[col_idx].indexed {
+        if held.indexed && !replace {
             return Err(DbError::BadRequest(format!(
                 "Column '{}' already has an index",
                 column
             )));
         }
-
-        // Copy values we need before building index
-        let compression = meta.compression.clone();
-
-        // Build index from the existing rows, by their position.
-        let values: Vec<Value> = {
-            let rows = self.row_set_with(&compression)?;
-            rows.positions().map(|at| rows.value(at, column)).collect()
+        let pending = PendingBuild {
+            id: uuid7::uuid7().to_string(),
+            index_type,
+            started_at: chrono::Utc::now().timestamp(),
         };
-        // The entries are built in memory and written once, with the
-        // schema, in one batch. They used to be written a row at a time,
-        // each row reading the list of its value back, adding itself and
-        // writing the list again: time quadratic in the rows (0.8 s for
-        // 20,000 rows, 11.7 s for 80,000), and an index half written when
-        // one of those writes failed.
-        let mut batch = KvBatch::default();
-        match index_type {
-            ColumnarIndexType::Bitmap => {
-                let mut bitmaps: HashMap<String, Vec<u8>> = HashMap::new();
-                for (row_id, value) in values.iter().enumerate() {
-                    let bitmap = bitmaps
-                        .entry(self.encode_bitmap_key(column, value))
-                        .or_default();
-                    let byte = row_id / 8;
-                    if byte >= bitmap.len() {
-                        bitmap.resize(byte + 1, 0);
-                    }
-                    bitmap[byte] |= 1 << (row_id % 8);
-                }
-                for (key, bitmap) in bitmaps {
-                    batch.put_ks(
-                        &cf,
-                        key.as_bytes(),
-                        self.compress_data(&bitmap, &CompressionType::Lz4),
-                    );
-                }
-            }
-            ColumnarIndexType::Bloom => {
-                for (chunk_id, chunk) in values.chunks(BLOOM_CHUNK_ROWS as usize).enumerate() {
-                    let mut filter = BloomFilter::with_num_bits(10_000).expected_items(1000);
-                    for value in chunk {
-                        filter.insert(&value.to_string());
-                    }
-                    batch.put_ks(
-                        &cf,
-                        self.encode_bloom_key(column, chunk_id as u64).as_bytes(),
-                        serde_json::to_vec(&filter)?,
-                    );
-                }
-            }
-            _ => {
-                let mut lists: HashMap<String, Vec<u64>> = HashMap::new();
-                for (row_id, value) in values.iter().enumerate() {
-                    lists
-                        .entry(self.encode_index_key(column, value))
-                        .or_default()
-                        .push(row_id as u64);
-                }
-                for (key, rows) in lists {
-                    batch.put_ks(&cf, key.as_bytes(), serde_json::to_vec(&rows)?);
-                }
-            }
-        }
-
-        // Store index metadata
-        let idx_meta = ColumnarIndexMeta {
-            column: column.to_string(),
-            index_type: index_type.clone(),
-            created_at: chrono::Utc::now().timestamp(),
-        };
-        let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-        batch.put_ks(&cf, idx_meta_key.as_bytes(), serde_json::to_vec(&idx_meta)?);
-
-        // The schema, with the entries.
         let mut new_meta = meta.clone();
-        new_meta.columns[col_idx].indexed = true;
-        new_meta.columns[col_idx].index_type = Some(index_type.clone());
         new_meta
-            .index_rows
-            .insert(column.to_string(), values.len() as u64);
-        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        batch.put_ks(&cf, meta_key.as_bytes(), serde_json::to_vec(&new_meta)?);
+            .index_builds
+            .insert(column.to_string(), pending.clone());
+        let mut batch = KvBatch::default();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
         db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
-
-        Ok(())
+        let rows = meta.row_count;
+        drop(meta);
+        if mark_only {
+            let build = IndexBuild::new(pending.id, column, pending.index_type, pending.started_at);
+            return Ok(Arc::new(build));
+        }
+        Ok(self.spawn_build(column, pending, rows))
     }
 
-    /// Drop an index from a column
+    /// Accept a build and write it down, without starting it: what a
+    /// process that stops right then leaves behind. For tests of the
+    /// resumption.
+    #[doc(hidden)]
+    pub fn mark_index_build(
+        &self,
+        column: &str,
+        index_type: ColumnarIndexType,
+    ) -> DbResult<Arc<IndexBuild>> {
+        self.accept_index_build(column, index_type, false, true)
+    }
+
+    /// The background build of the index on `column`, running or ended
+    /// since this process started.
+    pub fn index_build(&self, column: &str) -> Option<Arc<IndexBuild>> {
+        let key = (
+            Arc::as_ptr(&self.db) as usize,
+            self.cf_name.clone(),
+            column.to_string(),
+        );
+        INDEX_BUILDS
+            .get(&key)
+            .filter(|entry| entry.0.strong_count() > 0)
+            .map(|entry| entry.1.clone())
+    }
+
+    /// The background builds of this collection.
+    pub fn index_builds(&self) -> Vec<Arc<IndexBuild>> {
+        let address = Arc::as_ptr(&self.db) as usize;
+        let mut builds: Vec<Arc<IndexBuild>> = INDEX_BUILDS
+            .iter()
+            .filter(|entry| entry.key().0 == address && entry.key().1 == self.cf_name)
+            .filter(|entry| entry.value().0.strong_count() > 0)
+            .map(|entry| entry.value().1.clone())
+            .collect();
+        builds.sort_by(|a, b| a.column.cmp(&b.column));
+        builds
+    }
+
+    /// Start again the builds the metadata names and no thread of this
+    /// process runs: those a restart interrupted. Called when a collection
+    /// is loaded; nothing is read for a collection with no build pending.
+    pub fn resume_index_builds(&self) {
+        let pending: Vec<(String, PendingBuild)> = match self.meta.read() {
+            Ok(meta) if !meta.index_builds.is_empty() => meta
+                .index_builds
+                .iter()
+                .map(|(column, build)| (column.clone(), build.clone()))
+                .collect(),
+            _ => return,
+        };
+        let rows = self.count() as u64;
+        for (column, build) in pending {
+            if self
+                .index_build(&column)
+                .is_none_or(|known| known.id != build.id)
+            {
+                tracing::info!(
+                    "columnar '{}': resuming the build of the index on '{}'",
+                    self.name,
+                    column
+                );
+                self.spawn_build(&column, build, rows);
+            }
+        }
+    }
+
+    /// Register the build and start its thread, unless one of that id is
+    /// already registered (two requests loading the collection at once).
+    fn spawn_build(&self, column: &str, pending: PendingBuild, rows: u64) -> Arc<IndexBuild> {
+        let address = Arc::as_ptr(&self.db) as usize;
+        let key = (address, self.cf_name.clone(), column.to_string());
+        let build = Arc::new(IndexBuild::new(
+            pending.id.clone(),
+            column,
+            pending.index_type.clone(),
+            pending.started_at,
+        ));
+        build
+            .rows_total
+            .store(rows, std::sync::atomic::Ordering::Relaxed);
+        {
+            INDEX_BUILDS.retain(|_, (db, _)| db.strong_count() > 0);
+            let mut entry = INDEX_BUILDS
+                .entry(key)
+                .or_insert_with(|| (Arc::downgrade(&self.db), build.clone()));
+            if entry.1.id == pending.id && !Arc::ptr_eq(&entry.1, &build) {
+                return entry.1.clone();
+            }
+            *entry = (Arc::downgrade(&self.db), build.clone());
+        }
+        let collection = self.clone();
+        let running = build.clone();
+        let spawned = std::thread::Builder::new()
+            .name("solidb-colidx".to_string())
+            .spawn(move || {
+                let column = running.column.clone();
+                let built = collection.build_index(
+                    &column,
+                    running.index_type.clone(),
+                    Some(&running),
+                    true,
+                );
+                let state = match built {
+                    Ok(()) => BuildState::Done,
+                    // Stopped with the database: the mark stays, and the
+                    // next process builds it.
+                    Err(_) if running.cancelled() => BuildState::Failed("stopped".to_string()),
+                    Err(error) => {
+                        collection.forget_build(&column, &running.id);
+                        tracing::warn!(
+                            "columnar '{}': the index on '{}' was not built: {}",
+                            collection.name,
+                            column,
+                            error
+                        );
+                        BuildState::Failed(error.to_string())
+                    }
+                };
+                *running.state.lock() = state;
+            });
+        match spawned {
+            Ok(thread) => {
+                let mut threads = INDEX_THREADS.entry(address).or_default();
+                threads.retain(|thread| !thread.is_finished());
+                threads.push(thread);
+            }
+            Err(error) => {
+                self.forget_build(column, &build.id);
+                *build.state.lock() = BuildState::Failed(error.to_string());
+            }
+        }
+        build
+    }
+
+    /// Take the mark of the build `id` out of the metadata: it failed, and
+    /// must not be started again.
+    fn forget_build(&self, column: &str, id: &str) {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let Ok(mut meta) = self.meta.write() else {
+            return;
+        };
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return;
+        };
+        self.refresh_meta(&self.db, &cf, &mut meta);
+        if meta.index_builds.get(column).is_some_and(|b| b.id == id) {
+            meta.index_builds.remove(column);
+            let mut batch = KvBatch::default();
+            if self.stage_meta(&cf, &mut batch, &meta).is_ok() {
+                let _ = self.db.write(batch);
+            }
+        }
+    }
+
+    /// Build the index on `column` and store it.
+    ///
+    /// The rows are read and the entries built without the lock writers
+    /// share: it is held to take the rows as they stand, and again to
+    /// write. Rows appended meanwhile are simply after those the index
+    /// holds. A write that moved a row meanwhile (a delete, a row with an
+    /// older id) made the positions read wrong: the build starts again,
+    /// and holds the lock throughout at its third attempt. It used to
+    /// hold it from the first row to the write, and every insert waited.
+    ///
+    /// `build` is the background build this runs for: its progress is
+    /// kept, it stops when the database closes, and it gives up when its
+    /// mark is no longer in the metadata (the index was dropped, or
+    /// another build took its place).
+    fn build_index(
+        &self,
+        column: &str,
+        index_type: ColumnarIndexType,
+        build: Option<&IndexBuild>,
+        replace: bool,
+    ) -> DbResult<()> {
+        use std::sync::atomic::Ordering::Relaxed;
+        const ATTEMPTS: usize = 3;
+        let shared = self.shared_write_lock();
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| {
+            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
+        })?;
+        let stopped = || DbError::InternalError("the index build was stopped".to_string());
+        // The column as the metadata has it, or why it cannot be indexed.
+        let check = |meta: &ColumnarCollectionMeta| -> DbResult<usize> {
+            let at = meta
+                .columns
+                .iter()
+                .position(|c| c.name == column)
+                .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", column)))?;
+            if meta.columns[at].indexed && !replace {
+                return Err(DbError::BadRequest(format!(
+                    "Column '{}' already has an index",
+                    column
+                )));
+            }
+            if let Some(build) = build {
+                if meta
+                    .index_builds
+                    .get(column)
+                    .is_none_or(|b| b.id != build.id)
+                {
+                    return Err(DbError::BadRequest(format!(
+                        "The build of the index on '{}' was called off",
+                        column
+                    )));
+                }
+            }
+            Ok(at)
+        };
+        for attempt in 1..=ATTEMPTS {
+            let mut guard = Some(shared.lock());
+            let (rows, moved) = {
+                let mut meta = self
+                    .meta
+                    .write()
+                    .map_err(|e| DbError::InternalError(e.to_string()))?;
+                self.refresh_meta(db, &cf, &mut meta);
+                check(&meta)?;
+                (
+                    self.row_set_with(&meta.compression)?,
+                    self.store().moved.load(Relaxed),
+                )
+            };
+            if attempt < ATTEMPTS {
+                guard = None;
+            }
+            let total = rows.len() as u64;
+            if let Some(build) = build {
+                build.rows_total.store(total, Relaxed);
+                build.rows_done.store(0, Relaxed);
+            }
+
+            // The entries, built in memory: they are written once, with
+            // the schema, in one batch. They used to be written a row at a
+            // time, each row reading the list of its value back, adding
+            // itself and writing the list again: time quadratic in the
+            // rows, and an index half written when a write failed.
+            let mut entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+            let mut lists: HashMap<String, Vec<u64>> = HashMap::new();
+            let mut chunk: Vec<String> = Vec::new();
+            let mut position = 0u64;
+            let mut cancelled = false;
+            each_row(&rows, None, &[column], |cells| {
+                if cancelled {
+                    return;
+                }
+                let value = cells[0].value();
+                match index_type {
+                    ColumnarIndexType::Bitmap => lists
+                        .entry(self.encode_bitmap_key(column, &value))
+                        .or_default()
+                        .push(position),
+                    ColumnarIndexType::Bloom => {
+                        chunk.push(value.to_string());
+                        if chunk.len() as u64 == BLOOM_CHUNK_ROWS {
+                            let at = position / BLOOM_CHUNK_ROWS;
+                            entries.push(self.bloom_entry(column, at, &chunk));
+                            chunk.clear();
+                        }
+                    }
+                    _ => lists
+                        .entry(self.encode_index_key(column, &value))
+                        .or_default()
+                        .push(position),
+                }
+                position += 1;
+                if position.is_multiple_of(65_536) {
+                    if let Some(build) = build {
+                        build.rows_done.store(position, Relaxed);
+                        cancelled = build.cancelled();
+                    }
+                }
+            });
+            if cancelled {
+                return Err(stopped());
+            }
+            if !chunk.is_empty() {
+                let at = (position - 1) / BLOOM_CHUNK_ROWS;
+                entries.push(self.bloom_entry(column, at, &chunk));
+            }
+            for (key, positions) in lists {
+                let stored = match index_type {
+                    ColumnarIndexType::Bitmap => {
+                        let last = positions.last().copied().unwrap_or(0) as usize;
+                        let mut bitmap = vec![0u8; last / 8 + 1];
+                        for position in positions {
+                            bitmap[position as usize / 8] |= 1 << (position % 8);
+                        }
+                        self.compress_data(&bitmap, &CompressionType::Lz4)
+                    }
+                    _ => encode_positions(&positions),
+                };
+                entries.push((key.into_bytes(), stored));
+            }
+            drop(rows);
+            if let Some(build) = build {
+                build.rows_done.store(total, Relaxed);
+            }
+
+            // Written under the lock, if the positions read still stand.
+            let _guard = guard.unwrap_or_else(|| shared.lock());
+            let mut meta = self
+                .meta
+                .write()
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            self.refresh_meta(db, &cf, &mut meta);
+            let col_idx = check(&meta)?;
+            if build.is_some_and(|build| build.cancelled()) {
+                return Err(stopped());
+            }
+            if self.store().moved.load(Relaxed) != moved {
+                continue;
+            }
+            let mut batch = KvBatch::default();
+            if meta.columns[col_idx].indexed {
+                self.stage_index_removal(&cf, &mut batch, column);
+            }
+            let size_bytes = entries
+                .iter()
+                .map(|(key, value)| (key.len() + value.len()) as u64)
+                .sum();
+            for (key, value) in entries {
+                batch.put_ks(&cf, &key, value);
+            }
+            let idx_meta = ColumnarIndexMeta {
+                column: column.to_string(),
+                index_type: index_type.clone(),
+                created_at: chrono::Utc::now().timestamp(),
+                size_bytes,
+            };
+            let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
+            batch.put_ks(&cf, idx_meta_key.as_bytes(), serde_json::to_vec(&idx_meta)?);
+
+            // The schema, with the entries.
+            let mut new_meta = meta.clone();
+            new_meta.columns[col_idx].indexed = true;
+            new_meta.columns[col_idx].index_type = Some(index_type.clone());
+            new_meta.index_rows.insert(column.to_string(), total);
+            new_meta.index_base.remove(column);
+            new_meta.index_builds.remove(column);
+            self.stage_meta(&cf, &mut batch, &new_meta)?;
+            db.write(batch)
+                .map_err(|e| DbError::InternalError(e.to_string()))?;
+            *meta = new_meta;
+            return Ok(());
+        }
+        Err(DbError::InternalError(
+            "the index build was overtaken by writes".to_string(),
+        ))
+    }
+
+    /// One entry of a bloom index: what the rows of chunk `chunk` hold.
+    fn bloom_entry(&self, column: &str, chunk: u64, values: &[String]) -> (Vec<u8>, Vec<u8>) {
+        let mut filter = BloomFilter::with_num_bits(10_000).expected_items(1000);
+        for value in values {
+            filter.insert(value);
+        }
+        (
+            self.encode_bloom_key(column, chunk).into_bytes(),
+            serde_json::to_vec(&filter).unwrap_or_default(),
+        )
+    }
+
+    /// Stage the removal of the column's entries, whatever kind of index
+    /// wrote them, and of its metadata. Only those of a sorted or hash
+    /// index used to go: a bitmap or a bloom index left its entries
+    /// behind, and one created again on the column answered from the
+    /// entry of a value no row holds any more.
+    fn stage_index_removal(&self, cf: &KsCf, batch: &mut KvBatch, column: &str) {
+        for kind in [
+            COL_IDX_PREFIX,
+            COL_IDX_BITMAP_PREFIX,
+            COL_IDX_MINMAX_PREFIX,
+            COL_IDX_BLOOM_PREFIX,
+        ] {
+            let prefix = format!("{}{}:", kind, column);
+            let iter = self.db.prefix_iterator_ks(cf, prefix.as_bytes());
+            for (key, _) in iter.flatten() {
+                if !key.starts_with(prefix.as_bytes()) {
+                    break;
+                }
+                batch.delete_ks(cf, &key);
+            }
+        }
+        let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
+        batch.delete_ks(cf, idx_meta_key.as_bytes());
+    }
+
+    /// Drop an index from a column, and call off a build of it that is
+    /// still running.
     pub fn drop_index(&self, column: &str) -> DbResult<()> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
@@ -2263,58 +2834,34 @@ impl ColumnarCollection {
         })?;
         self.refresh_meta(db, &cf, &mut meta);
 
-        // Validate column exists and has index
         let col_idx = meta
             .columns
             .iter()
             .position(|c| c.name == column)
             .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", column)))?;
-
-        if !meta.columns[col_idx].indexed {
+        let building = meta.index_builds.contains_key(column);
+        if !meta.columns[col_idx].indexed && !building {
             return Err(DbError::BadRequest(format!(
                 "Column '{}' has no index",
                 column
             )));
         }
 
-        // Delete the column's entries, whatever kind of index wrote them.
-        // Only those of a sorted or hash index used to go: a bitmap or a
-        // bloom index left its entries behind, and one created again on
-        // the column answered from the entry of a value no row holds any
-        // more.
-        for kind in [
-            COL_IDX_PREFIX,
-            COL_IDX_BITMAP_PREFIX,
-            COL_IDX_MINMAX_PREFIX,
-            COL_IDX_BLOOM_PREFIX,
-        ] {
-            let prefix = format!("{}{}:", kind, column);
-            let iter = db.prefix_iterator_ks(&cf, prefix.as_bytes());
-            for (key, _) in iter.flatten() {
-                if !key.starts_with(prefix.as_bytes()) {
-                    break;
-                }
-                db.delete_ks(&cf, &key)
-                    .map_err(|e| DbError::InternalError(e.to_string()))?;
-            }
-        }
-
-        // Delete index metadata
-        let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-        db.delete_ks(&cf, idx_meta_key.as_bytes())
+        // The entries, the index's metadata and the schema in one batch:
+        // they used to be deleted one write at a time, and a failure
+        // part-way left an index with some of its entries.
+        let mut batch = KvBatch::default();
+        self.stage_index_removal(&cf, &mut batch, column);
+        let mut new_meta = meta.clone();
+        new_meta.columns[col_idx].indexed = false;
+        new_meta.columns[col_idx].index_type = None;
+        new_meta.index_rows.remove(column);
+        new_meta.index_base.remove(column);
+        new_meta.index_builds.remove(column);
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        // Mark column as not indexed
-        meta.columns[col_idx].indexed = false;
-        meta.columns[col_idx].index_type = None;
-        meta.index_rows.remove(column);
-
-        // Update collection metadata
-        let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_ks(&cf, meta_key.as_bytes(), &meta_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
+        *meta = new_meta;
         Ok(())
     }
 
@@ -2342,6 +2889,13 @@ impl ColumnarCollection {
         }
 
         Ok(indexes)
+    }
+
+    /// How many rows the index on `column` answers for: those it was
+    /// built on that are still where it knows them. The rows after them
+    /// are compared in their blocks.
+    pub fn index_coverage(&self, column: &str) -> u64 {
+        self.index_rows(column)
     }
 
     /// Check if a column has an index
@@ -2418,7 +2972,10 @@ impl ColumnarCollection {
             .meta
             .read()
             .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let row_count = meta.row_count;
+        // Over the rows the index was written for, in their positions of
+        // then.
+        let row_count = meta.index_rows.get(column).copied().unwrap_or(0)
+            + meta.index_base.get(column).copied().unwrap_or(0);
         let chunk_count = row_count.div_ceil(BLOOM_CHUNK_ROWS);
 
         let mut candidate_ids = Vec::new();
@@ -2454,10 +3011,7 @@ impl ColumnarCollection {
 
         let idx_key = self.encode_index_key(column, value);
         match db.get_ks(&cf, idx_key.as_bytes()) {
-            Ok(Some(bytes)) => {
-                let row_ids: Vec<u64> = serde_json::from_slice(&bytes)?;
-                Ok(row_ids)
-            }
+            Ok(Some(bytes)) => decode_positions(&bytes),
             Ok(None) => Ok(Vec::new()),
             Err(e) => Err(DbError::InternalError(e.to_string())),
         }
@@ -2502,9 +3056,7 @@ impl ColumnarCollection {
                     };
 
                     if matches {
-                        if let Ok(row_ids) = serde_json::from_slice::<Vec<u64>>(&val_bytes) {
-                            result.extend(row_ids);
-                        }
+                        result.extend(decode_positions(&val_bytes)?);
                     }
                 }
             }
@@ -2624,47 +3176,6 @@ impl ColumnarCollection {
         }
     }
 
-    fn compute_aggregate(&self, values: &[Value], op: AggregateOp) -> Value {
-        match op {
-            AggregateOp::Count => Value::Number(values.len().into()),
-
-            AggregateOp::Sum => {
-                let sum: f64 = values.iter().filter_map(|v| v.as_f64()).sum();
-                json_number(sum)
-            }
-
-            AggregateOp::Avg => {
-                let nums: Vec<f64> = values.iter().filter_map(|v| v.as_f64()).collect();
-                if nums.is_empty() {
-                    Value::Null
-                } else {
-                    let avg = nums.iter().sum::<f64>() / nums.len() as f64;
-                    json_number(avg)
-                }
-            }
-
-            AggregateOp::Min => values
-                .iter()
-                .filter_map(|v| v.as_f64())
-                .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(json_number)
-                .unwrap_or(Value::Null),
-
-            AggregateOp::Max => values
-                .iter()
-                .filter_map(|v| v.as_f64())
-                .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(json_number)
-                .unwrap_or(Value::Null),
-
-            AggregateOp::CountDistinct => {
-                let distinct: std::collections::HashSet<String> =
-                    values.iter().map(|v| v.to_string()).collect();
-                Value::Number(distinct.len().into())
-            }
-        }
-    }
-
     /// The positions, among `row_range`, of the rows `filter` keeps,
     /// ascending.
     ///
@@ -2747,8 +3258,22 @@ impl ColumnarCollection {
         if held <= row_range.start {
             return Ok(scan_leaf(rows, filter, column, row_range));
         }
-        let mut positions = self.index_positions(rows, filter, column, index)?;
-        positions.retain(|position| (row_range.start..held).contains(position));
+        // The index names a row by the position it had when it was
+        // written: its position now, plus the rows removed from the front
+        // since.
+        let base = self.index_base(column);
+        let mut positions: Vec<u64> = self
+            .index_positions(filter, column, index.clone())?
+            .into_iter()
+            .filter_map(|position| position.checked_sub(base))
+            .filter(|position| (row_range.start..held).contains(position))
+            .collect();
+        if index == ColumnarIndexType::Bloom {
+            // It may name a chunk that does not hold the value.
+            positions.retain(|position| {
+                leaf_keeps(filter, &rows.value(rows.locate(*position as usize), column))
+            });
+        }
         if !positions.windows(2).all(|pair| pair[0] < pair[1]) {
             positions.sort_unstable();
             positions.dedup();
@@ -2833,23 +3358,22 @@ impl ColumnarCollection {
         answers.then_some(index)
     }
 
-    /// The positions `index` gives for the comparison `filter`, among the
-    /// rows it holds.
+    /// The positions `index` gives for the comparison `filter`, as they
+    /// were when it was written. A bloom index may name rows that do not
+    /// hold the value: the caller checks them.
     fn index_positions(
         &self,
-        rows: &RowSet,
         filter: &ColumnFilter,
         column: &str,
         index: ColumnarIndexType,
     ) -> DbResult<Vec<u64>> {
         let lookup = |value: &Value| match index {
             ColumnarIndexType::Bitmap => self.index_lookup_bitmap(column, value),
-            // May name a chunk that does not hold the value: checked below.
             ColumnarIndexType::Bloom => self.get_candidate_rows_from_bloom(column, value),
             _ => self.index_lookup_eq(column, value),
         };
-        let mut positions = match filter {
-            ColumnFilter::Eq(_, value) => lookup(value)?,
+        match filter {
+            ColumnFilter::Eq(_, value) => lookup(value),
             ColumnFilter::In(_, values) => {
                 let mut found = Vec::new();
                 for value in values {
@@ -2857,17 +3381,10 @@ impl ColumnarCollection {
                 }
                 found.sort_unstable();
                 found.dedup();
-                found
+                Ok(found)
             }
-            _ => return self.index_range_scan(column, filter),
-        };
-        if index == ColumnarIndexType::Bloom {
-            positions.retain(|position| {
-                (*position as usize) < rows.len()
-                    && leaf_keeps(filter, &rows.value(rows.locate(*position as usize), column))
-            });
+            _ => self.index_range_scan(column, filter),
         }
-        Ok(positions)
     }
 }
 
@@ -2945,6 +3462,222 @@ fn retire_minmax(
         retired.join(", ")
     );
     Ok(bytes)
+}
+
+/// The value of one column for one row, as an aggregation reads it:
+/// where it is in its block's array, or the value itself (the tail, and
+/// rows out of id order).
+enum Cell<'a> {
+    In(&'a Column, usize),
+    Is(&'a Value),
+    Null,
+}
+
+impl Cell<'_> {
+    fn value(&self) -> Value {
+        match self {
+            Cell::In(column, row) => column.value(*row),
+            Cell::Is(value) => (*value).clone(),
+            Cell::Null => Value::Null,
+        }
+    }
+
+    /// As `Value::as_f64` of the value.
+    fn number(&self) -> Option<f64> {
+        match self {
+            Cell::In(column, row) => column.number(*row),
+            Cell::Is(value) => value.as_f64(),
+            Cell::Null => None,
+        }
+    }
+
+    /// The value as a key of a group. An integer stays one; anything else
+    /// is the text the groups have always been told apart by: a string's
+    /// contents, the JSON text of any other value.
+    fn key_part(&self) -> KeyPart {
+        if let Cell::In(column, row) = self {
+            let null = column.nulls.as_ref().is_some_and(|nulls| nulls[*row]);
+            if let (ColData::Int(values), false) = (&column.data, null) {
+                return KeyPart::Int(values[*row]);
+            }
+        }
+        match self.value() {
+            Value::Number(number) if number.is_i64() => {
+                KeyPart::Int(number.as_i64().unwrap_or_default())
+            }
+            Value::String(text) => KeyPart::Text(text),
+            other => KeyPart::Text(other.to_string()),
+        }
+    }
+}
+
+/// One key of a group.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum KeyPart {
+    Int(i64),
+    Text(String),
+}
+
+impl KeyPart {
+    fn text(&self) -> String {
+        match self {
+            KeyPart::Int(value) => value.to_string(),
+            KeyPart::Text(text) => text.clone(),
+        }
+    }
+}
+
+/// What an aggregation keeps of the rows of one group.
+#[derive(Default)]
+struct Folded {
+    /// Rows, nulls included.
+    rows: u64,
+    /// Rows holding a number, and their sum in the order of the rows.
+    numbers: u64,
+    sum: f64,
+    min: Option<f64>,
+    max: Option<f64>,
+    /// The JSON text of each value seen, for COUNT_DISTINCT only.
+    distinct: std::collections::HashSet<String>,
+}
+
+impl Folded {
+    fn add(&mut self, cell: &Cell<'_>, op: AggregateOp) {
+        self.rows += 1;
+        match op {
+            AggregateOp::Count => {}
+            AggregateOp::CountDistinct => {
+                self.distinct.insert(cell.value().to_string());
+            }
+            _ => {
+                if let Some(number) = cell.number() {
+                    self.numbers += 1;
+                    self.sum += number;
+                    self.min = Some(self.min.map_or(number, |min| min.min(number)));
+                    self.max = Some(self.max.map_or(number, |max| max.max(number)));
+                }
+            }
+        }
+    }
+
+    fn merge(&mut self, other: Folded) {
+        self.rows += other.rows;
+        self.numbers += other.numbers;
+        self.sum += other.sum;
+        self.min = match (self.min, other.min) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        self.max = match (self.max, other.max) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
+        self.distinct.extend(other.distinct);
+    }
+
+    fn result(&self, op: AggregateOp) -> Value {
+        match op {
+            AggregateOp::Count => Value::Number(self.rows.into()),
+            AggregateOp::Sum => json_number(self.sum),
+            AggregateOp::Avg if self.numbers == 0 => Value::Null,
+            AggregateOp::Avg => json_number(self.sum / self.numbers as f64),
+            AggregateOp::Min => self.min.map_or(Value::Null, json_number),
+            AggregateOp::Max => self.max.map_or(Value::Null, json_number),
+            AggregateOp::CountDistinct => Value::Number(self.distinct.len().into()),
+        }
+    }
+}
+
+/// `each` for every row at `positions` (ascending; every row without
+/// them), in that order, with its cells for `columns`. The columns of a
+/// block are looked up once for all its rows.
+fn each_row<'r>(
+    rows: &'r RowSet,
+    positions: Option<&[u64]>,
+    columns: &[&str],
+    mut each: impl FnMut(&[Cell<'r>]),
+) {
+    let mut cells: Vec<Cell<'r>> = Vec::with_capacity(columns.len());
+    if !rows.in_order() {
+        let mut one = |position: usize| {
+            let at = rows.locate(position);
+            cells.clear();
+            for column in columns {
+                cells.push(match rows.blocks.get(at.0) {
+                    Some(block) => block
+                        .column(column)
+                        .map_or(Cell::Null, |held| Cell::In(held, at.1)),
+                    None => rows.tail[at.1].1.get(*column).map_or(Cell::Null, Cell::Is),
+                });
+            }
+            each(&cells);
+        };
+        match positions {
+            Some(positions) => positions.iter().for_each(|p| one(*p as usize)),
+            None => (0..rows.len()).for_each(one),
+        }
+        return;
+    }
+    // Where the positions not yet read start.
+    let mut next = 0;
+    for part in 0..=rows.blocks.len() {
+        let start = rows.start(part);
+        let block = rows.blocks.get(part);
+        let held = block.map_or(rows.tail.len(), |block| block.len());
+        let here: Option<&[u64]> = positions.map(|positions| {
+            let from = next;
+            while next < positions.len() && (positions[next] as usize) < start + held {
+                next += 1;
+            }
+            &positions[from..next]
+        });
+        if held == 0 || here.is_some_and(|here| here.is_empty()) {
+            continue;
+        }
+        let in_block: Option<Vec<Option<&'r Column>>> =
+            block.map(|block| columns.iter().map(|column| block.column(column)).collect());
+        let mut one = |row: usize| {
+            cells.clear();
+            match &in_block {
+                Some(held) => cells.extend(
+                    held.iter()
+                        .map(|column| column.map_or(Cell::Null, |column| Cell::In(column, row))),
+                ),
+                None => cells.extend(
+                    columns
+                        .iter()
+                        .map(|column| rows.tail[row].1.get(*column).map_or(Cell::Null, Cell::Is)),
+                ),
+            }
+            each(&cells);
+        };
+        match here {
+            Some(here) => here.iter().for_each(|p| one(*p as usize - start)),
+            None => (0..held).for_each(one),
+        }
+    }
+}
+
+/// The key of a row in a `TimeBucket` group: the start of the bucket of
+/// an RFC 3339 instant, as RFC 3339 text; the JSON text of any other
+/// value.
+fn time_bucket(value: &Value, interval: &str) -> String {
+    let Ok(instant) = chrono::DateTime::parse_from_rfc3339(value.as_str().unwrap_or("")) else {
+        return value.to_string();
+    };
+    let (num, unit) = parsers::parse_interval(interval).unwrap_or((1, "h"));
+    let bucket_size = match unit {
+        "s" => num,
+        "m" => num * 60,
+        "h" => num * 3600,
+        "d" => num * 86400,
+        _ => num,
+    };
+    let bucketed = (instant.timestamp() / bucket_size) * bucket_size;
+    match chrono::DateTime::from_timestamp(bucketed, 0) {
+        Some(start) => start.to_rfc3339(),
+        None => value.to_string(),
+    }
 }
 
 /// Whether the comparison `filter` keeps a row holding `value`.
@@ -3687,6 +4420,28 @@ mod tests {
             col.read_column("host", None).unwrap().last(),
             Some(&serde_json::json!("new"))
         );
+    }
+
+    #[test]
+    fn positions_are_packed_and_the_older_json_is_still_read() {
+        for positions in [
+            vec![],
+            vec![0],
+            vec![0, 1, 2, 3],
+            vec![7, 500, 1_000, 70_000, 3_650_000, u64::MAX / 2],
+        ] {
+            let packed = encode_positions(&positions);
+            assert_eq!(decode_positions(&packed).unwrap(), positions);
+            // What 2.12.0 and earlier wrote.
+            let json = serde_json::to_vec(&positions).unwrap();
+            assert_eq!(decode_positions(&json).unwrap(), positions);
+        }
+        // A run of neighbours is a byte a row.
+        let run: Vec<u64> = (1_000_000..1_010_000).collect();
+        assert!(encode_positions(&run).len() < 10_010);
+        // Cut short: an error, not a wrong answer.
+        let packed = encode_positions(&[1, 2, 300]);
+        assert!(decode_positions(&packed[..packed.len() - 1]).is_err());
     }
 
     #[test]

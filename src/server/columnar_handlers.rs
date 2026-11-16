@@ -148,6 +148,9 @@ pub struct AggregateRequest {
     pub operation: String,
     #[serde(default)]
     pub group_by: Option<Vec<String>>,
+    /// A filter as `/query` takes: only the rows it keeps are aggregated.
+    #[serde(default)]
+    pub filter: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -647,6 +650,9 @@ pub async fn prune_columnar_handler(
 /// - `column` - Column to aggregate (required)
 /// - `operation` - Aggregation operation: SUM, AVG, COUNT, MIN, MAX, COUNT_DISTINCT
 /// - `group_by` - Optional array of columns to group by
+/// - `filter` - Optional filter, as `/query` takes (`{"column", "op",
+///   "value"}`, or `{"and": [..]}` / `{"or": [..]}`): the rows it keeps
+///   are the ones aggregated
 ///
 /// # Response (simple aggregation)
 /// ```json
@@ -663,39 +669,46 @@ pub async fn aggregate_columnar_handler(
     Json(req): Json<AggregateRequest>,
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
-
-    let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
-
     let op = AggregateOp::from_str(&req.operation).ok_or_else(|| {
         DbError::BadRequest(format!(
             "Unknown aggregation operation: {}. Supported: SUM, AVG, COUNT, MIN, MAX, COUNT_DISTINCT",
             req.operation
         ))
     })?;
+    let filter = req
+        .filter
+        .as_ref()
+        .map(ColumnFilter::from_json)
+        .transpose()?;
 
-    if let Some(group_cols) = req.group_by {
-        // Group by aggregation
+    // Off the async workers: a pass over every row of a large collection.
+    let answer = tokio::task::spawn_blocking(move || -> Result<AggregateResponse, DbError> {
         use crate::storage::columnar::GroupByColumn;
-        let group_defs: Vec<GroupByColumn> = group_cols
-            .iter()
-            .map(|s| GroupByColumn::Simple(s.clone()))
-            .collect();
-
-        let groups = col.group_by(&group_defs, &req.column, op)?;
-
-        Ok(Json(AggregateResponse {
+        let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
+        let Some(group_cols) = req.group_by else {
+            let result = match &filter {
+                Some(filter) => col.aggregate_where(filter, &req.column, op)?,
+                None => col.aggregate(&req.column, op)?,
+            };
+            return Ok(AggregateResponse {
+                result,
+                groups: None,
+            });
+        };
+        let group_defs: Vec<GroupByColumn> =
+            group_cols.into_iter().map(GroupByColumn::Simple).collect();
+        let groups = match &filter {
+            Some(filter) => col.group_by_where(filter, &group_defs, &req.column, op)?,
+            None => col.group_by(&group_defs, &req.column, op)?,
+        };
+        Ok(AggregateResponse {
             result: Value::Null,
             groups: Some(groups),
-        }))
-    } else {
-        // Simple aggregation
-        let result = col.aggregate(&req.column, op)?;
-
-        Ok(Json(AggregateResponse {
-            result,
-            groups: None,
-        }))
-    }
+        })
+    })
+    .await
+    .map_err(|e| DbError::InternalError(e.to_string()))??;
+    Ok(Json(answer))
 }
 
 /// Query a columnar collection with optional filtering
@@ -786,6 +799,42 @@ pub struct CreateIndexResponse {
     pub index_type: String,
 }
 
+/// What `POST …/index` takes in its query string.
+#[derive(Debug, Deserialize, Default)]
+pub struct CreateIndexParams {
+    /// `false`: answer at once with the build's id, and build in the
+    /// background. Left out or `true`: answer when the index is built.
+    #[serde(default)]
+    pub wait: Option<bool>,
+    /// `true`: build the index again in place of the one the column has.
+    #[serde(default)]
+    pub rebuild: Option<bool>,
+}
+
+/// A background build as the endpoints report it.
+fn build_json(build: &crate::storage::columnar::IndexBuild) -> Value {
+    use crate::storage::columnar::BuildState;
+    let (rows_done, rows_total) = build.progress();
+    let (status, error) = match build.state() {
+        BuildState::Building => ("building", None),
+        BuildState::Done => ("created", None),
+        BuildState::Failed(error) => ("failed", Some(error)),
+    };
+    let mut answer = serde_json::json!({
+        "status": status,
+        "job": build.id,
+        "column": build.column,
+        "index_type": format!("{:?}", build.index_type).to_lowercase(),
+        "rows_done": rows_done,
+        "rows_total": rows_total,
+        "started_at": build.started_at,
+    });
+    if let Some(error) = error {
+        answer["error"] = Value::String(error);
+    }
+    answer
+}
+
 /// Create an index on a columnar collection column
 ///
 /// # Endpoint
@@ -793,17 +842,30 @@ pub struct CreateIndexResponse {
 ///
 /// # Request Body
 /// - `column` - Column name to index (required)
-/// - `index_type` - Index type: "sorted" (default) or "hash"
+/// - `index_type` - Index type: "sorted" (default), "hash", "bitmap" or "bloom"
+///
+/// # Query string
+/// - `wait=false` - answer at once, `202` with the build's `job` id; the
+///   build is followed with `GET …/index/{column}`. By default the answer
+///   comes when the index is built.
+/// - `rebuild=true` - build the index again in place of the one the
+///   column has, from the rows as they are now.
 ///
 /// # Response
 /// ```json
 /// {"status": "created", "column": "host", "index_type": "sorted"}
 /// ```
+/// With `wait=false`:
+/// ```json
+/// {"status": "building", "job": "0193…", "column": "host", "index_type": "sorted",
+///  "rows_done": 0, "rows_total": 3650000, "started_at": 1794300000}
+/// ```
 pub async fn create_columnar_index_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    axum::extract::Query(params): axum::extract::Query<CreateIndexParams>,
     Json(req): Json<CreateIndexRequest>,
-) -> Result<impl IntoResponse, DbError> {
+) -> Result<axum::response::Response, DbError> {
     let db = state.storage.get_database(&db_name)?;
 
     let index_type = match req.index_type.as_deref() {
@@ -826,20 +888,106 @@ pub async fn create_columnar_index_handler(
             )))
         }
     };
+    let rebuild = params.rebuild.unwrap_or(false);
+    let log = state.replication_log.clone();
 
-    crate::sync::columnar::create_index(
-        &db,
-        state.replication_log.as_deref(),
-        &collection,
-        &req.column,
-        index_type.clone(),
-    )?;
+    if params.wait == Some(false) {
+        let build = crate::sync::columnar::start_index_build(
+            &db,
+            log.as_deref(),
+            &collection,
+            &req.column,
+            index_type,
+            rebuild,
+        )?;
+        return Ok((axum::http::StatusCode::ACCEPTED, Json(build_json(&build))).into_response());
+    }
+
+    // Off the async workers: the build reads every row.
+    let column = req.column.clone();
+    let kind = index_type.clone();
+    tokio::task::spawn_blocking(move || {
+        if rebuild {
+            crate::sync::columnar::rebuild_index(&db, log.as_deref(), &collection, &column, kind)
+        } else {
+            crate::sync::columnar::create_index(&db, log.as_deref(), &collection, &column, kind)
+        }
+    })
+    .await
+    .map_err(|e| DbError::InternalError(e.to_string()))??;
 
     Ok(Json(CreateIndexResponse {
         status: "created".to_string(),
         column: req.column,
         index_type: format!("{:?}", index_type).to_lowercase(),
-    }))
+    })
+    .into_response())
+}
+
+/// The index of one column, or the build of it
+///
+/// # Endpoint
+/// `GET /_api/database/{db}/columnar/{collection}/index/{column}`
+///
+/// # Response
+/// While it is being built (`status` is then `building`, and `failed`
+/// with an `error` when the build gave up):
+/// ```json
+/// {"status": "building", "job": "0193…", "column": "host", "index_type": "sorted",
+///  "rows_done": 1310720, "rows_total": 3650000, "started_at": 1794300000}
+/// ```
+/// Once it exists:
+/// ```json
+/// {"status": "created", "column": "host", "index_type": "sorted",
+///  "created_at": 1794300004, "rows": 3650000, "size_bytes": 5123456}
+/// ```
+/// `404` for a column with neither.
+pub async fn get_columnar_index_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, column)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    use crate::storage::columnar::BuildState;
+    let db = state.storage.get_database(&db_name)?;
+    let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
+    let build = col.index_build(&column);
+    if let Some(build) = build.as_ref().filter(|b| b.state() != BuildState::Done) {
+        // A build that failed and was followed by an index tells of the
+        // index.
+        if build.state() == BuildState::Building || !col.has_index(&column) {
+            return Ok(Json(build_json(build)));
+        }
+    }
+    let Some(index) = col
+        .list_indexes()?
+        .into_iter()
+        .find(|index| index.column == column)
+    else {
+        return Err(DbError::DocumentNotFound(format!(
+            "Column '{}' has no index",
+            column
+        )));
+    };
+    let mut answer = index_json(&col, &index);
+    answer["status"] = Value::String("created".to_string());
+    if let Some(build) = build {
+        answer["job"] = Value::String(build.id.clone());
+    }
+    Ok(Json(answer))
+}
+
+/// An index as the endpoints report it.
+fn index_json(
+    col: &ColumnarCollection,
+    index: &crate::storage::columnar::ColumnarIndexMeta,
+) -> Value {
+    serde_json::json!({
+        "column": index.column,
+        "index_type": format!("{:?}", index.index_type).to_lowercase(),
+        "created_at": index.created_at,
+        // The rows it answers for; those after them are read in their blocks.
+        "rows": col.index_coverage(&index.column),
+        "size_bytes": index.size_bytes,
+    })
 }
 
 /// List indexes on a columnar collection
@@ -849,31 +997,36 @@ pub async fn create_columnar_index_handler(
 ///
 /// # Response
 /// ```json
-/// {"indexes": [{"column": "host", "index_type": "sorted", "created_at": 1234567890}], "count": 1}
+/// {"indexes": [{"column": "host", "index_type": "sorted", "created_at": 1234567890,
+///               "rows": 3650000, "size_bytes": 5123456}],
+///  "count": 1,
+///  "builds": [{"status": "building", "job": "0193…", "column": "day", …}]}
 /// ```
+/// `builds` holds the background builds that have not ended in an index.
 pub async fn list_columnar_indexes_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, DbError> {
+    use crate::storage::columnar::BuildState;
     let db = state.storage.get_database(&db_name)?;
 
     let col = ColumnarCollection::load(collection, &db_name, db.db_arc())?;
-    let indexes = col.list_indexes()?;
-
-    let indexes_json: Vec<Value> = indexes
-        .into_iter()
-        .map(|idx| {
-            serde_json::json!({
-                "column": idx.column,
-                "index_type": format!("{:?}", idx.index_type).to_lowercase(),
-                "created_at": idx.created_at
-            })
-        })
+    let indexes_json: Vec<Value> = col
+        .list_indexes()?
+        .iter()
+        .map(|index| index_json(&col, index))
+        .collect();
+    let builds: Vec<Value> = col
+        .index_builds()
+        .iter()
+        .filter(|build| build.state() != BuildState::Done)
+        .map(|build| build_json(build))
         .collect();
 
     Ok(Json(serde_json::json!({
         "indexes": indexes_json,
-        "count": indexes_json.len()
+        "count": indexes_json.len(),
+        "builds": builds
     })))
 }
 
