@@ -186,6 +186,108 @@
     </form>
   </div>
 
+  <%# Counters: fields the database numbers on insert, with no gap. The
+      next number can be set here, for a collection that already holds some. %>
+  <div class="mt-5 border-t border-zinc-800 pt-4">
+    <p class="console-label">counters / <span class="text-teal-500"><%= collection_name %></span>
+      <span class="text-zinc-700">(<%= counters.length() %>)</span></p>
+
+    <% if counters.length() > 0 %>
+      <div class="overflow-x-auto"><table class="console-table mt-3">
+        <thead>
+          <tr>
+            <th>field</th>
+            <th>format</th>
+            <th>restarts</th>
+            <th>numbered by</th>
+            <th>next</th>
+            <th class="text-right">actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for counter in counters %>
+            <% counter_field = counter["field"] ?? "" %>
+            <% counter_state = counter["state"] ?? {} %>
+            <% counter_padding = counter["padding"] ?? 0 %>
+            <tr>
+              <td class="font-mono text-zinc-200"><%= counter_field %></td>
+              <td class="font-mono text-zinc-300"><%= counter["prefix"] %><span class="text-teal-500">n</span><%= counter["suffix"] %><%= counter_padding > 0 ? " (" + str(counter_padding) + " digits)" : "" %></td>
+              <td class="font-mono text-zinc-500"><%= counter["reset"] ?? "never" %><%= counter["reset"].nil? ? "" : " (" + (counter["timezone"] ?? "UTC") + ")" %></td>
+              <td class="font-mono text-zinc-500"><%= counter["node"] ?? "this instance" %></td>
+              <td class="font-mono text-zinc-300">
+                <form class="flex items-center gap-2"
+                      hx-put="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/counters/<%= url(counter_field) %>/next"
+                      hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                      hx-confirm="Set the next number of '<%= attr(counter_field) %>'? A number set lower than one already given is refused if a document holds it.">
+                  <input name="next" type="number" min="1" value="<%= attr(str(counter_state["next"] ?? 1)) %>"
+                         aria-label="next number of <%= attr(counter_field) %>"
+                         class="console-input w-28 font-mono">
+                  <button type="submit" class="btn-ghost">Set</button>
+                </form>
+              </td>
+              <td class="w-px whitespace-nowrap text-right">
+                <button class="btn-danger"
+                        hx-delete="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/counters/<%= url(counter_field) %>"
+                        hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML"
+                        hx-confirm="Drop the counter on '<%= attr(counter_field) %>'? New documents will no longer be numbered; the stored numbers stay.">
+                  Drop
+                </button>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table></div>
+    <% else %>
+      <p class="mt-3 font-mono text-xs text-zinc-600">no counters on <%= collection_name %></p>
+    <% end %>
+
+    <form class="mt-3 flex flex-wrap items-end gap-2"
+          hx-post="<%= attr(db_collections_path(db)) %>/<%= url(collection_name) %>/counters"
+          hx-target="#detail-row-<%= attr(collection_name) %>" hx-swap="innerHTML">
+      <div>
+        <label class="console-label" for="counter-field-<%= attr(collection_name) %>">field</label>
+        <input id="counter-field-<%= attr(collection_name) %>" name="field" type="text"
+               placeholder="number" class="console-input mt-1 w-32 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="counter-prefix-<%= attr(collection_name) %>">prefix</label>
+        <input id="counter-prefix-<%= attr(collection_name) %>" name="prefix" type="text"
+               placeholder="INV-{YYYY}-{MM}-" class="console-input mt-1 w-44 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="counter-suffix-<%= attr(collection_name) %>">suffix</label>
+        <input id="counter-suffix-<%= attr(collection_name) %>" name="suffix" type="text"
+               class="console-input mt-1 w-24 font-mono" autocomplete="off">
+      </div>
+      <div>
+        <label class="console-label" for="counter-padding-<%= attr(collection_name) %>">digits</label>
+        <input id="counter-padding-<%= attr(collection_name) %>" name="padding" type="number" min="0" max="32"
+               placeholder="4" class="console-input mt-1 w-20 font-mono">
+      </div>
+      <div>
+        <label class="console-label" for="counter-start-<%= attr(collection_name) %>">starts at</label>
+        <input id="counter-start-<%= attr(collection_name) %>" name="start" type="number" min="1"
+               placeholder="1" class="console-input mt-1 w-24 font-mono">
+      </div>
+      <div>
+        <label class="console-label" for="counter-reset-<%= attr(collection_name) %>">restarts</label>
+        <select id="counter-reset-<%= attr(collection_name) %>" name="reset" class="console-input mt-1 font-mono">
+          <option value="">never</option>
+          <option value="day">each day</option>
+          <option value="week">each week</option>
+          <option value="month">each month</option>
+          <option value="year">each year</option>
+        </select>
+      </div>
+      <div>
+        <label class="console-label" for="counter-timezone-<%= attr(collection_name) %>">timezone</label>
+        <input id="counter-timezone-<%= attr(collection_name) %>" name="timezone" type="text"
+               placeholder="UTC" class="console-input mt-1 w-36 font-mono" autocomplete="off">
+      </div>
+      <button type="submit" class="btn-ghost">Add counter</button>
+    </form>
+  </div>
+
   <%# Teleported to <body>: the panel lives inside a table row, and an
       ancestor there acts as containing block for position:fixed, cropping
       the modal to the panel area. htmx.process() is required because htmx

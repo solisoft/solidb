@@ -193,6 +193,45 @@ describe("CollectionsController") do
       SolidbClient.delete_api(SolidbEndpoints.collection("admin_spec_colls", "fk_parents"))
     end
 
+    test("declares a counter, sets its next number and drops it") do
+      response = post("/databases/admin_spec_colls/collections/idx_specs/counters",
+                      { "field": "number", "prefix": "N-", "padding": "3", "start": "7" })
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "counter on number declared")
+      assert_contains(body, "counters / ")
+      assert_contains(body, "N-")
+      assert_contains(body, "value=\"7\"")
+
+      # The database numbers what is inserted from then on.
+      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), { "label": "a" })
+      assert_eq((inserted["data"] ?? {})["number"], "N-007")
+
+      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", { "next": "40" })
+      assert_contains(res_body(response), "counter on number goes on at 40")
+      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), { "label": "b" })
+      assert_eq((inserted["data"] ?? {})["number"], "N-040")
+
+      # A number a document holds is refused, with the server's reason.
+      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", { "next": "7" })
+      assert_contains(res_body(response), "already holds")
+
+      response = delete("/databases/admin_spec_colls/collections/idx_specs/counters/number")
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "counter on number dropped")
+      assert_contains(body, "no counters on idx_specs")
+      delete("/databases/admin_spec_colls/collections/idx_specs/indexes/counter_number")
+    end
+
+    test("rejects a counter without a field, and shows why one was refused") do
+      response = post("/databases/admin_spec_colls/collections/idx_specs/counters", { "field": "" })
+      assert_contains(res_body(response), "a counter needs a field")
+      response = post("/databases/admin_spec_colls/collections/idx_specs/counters",
+                      { "field": "ref", "reset": "month", "prefix": "R-" })
+      assert_contains(res_body(response), "needs its period")
+    end
+
     test("rejects a foreign key without a field or a target") do
       response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
                       { "field": "", "references": "" })

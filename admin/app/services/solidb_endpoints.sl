@@ -131,6 +131,18 @@ class SolidbEndpoints
     return SolidbEndpoints.collection_foreign_keys(db, name) + "/" + key_name
   end
 
+  static def collection_counters(db, name)
+    return "/_api/database/" + db + "/collection/" + name + "/counters"
+  end
+
+  static def collection_counter(db, name, field)
+    return SolidbEndpoints.collection_counters(db, name) + "/" + field
+  end
+
+  static def collection_counter_next(db, name, field)
+    return SolidbEndpoints.collection_counter(db, name, field) + "/next"
+  end
+
   static def collection_indexes_rebuild(db, name)
     return SolidbEndpoints.collection_indexes(db, name) + "/rebuild"
   end

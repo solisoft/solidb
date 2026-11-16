@@ -44,6 +44,10 @@ describe("SolidbEndpoints") do
               "/_api/database/app/collection/orders/foreign-keys")
     assert_eq(SolidbEndpoints.collection_foreign_key("app", "orders", "fk_customer"),
               "/_api/database/app/collection/orders/foreign-keys/fk_customer")
+    assert_eq(SolidbEndpoints.collection_counters("app", "invoices"),
+              "/_api/database/app/collection/invoices/counters")
+    assert_eq(SolidbEndpoints.collection_counter_next("app", "invoices", "number"),
+              "/_api/database/app/collection/invoices/counters/number/next")
     assert_eq(SolidbEndpoints.geo_indexes("app", "places"), "/_api/database/app/geo/places")
     assert_eq(SolidbEndpoints.ttl_indexes("app", "sessions"), "/_api/database/app/ttl/sessions")
   end

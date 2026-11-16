@@ -162,6 +162,51 @@ class CollectionsController < Controller
     return this._render_indexes(result, "foreign key " + key_name + " dropped")
   end
 
+  # POST /databases/:db/collections/:name/counters
+  # Declares that the database numbers a field on insert. The server refuses
+  # a counter whose first number a stored document already holds, and a
+  # reset the prefix or suffix does not name; its message says which.
+  def create_counter
+    this._ctx_indexes()
+    field = params["field"].to_s.trim()
+    if field.blank?
+      return this._render_indexes({ "ok": false, "status": 422, "error": "a counter needs a field" }, "")
+    end
+    body = { "field": field }
+    for option in ["prefix", "suffix", "reset", "timezone"]
+      value = params[option].to_s.trim()
+      body[option] = value unless value.blank?
+    end
+    for option in ["start", "padding"]
+      value = params[option].to_s.trim()
+      body[option] = value.to_i unless value.blank?
+    end
+    result = SolidbClient.post_api(SolidbEndpoints.collection_counters(@db, @collection_name), body)
+    return this._render_indexes(result, "counter on " + field + " declared")
+  end
+
+  # PUT /databases/:db/collections/:name/counters/:field/next
+  def set_counter_next
+    this._ctx_indexes()
+    field = params["field"].to_s
+    next_text = params["next"].to_s.trim()
+    if next_text.blank? || next_text.to_i < 1
+      return this._render_indexes({ "ok": false, "status": 422,
+                                    "error": "the next number is 1 or more" }, "")
+    end
+    result = SolidbClient.put_api(SolidbEndpoints.collection_counter_next(@db, @collection_name, field),
+                                  { "next": next_text.to_i })
+    return this._render_indexes(result, "counter on " + field + " goes on at " + next_text)
+  end
+
+  # DELETE /databases/:db/collections/:name/counters/:field
+  def delete_counter
+    this._ctx_indexes()
+    field = params["field"].to_s
+    result = SolidbClient.delete_api(SolidbEndpoints.collection_counter(@db, @collection_name, field))
+    return this._render_indexes(result, "counter on " + field + " dropped")
+  end
+
   # Geo and TTL indexes are created through their own API families; everything
   # else (persistent / hash / fulltext / bloom / cuckoo) goes to /index.
   def _create_index_request(index_name, fields_text, index_type)
@@ -213,11 +258,22 @@ class CollectionsController < Controller
     @referenced_by = data["referenced_by"] ?? []
   end
 
+  # The fields the database numbers on insert, each with where it stands.
+  # A server from before counter fields answers 404: none.
+  def _load_counters
+    @counters = []
+    result = SolidbClient.get_api(SolidbEndpoints.collection_counters(@db, @collection_name))
+    return unless result["ok"]
+
+    @counters = (result["data"] ?? {})["counters"] ?? []
+  end
+
   # Merge the three index families (standard+fulltext, geo, ttl) into one
   # display list of { name, fields, type, unique, detail } rows.
   def _load_indexes
     @indexes = []
     this._load_foreign_keys()
+    this._load_counters()
     # Current versioning (time-travel) state comes from the collection summary.
     @versioning = false
     @auto_index = false
