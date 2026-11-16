@@ -10,13 +10,15 @@
 //!   collection).
 //! - **Filter.** The `FILTER`s that follow the `FOR` and compare a column
 //!   with a constant are answered by the collection first
-//!   (`ColumnarCollection::scan_filtered`: one column read, or an index
-//!   on it), and objects are built only for the rows kept. The `FILTER`
+//!   (`ColumnarCollection::scan_filtered`: the arrays of the blocks,
+//!   passing over a block its bounds rule out, or an index for an
+//!   equality), and objects are built only for the rows kept. The `FILTER`
 //!   clauses still run on those rows afterwards, so what is pushed down
 //!   may keep too much but never too little: a comparison is pushed only
-//!   when the collection answers it exactly as SDBQL does (a constant of
-//!   the column's own kind), and whatever else the `FILTER` holds is left
-//!   to it.
+//!   when the collection answers it exactly as SDBQL does (an equality
+//!   with a constant of the column's own kind, a range of a numeric
+//!   column against a number), and whatever else the `FILTER` holds is
+//!   left to it.
 //! - **Limit.** A scan with a limit and no filter stops at the limit.
 
 use serde_json::Value;
@@ -32,7 +34,7 @@ impl QueryExecutor<'_> {
     /// The rows `for_clause` reads when its source is a columnar
     /// collection, `None` otherwise. `filters` are the `FILTER`s right
     /// after it, which the caller still applies; `limit` is the scan's.
-    pub(super) fn columnar_for_rows(
+    pub(in crate::sdbql::executor) fn columnar_for_rows(
         &self,
         for_clause: &ForClause,
         filters: &[&Expression],
@@ -72,6 +74,93 @@ impl QueryExecutor<'_> {
         Ok(Some(rows))
     }
 
+    /// What EXPLAIN says of a `FOR` over a columnar collection, and the
+    /// indexes that read uses: `None` when the source is not columnar.
+    /// Follows `columnar_for_rows`.
+    pub(in crate::sdbql::executor) fn columnar_note(
+        &self,
+        for_clause: &ForClause,
+        filters: &[&Expression],
+        ctx: &Context,
+        limit: Option<usize>,
+        projected: Option<&[String]>,
+    ) -> DbResult<Option<(String, Vec<String>)>> {
+        let name = for_clause.collection.as_str();
+        let Some(columnar) = self.columnar_source(name)? else {
+            return Ok(None);
+        };
+        let meta = columnar.metadata()?;
+        // `projected`: the fields the run reads of the row (EXPLAIN does
+        // not record a projection, and builds whole rows).
+        let read = match projected {
+            Some(fields) => meta
+                .columns
+                .iter()
+                .filter(|c| fields.contains(&c.name))
+                .count(),
+            None => meta.columns.len(),
+        };
+        let mut note = format!(
+            "`{name}` is columnar: {read} of its {} columns are built",
+            meta.columns.len()
+        );
+        let mut indexes = Vec::new();
+        let pushed = match limit {
+            Some(_) => None,
+            None => self.pushed_filter(&for_clause.variable, filters, &meta.columns, ctx),
+        };
+        match (pushed, limit) {
+            (Some(filter), _) => {
+                let mut columns = Vec::new();
+                let mut leaves = vec![&filter];
+                while let Some(leaf) = leaves.pop() {
+                    let column = match leaf {
+                        ColumnFilter::And(sides) | ColumnFilter::Or(sides) => {
+                            leaves.extend(sides);
+                            continue;
+                        }
+                        ColumnFilter::Eq(column, _)
+                        | ColumnFilter::Ne(column, _)
+                        | ColumnFilter::Gt(column, _)
+                        | ColumnFilter::Gte(column, _)
+                        | ColumnFilter::Lt(column, _)
+                        | ColumnFilter::Lte(column, _)
+                        | ColumnFilter::In(column, _) => column,
+                    };
+                    if !columns.contains(column) {
+                        columns.push(column.clone());
+                    }
+                    if let Some(kind) = columnar.index_answering(leaf) {
+                        let index = format!("{column} ({kind:?})").to_lowercase();
+                        if !indexes.contains(&index) {
+                            indexes.push(index);
+                        }
+                    }
+                }
+                columns.sort();
+                indexes.sort();
+                note.push_str(&format!(
+                    ", for the rows its FILTER on {} keeps, found in the column arrays",
+                    columns
+                        .iter()
+                        .map(|c| format!("`{c}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                if !indexes.is_empty() {
+                    note.push_str(&format!(" and the index on {}", indexes.join(", ")));
+                }
+            }
+            (None, Some(limit)) => note.push_str(&format!(
+                ", for the first {limit} rows: the scan stops there"
+            )),
+            (None, None) => {
+                note.push_str(", for every row: no FILTER is the collection's to answer")
+            }
+        }
+        Ok(Some((note, indexes)))
+    }
+
     /// What of `filters` the collection can answer: the conjuncts that
     /// compare a column of `variable` with a constant of its kind.
     fn pushed_filter(
@@ -85,9 +174,29 @@ impl QueryExecutor<'_> {
         for filter in filters {
             push_conjuncts(filter, &mut conjuncts);
         }
-        let mut pushed: Vec<ColumnFilter> = conjuncts
+        let pushed: Vec<ColumnFilter> = conjuncts
             .into_iter()
             .filter_map(|conjunct| self.pushed_term(variable, conjunct, schema, ctx))
+            .collect();
+        // A column another conjunct bounds from below, or compares with a
+        // value, holds no null among the rows kept: its `<` stays a plain
+        // range, which lets a range bounded on both sides pass over the
+        // blocks outside it.
+        let bounded: Vec<String> = pushed
+            .iter()
+            .filter_map(|term| match term {
+                ColumnFilter::Gt(column, _)
+                | ColumnFilter::Gte(column, _)
+                | ColumnFilter::Eq(column, _) => Some(column.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut pushed: Vec<ColumnFilter> = pushed
+            .into_iter()
+            .map(|term| match term.column() {
+                Some(column) if bounded.iter().any(|b| b == column) => term,
+                _ => or_null(term),
+            })
             .collect();
         match pushed.len() {
             0 => None,
@@ -112,7 +221,7 @@ impl QueryExecutor<'_> {
             // Every branch, or none: a branch left out would lose rows.
             let mut branches = Vec::new();
             for side in [left, right] {
-                branches.push(self.pushed_term(variable, side, schema, ctx)?);
+                branches.push(or_null(self.pushed_term(variable, side, schema, ctx)?));
             }
             return Some(ColumnFilter::Or(branches));
         }
@@ -130,12 +239,20 @@ impl QueryExecutor<'_> {
         }
         let value = self.evaluate_expr_with_context(constant, ctx).ok()?;
         let kind = &schema.iter().find(|c| c.name == column)?.data_type;
-        // Only where both sides are of one kind: the collection compares an
-        // equality as JSON values, to which `3` and `3.0` differ.
+        // Only where the collection answers as SDBQL does. An equality is
+        // compared as JSON values, to which `3` and `3.0` differ: both
+        // sides of one kind. A range compares two integers as integers,
+        // and a float with a number as floats, which is exact while the
+        // bound is one a float holds (up to 2^53).
         let exact = match (kind, &value) {
             (ColumnType::String, Value::String(_)) => op == BinaryOperator::Equal,
             (ColumnType::Bool, Value::Bool(_)) => op == BinaryOperator::Equal,
-            (ColumnType::Int64, Value::Number(n)) => n.is_i64() || n.is_u64(),
+            (ColumnType::Int64, Value::Number(n)) => n.as_i64().is_some(),
+            (ColumnType::Float64, Value::Number(n)) => {
+                op != BinaryOperator::Equal
+                    && n.as_f64()
+                        .is_some_and(|bound| bound.abs() <= 9_007_199_254_740_992.0)
+            }
             _ => false,
         };
         if !exact {
@@ -150,6 +267,19 @@ impl QueryExecutor<'_> {
             BinaryOperator::LessThanOrEqual => ColumnFilter::Lte(column, value),
             _ => return None,
         })
+    }
+}
+
+/// A `<` or `<=` with the rows holding null beside it: to SDBQL null is
+/// below every number, so those comparisons keep them, and the collection's
+/// ranges keep numbers only. Any other filter as it is.
+fn or_null(filter: ColumnFilter) -> ColumnFilter {
+    match &filter {
+        ColumnFilter::Lt(column, _) | ColumnFilter::Lte(column, _) => {
+            let null = ColumnFilter::Eq(column.clone(), Value::Null);
+            ColumnFilter::Or(vec![filter, null])
+        }
+        _ => filter,
     }
 }
 

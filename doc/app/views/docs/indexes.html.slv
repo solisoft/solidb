@@ -335,7 +335,7 @@
                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="bg-black/20 p-3 rounded border border-white/5">
                         <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">MinMax</span>
-                        <p class="text-xs text-gray-400 mt-1">Stores min/max values per chunk. Excellent for range queries on time-series or sorted data.</p>
+                        <p class="text-xs text-gray-400 mt-1">Stores min/max values per chunk. No longer consulted: each block of an integer column carries its own bounds, and a range skips the blocks they rule out with no index.</p>
                     </div>
                     <div class="bg-black/20 p-3 rounded border border-white/5">
                         <span class="text-cyan-400 font-bold text-xs uppercase tracking-wide">Bitmap</span>

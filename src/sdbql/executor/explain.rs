@@ -737,7 +737,51 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A columnar collection, read as the run reads it: the
+                    // columns the query reads, for the rows the FILTERs that
+                    // follow keep (they still run on them next).
+                    let mut columnar_read = false;
                     if !used_index && !streamed {
+                        if let Some(first) = rows.first() {
+                            // What the run reads of the row, which it
+                            // records before it starts.
+                            let projection = super::projection::scan_projection(query)
+                                .filter(|(scanned, _)| std::ptr::eq(*scanned, for_clause))
+                                .map(|(_, fields)| fields);
+                            if let Some((note, indexes)) = self.columnar_note(
+                                for_clause,
+                                &filters,
+                                first,
+                                scan_limit,
+                                projection.as_deref(),
+                            )? {
+                                if let Some(docs) =
+                                    self.columnar_for_rows(for_clause, &filters, first, scan_limit)?
+                                {
+                                    columnar_read = true;
+                                    warnings.push(note);
+                                    if !indexes.is_empty() {
+                                        index_name = Some(indexes.join(", "));
+                                        index_type = Some("Columnar".to_string());
+                                    }
+                                    let mut new_rows = Vec::new();
+                                    for ctx in &rows {
+                                        for doc in &docs {
+                                            let mut new_ctx = ctx.clone();
+                                            new_ctx
+                                                .insert(for_clause.variable.clone(), doc.clone());
+                                            new_rows.push(new_ctx);
+                                        }
+                                    }
+                                    total_docs_scanned += docs.len() * rows.len();
+                                    rows = new_rows;
+                                    i += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if !used_index && !streamed && !columnar_read {
                         // Full Scan or Range
                         let mut new_rows = Vec::new();
                         let mut clause_docs_scanned = 0;
@@ -805,6 +849,8 @@ impl<'a> QueryExecutor<'a> {
                             "index_sort".to_string()
                         } else if used_index {
                             "index_lookup".to_string()
+                        } else if columnar_read {
+                            "columnar_scan".to_string()
                         } else if scan_limit.is_some() {
                             "limited_scan".to_string()
                         } else {

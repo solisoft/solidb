@@ -6,7 +6,9 @@
 //! - Column pruning (only read needed columns)
 //! - LZ4 compression for efficient storage
 
-use super::columnar_blocks::{ColBlock, RowSet, BLOCK_ROWS, COL_BLOCK_PREFIX, SEAL_ROWS};
+use super::columnar_blocks::{
+    ColBlock, ColData, Column, RowSet, BLOCK_ROWS, COL_BLOCK_PREFIX, SEAL_ROWS,
+};
 use super::keyspace::{Keyspace, KsBatchExt, KsCf, KsDbExt};
 use crate::storage::kv::KvBatch;
 use fastbloom::BloomFilter;
@@ -117,7 +119,7 @@ pub struct ColumnarCollectionMeta {
     /// For each indexed column, how many rows its index holds, counted
     /// from the first in id order. An index names rows by their position
     /// in that order and is written once, when it is created: the rows
-    /// after these are read as rows (`apply_filter`), and a write that
+    /// after these are read as rows (`filter_positions`), and a write that
     /// moves a position (a delete, a row with an older id) lowers the
     /// count to where it landed. A column with no entry is one indexed
     /// before this was kept: nothing is known of its index, which is not
@@ -277,6 +279,20 @@ pub enum ColumnFilter {
 }
 
 impl ColumnFilter {
+    /// The column a comparison is about; `None` for `And` / `Or`.
+    pub(crate) fn column(&self) -> Option<&str> {
+        match self {
+            ColumnFilter::Eq(column, _)
+            | ColumnFilter::Ne(column, _)
+            | ColumnFilter::Gt(column, _)
+            | ColumnFilter::Gte(column, _)
+            | ColumnFilter::Lt(column, _)
+            | ColumnFilter::Lte(column, _)
+            | ColumnFilter::In(column, _) => Some(column),
+            ColumnFilter::And(_) | ColumnFilter::Or(_) => None,
+        }
+    }
+
     /// Parse a filter from JSON: a leaf `{"column": c, "op": o, "value": v}`
     /// (`op` one of EQ, NE, GT, GTE, LT, LTE, IN, or the symbols), or
     /// `{"and": [..]}` / `{"or": [..]}` of filters.
@@ -1711,24 +1727,6 @@ impl ColumnarCollection {
             .map_or(Value::Null, |at| rows.value(at, column)))
     }
 
-    /// Convert position indices to UUIDs (positions are indices into list_row_uuids result)
-    fn positions_to_uuids(&self, positions: &[u64]) -> DbResult<Vec<String>> {
-        let all_uuids = self.list_row_uuids()?;
-        let mut result = Vec::with_capacity(positions.len());
-        for &pos in positions {
-            if let Some(uuid) = all_uuids.get(pos as usize) {
-                result.push(uuid.clone());
-            }
-        }
-        Ok(result)
-    }
-
-    /// Read column values by position indices (internal use for filtering)
-    fn read_column_by_positions(&self, column: &str, positions: &[u64]) -> DbResult<Vec<Value>> {
-        let uuids = self.positions_to_uuids(positions)?;
-        self.read_column(column, Some(&uuids))
-    }
-
     /// Aggregate a column with the specified operation: over its arrays,
     /// and the rows of the tail. Count counts rows, nulls included; the
     /// others take numbers and return floats.
@@ -1808,13 +1806,12 @@ impl ColumnarCollection {
     }
 
     fn filtered_row_uuids(&self, filter: &ColumnFilter) -> DbResult<Vec<String>> {
-        let row_count = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?
-            .row_count;
-        let positions = self.apply_filter(filter, 0..row_count)?;
-        self.positions_to_uuids(&positions)
+        let rows = self.row_set()?;
+        let positions = self.filter_positions(&rows, filter, 0..rows.len() as u64)?;
+        Ok(positions
+            .into_iter()
+            .map(|position| rows.uuid(rows.locate(position as usize)).to_string())
+            .collect())
     }
 
     fn group_by_rows(
@@ -1935,21 +1932,27 @@ impl ColumnarCollection {
         Ok(results)
     }
 
-    /// Scan with filter and column projection
+    /// The rows `filter` keeps, with these columns, in the order of their
+    /// ids. The rows are read once, for the filter and for what is
+    /// returned.
     pub fn scan_filtered(&self, filter: &ColumnFilter, columns: &[&str]) -> DbResult<Vec<Value>> {
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        // Find matching row indices (positions)
-        let matching_positions = self.apply_filter(filter, 0..meta.row_count)?;
-
-        // Convert positions to UUIDs
-        let matching_uuids = self.positions_to_uuids(&matching_positions)?;
-
-        // Return projected columns for matching rows
-        self.read_columns(columns, Some(&matching_uuids))
+        for column in columns {
+            self.check_column(column)?;
+        }
+        let rows = self.row_set()?;
+        let positions = self.filter_positions(&rows, filter, 0..rows.len() as u64)?;
+        Ok(positions
+            .into_iter()
+            .map(|position| {
+                let at = rows.locate(position as usize);
+                Value::Object(
+                    columns
+                        .iter()
+                        .map(|column| (column.to_string(), rows.value(at, column)))
+                        .collect(),
+                )
+            })
+            .collect())
     }
 
     /// Get collection statistics
@@ -2380,61 +2383,6 @@ impl ColumnarCollection {
         Ok(row_ids)
     }
 
-    /// Get candidate chunks/rows from MinMax index
-    fn get_candidate_rows_from_minmax(
-        &self,
-        column: &str,
-        filter: &ColumnFilter,
-    ) -> DbResult<Vec<u64>> {
-        let db = &self.db;
-        let cf = self.ks.handle(db).ok_or_else(|| {
-            DbError::CollectionNotFound(format!("Columnar CF '{}' not found", self.cf_name))
-        })?;
-
-        let meta = self
-            .meta
-            .read()
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-        let row_count = meta.row_count;
-        let chunk_count = row_count.div_ceil(MINMAX_CHUNK_SIZE);
-
-        let mut candidate_ids = Vec::new();
-
-        for chunk_id in 0..chunk_count {
-            let idx_key = self.encode_minmax_key(column, chunk_id);
-            if let Ok(Some(bytes)) = db.get_ks(&cf, idx_key.as_bytes()) {
-                if let Ok(chunk) = serde_json::from_slice::<MinMaxChunk>(&bytes) {
-                    let mut matches = false;
-                    match filter {
-                        ColumnFilter::Gt(_, val) => {
-                            matches =
-                                compare_values(&chunk.max, val) == std::cmp::Ordering::Greater;
-                        }
-                        ColumnFilter::Gte(_, val) => {
-                            matches = compare_values(&chunk.max, val) != std::cmp::Ordering::Less;
-                        }
-                        ColumnFilter::Lt(_, val) => {
-                            matches = compare_values(&chunk.min, val) == std::cmp::Ordering::Less;
-                        }
-                        ColumnFilter::Lte(_, val) => {
-                            matches =
-                                compare_values(&chunk.min, val) != std::cmp::Ordering::Greater;
-                        }
-                        _ => {}
-                    }
-
-                    if matches {
-                        let start = chunk_id * MINMAX_CHUNK_SIZE;
-                        let end = (start + MINMAX_CHUNK_SIZE).min(row_count);
-                        candidate_ids.extend(start..end);
-                    }
-                }
-            }
-        }
-
-        Ok(candidate_ids)
-    }
-
     /// Get candidate chunks/rows from Bloom index
     fn get_candidate_rows_from_bloom(&self, column: &str, value: &Value) -> DbResult<Vec<u64>> {
         let db = &self.db;
@@ -2698,18 +2646,97 @@ impl ColumnarCollection {
         }
     }
 
-    /// The positions, among `row_range`, of the rows `filter` keeps.
+    /// The positions, among `row_range`, of the rows `filter` keeps,
+    /// ascending.
     ///
-    /// An index answers only for the rows it holds
+    /// A comparison is answered from the arrays of the blocks
+    /// (`scan_leaf`), which skips a block whose smallest and largest value
+    /// rule it out, or from an index on the column where one answers it
+    /// (`index_for`). An index answers only for the rows it holds
     /// (`ColumnarCollectionMeta::index_rows`): those after them are
     /// compared as rows. It used to answer for all of them, and a row
     /// inserted after an index was created was never found (card #901).
-    fn apply_filter(
+    ///
+    /// Each comparison used to build its whole column as JSON values, and
+    /// the rows kept were then found again by id, one block after another
+    /// (card #893).
+    fn filter_positions(
         &self,
+        rows: &RowSet,
         filter: &ColumnFilter,
         row_range: std::ops::Range<u64>,
     ) -> DbResult<Vec<u64>> {
+        let row_range = row_range.start..row_range.end.min(rows.len() as u64);
+        let span = row_range.end.saturating_sub(row_range.start) as usize;
         let column = match filter {
+            ColumnFilter::And(filters) => {
+                // Each side over the whole range: it used to be asked only
+                // for as many positions as the sides before it had kept,
+                // and a row past them was lost.
+                //
+                // The comparisons the arrays answer go block by block: a
+                // block one of them rules out is passed over for all of
+                // them, which is what a range bounded on both sides needs
+                // (`t >= a AND t < b` reads the blocks that hold the range,
+                // not every row above `a`). The others, an index's or a
+                // nested filter, are asked once.
+                let by_block = |side: &&ColumnFilter| {
+                    side.column().is_some() && self.index_answering(side).is_none()
+                };
+                let (scanned, whole): (Vec<&ColumnFilter>, Vec<&ColumnFilter>) =
+                    filters.iter().partition(by_block);
+                let mut kept: Option<Vec<u64>> = None;
+                if !scanned.is_empty() {
+                    let mut found = Vec::new();
+                    for (block, part) in parts(rows, &row_range) {
+                        let ruled_out = block.is_some_and(|block| {
+                            scanned.iter().any(|side| {
+                                side.column()
+                                    .and_then(|column| block.column(column))
+                                    .is_some_and(|values| block_rules_out(values, side))
+                            })
+                        });
+                        if ruled_out {
+                            continue;
+                        }
+                        let mut here: Option<Vec<u64>> = None;
+                        for side in &scanned {
+                            let positions = self.filter_positions(rows, side, part.clone())?;
+                            let both = match here {
+                                None => positions,
+                                Some(here) => in_both(here, &positions),
+                            };
+                            let none = both.is_empty();
+                            here = Some(both);
+                            if none {
+                                break;
+                            }
+                        }
+                        found.extend(here.unwrap_or_default());
+                    }
+                    kept = Some(found);
+                }
+                for side in whole {
+                    let positions = self.filter_positions(rows, side, row_range.clone())?;
+                    kept = Some(match kept {
+                        None => positions,
+                        Some(kept) => in_both(kept, &positions),
+                    });
+                }
+                return Ok(kept.unwrap_or_else(|| row_range.collect()));
+            }
+            ColumnFilter::Or(filters) => {
+                let mut held = vec![false; span];
+                for side in filters {
+                    for position in self.filter_positions(rows, side, row_range.clone())? {
+                        held[(position - row_range.start) as usize] = true;
+                    }
+                }
+                return Ok(row_range
+                    .clone()
+                    .filter(|p| held[(p - row_range.start) as usize])
+                    .collect());
+            }
             ColumnFilter::Eq(column, _)
             | ColumnFilter::Ne(column, _)
             | ColumnFilter::Gt(column, _)
@@ -2717,330 +2744,348 @@ impl ColumnarCollection {
             | ColumnFilter::Lt(column, _)
             | ColumnFilter::Lte(column, _)
             | ColumnFilter::In(column, _) => column,
-            // Each side comes back through here.
-            ColumnFilter::And(_) | ColumnFilter::Or(_) => {
-                return self.apply_filter_with(filter, row_range, true)
-            }
         };
-        if !self.has_index(column) {
-            return self.apply_filter_with(filter, row_range, false);
-        }
+        self.check_column(column)?;
+        let Some(index) = self.index_for(filter, column) else {
+            return Ok(scan_leaf(rows, filter, column, row_range));
+        };
         let held = self.index_rows(column).min(row_range.end);
         if held <= row_range.start {
-            return self.apply_filter_with(filter, row_range, false);
+            return Ok(scan_leaf(rows, filter, column, row_range));
         }
-        // An index lookup answers for every position it holds.
-        let mut positions = self.apply_filter_with(filter, row_range.start..held, true)?;
+        let mut positions = self.index_positions(rows, filter, column, index)?;
         positions.retain(|position| (row_range.start..held).contains(position));
+        if !positions.windows(2).all(|pair| pair[0] < pair[1]) {
+            positions.sort_unstable();
+            positions.dedup();
+        }
         if held < row_range.end {
-            positions.extend(self.apply_filter_with(filter, held..row_range.end, false)?);
+            positions.extend(scan_leaf(rows, filter, column, held..row_range.end));
         }
         Ok(positions)
     }
 
-    fn apply_filter_with(
+    /// The kind of the index that answers the comparison `filter` for the
+    /// rows it holds, if one does: what EXPLAIN reports.
+    pub(crate) fn index_answering(&self, filter: &ColumnFilter) -> Option<ColumnarIndexType> {
+        let column = filter.column()?;
+        self.index_for(filter, column)
+            .filter(|_| self.index_rows(column) > 0)
+    }
+
+    /// The index on `column` that answers the comparison `filter`, if one
+    /// does.
+    ///
+    /// An equality (or `IN`) is one entry of a hash, sorted or bitmap
+    /// index, or the chunks a bloom index does not rule out. A range
+    /// against a number is never an index's: the arrays answer it in one
+    /// pass and skip the blocks out of range, where a sorted index reads
+    /// one entry per distinct value (0.5 s against 0.2 s for a hundred
+    /// rows out of a million, card #891), and a minmax index only knows
+    /// what each block already does.
+    fn index_for(&self, filter: &ColumnFilter, column: &str) -> Option<ColumnarIndexType> {
+        let index = self.get_index_type(column)?;
+        let answers = match filter {
+            ColumnFilter::Eq(..) | ColumnFilter::In(..) => index != ColumnarIndexType::MinMax,
+            ColumnFilter::Gt(_, bound)
+            | ColumnFilter::Gte(_, bound)
+            | ColumnFilter::Lt(_, bound)
+            | ColumnFilter::Lte(_, bound) => {
+                !bound.is_number() && index == ColumnarIndexType::Sorted
+            }
+            ColumnFilter::Ne(..) | ColumnFilter::And(_) | ColumnFilter::Or(_) => false,
+        };
+        answers.then_some(index)
+    }
+
+    /// The positions `index` gives for the comparison `filter`, among the
+    /// rows it holds.
+    fn index_positions(
         &self,
+        rows: &RowSet,
         filter: &ColumnFilter,
-        row_range: std::ops::Range<u64>,
-        indexed: bool,
+        column: &str,
+        index: ColumnarIndexType,
     ) -> DbResult<Vec<u64>> {
-        match filter {
-            ColumnFilter::Eq(col, val) => {
-                // Check index type
-                if let Some(idx_type) = self.get_index_type(col).filter(|_| indexed) {
-                    match idx_type {
-                        ColumnarIndexType::Bitmap => return self.index_lookup_bitmap(col, val),
-                        ColumnarIndexType::Sorted | ColumnarIndexType::Hash => {
-                            return self.index_lookup_eq(col, val)
-                        }
-                        ColumnarIndexType::Bloom => {
-                            // Bloom filter can give false positives, so it provides candidates.
-                            // We still need to verify with actual data.
-                            let candidate_ids = self.get_candidate_rows_from_bloom(col, val)?;
-                            let values = self.read_column_by_positions(col, &candidate_ids)?;
-                            return Ok(candidate_ids
-                                .into_iter()
-                                .zip(values)
-                                .filter(|(_, v)| v == val)
-                                .map(|(id, _)| id)
-                                .collect());
-                        }
-                        _ => {} // MinMax bad for equality usually, fall back to scan
-                    }
+        let lookup = |value: &Value| match index {
+            ColumnarIndexType::Bitmap => self.index_lookup_bitmap(column, value),
+            // May name a chunk that does not hold the value: checked below.
+            ColumnarIndexType::Bloom => self.get_candidate_rows_from_bloom(column, value),
+            _ => self.index_lookup_eq(column, value),
+        };
+        let mut positions = match filter {
+            ColumnFilter::Eq(_, value) => lookup(value)?,
+            ColumnFilter::In(_, values) => {
+                let mut found = Vec::new();
+                for value in values {
+                    found.extend(lookup(value)?);
                 }
-
-                // Fallback to full scan
-                let values = self.read_column(col, None)?;
-                Ok(row_range
-                    .filter(|&i| values.get(i as usize).map(|v| v == val).unwrap_or(false))
-                    .collect())
+                found.sort_unstable();
+                found.dedup();
+                found
             }
+            _ => return self.index_range_scan(column, filter),
+        };
+        if index == ColumnarIndexType::Bloom {
+            positions.retain(|position| {
+                (*position as usize) < rows.len()
+                    && leaf_keeps(filter, &rows.value(rows.locate(*position as usize), column))
+            });
+        }
+        Ok(positions)
+    }
+}
 
-            ColumnFilter::Ne(col, val) => {
-                let values = self.read_column(col, None)?;
-                Ok(row_range
-                    .filter(|&i| values.get(i as usize).map(|v| v != val).unwrap_or(false))
-                    .collect())
+/// Whether the comparison `filter` keeps a row holding `value`.
+fn leaf_keeps(filter: &ColumnFilter, value: &Value) -> bool {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    match filter {
+        ColumnFilter::Eq(_, wanted) => value == wanted,
+        ColumnFilter::Ne(_, wanted) => value != wanted,
+        ColumnFilter::In(_, wanted) => wanted.contains(value),
+        ColumnFilter::Gt(_, bound) => against(value, bound, f64::NEG_INFINITY) == Some(Greater),
+        ColumnFilter::Gte(_, bound) => {
+            matches!(
+                against(value, bound, f64::NEG_INFINITY),
+                Some(Greater | Equal)
+            )
+        }
+        ColumnFilter::Lt(_, bound) => against(value, bound, f64::INFINITY) == Some(Less),
+        ColumnFilter::Lte(_, bound) => {
+            matches!(against(value, bound, f64::INFINITY), Some(Less | Equal))
+        }
+        ColumnFilter::And(_) | ColumnFilter::Or(_) => false,
+    }
+}
+
+/// A number against the bound of a range; `None` for anything but a number,
+/// which no range keeps. Two integers are compared as integers (as floats,
+/// those past 2^53 are equal to their neighbours). A bound that is not a
+/// number counts as `otherwise`.
+fn against(value: &Value, bound: &Value, otherwise: f64) -> Option<std::cmp::Ordering> {
+    let Value::Number(number) = value else {
+        return None;
+    };
+    if let (Some(a), Some(b)) = (number.as_i64(), bound.as_i64()) {
+        return Some(a.cmp(&b));
+    }
+    number
+        .as_f64()?
+        .partial_cmp(&bound.as_f64().unwrap_or(otherwise))
+}
+
+/// The positions of `kept` that `other` holds too; both ascending.
+fn in_both(mut kept: Vec<u64>, other: &[u64]) -> Vec<u64> {
+    let mut at = 0;
+    kept.retain(|position| {
+        while at < other.len() && other[at] < *position {
+            at += 1;
+        }
+        at < other.len() && other[at] == *position
+    });
+    kept
+}
+
+/// `range` cut where the rows change block: each block that holds some of
+/// it, with its share, then the tail's (`None`). The whole range as one
+/// part when the rows are not the blocks one after another.
+fn parts<'r>(
+    rows: &'r RowSet,
+    range: &std::ops::Range<u64>,
+) -> Vec<(Option<&'r ColBlock>, std::ops::Range<u64>)> {
+    if !rows.in_order() {
+        return vec![(None, range.clone())];
+    }
+    let mut parts = Vec::new();
+    for at in 0..=rows.blocks.len() {
+        let block = rows.blocks.get(at).map(|block| block.as_ref());
+        let start = rows.start(at) as u64;
+        let rows_held = block.map_or(rows.tail.len(), |block| block.len()) as u64;
+        let from = range.start.max(start);
+        let to = range.end.min(start + rows_held);
+        if from < to {
+            parts.push((block, from..to));
+        }
+    }
+    parts
+}
+
+/// Whether the smallest and largest value of a block's column say that
+/// the comparison `filter` keeps none of its rows. Only a column of
+/// integers knows them; `false` is always a safe answer.
+fn block_rules_out(column: &Column, filter: &ColumnFilter) -> bool {
+    let Some((low, high)) = column.int_range() else {
+        return false;
+    };
+    let keeps = |value: i64| leaf_keeps(filter, &Value::from(value));
+    match filter {
+        // What keeps neither end keeps nothing between them.
+        ColumnFilter::Gt(_, bound)
+        | ColumnFilter::Gte(_, bound)
+        | ColumnFilter::Lt(_, bound)
+        | ColumnFilter::Lte(_, bound) => bound.as_i64().is_some() && !keeps(low) && !keeps(high),
+        ColumnFilter::Eq(_, wanted) => wanted.as_i64().is_some_and(|w| w < low || high < w),
+        _ => false,
+    }
+}
+
+/// The positions, among `range`, of the rows the comparison `filter` on
+/// `column` keeps, ascending, read from the arrays of the blocks and from
+/// the tail.
+fn scan_leaf(
+    rows: &RowSet,
+    filter: &ColumnFilter,
+    column: &str,
+    range: std::ops::Range<u64>,
+) -> Vec<u64> {
+    let range = range.start..range.end.min(rows.len() as u64);
+    let mut kept = Vec::new();
+    if !rows.in_order() {
+        // A row with an older id sits among the blocks (replication):
+        // position by position.
+        kept.extend(range.filter(|position| {
+            leaf_keeps(filter, &rows.value(rows.locate(*position as usize), column))
+        }));
+        return kept;
+    }
+    for (b, block) in rows.blocks.iter().enumerate() {
+        let start = rows.start(b) as u64;
+        let from = range.start.max(start);
+        let to = range.end.min(start + block.len() as u64);
+        if from >= to {
+            continue;
+        }
+        match block.column(column) {
+            Some(values) => {
+                let inside = (from - start) as usize..(to - start) as usize;
+                scan_block(values, filter, inside, start, &mut kept)
             }
-
-            ColumnFilter::Gt(col, val) => {
-                // Use sorted index if available
-                if indexed && self.has_sorted_index(col) {
-                    return self.index_range_scan(col, filter);
+            // Sealed before the column was added: null for every row.
+            None => {
+                if leaf_keeps(filter, &Value::Null) {
+                    kept.extend(from..to)
                 }
-
-                // Use MinMax to get candidates
-                let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) =
-                    self.get_index_type(col).filter(|_| indexed)
-                {
-                    candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
-                }
-
-                // If we have candidates, use them to restrict read.
-                // However, read_column reads raw values. We still need to filter them.
-                // The candidates vector effectively replaces the row_range iteration space,
-                // but we also need to pass it to read_column to avoid IO on skipped chunks.
-
-                // Optimization: calling read_column with candidates only reads those blocks.
-                // Then filter the results.
-
-                // Since `apply_filter` logic below filters based on ALL values returned by `read_column`,
-                // and `read_column` returns values *corresponding* to inputs if provided...
-                // Wait, read_column returns Vec<Value>. If input IDs are [0, 5], it returns [v0, v5].
-                // The iterating logic below `values.get(i)` assumes `values` is indexed by row_id from 0??
-                // Checking read_column: "Read a single column for all rows or specific row IDs"
-                // If row_ids provided, it returns values for ONLY those rows.
-                // BUT the filter logic below `values.get(i as usize)` accesses by row index.
-                // If `read_column` returns partial vector, we can't index it by row_id directly.
-                // The existing logic matches: `let values = self.read_column(col, None)?;` -> full column.
-
-                // So I MUST restructure the scan logic to handle partial reads.
-                if let Some(cand_ids) = candidates {
-                    let values = self.read_column_by_positions(col, &cand_ids)?;
-                    // Zip candidates with values
-                    let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(cand_ids
-                        .into_iter()
-                        .zip(values)
-                        .filter(|(_, v): &(_, Value)| {
-                            v.as_f64().map(|n| n > threshold).unwrap_or(false)
-                        })
-                        .map(|(id, _)| id)
-                        .collect())
-                } else {
-                    let values = self.read_column(col, None)?;
-                    let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(row_range
-                        .filter(|&i| {
-                            values
-                                .get(i as usize)
-                                .and_then(|v| v.as_f64())
-                                .map(|n| n > threshold)
-                                .unwrap_or(false)
-                        })
-                        .collect())
-                }
-            }
-
-            ColumnFilter::Gte(col, val) => {
-                // Use sorted index if available
-                if indexed && self.has_sorted_index(col) {
-                    return self.index_range_scan(col, filter);
-                }
-
-                // Use MinMax
-                let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) =
-                    self.get_index_type(col).filter(|_| indexed)
-                {
-                    candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
-                }
-
-                if let Some(cand_ids) = candidates {
-                    let values = self.read_column_by_positions(col, &cand_ids)?;
-                    let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(cand_ids
-                        .into_iter()
-                        .zip(values)
-                        .filter(|(_, v): &(_, Value)| {
-                            v.as_f64().map(|n| n >= threshold).unwrap_or(false)
-                        })
-                        .map(|(id, _)| id)
-                        .collect())
-                } else {
-                    let values = self.read_column(col, None)?;
-                    let threshold = val.as_f64().unwrap_or(f64::NEG_INFINITY);
-                    Ok(row_range
-                        .filter(|&i| {
-                            values
-                                .get(i as usize)
-                                .and_then(|v| v.as_f64())
-                                .map(|n| n >= threshold)
-                                .unwrap_or(false)
-                        })
-                        .collect())
-                }
-            }
-
-            ColumnFilter::Lt(col, val) => {
-                // Use sorted index if available
-                if indexed && self.has_sorted_index(col) {
-                    return self.index_range_scan(col, filter);
-                }
-
-                // Use MinMax
-                let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) =
-                    self.get_index_type(col).filter(|_| indexed)
-                {
-                    candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
-                }
-
-                if let Some(cand_ids) = candidates {
-                    let values = self.read_column_by_positions(col, &cand_ids)?;
-                    let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(cand_ids
-                        .into_iter()
-                        .zip(values)
-                        .filter(|(_, v): &(_, Value)| {
-                            v.as_f64().map(|n| n < threshold).unwrap_or(false)
-                        })
-                        .map(|(id, _)| id)
-                        .collect())
-                } else {
-                    let values = self.read_column(col, None)?;
-                    let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(row_range
-                        .filter(|&i| {
-                            values
-                                .get(i as usize)
-                                .and_then(|v| v.as_f64())
-                                .map(|n| n < threshold)
-                                .unwrap_or(false)
-                        })
-                        .collect())
-                }
-            }
-
-            ColumnFilter::Lte(col, val) => {
-                // Use sorted index if available
-                if indexed && self.has_sorted_index(col) {
-                    return self.index_range_scan(col, filter);
-                }
-
-                // Use MinMax
-                let mut candidates = None;
-                if let Some(ColumnarIndexType::MinMax) =
-                    self.get_index_type(col).filter(|_| indexed)
-                {
-                    candidates = Some(self.get_candidate_rows_from_minmax(col, filter)?);
-                }
-
-                if let Some(cand_ids) = candidates {
-                    let values = self.read_column_by_positions(col, &cand_ids)?;
-                    let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(cand_ids
-                        .into_iter()
-                        .zip(values)
-                        .filter(|(_, v): &(_, Value)| {
-                            v.as_f64().map(|n| n <= threshold).unwrap_or(false)
-                        })
-                        .map(|(id, _)| id)
-                        .collect())
-                } else {
-                    let values = self.read_column(col, None)?;
-                    let threshold = val.as_f64().unwrap_or(f64::INFINITY);
-                    Ok(row_range
-                        .filter(|&i| {
-                            values
-                                .get(i as usize)
-                                .and_then(|v| v.as_f64())
-                                .map(|n| n <= threshold)
-                                .unwrap_or(false)
-                        })
-                        .collect())
-                }
-            }
-
-            ColumnFilter::In(col, vals) => {
-                // Use index if available - lookup each value and union results
-                // Check index type to dispatch correctly
-                if let Some(idx_type) = self.get_index_type(col).filter(|_| indexed) {
-                    match idx_type {
-                        ColumnarIndexType::Bitmap
-                        | ColumnarIndexType::Hash
-                        | ColumnarIndexType::Sorted => {
-                            let mut result = Vec::new();
-                            for val in vals {
-                                if idx_type == ColumnarIndexType::Bitmap {
-                                    result.extend(self.index_lookup_bitmap(col, val)?);
-                                } else {
-                                    result.extend(self.index_lookup_eq(col, val)?);
-                                }
-                            }
-                            result.sort();
-                            result.dedup();
-                            return Ok(result);
-                        }
-                        ColumnarIndexType::Bloom => {
-                            let mut candidates = Vec::new();
-                            for val in vals {
-                                candidates.extend(self.get_candidate_rows_from_bloom(col, val)?);
-                            }
-                            candidates.sort();
-                            candidates.dedup();
-
-                            // Verify candidates
-                            let values = self.read_column_by_positions(col, &candidates)?;
-                            return Ok(candidates
-                                .into_iter()
-                                .zip(values)
-                                .filter(|(_, v)| vals.contains(v)) // O(N*M) where M is vals len. vals usually small.
-                                .map(|(id, _)| id)
-                                .collect());
-                        }
-                        _ => {}
-                    }
-                }
-
-                let values = self.read_column(col, None)?;
-                Ok(row_range
-                    .filter(|&i| {
-                        values
-                            .get(i as usize)
-                            .map(|v| vals.contains(v))
-                            .unwrap_or(false)
-                    })
-                    .collect())
-            }
-
-            ColumnFilter::And(filters) => {
-                // Each side over the whole range: it used to be asked only
-                // for as many positions as the sides before it had kept,
-                // and a row past them was lost.
-                let mut result: Vec<u64> = row_range.clone().collect();
-                for f in filters {
-                    let matching = self.apply_filter(f, row_range.clone())?;
-                    let matching_set: std::collections::HashSet<u64> =
-                        matching.into_iter().collect();
-                    result.retain(|id| matching_set.contains(id));
-                }
-                Ok(result)
-            }
-
-            ColumnFilter::Or(filters) => {
-                let mut result_set: std::collections::HashSet<u64> =
-                    std::collections::HashSet::new();
-                for f in filters {
-                    let matching = self.apply_filter(f, row_range.clone())?;
-                    result_set.extend(matching);
-                }
-                let mut result: Vec<u64> = result_set.into_iter().collect();
-                result.sort();
-                Ok(result)
             }
         }
+    }
+    let start = rows.start(rows.blocks.len()) as u64;
+    for (at, (_, row)) in rows.tail.iter().enumerate() {
+        let position = start + at as u64;
+        if range.contains(&position) && leaf_keeps(filter, row.get(column).unwrap_or(&Value::Null))
+        {
+            kept.push(position);
+        }
+    }
+    kept
+}
+
+/// The rows of one block, among `inside`, that `filter` keeps, pushed as
+/// positions (`base` is the block's first).
+///
+/// Integers, floats and strings are compared in their arrays, and a block
+/// of integers is passed over, or taken whole, when its smallest and
+/// largest value decide for every row. Anything else is compared value by
+/// value, as `leaf_keeps` does. Both must keep the same rows.
+fn scan_block(
+    column: &Column,
+    filter: &ColumnFilter,
+    inside: std::ops::Range<usize>,
+    base: u64,
+    kept: &mut Vec<u64>,
+) {
+    use std::cmp::Ordering::{self, Greater, Less};
+    /// What a range keeps of the order between a value and its bound.
+    type Keeps = fn(Ordering) -> bool;
+    let null = |row: usize| column.nulls.as_ref().is_some_and(|nulls| nulls[row]);
+    // What a range keeps of the order between a value and its bound.
+    let range: Option<(&Value, Keeps)> = match filter {
+        ColumnFilter::Gt(_, bound) => Some((bound, |o| o == Greater)),
+        ColumnFilter::Gte(_, bound) => Some((bound, |o| o != Less)),
+        ColumnFilter::Lt(_, bound) => Some((bound, |o| o == Less)),
+        ColumnFilter::Lte(_, bound) => Some((bound, |o| o != Greater)),
+        _ => None,
+    };
+    // The bounds of a block of integers hold a placeholder for each null,
+    // which only widens them: a block is never passed over wrongly, and
+    // one with nulls is never taken whole.
+    let mut ints = |values: &[i64], keeps: &dyn Fn(i64) -> bool| {
+        if let Some((low, high)) = column.int_range() {
+            match (keeps(low), keeps(high)) {
+                (false, false) => return,
+                (true, true) if column.nulls.is_none() => {
+                    kept.extend(inside.clone().map(|row| base + row as u64));
+                    return;
+                }
+                _ => {}
+            }
+        }
+        kept.extend(
+            inside
+                .clone()
+                .filter(|&row| !null(row) && keeps(values[row]))
+                .map(|row| base + row as u64),
+        );
+    };
+    match (&column.data, filter, range) {
+        (_, ColumnFilter::Eq(_, Value::Null), _) => {
+            if let Some(nulls) = &column.nulls {
+                kept.extend(
+                    inside
+                        .filter(|&row| nulls[row])
+                        .map(|row| base + row as u64),
+                );
+            }
+        }
+        // What keeps a value of a range, or the one value of an equality,
+        // keeps every value between two it keeps: the bounds decide.
+        (ColData::Int(values), _, Some((bound, keeps))) if bound.as_i64().is_some() => {
+            let bound = bound.as_i64().unwrap_or(0);
+            ints(values, &|value| keeps(value.cmp(&bound)));
+        }
+        (ColData::Int(values), ColumnFilter::Eq(_, wanted), _) if wanted.as_i64().is_some() => {
+            let wanted = wanted.as_i64().unwrap_or(0);
+            if column
+                .int_range()
+                .is_some_and(|(low, high)| wanted < low || high < wanted)
+            {
+                return;
+            }
+            kept.extend(
+                inside
+                    .filter(|&row| !null(row) && values[row] == wanted)
+                    .map(|row| base + row as u64),
+            );
+        }
+        (ColData::Float(values), _, Some((bound, keeps))) if bound.is_number() => {
+            let bound = bound.as_f64().unwrap_or(0.0);
+            kept.extend(
+                inside
+                    .filter(|&row| !null(row) && values[row].partial_cmp(&bound).is_some_and(keeps))
+                    .map(|row| base + row as u64),
+            );
+        }
+        (ColData::Str { dict, .. }, ColumnFilter::Eq(_, Value::String(wanted)), _) => {
+            let Ok(code) = dict.binary_search_by(|held| held.as_str().cmp(wanted)) else {
+                return;
+            };
+            // The rows of that string, ascending; a null row holds a
+            // placeholder code.
+            let rows = column.rows_of(code as u32);
+            let from = rows.partition_point(|row| (*row as usize) < inside.start);
+            kept.extend(
+                rows[from..]
+                    .iter()
+                    .map(|row| *row as usize)
+                    .take_while(|row| *row < inside.end)
+                    .filter(|&row| !null(row))
+                    .map(|row| base + row as u64),
+            );
+        }
+        _ => kept.extend(
+            inside
+                .filter(|&row| leaf_keeps(filter, &column.value(row)))
+                .map(|row| base + row as u64),
+        ),
     }
 }
 

@@ -33,6 +33,7 @@ fn fixture() -> (StorageEngine, ColumnarCollection, TempDir) {
         column("v", ColumnType::Int64, false),
         column("ms", ColumnType::Float64, true),
         column("ok", ColumnType::Bool, false),
+        column("n", ColumnType::Int64, true),
     ];
     let col = columnar::create(&db, None, "m", columns, CompressionType::Lz4).unwrap();
     let rows: Vec<Value> = (0..ROWS)
@@ -42,10 +43,14 @@ fn fixture() -> (StorageEngine, ColumnarCollection, TempDir) {
             } else {
                 json!(i as f64 / 8.0)
             };
-            json!({"host": format!("h{}", i % 7), "v": i, "ms": ms, "ok": i % 3 == 0})
+            let n = if i % 5 == 0 { Value::Null } else { json!(i) };
+            json!({"host": format!("h{}", i % 7), "v": i, "ms": ms, "ok": i % 3 == 0, "n": n})
         })
         .collect();
-    col.insert_rows(rows[..19_990].to_vec()).unwrap();
+    // Two blocks, so that a range may pass one over and take the other
+    // whole, and a tail.
+    col.insert_rows(rows[..8_000].to_vec()).unwrap();
+    col.insert_rows(rows[8_000..19_990].to_vec()).unwrap();
     col.insert_rows(rows[19_990..].to_vec()).unwrap();
     db.create_collection("d".to_string(), None).unwrap();
     db.get_collection("d").unwrap().insert_batch(rows).unwrap();
@@ -93,6 +98,23 @@ fn queries() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         ("FOR r IN $c FILTER r.host == 'nobody' RETURN r.v", vec![]),
         ("FOR r IN $c FILTER r.ok == false AND r.v < 10 SORT r.v RETURN r.v", vec![]),
         ("FOR r IN $c FILTER r.missing == null AND r.v < 3 SORT r.v RETURN [r.v, r.missing]", vec![]),
+        // Ranges of a column that holds nulls: to SDBQL null is below
+        // every number, so `<` keeps those rows (card #893: they were lost).
+        ("FOR r IN $c FILTER r.n < 4 SORT r.v RETURN r.v", vec![]),
+        ("FOR r IN $c FILTER r.n <= 6 AND r.v < 40 SORT r.v RETURN [r.v, r.n]", vec![]),
+        ("FOR r IN $c FILTER r.n > 19990 SORT r.v RETURN r.v", vec![]),
+        ("FOR r IN $c FILTER r.n >= @n SORT r.v RETURN r.n", vec![("n", json!(19996))]),
+        ("FOR r IN $c FILTER r.n == null AND r.v > 19980 SORT r.v RETURN r.v", vec![]),
+        // Ranges of floats, against a float and against an integer.
+        ("FOR r IN $c FILTER r.ms < 0.5 AND r.v < 9 SORT r.v RETURN [r.v, r.ms]", vec![]),
+        ("FOR r IN $c FILTER r.ms > 2499.5 SORT r.v RETURN r.ms", vec![]),
+        ("FOR r IN $c FILTER r.ms >= 100 AND r.ms <= 101 SORT r.v RETURN r.ms", vec![]),
+        ("FOR r IN $c FILTER r.ms >= 2499 SORT r.v RETURN r.v", vec![]),
+        // A range no block holds, one that takes whole blocks, and both ends.
+        ("FOR r IN $c FILTER r.v > 50000 RETURN r.v", vec![]),
+        ("FOR r IN $c FILTER r.v >= 0 COLLECT WITH COUNT INTO n RETURN n", vec![]),
+        ("FOR r IN $c FILTER r.v >= 19985 AND r.v < 19995 SORT r.v RETURN r.v", vec![]),
+        ("FOR r IN $c FILTER r.v < 3 OR r.v > 19996 OR r.host == 'nobody' SORT r.v RETURN r.v", vec![]),
         // Limits, with and without a FILTER, and a sort that picks the end.
         ("FOR r IN $c SORT r.v DESC LIMIT 3 RETURN r.v", vec![]),
         ("FOR r IN $c FILTER r.host == 'h1' SORT r.v LIMIT 2, 3 RETURN r.v", vec![]),
@@ -148,7 +170,7 @@ fn whole_rows_and_limits_without_a_sort() {
     let rows = run(&engine, "FOR r IN m FILTER r.v == 7 RETURN r", &[]);
     assert_eq!(
         rows,
-        [json!({"host": "h0", "v": 7, "ms": 0.875, "ok": false})]
+        [json!({"host": "h0", "v": 7, "ms": 0.875, "ok": false, "n": 7})]
     );
     let first = run(&engine, "FOR r IN m LIMIT 4 RETURN r.v", &[]);
     assert_eq!(first, [json!(0), json!(1), json!(2), json!(3)]);
@@ -163,4 +185,46 @@ fn whole_rows_and_limits_without_a_sort() {
     // Only one column is asked for: the others are not in the way.
     let hosts = run(&engine, "FOR r IN m FILTER r.v < 2 RETURN r.host", &[]);
     assert_eq!(hosts, [json!("h0"), json!("h1")]);
+}
+
+#[test]
+fn explain_says_how_a_columnar_collection_is_read() {
+    let (engine, col, _dir) = fixture();
+    let explain = |query: &str| {
+        QueryExecutor::with_database(&engine, "app".to_string())
+            .explain(&parse(query).expect("query parses"))
+            .unwrap_or_else(|e| panic!("{query}: {e}"))
+    };
+    let query = "FOR r IN m FILTER r.host == 'h1' AND r.v > 19000 RETURN r.ms";
+    let plan = explain(query);
+    assert_eq!(plan.collections[0].access_type, "columnar_scan");
+    assert_eq!(plan.collections[0].index_used, None);
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| w.contains("3 of its 5 columns") && w.contains("`host`, `v`")),
+        "{:?}",
+        plan.warnings
+    );
+
+    // An equality is an index's; a range against a number is the arrays'.
+    col.create_index("host", ColumnarIndexType::Hash).unwrap();
+    col.create_index("v", ColumnarIndexType::Sorted).unwrap();
+    let plan = explain(query);
+    assert_eq!(plan.collections[0].access_type, "columnar_scan");
+    assert_eq!(
+        plan.collections[0].index_used.as_deref(),
+        Some("host (hash)")
+    );
+
+    // Nothing the collection answers: every row, the columns read only.
+    let plan = explain("FOR r IN m FILTER r.v % 2 == 0 RETURN r.v");
+    assert_eq!(plan.collections[0].access_type, "columnar_scan");
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| w.contains("1 of its 5 columns") && w.contains("every row")),
+        "{:?}",
+        plan.warnings
+    );
 }

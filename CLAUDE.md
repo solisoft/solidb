@@ -906,17 +906,36 @@ Rules that keep it sound:
 - **A `FOR` over a columnar collection builds what the query needs**
   (`sdbql/executor/execution/columnar_rows.rs`): the columns of the scan's
   projection, and the rows its leading FILTERs keep, through
-  `ColumnarCollection::scan_filtered` (one column read, or an index). The
-  FILTER clauses still run on those rows, so a pushed filter may keep too
-  much but must never keep too little: a comparison is pushed only when
-  the collection answers it exactly as SDBQL does, which today means a
-  constant of the column's own kind (the collection compares an equality
-  as JSON values, to which `3` and `3.0` differ; floats and string ranges
-  are left to the FILTER). A new comparison pushed down has to hold to
-  that, and `tests/columnar_rows_tests.rs` runs each query on a document
-  collection with the same rows. A scan limit stops the read and pushes
-  no filter (the limit counts rows before the FILTERs). A filter whose
-  constant names an outer row is not pushed.
+  `ColumnarCollection::scan_filtered`. The FILTER clauses still run on
+  those rows, so a pushed filter may keep too much but must never keep too
+  little: a comparison is pushed only when the collection answers it
+  exactly as SDBQL does. Today: an equality with a constant of the
+  column's own kind (the collection compares an equality as JSON values,
+  to which `3` and `3.0` differ), and a range of an integer column against
+  an integer or of a float column against a number a float holds. To
+  SDBQL null is below every number and the collection's ranges keep
+  numbers only, so a `<` / `<=` is pushed with the null rows beside it
+  (`or_null`) unless another conjunct bounds the column from below — it
+  lost those rows before (card #893). A new comparison pushed down has to
+  hold to that, and `tests/columnar_rows_tests.rs` runs each query on a
+  document collection with the same rows. A scan limit stops the read and
+  pushes no filter (the limit counts rows before the FILTERs). A filter
+  whose constant names an outer row is not pushed. EXPLAIN follows the
+  same code (`columnar_note`, `columnar_scan`).
+- **A filter is answered from the arrays, block by block**
+  (`columnar.rs`: `filter_positions`, `scan_leaf`, `scan_block`), for
+  SDBQL and the HTTP / driver query alike. `scan_block`'s typed arms
+  (integers, floats, a string equality, null) must keep exactly the rows
+  `leaf_keeps` keeps value by value, which is what the tail, a column
+  stored as JSON and rows out of id order go through. A block of integers
+  is passed over, or taken whole, from its smallest and largest value
+  (`Column::int_range`, which counts the placeholder of a null: bounds
+  only ever wider, and a block with nulls is never taken whole); an `AND`
+  goes block by block so that one side ruling a block out spares the
+  others (`block_rules_out`). An index answers an equality or an `IN`
+  (`index_for`), for the rows it holds; a range against a number is never
+  an index's. Positions come back ascending from every branch: `in_both`
+  relies on it.
 - **Compacting merges runs of neighbouring blocks** that fit in one
   (`ColumnarCollection::compact`, `POST …/compact`): the rows of a run are
   sorted by id and sealed again as one block, each run under the write

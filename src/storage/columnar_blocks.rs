@@ -518,6 +518,18 @@ impl RowSet {
         self.starts[self.blocks.len()] + self.tail.len()
     }
 
+    /// Whether the rows are the blocks one after another, then the tail:
+    /// a row's position is then where its block starts plus its row.
+    pub(crate) fn in_order(&self) -> bool {
+        self.order.is_none()
+    }
+
+    /// The position of the first row of block `block` (`blocks.len()`: of
+    /// the tail), when the rows are `in_order`.
+    pub(crate) fn start(&self, block: usize) -> usize {
+        self.starts[block]
+    }
+
     /// The row at position `at` of the id order, as `(block, row)`.
     pub(crate) fn locate(&self, at: usize) -> (usize, usize) {
         if let Some(order) = &self.order {
