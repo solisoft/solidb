@@ -705,20 +705,27 @@ impl Kv {
         }
     }
 
-    /// Make every write that has returned durable, where the engine can do
-    /// it apart from a write: `None` where it cannot (solistore), and the
-    /// caller syncs its own write instead.
+    /// Make every write that has returned durable, where a write leaves
+    /// that to do: `None` where it does not (solistore fsyncing every
+    /// write, `SOLIDB_DURABILITY=full`), and the caller syncs its own write
+    /// instead.
     pub fn sync_wal(&self) -> Option<Result<(), KvError>> {
         match &self.engine {
             Engine::Rocks(db) => Some(db.flush_wal(true).map_err(Into::into)),
             #[cfg(feature = "engine-solistore")]
-            Engine::Solistore(_) => None,
+            Engine::Solistore(db) => {
+                (!solistore::syncs_every_write()).then(|| db.sync_wal().map_err(Into::into))
+            }
         }
     }
 
-    /// Whether [`Self::sync_wal`] does anything on this engine.
+    /// Whether [`Self::sync_wal`] does anything here.
     pub fn syncs_wal_apart(&self) -> bool {
-        matches!(&self.engine, Engine::Rocks(_))
+        match &self.engine {
+            Engine::Rocks(_) => true,
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(_) => !solistore::syncs_every_write(),
+        }
     }
 
     pub fn flush(&self) -> Result<(), KvError> {

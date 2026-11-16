@@ -30,6 +30,12 @@ fn durability() -> Durability {
     }
 }
 
+/// Whether every write is fsynced before it returns
+/// (`SOLIDB_DURABILITY=full`): a write then has nothing left to sync.
+pub(super) fn syncs_every_write() -> bool {
+    matches!(durability(), Durability::Full)
+}
+
 /// The process-wide [`crate::storage::engine::EngineProfile`] mapped onto
 /// solistore's options. Everything shares one LSM, so the per-column-family
 /// RocksDB knobs (arena block, global write-buffer budget) have no

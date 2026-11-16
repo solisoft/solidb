@@ -593,17 +593,20 @@ Rules that keep it sound:
   (`Numbering::stage`, `Collection::write_numbered`), never apart: that is
   what gives a number back when a write is refused or lost. Nothing is kept
   in memory; the state is read under the lock.
-- **A durable insert is synced after it leaves the lock**, where the engine
-  syncs its log apart from a write (`Kv::sync_wal`, RocksDB): the write goes
+- **A durable insert is synced after it leaves the lock**, where a write
+  leaves that to do (`Kv::sync_wal`: RocksDB, and solistore unless
+  `SOLIDB_DURABILITY=full`): the write goes
   in unsynced under the lock, takes a stamp (`counters::WalSync::wrote`),
   and `Numbering::settle`, which every non-transactional numbered write
   ends with, waits for a sync that covers it; the inserts waiting share
   one. Sound because a log is durable up to a point: what a power loss
   takes is the latest numbers, never one in the middle. The stamp must be
   taken after the write has returned, and nothing may acknowledge the
-  insert before `settle`. On solistore the write is synced under the lock,
-  as before. Measured over HTTP on RocksDB: 453 → 1,712 inserts a second
-  from 8 clients, 3,466 from 32.
+  insert before `settle`. With `SOLIDB_DURABILITY=full` solistore fsyncs
+  every write as it is made, under the lock: about 450 inserts a second
+  into a collection with a counter, whatever the clients. Measured over
+  HTTP, on either engine: 453 → 1,712 inserts a second from 8 clients,
+  3,466 from 32.
 - **One lock per collection, held from the number to the write**
   (`KsState::hold_counter_lock`, a value that can cross threads like the
   commit gates). Order: foreign-key gate, commit gates (commits only), then
