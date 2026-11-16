@@ -273,6 +273,15 @@ pub(super) enum Slice<'a> {
     },
     /// Integers and floats, each as a float, with whether it is an integer.
     Mixed(&'a [f64], &'a [bool]),
+    /// As `Total`, for `rows` of the rows pushed: the others hold null.
+    TotalOf {
+        rows: usize,
+        sum: &'a ExactSum,
+        min: Option<serde_json::Number>,
+        max: Option<serde_json::Number>,
+    },
+    /// As `Other`, for that many of the rows pushed: the others hold null.
+    OtherOf(usize),
 }
 
 /// `x` as the number a document holds: an integer when `int`.
@@ -488,22 +497,27 @@ impl AggregateAccumulator {
     }
 
     /// Fold `rows` rows at once: what [`Self::push`] does with each of
-    /// `values` in turn (none of them null; `None` for an aggregate without
-    /// an argument). Only for the kinds [`Self::takes_slices`] names.
+    /// `values` in turn (none of them null, unless the slice says how many
+    /// of the rows hold a value; `None` for an aggregate without an
+    /// argument). Only for the kinds [`Self::takes_slices`] names.
     /// `ordinal` is the first row's: of equal extremes met in other rows,
     /// which is kept may differ from one row at a time.
     pub(super) fn push_slice(&mut self, rows: usize, values: Option<&Slice<'_>>, ordinal: u64) {
         match self {
             Self::CountRows(n) => *n += rows as i64,
-            Self::CountNonNull(n) => {
-                if values.is_some() {
-                    *n += rows as i64;
+            Self::CountNonNull(n) => match values {
+                Some(Slice::TotalOf { rows, .. }) | Some(Slice::OtherOf(rows)) => {
+                    *n += *rows as i64
                 }
-            }
+                Some(_) => *n += rows as i64,
+                None => {}
+            },
             Self::Sum(sum) => match values {
                 Some(Slice::Int(xs)) => xs.iter().for_each(|x| sum.add_i64(*x)),
                 Some(Slice::Float(xs)) => sum.add_slice(xs),
-                Some(Slice::Total { sum: total, .. }) => sum.merge(total),
+                Some(Slice::Total { sum: total, .. }) | Some(Slice::TotalOf { sum: total, .. }) => {
+                    sum.merge(total)
+                }
                 Some(Slice::Mixed(xs, ints)) => {
                     for (x, int) in xs.iter().zip(*ints) {
                         if *int {
@@ -513,7 +527,7 @@ impl AggregateAccumulator {
                         }
                     }
                 }
-                Some(Slice::Other) | None => {}
+                Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => {}
             },
             Self::Avg { sum, count } => match values {
                 Some(Slice::Int(xs)) => {
@@ -530,11 +544,17 @@ impl AggregateAccumulator {
                     sum.merge(total);
                     *count += rows as i64;
                 }
+                Some(Slice::TotalOf {
+                    rows, sum: total, ..
+                }) => {
+                    sum.merge(total);
+                    *count += *rows as i64;
+                }
                 Some(Slice::Mixed(xs, _)) => {
                     sum.add_slice(xs);
                     *count += xs.len() as i64;
                 }
-                Some(Slice::Other) | None => {}
+                Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => {}
             },
             Self::Min(_) | Self::Max(_) => {
                 let least = matches!(self, Self::Min(_));
@@ -550,7 +570,7 @@ impl AggregateAccumulator {
                         .copied()
                         .reduce(|a, b| if (b < a) == least && b != a { b } else { a })
                         .and_then(serde_json::Number::from_f64),
-                    Some(Slice::Total { min, max, .. }) => {
+                    Some(Slice::Total { min, max, .. }) | Some(Slice::TotalOf { min, max, .. }) => {
                         if least {
                             min.clone()
                         } else {
@@ -566,7 +586,7 @@ impl AggregateAccumulator {
                             }
                         })
                         .and_then(|at| number_of(xs[at], ints[at])),
-                    Some(Slice::Other) | None => None,
+                    Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => None,
                 };
                 if let Some(extreme) = extreme {
                     self.push(Some(Datum::Num(extreme)), ordinal);

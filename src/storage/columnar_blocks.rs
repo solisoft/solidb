@@ -632,6 +632,17 @@ impl ColBlock {
 }
 
 impl Column {
+    /// A column of integers, made of values computed from another.
+    pub(crate) fn ints(values: Vec<i64>, nulls: Option<Vec<bool>>) -> Self {
+        Column {
+            data: ColData::Int(values),
+            nulls,
+            lists: Default::default(),
+            range: Default::default(),
+            float_range: Default::default(),
+        }
+    }
+
     /// How many rows the column holds.
     pub(crate) fn len(&self) -> usize {
         match &self.data {

@@ -839,9 +839,11 @@ converted when it is loaded (`migrate`).
 
 `FOR r IN c [FILTER …] COLLECT … AGGREGATE …` over one is folded from the
 arrays (`sdbql/executor/execution/columnar_scan.rs`) when the FILTERs
-compare columns with constants (`==` with a string, number or boolean, `<`
-`<=` `>` `>=` with a number), the keys are columns and the aggregates are
-`COUNT`, `SUM`, `AVG`, `MIN`, `MAX` of a column: on several threads, into a
+compare columns with constants (`==` `!=` `<` `<=` `>` `>=` with a string,
+a number, a boolean or null, on either side; `IN` a list of them; joined by
+`AND` / `OR`), the keys are columns or `TIME_BUCKET(column, "<fixed
+interval>")` of a column of integers, and the aggregates are `COUNT`,
+`SUM`, `AVG`, `MIN`, `MAX` of a column: on several threads, into a
 table of groups handed to the same `CollectFold` as rows, with the exact
 state of each sum. A single integer key of small range is grouped in plain
 arrays indexed by the key (`Flat`): a sum and, beside it, the total of what
@@ -987,10 +989,24 @@ Rules that keep it sound:
 - **Rows come back in the order of their ids**, as before: filters and the
   secondary indexes work on positions in that order. A replicated row may
   carry an older id; `RowSet` then orders blocks and tail together.
-- A block the arrays cannot answer for (a column with nulls or of several
-  kinds, a constant of another kind) and the tail are read as objects and
-  folded the ordinary way: `tests/columnar_blocks_tests.rs` runs each query
-  both ways.
+- A block the arrays cannot answer for (a column of several kinds, a
+  constant of another kind than the column, a column the block was sealed
+  without) and the tail are read as objects and folded the ordinary way:
+  `tests/columnar_blocks_tests.rs` runs each query both ways, and checks
+  with `BLOCKS_FOLDED_AS_ROWS` that the arrays did answer, so a shape that
+  silently falls back fails there.
+- **Nulls in the fold follow SDBQL** (`columnar_scan.rs`): to a
+  comparison a null is below every value and equal to none (`select`:
+  it passes `!=`, `<`, `<=`); a null key is a group of its own
+  (`Atom::Null`); an aggregate passes a null over, which the group says
+  with `Acc::missing` and the fold reads as `Slice::TotalOf` /
+  `OtherOf` (how many of the rows hold a value). Rows with a null among
+  their keys or arguments go one at a time (`fold_with_nulls`); the
+  arrays indexed by position (`Flat`, `Share::Ranged`) hold no null, so
+  the caller takes that way only when no block's head says a key or an
+  argument holds one. The groups of one numeric key are found in
+  `Table::numbers` on both ways, so a key is one group in a table: the
+  top-k pruning counts on it.
 - **The decoded blocks are kept in memory up to a budget**, ids of the
   rows included (0.9 GB for ten million rows of six columns).
   `SOLIDB_COLUMNAR_BLOCKS_MB` (default: a quarter of the memory the

@@ -182,6 +182,13 @@ fn decoded_budget() -> usize {
 /// tests, which must know that way was taken.
 pub static WINDOWED_READS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Blocks a `COLLECT` folded from the arrays had to read as rows instead
+/// (a column of several kinds, a comparison with another kind of value)
+/// since the process started: for tests, which must know the arrays
+/// answered.
+pub static BLOCKS_FOLDED_AS_ROWS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Bytes of decoded blocks kept for every columnar collection of the
 /// process, as [`ColBlock::bytes`] counts them.
 pub fn decoded_blocks_kept() -> usize {

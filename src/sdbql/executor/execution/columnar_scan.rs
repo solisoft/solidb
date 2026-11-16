@@ -4,10 +4,12 @@
 //! used to build every row as an object, then filter and group the
 //! objects. When the query stays within what the arrays answer —
 //!
-//! - every FILTER is a conjunction of comparisons of a column with a
-//!   constant: `==` with a string, a number or a boolean, `<`, `<=`, `>`,
-//!   `>=` with a number;
-//! - every group key is a column;
+//! - every FILTER is made of comparisons of a column with a constant
+//!   (`==`, `!=`, `<`, `<=`, `>`, `>=` with a string, a number, a
+//!   boolean or null, on either side; `IN` a list of such), joined by
+//!   `AND` and `OR`;
+//! - every group key is a column, or `TIME_BUCKET(column, "<fixed
+//!   interval>")` of a column of integers;
 //! - every aggregate is one that takes whole columns (`COUNT`, `SUM`,
 //!   `AVG`, `MIN`, `MAX`) of a column, or of nothing
 //!
@@ -15,10 +17,14 @@
 //! threads when they are many: rows are selected by comparing array
 //! elements, grouped in a table keyed by the key columns' values, and each
 //! group is handed to the same [`CollectFold`] the ordinary path fills,
-//! with the exact state of its sums. A block that does not fit (a column
-//! with nulls, with values of several kinds, compared with a constant of
-//! another kind) and the rows of the tail are read as objects and folded
-//! the ordinary way, FILTERs included: the answer is the ordinary path's.
+//! with the exact state of its sums. A column that holds nulls is read
+//! with its mask: to a comparison a null is below every value and equal
+//! to none, a null key is a group of its own, and an aggregate passes a
+//! null over. A block that does not fit (a column with values of several
+//! kinds, or compared with a constant of another kind, or that the block
+//! was sealed without) and the rows of the tail are read as objects and
+//! folded the ordinary way, FILTERs included: the answer is the ordinary
+//! path's.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,6 +42,7 @@ use super::scan_collect::{bind_in_place, plan, Plan, ScanCollectRun};
 use super::scan_threads::Helpers;
 use crate::error::DbResult;
 use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression};
+use crate::sdbql::executor::builtins::timeseries::{parse_interval, Interval};
 use crate::storage::columnar_blocks::{ColBlock, ColData, Column};
 
 /// A comparison of a column with a constant.
@@ -45,9 +52,38 @@ struct Cond {
     value: Value,
 }
 
+/// What a FILTER keeps: comparisons, joined.
+enum Pred {
+    Cmp(Cond),
+    /// Every one of them (`AND`).
+    All(Vec<Pred>),
+    /// One of them at least (`OR`, `IN`).
+    Any(Vec<Pred>),
+}
+
+/// A group key.
+enum Key {
+    Column(String),
+    /// `TIME_BUCKET(column, "<interval>")` for an interval of `step`
+    /// milliseconds: the instant its bucket starts at.
+    Bucket {
+        column: String,
+        step: i64,
+    },
+}
+
+impl Key {
+    /// The column the key is read from.
+    fn column(&self) -> &str {
+        match self {
+            Key::Column(column) | Key::Bucket { column, .. } => column,
+        }
+    }
+}
+
 struct ColPlan {
-    conds: Vec<Cond>,
-    keys: Vec<String>,
+    preds: Vec<Pred>,
+    keys: Vec<Key>,
     /// For each aggregate, its argument and what it computes.
     args: Vec<Option<String>>,
     kinds: Vec<AggKind>,
@@ -61,11 +97,15 @@ enum Atom {
     Float(u64),
     Str(Arc<str>),
     Bool(bool),
+    Null,
 }
 
 /// What one aggregate holds of one group's numbers.
 #[derive(Default)]
 struct Acc {
+    /// The rows of the group whose argument is null: what the aggregate
+    /// passes over.
+    missing: u64,
     sum: ExactSum,
     /// The extremes, and whether each is held as an integer.
     min: Option<(f64, bool)>,
@@ -110,6 +150,7 @@ impl Acc {
     }
 
     fn merge(&mut self, other: &Acc) {
+        self.missing += other.missing;
         self.sum.merge(&other.sum);
         if let Some((v, int)) = other.min {
             if self.min.is_none_or(|(held, _)| v < held) {
@@ -513,55 +554,91 @@ fn number((x, int): (f64, bool)) -> Option<serde_json::Number> {
     }
 }
 
-/// The rows of `column` (without nulls) the comparison keeps, among `rows`
-/// (`None`: all of them). `None` when the arrays cannot answer as the
-/// ordinary comparison would: another kind of value on one side.
+/// The rows of `column` the comparison keeps, among `rows` (`None`: all of
+/// them), ascending. To SDBQL null is below every other value and equal
+/// to none: a null passes `!=`, `<` and `<=`, and nothing else. `None`
+/// when the arrays cannot answer as the ordinary comparison would: another
+/// kind of value on one side.
 fn select(column: &Column, cond: &Cond, rows: Option<Vec<u32>>, len: usize) -> Option<Vec<u32>> {
+    use std::cmp::Ordering;
     use BinaryOperator::*;
-    let keep = |pred: &dyn Fn(usize) -> bool| -> Vec<u32> {
+    // What the comparison keeps of how a value stands to the constant.
+    let wanted: fn(Ordering) -> bool = match cond.op {
+        Equal => |o| o == Ordering::Equal,
+        NotEqual => |o| o != Ordering::Equal,
+        LessThan => |o| o == Ordering::Less,
+        LessThanOrEqual => |o| o != Ordering::Greater,
+        GreaterThan => |o| o == Ordering::Greater,
+        GreaterThanOrEqual => |o| o != Ordering::Less,
+        _ => return None,
+    };
+    let null_passes = matches!(cond.op, NotEqual | LessThan | LessThanOrEqual);
+    let nulls = column.nulls.as_deref();
+    let keep = |stands: &dyn Fn(usize) -> Ordering| -> Vec<u32> {
+        let test = |row: &u32| {
+            let row = *row as usize;
+            match nulls {
+                Some(nulls) if nulls[row] => null_passes,
+                _ => wanted(stands(row)),
+            }
+        };
         match &rows {
-            Some(rows) => rows.iter().copied().filter(|r| pred(*r as usize)).collect(),
-            None => (0..len as u32).filter(|r| pred(*r as usize)).collect(),
+            Some(rows) => rows.iter().copied().filter(test).collect(),
+            None => (0..len as u32).filter(test).collect(),
         }
     };
+    // Against null: a null is equal to it, anything else above it.
+    if cond.value.is_null() {
+        let test = |row: &u32| {
+            wanted(match nulls {
+                Some(nulls) if nulls[*row as usize] => Ordering::Equal,
+                _ => Ordering::Greater,
+            })
+        };
+        return Some(match &rows {
+            Some(rows) => rows.iter().copied().filter(test).collect(),
+            None => (0..len as u32).filter(test).collect(),
+        });
+    }
     match (&column.data, &cond.value) {
-        (ColData::Str { dict, codes }, Value::String(wanted)) if cond.op == Equal => {
-            match dict.binary_search_by(|d| d.as_str().cmp(wanted)) {
-                // The first comparison: the rows are listed, not looked for.
-                Ok(code) if rows.is_none() => Some(column.rows_of(code as u32).to_vec()),
-                Ok(code) => Some(keep(&|r| codes[r] == code as u32)),
-                Err(_) => Some(Vec::new()),
+        (ColData::Str { dict, codes }, Value::String(constant)) => {
+            // The dictionary is sorted: the strings below the constant are
+            // the codes below `at`, and the constant itself, if the block
+            // holds it, is the code `at`.
+            let at = dict.partition_point(|held| held.as_str() < constant.as_str());
+            let held = dict.get(at).is_some_and(|held| held == constant);
+            // The first comparison, an equality: the rows are listed, not
+            // looked for.
+            if cond.op == Equal && rows.is_none() && nulls.is_none() {
+                return Some(match held {
+                    true => column.rows_of(at as u32).to_vec(),
+                    false => Vec::new(),
+                });
             }
+            Some(keep(&|row| match (codes[row] as usize).cmp(&at) {
+                Ordering::Equal if !held => Ordering::Greater,
+                other => other,
+            }))
         }
-        (ColData::Bool(values), Value::Bool(wanted)) if cond.op == Equal => {
-            Some(keep(&|r| values[r] == *wanted))
+        (ColData::Bool(values), Value::Bool(constant)) => {
+            Some(keep(&|row| values[row].cmp(constant)))
         }
         (ColData::Int(values), Value::Number(n)) => {
             // Against an integer, as integers; against a float, as the
             // floats both are compared as.
             if let Some(c) = n.as_i64() {
-                Some(match cond.op {
-                    Equal => keep(&|r| values[r] == c),
-                    LessThan => keep(&|r| values[r] < c),
-                    LessThanOrEqual => keep(&|r| values[r] <= c),
-                    GreaterThan => keep(&|r| values[r] > c),
-                    GreaterThanOrEqual => keep(&|r| values[r] >= c),
-                    _ => return None,
-                })
+                Some(keep(&|row| values[row].cmp(&c)))
             } else {
                 let c = n.as_f64()?;
                 let exact = |v: i64| v.abs() <= 1 << 53;
                 if !values.iter().copied().all(exact) {
                     return None;
                 }
-                Some(match cond.op {
-                    Equal => keep(&|r| values[r] as f64 == c),
-                    LessThan => keep(&|r| (values[r] as f64) < c),
-                    LessThanOrEqual => keep(&|r| values[r] as f64 <= c),
-                    GreaterThan => keep(&|r| values[r] as f64 > c),
-                    GreaterThanOrEqual => keep(&|r| values[r] as f64 >= c),
-                    _ => return None,
-                })
+                Some(keep(&|row| {
+                    (values[row] as f64)
+                        .partial_cmp(&c)
+                        .unwrap_or(Ordering::Equal)
+                }))
             }
         }
         (ColData::Float(values), Value::Number(n)) => {
@@ -570,17 +647,216 @@ fn select(column: &Column, cond: &Cond, rows: Option<Vec<u32>>, len: usize) -> O
                 Some(_) => return None,
                 None => n.as_f64()?,
             };
-            Some(match cond.op {
-                Equal => keep(&|r| values[r] == c),
-                LessThan => keep(&|r| values[r] < c),
-                LessThanOrEqual => keep(&|r| values[r] <= c),
-                GreaterThan => keep(&|r| values[r] > c),
-                GreaterThanOrEqual => keep(&|r| values[r] >= c),
-                _ => return None,
-            })
+            Some(keep(&|row| {
+                values[row].partial_cmp(&c).unwrap_or(Ordering::Equal)
+            }))
         }
         _ => None,
     }
+}
+
+/// The rows `pred` keeps among `rows` (`None`: every row of the block),
+/// ascending; the outer `None` when the arrays cannot answer for it.
+fn kept(
+    block: &ColBlock,
+    pred: &Pred,
+    rows: Option<Vec<u32>>,
+    len: usize,
+) -> Option<Option<Vec<u32>>> {
+    if rows.as_ref().is_some_and(Vec::is_empty) {
+        return Some(rows);
+    }
+    match pred {
+        Pred::Cmp(cond) => {
+            let column = block
+                .column(&cond.column)
+                .filter(|c| !matches!(c.data, ColData::Json(_)))?;
+            // The smallest and largest value of the block may say it all.
+            if column.nulls.is_none() {
+                match settled(column, cond) {
+                    Some(true) => return Some(rows),
+                    Some(false) => return Some(Some(Vec::new())),
+                    None => {}
+                }
+            }
+            Some(Some(select(column, cond, rows, len)?))
+        }
+        Pred::All(all) => {
+            let mut rows = rows;
+            for pred in all {
+                rows = kept(block, pred, rows, len)?;
+            }
+            Some(rows)
+        }
+        Pred::Any(any) => {
+            let mut found: Vec<u32> = Vec::new();
+            for pred in any {
+                match kept(block, pred, rows.clone(), len)? {
+                    // Every row there was.
+                    None => return Some(None),
+                    Some(more) => found = either(&found, &more),
+                }
+            }
+            Some(Some(found))
+        }
+    }
+}
+
+/// The rows of `a` and those of `b`, each once; all three ascending.
+fn either(a: &[u32], b: &[u32]) -> Vec<u32> {
+    let mut rows = Vec::with_capacity(a.len() + b.len());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => {
+                rows.push(a[i]);
+                i += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                rows.push(b[j]);
+                j += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                rows.push(a[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    rows.extend_from_slice(&a[i..]);
+    rows.extend_from_slice(&b[j..]);
+    rows
+}
+
+/// The value of a key column at `row`.
+fn atom(column: &Column, row: usize) -> Atom {
+    if column.nulls.as_ref().is_some_and(|nulls| nulls[row]) {
+        return Atom::Null;
+    }
+    match &column.data {
+        ColData::Int(values) => Atom::Int(values[row]),
+        ColData::Float(values) => Atom::Float(values[row].to_bits()),
+        ColData::Str { dict, codes } => Atom::Str(Arc::from(dict[codes[row] as usize].as_str())),
+        ColData::Bool(values) => Atom::Bool(values[row]),
+        ColData::Json(_) => Atom::Bool(false),
+    }
+}
+
+/// A number that tells a row's key value from the others of the block
+/// (nulls aside): a string's code, a number's bits.
+fn local(column: &Column, row: usize) -> u64 {
+    match &column.data {
+        ColData::Int(values) => values[row] as u64,
+        ColData::Float(values) => values[row].to_bits(),
+        ColData::Str { codes, .. } => u64::from(codes[row]),
+        ColData::Bool(values) => u64::from(values[row]),
+        ColData::Json(_) => 0,
+    }
+}
+
+/// Fold rows whose keys or arguments hold nulls: a row at a time, a null
+/// key being a group of its own and a null argument passed over
+/// (`Acc::missing`). The groups of a single numeric key are found where
+/// the blocks without nulls put them (`Table::numbers`), so that a key is
+/// one group in the table.
+fn fold_with_nulls(
+    table: &mut Table,
+    share: Share,
+    keys: &[&Column],
+    args: &[Option<&Column>],
+    rows: Option<&[u32]>,
+    len: usize,
+) -> Option<()> {
+    let (mine, of) = match share {
+        Share::All => (0, 1),
+        Share::Hashed { mine, of } => (mine, of),
+        // Groups by position hold no null.
+        Share::Ranged { .. } => return None,
+    };
+    if keys.len() > 63 {
+        return None;
+    }
+    let accs = args.len();
+    let is_null = |column: &Column, row: usize| column.nulls.as_ref().is_some_and(|n| n[row]);
+    let by_number = matches!(
+        keys,
+        [Column {
+            data: ColData::Int(_) | ColData::Float(_),
+            ..
+        }]
+    );
+    let mut seen: HashMap<Vec<u64>, u32, foldhash::fast::RandomState> = HashMap::default();
+    let mut scratch: Vec<u64> = Vec::with_capacity(keys.len() + 1);
+    let mut each = |row: usize| {
+        let group = if by_number {
+            let key = keys[0];
+            if is_null(key, row) {
+                // The null key is the first thread's.
+                if mine != 0 {
+                    return;
+                }
+                table.group(vec![Atom::Null], accs)
+            } else {
+                let bits = local(key, row);
+                if of > 1 && owner(bits, of) != mine {
+                    return;
+                }
+                match table.numbers.get(&bits) {
+                    Some(group) => *group,
+                    None => {
+                        let group = table.groups.len() as u32;
+                        table.groups.push(Group {
+                            key: vec![atom(key, row)],
+                            count: 0,
+                            accs: (0..accs).map(|_| Acc::default()).collect(),
+                        });
+                        table.numbers.insert(bits, group);
+                        group
+                    }
+                }
+            }
+        } else {
+            // The keys' numbers, then which of them are null.
+            scratch.clear();
+            let mut nulls = 0u64;
+            for (n, key) in keys.iter().enumerate() {
+                if is_null(key, row) {
+                    nulls |= 1 << n;
+                    scratch.push(0);
+                } else {
+                    scratch.push(local(key, row));
+                }
+            }
+            scratch.push(nulls);
+            match seen.get(&scratch) {
+                Some(group) => *group,
+                None => {
+                    let key = keys.iter().map(|key| atom(key, row)).collect();
+                    let group = table.group(key, accs);
+                    seen.insert(scratch.clone(), group);
+                    group
+                }
+            }
+        };
+        let group = &mut table.groups[group as usize];
+        group.count += 1;
+        for (acc, column) in group.accs.iter_mut().zip(args) {
+            match column {
+                Some(column) if is_null(column, row) => acc.missing += 1,
+                Some(column) => match &column.data {
+                    ColData::Int(values) => acc.int(values[row]),
+                    ColData::Float(values) => acc.float(values[row]),
+                    _ => {}
+                },
+                None => {}
+            }
+        }
+    };
+    match rows {
+        Some(rows) => rows.iter().for_each(|row| each(*row as usize)),
+        None => (0..len).for_each(&mut each),
+    }
+    Some(())
 }
 
 /// Whether every row of `column` passes `cond`, or none does, when the
@@ -615,30 +891,52 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
             table.dense = vec![u32::MAX; span as usize + 1];
         }
     }
-    let plain = |name: &String| {
+    let usable = |name: &str| {
         block
             .column(name)
-            .filter(|c| c.nulls.is_none() && !matches!(c.data, ColData::Json(_)))
+            .filter(|c| !matches!(c.data, ColData::Json(_)))
     };
     let len = block.len();
     let mut rows: Option<Vec<u32>> = None;
-    for cond in &plan.conds {
-        let column = plain(&cond.column)?;
-        // The smallest and largest value of the block may say it all.
-        match settled(column, cond) {
-            Some(true) => {}
-            Some(false) => rows = Some(Vec::new()),
-            None => rows = Some(select(column, cond, rows, len)?),
-        }
+    for pred in &plan.preds {
+        rows = kept(block, pred, rows, len)?;
     }
-    let keys: Vec<&Column> = plan.keys.iter().map(plain).collect::<Option<_>>()?;
+    // A key that is a bucket of time: the instants its buckets start at,
+    // as a column of its own. One that overflows is the builtin's to
+    // report, from the rows.
+    let mut made: Vec<Option<Column>> = Vec::with_capacity(plan.keys.len());
+    for key in &plan.keys {
+        made.push(match key {
+            Key::Column(_) => None,
+            Key::Bucket { column, step } => {
+                let source = usable(column)?;
+                let ColData::Int(times) = &source.data else {
+                    return None;
+                };
+                let starts = times
+                    .iter()
+                    .map(|time| time.div_euclid(*step).checked_mul(*step))
+                    .collect::<Option<Vec<i64>>>()?;
+                Some(Column::ints(starts, source.nulls.clone()))
+            }
+        });
+    }
+    let keys: Vec<&Column> = plan
+        .keys
+        .iter()
+        .zip(&made)
+        .map(|(key, made)| match made {
+            Some(column) => Some(column),
+            None => usable(key.column()),
+        })
+        .collect::<Option<_>>()?;
     // Numbers for the aggregates that add or compare; a string or a
     // boolean can only be counted.
     let mut args: Vec<Option<&Column>> = Vec::with_capacity(plan.args.len());
     for (arg, kind) in plan.args.iter().zip(&plan.kinds) {
         let column = match arg {
             None => None,
-            Some(name) => Some(plain(name)?),
+            Some(name) => Some(usable(name)?),
         };
         let numeric = column.is_none_or(|c| matches!(c.data, ColData::Int(_) | ColData::Float(_)));
         if !numeric && !matches!(kind, AggKind::CountNonNull | AggKind::CountRows) {
@@ -647,25 +945,16 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
         args.push(column);
     }
     let accs = args.len();
+    // A null among the keys or the arguments: a row at a time, with the
+    // masks. What follows reads whole arrays.
+    let nullable = keys
+        .iter()
+        .chain(args.iter().flatten())
+        .any(|column| column.nulls.is_some());
+    if nullable {
+        return fold_with_nulls(table, share, &keys, &args, rows.as_deref(), len);
+    }
 
-    let atom = |column: &Column, row: usize| match &column.data {
-        ColData::Int(values) => Atom::Int(values[row]),
-        ColData::Float(values) => Atom::Float(values[row].to_bits()),
-        ColData::Str { dict, codes } => Atom::Str(Arc::from(dict[codes[row] as usize].as_str())),
-        ColData::Bool(values) => Atom::Bool(values[row]),
-        ColData::Json(_) => Atom::Bool(false),
-    };
-    // A number that tells a row's key value from the others of the block:
-    // a string's code, a number's bits.
-    let local = |column: &Column, row: usize| -> u64 {
-        match &column.data {
-            ColData::Int(values) => values[row] as u64,
-            ColData::Float(values) => values[row].to_bits(),
-            ColData::Str { codes, .. } => u64::from(codes[row]),
-            ColData::Bool(values) => u64::from(values[row]),
-            ColData::Json(_) => 0,
-        }
-    };
     // The group of each combination of key values met in this block.
     let mut seen: HashMap<Vec<u64>, u32, foldhash::fast::RandomState> = HashMap::default();
     let mut by_code: Vec<u32> = match keys.as_slice() {
@@ -871,7 +1160,7 @@ impl QueryExecutor<'_> {
             .then(|| field.clone())
         };
         let mut plan = ColPlan {
-            conds: Vec::new(),
+            preds: Vec::new(),
             keys: Vec::new(),
             args: Vec::new(),
             kinds: Vec::new(),
@@ -884,34 +1173,33 @@ impl QueryExecutor<'_> {
             push_conjuncts(&filter.expression, &mut conjuncts);
         }
         for conjunct in conjuncts {
-            let Expression::BinaryOp { left, op, right } = conjunct else {
-                return None;
-            };
-            use BinaryOperator::*;
-            if !matches!(
-                op,
-                Equal | LessThan | LessThanOrEqual | GreaterThan | GreaterThanOrEqual
-            ) || expression_references_var(right, var)
-            {
-                return None;
-            }
-            let value = self.evaluate_expr_with_context(right, outer).ok()?;
-            let comparable = match &value {
-                Value::Number(_) => true,
-                Value::String(_) | Value::Bool(_) => *op == Equal,
-                _ => false,
-            };
-            if !comparable {
-                return None;
-            }
-            plan.conds.push(Cond {
-                column: column(left)?,
-                op: op.clone(),
-                value,
-            });
+            plan.preds
+                .push(self.columnar_pred(conjunct, var, &column, outer)?);
         }
         for (_, expr) in &found.collect.group_vars {
-            plan.keys.push(column(expr)?);
+            plan.keys.push(match expr {
+                Expression::FunctionCall { name, args }
+                    if name.eq_ignore_ascii_case("TIME_BUCKET") && args.len() == 2 =>
+                {
+                    let Expression::Literal(Value::String(interval)) = &args[1] else {
+                        return None;
+                    };
+                    // Weeks are counted from a Monday, months have no fixed
+                    // length: the builtin's own business.
+                    let unit = interval.trim_end().to_ascii_lowercase();
+                    if unit.ends_with('w') || unit.ends_with("week") || unit.ends_with("weeks") {
+                        return None;
+                    }
+                    match parse_interval(interval).ok()? {
+                        Interval::Fixed(step) if step > 0 => Key::Bucket {
+                            column: column(&args[0])?,
+                            step,
+                        },
+                        _ => return None,
+                    }
+                }
+                other => Key::Column(column(other)?),
+            });
         }
         for aggregate in &found.collect.aggregates {
             plan.args.push(match &aggregate.argument {
@@ -925,6 +1213,92 @@ impl QueryExecutor<'_> {
             plan.kinds.push(kind);
         }
         Some(plan)
+    }
+
+    /// One conjunct of a FILTER as what the arrays answer: a comparison of
+    /// a column of `var` with a constant, on either side, an `IN` a list
+    /// of constants, or such joined by `AND` and `OR`.
+    fn columnar_pred(
+        &self,
+        expr: &Expression,
+        var: &str,
+        column: &dyn Fn(&Expression) -> Option<String>,
+        outer: &Context,
+    ) -> Option<Pred> {
+        use BinaryOperator::*;
+        let Expression::BinaryOp { left, op, right } = expr else {
+            return None;
+        };
+        // A constant the arrays compare with: of one of the kinds a column
+        // holds as an array, or null.
+        let constant = |expr: &Expression| -> Option<Value> {
+            if expression_references_var(expr, var) {
+                return None;
+            }
+            self.evaluate_expr_with_context(expr, outer).ok()
+        };
+        let comparable = |value: &Value| {
+            matches!(
+                value,
+                Value::Number(_) | Value::String(_) | Value::Bool(_) | Value::Null
+            )
+        };
+        match op {
+            And | Or => {
+                let sides = vec![
+                    self.columnar_pred(left, var, column, outer)?,
+                    self.columnar_pred(right, var, column, outer)?,
+                ];
+                Some(if *op == And {
+                    Pred::All(sides)
+                } else {
+                    Pred::Any(sides)
+                })
+            }
+            In => {
+                let name = column(left)?;
+                let Value::Array(values) = constant(right)? else {
+                    return None;
+                };
+                // Equal to one of them, as `==` compares.
+                values
+                    .into_iter()
+                    .map(|value| {
+                        comparable(&value).then(|| {
+                            Pred::Cmp(Cond {
+                                column: name.clone(),
+                                op: Equal,
+                                value,
+                            })
+                        })
+                    })
+                    .collect::<Option<Vec<Pred>>>()
+                    .map(Pred::Any)
+            }
+            Equal | NotEqual | LessThan | LessThanOrEqual | GreaterThan | GreaterThanOrEqual => {
+                // `column <op> constant`, or the same the other way round.
+                let (name, value, op) = match (column(left), column(right)) {
+                    (Some(name), None) => (name, constant(right)?, op.clone()),
+                    (None, Some(name)) => {
+                        let mirrored = match op {
+                            LessThan => GreaterThan,
+                            LessThanOrEqual => GreaterThanOrEqual,
+                            GreaterThan => LessThan,
+                            GreaterThanOrEqual => LessThanOrEqual,
+                            other => other.clone(),
+                        };
+                        (name, constant(left)?, mirrored)
+                    }
+                    _ => return None,
+                };
+                comparable(&value).then_some(Pred::Cmp(Cond {
+                    column: name,
+                    op,
+                    value,
+                }))
+            }
+            _ => None,
+        }
     }
 
     /// Each group into the fold the ordinary path fills, with the state of
@@ -949,6 +1323,7 @@ impl QueryExecutor<'_> {
                         .map_or(Datum::Null, Datum::Num),
                     Atom::Str(s) => Datum::Str(s.as_ref()),
                     Atom::Bool(b) => Datum::Bool(*b),
+                    Atom::Null => Datum::Null,
                 })
                 .collect();
             let args: Vec<Option<Slice<'_>>> = col_plan
@@ -956,14 +1331,23 @@ impl QueryExecutor<'_> {
                 .iter()
                 .zip(&group.accs)
                 .map(|(arg, acc)| {
-                    arg.as_ref().map(|_| match (acc.min, acc.max) {
-                        (Some(min), Some(max)) => Slice::Total {
+                    // The rows of the group whose argument is not null.
+                    let rows = group.count.saturating_sub(acc.missing) as usize;
+                    arg.as_ref().map(|_| match (acc.min, acc.max, acc.missing) {
+                        (Some(min), Some(max), 0) => Slice::Total {
                             sum: &acc.sum,
                             min: number(min),
                             max: number(max),
                         },
                         // A column of strings or booleans: counted.
-                        _ => Slice::Other,
+                        (_, _, 0) => Slice::Other,
+                        (Some(min), Some(max), _) => Slice::TotalOf {
+                            rows,
+                            sum: &acc.sum,
+                            min: number(min),
+                            max: number(max),
+                        },
+                        _ => Slice::OtherOf(rows),
                     })
                 })
                 .collect();
@@ -1039,6 +1423,8 @@ impl QueryExecutor<'_> {
             DbResult::Ok(())
         };
         if !left.is_empty() {
+            crate::storage::columnar::BLOCKS_FOLDED_AS_ROWS
+                .fetch_add(left.len() as u64, std::sync::atomic::Ordering::Relaxed);
             columnar.for_each_blocks(1, Some(&left), |blocks| {
                 for block in blocks {
                     for row in 0..block.len() {
@@ -1144,12 +1530,12 @@ impl QueryExecutor<'_> {
         let total: usize = set
             .blocks
             .iter()
-            .map(|block| match col_plan.conds.first() {
-                Some(Cond {
+            .map(|block| match col_plan.preds.first() {
+                Some(Pred::Cmp(Cond {
                     column,
                     op: BinaryOperator::Equal,
                     value: Value::String(wanted),
-                }) => block.column(column).map_or(block.len(), |c| match &c.data {
+                })) => block.column(column).map_or(block.len(), |c| match &c.data {
                     ColData::Str { dict, .. } if c.nulls.is_none() => dict
                         .binary_search_by(|d| d.as_str().cmp(wanted))
                         .map_or(0, |code| c.rows_of(code as u32).len()),
@@ -1167,17 +1553,34 @@ impl QueryExecutor<'_> {
         // the few groups of each thread merged.
         let by_key = col_plan.keys.len() == 1
             && set.blocks.iter().find(|b| b.len() > 0).is_some_and(|b| {
-                b.column(&col_plan.keys[0])
+                b.column(col_plan.keys[0].column())
                     .is_some_and(|c| matches!(c.data, ColData::Int(_) | ColData::Float(_)))
             });
         let per = set.blocks.len().div_ceil(threads).max(1);
-        // An integer key within a small range: groups by position.
-        let ranged = by_key
+        // An integer key within a small range: groups by position. Only
+        // for a key that is a column, and when no block holds a null in
+        // the key or in an argument: positions hold neither.
+        let plain_key = matches!(col_plan.keys.first(), Some(Key::Column(_)));
+        let read = col_plan
+            .keys
+            .iter()
+            .map(Key::column)
+            .chain(col_plan.args.iter().flatten().map(String::as_str));
+        let no_null = plain_key
+            && read.into_iter().all(|name| {
+                set.blocks
+                    .iter()
+                    .all(|b| b.stats(name).is_some_and(|stats| !stats.nulls))
+            });
+        let ranged = (by_key && no_null)
             .then(|| {
                 set.blocks
                     .iter()
                     .filter(|b| b.len() > 0)
-                    .map(|b| b.column(&col_plan.keys[0]).and_then(Column::int_range))
+                    .map(|b| {
+                        b.column(col_plan.keys[0].column())
+                            .and_then(Column::int_range)
+                    })
                     .try_fold((i64::MAX, i64::MIN), |(lo, hi), range| {
                         range.map(|(a, b)| (lo.min(a), hi.max(b)))
                     })
@@ -1447,6 +1850,8 @@ impl QueryExecutor<'_> {
             DbResult::Ok(())
         };
         left.sort_unstable();
+        crate::storage::columnar::BLOCKS_FOLDED_AS_ROWS
+            .fetch_add(left.len() as u64, std::sync::atomic::Ordering::Relaxed);
         for at in left {
             let block = &set.blocks[at];
             for row in 0..block.len() {
