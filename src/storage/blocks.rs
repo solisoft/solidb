@@ -1011,20 +1011,27 @@ impl BlockSet {
             let fingerprint = keys[from..to]
                 .iter()
                 .fold(0, |f, key| f ^ key_hash(&doc_key(key)));
-            let rows: Option<Vec<Vec<Value>>> = docs.as_ref().and_then(|(all, ends)| {
-                (from..to)
-                    .map(|i| {
-                        let start = if i == 0 { 0 } else { ends[i - 1] };
-                        row_of(&all[start..ends[i]], &fields)
-                    })
-                    .collect()
+            let columns = docs.as_ref().and_then(|(all, ends)| {
+                let doc = |i: usize| {
+                    let start = if i == 0 { 0 } else { ends[i - 1] };
+                    &all[start..ends[i]]
+                };
+                // Straight from the stored bytes when every document
+                // holds plain numbers and strings there; else through
+                // decoded documents, which decide what a block can hold.
+                columns_from_bytes((from..to).map(doc), &fields).or_else(|| {
+                    (from..to)
+                        .map(|i| row_of(doc(i), &fields))
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(columns_of)
+                })
             });
             Stored {
                 lo: block_lo.to_string(),
                 hi: block_hi.to_string(),
                 rows: (to - from) as u64,
                 fingerprint,
-                columns: rows.and_then(columns_of),
+                columns,
             }
         };
         if starts.len() == 1 {
@@ -1095,6 +1102,163 @@ fn row_of(bytes: &[u8], fields: &[String]) -> Option<Vec<Value>> {
             .map(|f| object.get(f).cloned().unwrap_or(Value::Null))
             .collect(),
     )
+}
+
+/// A field of a stored document that a column takes as it is.
+#[derive(Clone, Copy)]
+enum Cell<'a> {
+    Int(i64),
+    Float(f64),
+    Str(&'a str),
+}
+
+/// The MessagePack value `raw` as a cell: an integer an `i64` holds, a
+/// finite 64-bit float, a string. `None` for anything else, which is left
+/// to the decoder.
+fn cell_of(raw: &[u8]) -> Option<Cell<'_>> {
+    let (&marker, rest) = raw.split_first()?;
+    fn text(bytes: Option<&[u8]>) -> Option<Cell<'_>> {
+        std::str::from_utf8(bytes?).ok().map(Cell::Str)
+    }
+    Some(match marker {
+        0x00..=0x7f => Cell::Int(i64::from(marker)),
+        0xe0..=0xff => Cell::Int(i64::from(marker as i8)),
+        0xcc => Cell::Int(i64::from(*rest.first()?)),
+        0xcd => Cell::Int(i64::from(u16::from_be_bytes(
+            rest.get(..2)?.try_into().ok()?,
+        ))),
+        0xce => Cell::Int(i64::from(u32::from_be_bytes(
+            rest.get(..4)?.try_into().ok()?,
+        ))),
+        0xcf => Cell::Int(i64::try_from(u64::from_be_bytes(rest.get(..8)?.try_into().ok()?)).ok()?),
+        0xd0 => Cell::Int(i64::from(*rest.first()? as i8)),
+        0xd1 => Cell::Int(i64::from(i16::from_be_bytes(
+            rest.get(..2)?.try_into().ok()?,
+        ))),
+        0xd2 => Cell::Int(i64::from(i32::from_be_bytes(
+            rest.get(..4)?.try_into().ok()?,
+        ))),
+        0xd3 => Cell::Int(i64::from_be_bytes(rest.get(..8)?.try_into().ok()?)),
+        0xcb => {
+            let f = f64::from_be_bytes(rest.get(..8)?.try_into().ok()?);
+            if !f.is_finite() {
+                return None;
+            }
+            Cell::Float(f)
+        }
+        0xa0..=0xbf => text(rest.get(..usize::from(marker & 0x1f)))?,
+        0xd9 => text(rest.get(1..1 + usize::from(*rest.first()?)))?,
+        0xda => {
+            let len = usize::from(u16::from_be_bytes(rest.get(..2)?.try_into().ok()?));
+            text(rest.get(2..2 + len))?
+        }
+        0xdb => {
+            let len = u32::from_be_bytes(rest.get(..4)?.try_into().ok()?) as usize;
+            text(rest.get(4..4usize.checked_add(len)?))?
+        }
+        _ => return None,
+    })
+}
+
+/// [`columns_of`] for stored documents, their fields read where they lie:
+/// what sealing a block costs is mostly decoding its documents, and a
+/// decoded document is a map of owned values built to be read once. `None`
+/// whenever a document is not the plain case — an older format, a field
+/// missing or of another kind, a system field asked for — and then the
+/// caller decodes: the two must give the same columns, which a test holds
+/// them to.
+fn columns_from_bytes<'a>(
+    docs: impl Iterator<Item = &'a [u8]>,
+    fields: &[String],
+) -> Option<Columns> {
+    let width = fields.len();
+    if width == 0 || fields.iter().any(|f| f.starts_with('_')) {
+        return None;
+    }
+    let mut time: Vec<i64> = Vec::new();
+    let mut cells: Vec<Vec<Cell<'a>>> = vec![Vec::new(); width - 1];
+    let mut found: Vec<Option<Cell<'a>>> = vec![None; width];
+    for bytes in docs {
+        let doc = super::serializer::StoredDocRef::parse(bytes)?;
+        found.iter_mut().for_each(|f| *f = None);
+        let mut plain = true;
+        super::raw_rows::visit_map(doc.data, |key, value| {
+            // (A field given twice: the last one, as a decoded map keeps.)
+            if let Some(at) = fields.iter().position(|f| f.as_bytes() == key) {
+                found[at] = cell_of(value);
+                plain &= found[at].is_some();
+            }
+        })?;
+        if !plain {
+            return None;
+        }
+        let Cell::Int(at) = found[0]? else {
+            return None;
+        };
+        time.push(at);
+        for (column, cell) in cells.iter_mut().zip(&found[1..]) {
+            column.push((*cell)?);
+        }
+    }
+    if time.is_empty() {
+        return None;
+    }
+    let cols = cells
+        .iter()
+        .map(|column| {
+            let ints = column.iter().filter(|c| matches!(c, Cell::Int(_))).count();
+            let strs = column.iter().filter(|c| matches!(c, Cell::Str(_))).count();
+            let number = |c: &Cell<'_>| match *c {
+                Cell::Int(i) => i as f64,
+                Cell::Float(f) => f,
+                Cell::Str(_) => 0.0,
+            };
+            if strs == column.len() {
+                let text = |c: &Cell<'a>| match *c {
+                    Cell::Str(s) => s,
+                    _ => "",
+                };
+                let mut dict: Vec<&str> = column.iter().map(text).collect();
+                dict.sort_unstable();
+                dict.dedup();
+                let codes = column
+                    .iter()
+                    .map(|c| dict.binary_search(&text(c)).unwrap_or(0) as u32)
+                    .collect();
+                Some(Column::Str {
+                    dict: dict.into_iter().map(str::to_string).collect(),
+                    codes,
+                })
+            } else if strs > 0 {
+                // Strings among numbers: for the decoder to refuse.
+                None
+            } else if ints == column.len() {
+                Some(Column::Int(
+                    column
+                        .iter()
+                        .map(|c| match *c {
+                            Cell::Int(i) => i,
+                            _ => 0,
+                        })
+                        .collect(),
+                ))
+            } else if ints == 0 {
+                Some(Column::Float(column.iter().map(number).collect()))
+            } else {
+                // Integers among floats are kept as floats, which holds
+                // those up to 2^53 exactly.
+                let fits = |c: &Cell<'_>| match *c {
+                    Cell::Int(i) => i.unsigned_abs() <= EXACT_INT as u64,
+                    _ => true,
+                };
+                column.iter().all(fits).then(|| Column::Mixed {
+                    values: column.iter().map(number).collect(),
+                    ints: column.iter().map(|c| matches!(c, Cell::Int(_))).collect(),
+                })
+            }
+        })
+        .collect::<Option<Vec<Column>>>()?;
+    Some(arrange(time, cols))
 }
 
 /// The rows as columns, ordered by the string columns then by time; `None`
@@ -1582,5 +1746,123 @@ pub(crate) fn stop_sealer(db: &Arc<DB>) {
     drop(sealer);
     if let Some(thread) = thread {
         let _ = thread.join();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::document::Document;
+    use crate::storage::serializer::serialize_doc;
+    use serde_json::json;
+
+    fn stored(docs: &[Value]) -> Vec<Vec<u8>> {
+        docs.iter()
+            .enumerate()
+            .map(|(i, data)| {
+                let doc = Document::with_key("c", format!("k{i:05}"), data.clone());
+                serialize_doc(&doc).unwrap()
+            })
+            .collect()
+    }
+
+    fn decoded(bytes: &[Vec<u8>], fields: &[String]) -> Option<Columns> {
+        bytes
+            .iter()
+            .map(|b| row_of(b, fields))
+            .collect::<Option<Vec<_>>>()
+            .and_then(columns_of)
+    }
+
+    fn same(docs: &[Value], fields: &[&str], plain: bool) {
+        let fields: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
+        let bytes = stored(docs);
+        let direct = columns_from_bytes(bytes.iter().map(Vec::as_slice), &fields);
+        assert_eq!(direct.is_some(), plain, "{docs:?}");
+        if let Some(direct) = direct {
+            let through = decoded(&bytes, &fields).expect("the decoder takes what the bytes give");
+            assert_eq!(
+                bincode::serialize(&direct).unwrap(),
+                bincode::serialize(&through).unwrap(),
+                "{docs:?}"
+            );
+        }
+    }
+
+    /// Columns read from the stored bytes are the columns decoded documents
+    /// give, and anything but plain numbers and strings is left to the
+    /// decoder.
+    #[test]
+    fn columns_from_bytes_are_the_decoded_ones() {
+        let points: Vec<Value> = (0..3_000i64)
+            .map(|i| {
+                json!({
+                    "series": format!("s{:03}", (i * 7) % 41),
+                    "ts": 1_760_000_000_000i64 + (i / 41) * 1_000 - (i % 5) * 3,
+                    "v": ((i * 7919) % 1000) as f64 / if i % 3 == 0 { 4.0 } else { 3.0 },
+                    "n": (i * 31) % 17 - 8,
+                    "m": if i % 2 == 0 { json!(i % 9) } else { json!((i % 9) as f64 + 0.5) },
+                    "big": i64::MAX - i,
+                    "other": {"left": "out"},
+                    "name": "é𝄞",
+                })
+            })
+            .collect();
+        same(
+            &points,
+            &["ts", "series", "v", "n", "m", "big", "name"],
+            true,
+        );
+        same(&points, &["ts", "v"], true);
+        same(&points[..1], &["ts", "series"], true);
+        // Integers every width MessagePack has, and a long string.
+        let widths: Vec<Value> = [
+            0i64,
+            -1,
+            127,
+            128,
+            -32,
+            -33,
+            255,
+            256,
+            -129,
+            65_535,
+            65_536,
+            -32_769,
+            1 << 32,
+            -(1 << 40),
+            i64::MIN + 1,
+        ]
+        .iter()
+        .map(|n| json!({"ts": n, "s": "x".repeat((n.unsigned_abs() % 300) as usize)}))
+        .collect();
+        same(&widths, &["ts", "s"], true);
+
+        // Left to the decoder: a field missing, null, a boolean, an array,
+        // strings among numbers, a time that is not an integer, an integer
+        // past i64, a system field, no document.
+        let plain = json!({"ts": 5, "v": 1.5, "s": "a"});
+        for odd in [
+            json!({"ts": 5, "s": "a"}),
+            json!({"ts": 5, "v": null, "s": "a"}),
+            json!({"ts": 5, "v": true, "s": "a"}),
+            json!({"ts": 5, "v": [1], "s": "a"}),
+            json!({"ts": 5, "v": "1.5", "s": "a"}),
+            json!({"ts": 5.5, "v": 1.5, "s": "a"}),
+            json!({"ts": 5, "v": u64::MAX, "s": "a"}),
+        ] {
+            same(&[plain.clone(), odd], &["ts", "v", "s"], false);
+        }
+        same(std::slice::from_ref(&plain), &["ts", "_key"], false);
+        same(&[], &["ts", "v"], false);
+        // Mixed numbers one of which a float does not hold exactly.
+        same(
+            &[
+                json!({"ts": 1, "v": 1.5}),
+                json!({"ts": 2, "v": (1i64 << 53) + 1}),
+            ],
+            &["ts", "v"],
+            false,
+        );
     }
 }
