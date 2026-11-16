@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+## [2.12.1](https://github.com/solisoft/solidb/compare/v2.12.0...v2.12.1) (2026-11-16)
+
+Columnar collections on a table that keeps changing: indexes are built in
+the background, survive the removal of the oldest rows and take a seventh
+of the space; the aggregate endpoint takes a filter and no longer reads row
+by row; more SDBQL aggregations are answered from the column arrays.
+
+A node on 2.12.0 does not read a columnar index written by 2.12.1: after a
+downgrade, drop the index and create it again. 2.12.1 reads the indexes of
+2.12.0 as they are.
+
+### Added
+
+- **Columnar indexes built in the background.** `POST /_api/database/:db/columnar/:collection/index?wait=false` answers `202` at once with a `job` id and builds the index on a thread of the server; `GET …/columnar/:collection/index/:column` reports the build (`status`, `rows_done`, `rows_total`), then the index (`rows` it holds, `size_bytes`). The build is written in the collection's metadata before it starts, so one that a restart interrupts is started again when the collection is next read, under the same job; `DELETE …/index/:column` calls a running build off. Without `wait=false` the endpoint answers as before, once the index is built. `?rebuild=true` builds an index again from the rows as they are, which brings under it the rows inserted since. `GET …/indexes` reports, for each index, the rows it holds and its size, and the builds that have not ended. In a cluster the index is announced to the peers when the build is accepted, and each builds its own. See Columnar › Advanced Indexing.
+
+- **`POST …/columnar/:collection/aggregate` takes a `filter`**, the one `/query` takes (a comparison, or `{"and": […]}` / `{"or": […]}`): only the rows it keeps are aggregated, with or without `group_by`. The endpoint used to ignore the field and answer for every row, so "the average per metric over the last 30 days" came back as the average over everything. The average per metric over the last 30 days of 3.65 million rows: 32 ms for 500 groups.
+
+- **`benchmarks/columnar_index.py`**: a history of metric values (500 metrics × 20 perimeters × 365 days = 3.65 million rows, generated the same at each run) loaded into a columnar collection on a throwaway server, with the time of the load, of the index builds, of an insert of 10,000 rows with and without indexes, of five questions and of a delete of half the rows, and the sizes. Every answer is checked against the generator's formula. The figures below come from it, on the same machine, 2.12.0 then 2.12.1.
+
+### Changed
+
+- **A grouped aggregate over the HTTP endpoint and the driver reads the blocks once.** `aggregate` with `group_by` listed the rows by id, then found each one again by id in a set of rows built for it alone, once per group column, and read the aggregated column once more per group: 124.8 s for 500 groups of 3.65 million rows. The groups are now folded in one pass over the column arrays: 0.33 s. The results are the same, down to a group key that reads as a number coming back as a float.
+
+- **Deleting by filter removes the rows where the filter found them.** `POST …/columnar/:collection/delete` with a `filter` listed the ids of the rows, then looked for each one again among the blocks: 9.5 s for the 1.81 million rows older than six months, out of 3.65 million. 0.15 s now: a block whose rows all go is removed as one key.
+
+- **A columnar index takes a seventh of the space.** The positions of an entry were stored as a JSON array, about eight bytes a row: two sorted indexes on 3.65 million rows took 56 MB, for 29 MB of rows. They are stored as packed distances: 7.6 MB. Entries written by 2.12.0 and earlier are still read.
+
+- **An index goes on answering after the oldest rows are removed.** A retention, or a delete of everything before a date, moves every row that stays; an index then answered for none of them until it was created again, and nothing said so. It now keeps how many rows left the front and answers for the rows it held. A delete in the middle still leaves it answering for the rows before the first one removed; `rows` in `GET …/indexes` says how many that is.
+
+- **Building an index does not hold up inserts.** The build held the collection's write lock from the first row read to the write. It now holds it to take the rows as they stand and again to write, and starts again if a write moved a row in between (a delete, a replicated row with an older id); rows appended meanwhile are simply after those the index holds. Dropping an index removes its entries, its metadata and the schema flag in one write.
+
+- **More columnar aggregations are answered from the column arrays.** What 2.12.0 still computed from rows, about a second per million, is folded from the arrays: conditions with `NOT`, `NOT IN`, a comparison of two columns, a column of values of several kinds, and any condition computed from the columns (`CONTAINS(r.host, "db")`, `r.a + r.b > 10`); keys and aggregate arguments that are expressions of the columns (`SUM(r.price * r.qty)`, `COLLECT k = UPPER(r.host)`, `r.bytes % 10`, `DATE_TRUNC(r.ts, "hour")`, `TIME_BUCKET` of weeks, of months, with options); and `COUNT_DISTINCT`. Measured on a million rows: `SUM(r.price * r.qty)` by host 1,269 ms → 6 ms; `r.status NOT IN [200]` 1,313 → 2.3 ms; two columns compared 1,243 → 3.1 ms; `COUNT_DISTINCT(r.user)` by status 1,322 → 11 ms; weekly buckets 1,307 → 11 ms; `DATE_TRUNC` to the hour 1,476 → 136 ms; monthly buckets 1,420 → 264 ms. Still from rows: a key or an argument that is a column of values of several kinds, a key whose values are integers and floats together (`r.bytes / 100`), a function that is not pure (`RAND()`), an aggregate other than the six above.
+
 ## [2.12.0](https://github.com/solisoft/solidb/compare/v2.11.0...v2.12.0) (2026-11-16)
 
 Counter fields: a collection declares that a field is numbered by the
