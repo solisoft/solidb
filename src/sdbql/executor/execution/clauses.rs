@@ -299,6 +299,46 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A columnar collection read as rows: only the columns
+                    // the query reads, and only the rows its FILTERs can
+                    // keep, are built. The FILTERs that follow still run.
+                    if is_collection {
+                        if let Some(first) = rows.first() {
+                            if let Some(docs) =
+                                self.columnar_for_rows(for_clause, &filters, first, scan_limit)?
+                            {
+                                let mut new_rows =
+                                    Vec::with_capacity(rows.len().saturating_mul(docs.len()));
+                                // The rows are moved into the last outer
+                                // row (the only one, most of the time) and
+                                // copied for the others.
+                                let (last, others) = rows.split_last().unwrap_or((first, &[]));
+                                for ctx in others {
+                                    for doc in &docs {
+                                        let mut new_ctx = ctx.clone();
+                                        new_ctx.insert(for_clause.variable.clone(), doc.clone());
+                                        new_rows.push(new_ctx);
+                                        if new_rows.len() % 65_536 == 0 {
+                                            self.check_budget(new_rows.len())?;
+                                        }
+                                    }
+                                }
+                                for doc in docs {
+                                    let mut new_ctx = last.clone();
+                                    new_ctx.insert(for_clause.variable.clone(), doc);
+                                    new_rows.push(new_ctx);
+                                    if new_rows.len() % 65_536 == 0 {
+                                        self.check_budget(new_rows.len())?;
+                                    }
+                                }
+                                rows = new_rows;
+                                self.check_budget(rows.len())?;
+                                i += 1;
+                                continue;
+                            }
+                        }
+                    }
+
                     // The index read returns unfiltered rows; a collection
                     // under a row policy takes the scan below (audit H2).
                     if is_collection

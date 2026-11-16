@@ -204,6 +204,22 @@ impl<'a> QueryExecutor<'a> {
         name: &str,
         limit: Option<usize>,
     ) -> DbResult<Option<Vec<Value>>> {
+        let Some(columnar) = self.columnar_source(name)? else {
+            return Ok(None);
+        };
+        let meta = columnar.metadata()?;
+        let column_names: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+        // Stops at the limit: every row used to be built and the rest
+        // thrown away.
+        Ok(Some(columnar.read_columns_limited(&column_names, limit)?))
+    }
+
+    /// The columnar collection `name` when a `FOR` reads one, with the
+    /// guards every read of it goes through.
+    pub(crate) fn columnar_source(
+        &self,
+        name: &str,
+    ) -> DbResult<Option<crate::storage::ColumnarCollection>> {
         // This runs before the document path's guard, so keep the invariant
         // uniform: a credential name is never served from a query, whatever
         // storage layout happens to sit behind it. (A columnar collection
@@ -223,17 +239,11 @@ impl<'a> QueryExecutor<'a> {
         }
         self.refuse_untracked_read("a columnar collection")?;
 
-        let columnar =
-            crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
-
-        let meta = columnar.metadata()?;
-        let column_names: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
-
-        let mut rows = columnar.read_columns(&column_names, None)?;
-        if let Some(n) = limit {
-            rows.truncate(n);
-        }
-        Ok(Some(rows))
+        Ok(Some(crate::storage::ColumnarCollection::load(
+            name.to_string(),
+            db_name,
+            database.db_arc(),
+        )?))
     }
 
     /// Try to optimize columnar aggregation queries

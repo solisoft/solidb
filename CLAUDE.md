@@ -903,6 +903,20 @@ Rules that keep it sound:
   dropped (an index is stored under the column's name). Replicated as
   `ColumnarAddColumn` / `ColumnarDropColumn` / `ColumnarRenameColumn`,
   each applied once (`apply_column_change`).
+- **A `FOR` over a columnar collection builds what the query needs**
+  (`sdbql/executor/execution/columnar_rows.rs`): the columns of the scan's
+  projection, and the rows its leading FILTERs keep, through
+  `ColumnarCollection::scan_filtered` (one column read, or an index). The
+  FILTER clauses still run on those rows, so a pushed filter may keep too
+  much but must never keep too little: a comparison is pushed only when
+  the collection answers it exactly as SDBQL does, which today means a
+  constant of the column's own kind (the collection compares an equality
+  as JSON values, to which `3` and `3.0` differ; floats and string ranges
+  are left to the FILTER). A new comparison pushed down has to hold to
+  that, and `tests/columnar_rows_tests.rs` runs each query on a document
+  collection with the same rows. A scan limit stops the read and pushes
+  no filter (the limit counts rows before the FILTERs). A filter whose
+  constant names an outer row is not pushed.
 - **Compacting merges runs of neighbouring blocks** that fit in one
   (`ColumnarCollection::compact`, `POST …/compact`): the rows of a run are
   sorted by id and sealed again as one block, each run under the write

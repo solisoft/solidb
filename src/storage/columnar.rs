@@ -1673,6 +1673,31 @@ impl ColumnarCollection {
         })
     }
 
+    /// The first `limit` rows in id order (all of them without a limit),
+    /// with these columns. Stops at the limit: nothing is built past it.
+    pub fn read_columns_limited(
+        &self,
+        columns: &[&str],
+        limit: Option<usize>,
+    ) -> DbResult<Vec<Value>> {
+        for column in columns {
+            self.check_column(column)?;
+        }
+        let rows = self.row_set()?;
+        Ok(rows
+            .positions()
+            .take(limit.unwrap_or(usize::MAX))
+            .map(|at| {
+                Value::Object(
+                    columns
+                        .iter()
+                        .map(|column| (column.to_string(), rows.value(at, column)))
+                        .collect(),
+                )
+            })
+            .collect())
+    }
+
     /// Get total row count
     pub fn count(&self) -> usize {
         self.meta.read().map(|m| m.row_count as usize).unwrap_or(0)
