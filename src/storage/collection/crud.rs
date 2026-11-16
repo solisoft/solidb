@@ -498,21 +498,38 @@ impl Collection {
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
         }
+        // With a counter, a key that is not stored is a numbered insert:
+        // like one, it is validated with a value of the number's shape in
+        // the field, and takes the counters' lock before its key.
+        let fresh = match self.counters() {
+            Some(defs) => {
+                let stored = data
+                    .get("_key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|key| self.get(key).is_ok());
+                (!stored).then_some(defs)
+            }
+            None => None,
+        };
+        let mut validated = None;
+        if let Some(defs) = &fresh {
+            let mut numbered = data.clone();
+            self.expect_numbers(defs, &mut numbered)?;
+            validated = Some(numbered);
+        }
         if let Some(validator) = self.get_cached_schema_validator()? {
-            validator.validate(&data).map_err(|e| {
-                DbError::InvalidDocument(format!("Schema validation failed: {}", e))
-            })?;
+            validator
+                .validate(validated.as_ref().unwrap_or(&data))
+                .map_err(|e| {
+                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                })?;
         }
 
         let key = take_key(&mut data)?;
-        // With a counter, a key that is not stored is a numbered insert:
-        // the lock is taken before the key, as every numbered insert does,
-        // and given back unused when the key turns out to be stored.
         let _gate = self.enter_gate(false)?;
-        let numbering = match self.counters() {
-            Some(defs) if self.get(&key).is_err() => {
-                let mut numbered = data.clone();
-                self.expect_numbers(&defs, &mut numbered)?;
+        let numbering = match (fresh, validated) {
+            (Some(defs), Some(mut numbered)) => {
+                take_key(&mut numbered)?;
                 let numbering = self.number(&defs, std::iter::once(&mut numbered))?;
                 Some((numbering, numbered))
             }
@@ -530,7 +547,7 @@ impl Collection {
                             self.insert_locked(doc, true, Returning::Document, Some(numbering))
                         }
                         None => {
-                            self.refuse_unnumbered("a replace")?;
+                            self.refuse_unnumbered("it replaces")?;
                             self.insert_locked(doc, true, Returning::Document, None)
                         }
                     }
@@ -1120,6 +1137,9 @@ impl Collection {
         }
 
         let _gate = self.enter_gate(false)?;
+        // Before the keys, as every numbered insert takes it: which of the
+        // documents are new, and so numbered, is known only under them.
+        let counters = self.counters().map(|defs| (defs, self.hold_counters()));
         let _key_guard = self.lock_keys(documents.iter().map(|(k, _)| k.as_str()));
 
         let db = &self.db;
@@ -1152,14 +1172,40 @@ impl Collection {
                     existing.update(data);
                     (Some(old_value), existing)
                 }
-                None => {
-                    self.refuse_unnumbered("a merge of documents by key")?;
-                    (None, Document::with_key(&self.name, key.clone(), data))
-                }
+                None => (None, Document::with_key(&self.name, key.clone(), data)),
             };
             positions.insert(key.clone(), pending.len());
             pending.push((key, old_value, doc, existed));
         }
+
+        // The documents this batch creates are numbered, in batch order;
+        // those it merges into keep the number they have.
+        let numbering = match counters {
+            Some((defs, lock)) => {
+                for (_, old_value, doc, _) in &pending {
+                    match old_value {
+                        Some(old) => self.numbers_unchanged(old, &doc.data)?,
+                        None => self.refuse_given_numbers(&defs, &doc.data)?,
+                    }
+                }
+                let created = || pending.iter().filter(|(_, old, _, _)| old.is_none());
+                if created().next().is_none() {
+                    None
+                } else {
+                    Some(
+                        self.number_holding(
+                            lock,
+                            &[],
+                            pending
+                                .iter_mut()
+                                .filter(|(_, old, _, _)| old.is_none())
+                                .map(|(_, _, doc, _)| &mut doc.data),
+                        )?,
+                    )
+                }
+            }
+            None => None,
+        };
 
         let versioned = self.is_versioned();
         let mut batch = KvBatch::default();
@@ -1195,8 +1241,9 @@ impl Collection {
         let count = written.len();
 
         // Write all documents in one batch operation
-        db.write(batch)
+        self.write_numbered(batch, &cf, numbering.as_ref())
             .map_err(|e| DbError::InternalError(format!("Failed to batch upsert: {}", e)))?;
+        drop(numbering);
 
         // Update document count (only for new inserts)
         if insert_count > 0 {

@@ -136,22 +136,90 @@ fn the_client_does_not_choose_the_number() {
 }
 
 #[test]
-fn a_merge_by_key_does_not_create_an_unnumbered_document() {
+fn a_merge_by_key_numbers_the_documents_it_creates() {
     let s = shop(json!({"field": "number"}));
     s.invoices.insert(json!({"_key": "a"})).unwrap();
-    // Merging into a stored document is an update.
-    s.invoices
-        .upsert_batch(vec![("a".to_string(), json!({"paid": true}))])
-        .unwrap();
-    let refused = s
+    // Merging into a stored document is an update; a key that is not
+    // stored is a numbered insert. One batch may do both.
+    let written = s
         .invoices
-        .upsert_batch(vec![("b".to_string(), json!({"paid": true}))]);
-    assert!(
-        matches!(refused, Err(DbError::OperationNotSupported(_))),
-        "{:?}",
-        refused
+        .upsert_batch(vec![
+            ("b".to_string(), json!({"paid": false})),
+            ("a".to_string(), json!({"paid": true})),
+            ("c".to_string(), json!({})),
+            ("b".to_string(), json!({"paid": true})),
+        ])
+        .unwrap();
+    assert_eq!(written, 3);
+    let a = s.invoices.get("a").unwrap();
+    assert_eq!(
+        (&a.data["number"], &a.data["paid"]),
+        (&json!(1), &json!(true))
     );
-    assert_eq!(numbers(&s.invoices), [1]);
+    let b = s.invoices.get("b").unwrap();
+    assert_eq!(
+        (&b.data["number"], &b.data["paid"]),
+        (&json!(2), &json!(true))
+    );
+    assert_eq!(s.invoices.get("c").unwrap().data["number"], json!(3));
+
+    // Neither kind of write takes its number from the client.
+    let given = s
+        .invoices
+        .upsert_batch(vec![("d".to_string(), json!({"number": 9}))]);
+    assert!(matches!(given, Err(DbError::BadRequest(_))), "{:?}", given);
+    let changed = s
+        .invoices
+        .upsert_batch(vec![("a".to_string(), json!({"number": 9}))]);
+    assert!(
+        matches!(changed, Err(DbError::BadRequest(_))),
+        "{:?}",
+        changed
+    );
+    // A batch that only merges takes no number.
+    s.invoices
+        .upsert_batch(vec![("c".to_string(), json!({"paid": true}))])
+        .unwrap();
+    assert_eq!(
+        s.invoices.insert(json!({})).unwrap().data["number"],
+        json!(4)
+    );
+    assert_eq!(numbers(&s.invoices), [1, 2, 3, 4]);
+}
+
+#[test]
+fn a_schema_may_require_the_number() {
+    let s = shop(json!({"field": "number", "prefix": "N", "padding": 2}));
+    let schema = solidb::storage::schema::CollectionSchema::new(
+        "strict".to_string(),
+        json!({
+            "type": "object",
+            "required": ["number", "total"],
+            "properties": {"number": {"type": "string"}, "total": {"type": "number"}}
+        }),
+        solidb::storage::schema::SchemaValidationMode::Strict,
+    );
+    s.invoices.set_json_schema(schema).unwrap();
+
+    let a = s.invoices.insert(json!({"total": 1})).unwrap();
+    assert_eq!(a.data["number"], json!("N01"));
+    let batch = s.invoices.insert_batch(vec![json!({"total": 2})]).unwrap();
+    assert_eq!(batch[0].data["number"], json!("N02"));
+    let replaced = s
+        .invoices
+        .insert_or_replace(json!({"_key": "new", "total": 3}))
+        .unwrap();
+    assert_eq!(replaced.data["number"], json!("N03"));
+    // What the schema refuses takes no number.
+    assert!(s.invoices.insert(json!({"total": "x"})).is_err());
+    assert!(s
+        .invoices
+        .insert_or_replace(json!({"_key": "bad"}))
+        .is_err());
+    assert_eq!(
+        s.invoices.insert(json!({"total": 4})).unwrap().data["number"],
+        json!("N04")
+    );
 }
 
 #[test]

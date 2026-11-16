@@ -606,12 +606,14 @@ Rules that keep it sound:
   commit is prepared (`number_operations`, before
   `lock_for_transaction_reading`), the number carried into the updates the
   transaction made to the same key, and a key inserted then deleted takes
-  none; `upsert_batch` refuses to create (`refuse_unnumbered`);
+  none; `upsert_batch` takes the lock before its keys and numbers the
+  documents whose key was not stored (`number_holding`);
   `raw_write_ready` sends the collection the decoded way. A new insert path
   must do one of the two.
 - **The client neither sets nor changes the field**: `expect_numbers` /
   `refuse_given_numbers` on insert, `numbers_unchanged` in
-  `write_update_core`, `update_batch_guarded` and `update_tx_guarded`,
+  `write_update_core`, `update_batch_guarded`, `upsert_batch` and
+  `update_tx_guarded`,
   `keep_numbers` where a replace would drop it. An update path that reaches
   storage without one of them lets a number be rewritten.
 - **A replicated write is not numbered**: `Collection::counters` returns

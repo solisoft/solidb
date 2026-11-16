@@ -141,7 +141,7 @@
               A document inserted in a transaction has no number until the transaction commits: <code class="text-indigo-300">RETURN NEW</code> and the transaction's own reads show it without the field. The commit numbers the documents it inserts, in the order they were inserted, as part of its one atomic write. A document inserted and deleted in the same transaction takes no number.
             </p>
             <p class="text-gray-300 leading-relaxed">
-              Inserts into a collection with a counter are stored one after the other: each holds the counter from the number it takes until its write is done, which is what makes the numbers follow each other without a gap. With <code class="text-indigo-300">durable</code> that is one insert per fsync. A batch (<code class="text-indigo-300">FOR &hellip; INSERT</code>, a bulk insert, a transaction) is one write and one fsync for all its documents.
+              Inserts into a collection with a counter are stored one after the other: each holds the counter from the number it takes until its write is done, which is what makes the numbers follow each other without a gap. With <code class="text-indigo-300">durable</code> that is one insert per fsync, whatever the number of clients: measured over HTTP on a workstation (RocksDB engine, NVMe), single inserts ran at 418 a second from one client and 453 from eight, against 6,500 and 10,000 with <code class="text-indigo-300">durable: false</code> and 7,500 and 10,200 into a collection without a counter. A batch (<code class="text-indigo-300">FOR &hellip; INSERT</code>, a bulk insert, a transaction) is one write and one fsync for all its documents: load many that way.
             </p>
           </div>
         </div>
@@ -181,7 +181,7 @@
               <li><strong class="text-white">No sharded collections.</strong> A counter cannot be declared on a sharded collection, and a collection with a counter cannot be sharded: each shard would count on its own.</li>
               <li><strong class="text-white">Document collections only</strong>, and no system collection.</li>
               <li><strong class="text-white">No takeover from a dead node.</strong> The numbering is handed over by the node that holds it. If that node is lost, the counter has to be dropped and declared again on another, with the next number set by hand.</li>
-              <li><strong class="text-white">Merges by key do not create documents.</strong> An import in upsert mode and an offline client's sync merge documents into what is stored: they update a numbered document, and are refused (<code class="text-indigo-300">501</code>) when the key is not there. Insert instead.</li>
+              <li><strong class="text-white">Merges by key.</strong> An import in upsert mode and an offline client's sync merge documents into what is stored: a document whose key is there keeps its number, and one whose key is not is numbered like an insert. Neither may carry a value for the field.</li>
               <li><strong class="text-white">A deleted document's number is not given again.</strong> Without a gap means no number is skipped when it is given, not that the stored numbers stay contiguous after deletes.</li>
               <li><strong class="text-white">Dump and restore.</strong> <code class="text-indigo-300">solidb-dump</code> writes each counter with its state; <code class="text-indigo-300">solidb-restore</code> loads the documents with their numbers, then declares the counter where the dump left it.</li>
             </ul>

@@ -256,7 +256,22 @@ impl Collection {
         expected: &[CounterDef],
         documents: impl Iterator<Item = &'a mut Value>,
     ) -> DbResult<Numbering> {
-        let lock = self.ks.state().hold_counter_lock();
+        self.number_holding(self.hold_counters(), expected, documents)
+    }
+
+    /// The counters' lock, for a write that takes it before it knows which
+    /// of its documents are new ([`Self::number_holding`]).
+    pub(crate) fn hold_counters(&self) -> HeldCounterLock {
+        self.ks.state().hold_counter_lock()
+    }
+
+    /// [`Self::number`] for a caller that already holds the counters' lock.
+    pub(crate) fn number_holding<'a>(
+        &self,
+        lock: HeldCounterLock,
+        expected: &[CounterDef],
+        documents: impl Iterator<Item = &'a mut Value>,
+    ) -> DbResult<Numbering> {
         // Under the lock: a counter declared, dropped or moved meanwhile is
         // the one that counts.
         let defs = self.counter_defs();
@@ -362,14 +377,13 @@ impl Collection {
         Ok(())
     }
 
-    /// Refuse a write that would create a document without numbering it:
-    /// the paths that merge into whatever is stored (`upsert_batch`) do not
-    /// number.
+    /// Refuse a write that would create a document without numbering it: a
+    /// replace whose document was deleted between its check and its lock.
     pub(crate) fn refuse_unnumbered(&self, what: &str) -> DbResult<()> {
         match self.counters() {
             None => Ok(()),
-            Some(defs) => Err(DbError::OperationNotSupported(format!(
-                "'{}' has a counter ('{}'): {} cannot create a document in it, insert it instead",
+            Some(defs) => Err(DbError::ConflictError(format!(
+                "'{}' has a counter ('{}') and the document {} was deleted meanwhile: retry",
                 self.bare_name(),
                 defs[0].field,
                 what
