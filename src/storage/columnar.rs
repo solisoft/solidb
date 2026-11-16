@@ -592,7 +592,7 @@ impl ColumnarCollection {
         let (mut low, mut high) = (0, rows.len());
         while low < high {
             let middle = low + (high - low) / 2;
-            if rows.uuid(rows.locate(middle)) < id {
+            if rows.uuid(rows.locate(middle)).as_ref() < id {
                 low = middle + 1;
             } else {
                 high = middle;
@@ -984,7 +984,7 @@ impl ColumnarCollection {
                 let gone: std::collections::HashSet<usize> = gone.into_iter().collect();
                 let kept: Vec<(String, serde_json::Map<String, Value>)> = (0..block.len())
                     .filter(|row| !gone.contains(row))
-                    .map(|row| (block.uuids[row].clone(), block.row(row)))
+                    .map(|row| (block.uuids.text(row), block.row(row)))
                     .collect();
                 Some(ColBlock::seal(&names, &kept))
             };

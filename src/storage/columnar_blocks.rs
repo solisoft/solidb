@@ -58,12 +58,122 @@ pub(crate) struct Column {
     range: std::sync::OnceLock<Option<(i64, i64)>>,
 }
 
+/// The ids of a block's rows, ascending. Almost always UUIDs in their
+/// usual text (lower case, hyphens), kept then as their 16 bytes: a
+/// `String` of 36 characters is about 70 bytes of memory a row, half of
+/// what a row of a few columns takes. Bytes order as the texts do. Any
+/// other id keeps the block's ids as texts. Stored as texts either way.
+pub(crate) enum Ids {
+    Uuids(Vec<[u8; 16]>),
+    Texts(Vec<String>),
+}
+
+/// One id, to compare or to write out.
+#[derive(Clone, Copy)]
+pub(crate) enum IdRef<'a> {
+    Uuid([u8; 16]),
+    Text(&'a str),
+}
+
+/// The 16 bytes of `text` if it is a UUID written the usual way.
+fn uuid_bytes(text: &str) -> Option<[u8; 16]> {
+    let id = uuid::Uuid::try_parse(text).ok()?;
+    let mut buf = [0u8; uuid::fmt::Hyphenated::LENGTH];
+    (id.hyphenated().encode_lower(&mut buf) == text).then(|| *id.as_bytes())
+}
+
+impl<'a> IdRef<'a> {
+    pub(crate) fn of(text: &'a str) -> Self {
+        uuid_bytes(text).map_or(IdRef::Text(text), IdRef::Uuid)
+    }
+
+    /// Call `f` with the id's text.
+    fn with_text<T>(&self, f: impl FnOnce(&str) -> T) -> T {
+        match self {
+            IdRef::Text(text) => f(text),
+            IdRef::Uuid(bytes) => {
+                let mut buf = [0u8; uuid::fmt::Hyphenated::LENGTH];
+                f(uuid::Uuid::from_bytes(*bytes)
+                    .hyphenated()
+                    .encode_lower(&mut buf))
+            }
+        }
+    }
+
+    pub(crate) fn text(&self) -> String {
+        self.with_text(str::to_string)
+    }
+}
+
+impl Ord for IdRef<'_> {
+    /// The order of the texts.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (IdRef::Uuid(a), IdRef::Uuid(b)) => a.cmp(b),
+            _ => self.with_text(|a| other.with_text(|b| a.cmp(b))),
+        }
+    }
+}
+
+impl PartialOrd for IdRef<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for IdRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for IdRef<'_> {}
+
+impl Ids {
+    pub(crate) fn of(texts: Vec<String>) -> Self {
+        match texts.iter().map(|t| uuid_bytes(t)).collect() {
+            Some(uuids) => Ids::Uuids(uuids),
+            None => Ids::Texts(texts),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Ids::Uuids(ids) => ids.len(),
+            Ids::Texts(ids) => ids.len(),
+        }
+    }
+
+    pub(crate) fn get(&self, at: usize) -> IdRef<'_> {
+        match self {
+            Ids::Uuids(ids) => IdRef::Uuid(ids[at]),
+            Ids::Texts(ids) => IdRef::Text(&ids[at]),
+        }
+    }
+
+    pub(crate) fn text(&self, at: usize) -> String {
+        self.get(at).text()
+    }
+}
+
+impl Serialize for Ids {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq((0..self.len()).map(|at| self.text(at)))
+    }
+}
+
+impl<'de> Deserialize<'de> for Ids {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<String>::deserialize(deserializer).map(Ids::of)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ColBlock {
     /// The id of the first row when the block was sealed: its key.
     pub(crate) key: String,
     /// The ids of the rows, ascending.
-    pub(crate) uuids: Vec<String>,
+    pub(crate) uuids: Ids,
     /// The columns of the schema, by name, and their values.
     pub(crate) names: Vec<String>,
     pub(crate) cols: Vec<Column>,
@@ -78,7 +188,7 @@ impl ColBlock {
             .collect();
         ColBlock {
             key: rows.first().map(|(id, _)| id.clone()).unwrap_or_default(),
-            uuids: rows.iter().map(|(id, _)| id.clone()).collect(),
+            uuids: Ids::of(rows.iter().map(|(id, _)| id.clone()).collect()),
             names: names.to_vec(),
             cols,
         }
@@ -90,7 +200,7 @@ impl ColBlock {
     pub(crate) fn of_rows(names: &[String], rows: &[Map<String, Value>]) -> Self {
         ColBlock {
             key: String::new(),
-            uuids: Vec::new(),
+            uuids: Ids::Texts(Vec::new()),
             names: names.to_vec(),
             cols: names
                 .iter()
@@ -102,7 +212,7 @@ impl ColBlock {
     /// The block with the ids of its rows, ascending.
     pub(crate) fn identified(mut self, uuids: Vec<String>) -> Self {
         self.key = uuids.first().cloned().unwrap_or_default();
-        self.uuids = uuids;
+        self.uuids = Ids::of(uuids);
         self
     }
 
@@ -119,16 +229,24 @@ impl ColBlock {
 
     /// The position of the row `uuid`, when the block holds it.
     pub(crate) fn find(&self, uuid: &str) -> Option<usize> {
-        self.uuids
-            .binary_search_by(|held| held.as_str().cmp(uuid))
-            .ok()
+        let wanted = IdRef::of(uuid);
+        let (mut low, mut high) = (0, self.len());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            match self.uuids.get(middle).cmp(&wanted) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return Some(middle),
+            }
+        }
+        None
     }
 
     /// The block without its row at `at`.
     pub(crate) fn without(&self, at: usize) -> Self {
         let rows: Vec<(String, Map<String, Value>)> = (0..self.len())
             .filter(|row| *row != at)
-            .map(|row| (self.uuids[row].clone(), self.row(row)))
+            .map(|row| (self.uuids.text(row), self.row(row)))
             .collect();
         let mut block = ColBlock::seal(&self.names, &rows);
         block.key = self.key.clone();
@@ -320,16 +438,16 @@ impl RowSet {
         starts.push(total);
         // In order as they stand when each part starts after the one
         // before it ends.
-        let mut last: Option<&str> = None;
+        let mut last: Option<IdRef<'_>> = None;
         let mut sorted = true;
         let firsts = blocks
             .iter()
             .filter(|b| b.len() > 0)
-            .map(|b| (b.uuids[0].as_str(), b.uuids[b.len() - 1].as_str()))
+            .map(|b| (b.uuids.get(0), b.uuids.get(b.len() - 1)))
             .chain(
                 tail.first()
                     .zip(tail.last())
-                    .map(|(a, b)| (a.0.as_str(), b.0.as_str())),
+                    .map(|(a, b)| (IdRef::of(&a.0), IdRef::of(&b.0))),
             );
         for (first, end) in firsts {
             sorted &= last.is_none_or(|last| last < first);
@@ -341,13 +459,13 @@ impl RowSet {
                 order.extend((0..block.len() as u32).map(|row| (b as u32, row)));
             }
             order.extend((0..tail.len() as u32).map(|row| (blocks.len() as u32, row)));
-            let id = |at: &(u32, u32)| -> &str {
+            let id = |at: &(u32, u32)| -> IdRef<'_> {
                 match blocks.get(at.0 as usize) {
-                    Some(block) => &block.uuids[at.1 as usize],
-                    None => &tail[at.1 as usize].0,
+                    Some(block) => block.uuids.get(at.1 as usize),
+                    None => IdRef::of(&tail[at.1 as usize].0),
                 }
             };
-            order.sort_by(|a, b| id(a).cmp(id(b)));
+            order.sort_by(|a, b| id(a).cmp(&id(b)));
             order
         });
         RowSet {
@@ -375,9 +493,10 @@ impl RowSet {
     /// Where the row `uuid` is, when it exists.
     pub(crate) fn find(&self, uuid: &str) -> Option<(usize, usize)> {
         for (b, block) in self.blocks.iter().enumerate() {
+            let wanted = IdRef::of(uuid);
             let inside = block.len() > 0
-                && block.uuids[0].as_str() <= uuid
-                && uuid <= block.uuids[block.len() - 1].as_str();
+                && block.uuids.get(0) <= wanted
+                && wanted <= block.uuids.get(block.len() - 1);
             if inside {
                 if let Some(row) = block.find(uuid) {
                     return Some((b, row));
@@ -390,10 +509,10 @@ impl RowSet {
             .map(|row| (self.blocks.len(), row))
     }
 
-    pub(crate) fn uuid(&self, at: (usize, usize)) -> &str {
+    pub(crate) fn uuid(&self, at: (usize, usize)) -> std::borrow::Cow<'_, str> {
         match self.blocks.get(at.0) {
-            Some(block) => &block.uuids[at.1],
-            None => &self.tail[at.1].0,
+            Some(block) => std::borrow::Cow::Owned(block.uuids.text(at.1)),
+            None => std::borrow::Cow::Borrowed(&self.tail[at.1].0),
         }
     }
 
@@ -413,5 +532,81 @@ impl RowSet {
     /// Every position, in id order.
     pub(crate) fn positions(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         (0..self.len()).map(|at| self.locate(at))
+    }
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    /// Ids kept as bytes are stored, ordered and found as their texts are.
+    #[test]
+    fn ids_as_bytes_behave_as_their_texts() {
+        let mut texts: Vec<String> = (0..500u128)
+            .map(|i| {
+                uuid::Uuid::from_u128(i.wrapping_mul(0x9e37_79b9_7f4a_7c15_f39c_c060_5ced_c835))
+                    .to_string()
+            })
+            .collect();
+        texts.sort();
+        let ids = Ids::of(texts.clone());
+        assert!(matches!(ids, Ids::Uuids(_)));
+        // Stored as the texts were.
+        assert_eq!(
+            bincode::serialize(&ids).unwrap(),
+            bincode::serialize(&texts).unwrap()
+        );
+        let back: Ids = bincode::deserialize(&bincode::serialize(&texts).unwrap()).unwrap();
+        assert!(matches!(back, Ids::Uuids(_)));
+        for (at, text) in texts.iter().enumerate() {
+            assert_eq!(&ids.text(at), text);
+            assert_eq!(&back.text(at), text);
+        }
+        // The order of the texts, among themselves and against any text.
+        for pair in texts.windows(2) {
+            assert!(IdRef::of(&pair[0]) < IdRef::of(&pair[1]));
+        }
+        for other in [
+            "",
+            "0",
+            "zzz",
+            "0190a000-0000-7000-8000-000000000000",
+            "7FFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+        ] {
+            for text in texts.iter().step_by(37) {
+                assert_eq!(
+                    IdRef::of(text).cmp(&IdRef::of(other)),
+                    text.as_str().cmp(other),
+                    "{text} against {other:?}"
+                );
+            }
+        }
+
+        // An id that is not a UUID written the usual way keeps the texts.
+        for odd in [
+            "row-1",
+            "0190A000-0000-7000-8000-000000000000",
+            "0190a00000007000800000000000000a",
+        ] {
+            let mut mixed = texts.clone();
+            mixed.push(odd.to_string());
+            mixed.sort();
+            let ids = Ids::of(mixed.clone());
+            assert!(matches!(ids, Ids::Texts(_)), "{odd}");
+            assert_eq!(
+                bincode::serialize(&ids).unwrap(),
+                bincode::serialize(&mixed).unwrap()
+            );
+        }
+
+        // A block finds its rows by id either way.
+        let rows: Vec<(String, Map<String, Value>)> =
+            texts.iter().map(|id| (id.clone(), Map::new())).collect();
+        let block = ColBlock::seal(&[], &rows);
+        for (at, text) in texts.iter().enumerate() {
+            assert_eq!(block.find(text), Some(at));
+        }
+        assert_eq!(block.find("nope"), None);
+        assert_eq!(block.find(&uuid::Uuid::from_u128(1).to_string()), None);
     }
 }

@@ -823,7 +823,11 @@ Rules that keep it sound:
   folded the ordinary way: `tests/columnar_blocks_tests.rs` runs each query
   both ways.
 - **The decoded blocks are all kept in memory**, ids of the rows included
-  (1.4 GB for ten million rows of six columns): there is no ceiling yet.
+  (0.9 GB for ten million rows of six columns): there is no ceiling yet.
+  The ids of a block are its rows' UUIDs as 16 bytes each when every one
+  is a UUID in its usual text (`columnar_blocks::Ids`), texts otherwise;
+  they are stored as texts either way, so the format did not change.
+  Compare ids through `IdRef`, which orders them as their texts.
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.
