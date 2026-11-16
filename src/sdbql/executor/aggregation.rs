@@ -282,6 +282,9 @@ pub(super) enum Slice<'a> {
     },
     /// As `Other`, for that many of the rows pushed: the others hold null.
     OtherOf(usize),
+    /// The distinct values of the rows pushed, null among them if a row
+    /// holds it: what `COUNT_DISTINCT` keeps.
+    Each(&'a [Value]),
 }
 
 /// `x` as the number a document holds: an integer when `int`.
@@ -527,7 +530,7 @@ impl AggregateAccumulator {
                         }
                     }
                 }
-                Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => {}
+                Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {}
             },
             Self::Avg { sum, count } => match values {
                 Some(Slice::Int(xs)) => {
@@ -554,7 +557,7 @@ impl AggregateAccumulator {
                     sum.add_slice(xs);
                     *count += xs.len() as i64;
                 }
-                Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => {}
+                Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {}
             },
             Self::Min(_) | Self::Max(_) => {
                 let least = matches!(self, Self::Min(_));
@@ -586,10 +589,19 @@ impl AggregateAccumulator {
                             }
                         })
                         .and_then(|at| number_of(xs[at], ints[at])),
-                    Some(Slice::Other) | Some(Slice::OtherOf(_)) | None => None,
+                    Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {
+                        None
+                    }
                 };
                 if let Some(extreme) = extreme {
                     self.push(Some(Datum::Num(extreme)), ordinal);
+                }
+            }
+            Self::CountDistinct(_) => {
+                if let Some(Slice::Each(values)) = values {
+                    for value in *values {
+                        self.push(Some(Datum::of(Cow::Borrowed(value))), ordinal);
+                    }
                 }
             }
             _ => debug_assert!(false, "push_slice on an aggregate that takes rows"),

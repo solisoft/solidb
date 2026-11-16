@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Columnar aggregations: expressions, distinct counts, <code>NOT</code></strong> &mdash; what 2.12.0 still computed from rows, about a second per million, is now answered from the column arrays. Conditions: <code>NOT</code>, <code>NOT IN</code>, a comparison of two columns, a column of values of several kinds, and any condition computed from the columns (<code>CONTAINS(r.host, "db")</code>, <code>r.a + r.b &gt; 10</code>). Keys and aggregate arguments that are expressions of the columns: <code>SUM(r.price * r.qty)</code>, <code>COLLECT k = UPPER(r.host)</code>, <code>r.bytes % 10</code>, <code>DATE_TRUNC(r.ts, "hour")</code>, <code>TIME_BUCKET</code> of weeks, of months, with options. And <code>COUNT_DISTINCT</code>. Arithmetic on numeric columns is computed in the arrays exactly as SDBQL computes it (a null counts as 0, integers stay integers until they overflow, a division by zero is null); other expressions are computed once per block by the evaluator, an expression of one string column once per string. Measured on a million rows: <code>SUM(r.price * r.qty)</code> by host 1,269&nbsp;ms &rarr; 6&nbsp;ms; <code>r.status NOT IN [200]</code> 1,313 &rarr; 2.3&nbsp;ms; two columns compared 1,243 &rarr; 3.1&nbsp;ms; <code>COUNT_DISTINCT(r.user)</code> by status 1,322 &rarr; 11&nbsp;ms; weekly buckets 1,307 &rarr; 11&nbsp;ms; <code>DATE_TRUNC</code> to the hour 1,476 &rarr; 136&nbsp;ms; monthly buckets 1,420 &rarr; 264&nbsp;ms. Still from rows: a key or an argument that is a column of values of several kinds, a key whose values are integers and floats together (<code>r.bytes / 100</code>), a function that is not pure (<code>RAND()</code>), an aggregate other than the six above.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.12.0 -->
   <section id="v2-12-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

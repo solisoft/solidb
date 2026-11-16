@@ -839,11 +839,12 @@ converted when it is loaded (`migrate`).
 
 `FOR r IN c [FILTER …] COLLECT … AGGREGATE …` over one is folded from the
 arrays (`sdbql/executor/execution/columnar_scan.rs`) when the FILTERs
-compare columns with constants (`==` `!=` `<` `<=` `>` `>=` with a string,
-a number, a boolean or null, on either side; `IN` a list of them; joined by
-`AND` / `OR`), the keys are columns or `TIME_BUCKET(column, "<fixed
-interval>")` of a column of integers, and the aggregates are `COUNT`,
-`SUM`, `AVG`, `MIN`, `MAX` of a column: on several threads, into a
+compare columns with constants or with each other (`==` `!=` `<` `<=` `>`
+`>=`, `IN` / `NOT IN` a list, joined by `AND` / `OR` / `NOT`) or are any
+other condition computed from the columns, the keys are columns,
+`TIME_BUCKET(column, "<fixed interval>")` or expressions of the columns,
+and the aggregates are `COUNT`, `SUM`, `AVG`, `MIN`, `MAX` or
+`COUNT_DISTINCT` of a column or of an expression of the columns: on several threads, into a
 table of groups handed to the same `CollectFold` as rows, with the exact
 state of each sum. A single integer key of small range is grouped in plain
 arrays indexed by the key (`Flat`): a sum and, beside it, the total of what
@@ -995,6 +996,25 @@ Rules that keep it sound:
   `tests/columnar_blocks_tests.rs` runs each query both ways, and checks
   with `BLOCKS_FOLDED_AS_ROWS` that the arrays did answer, so a shape that
   silently falls back fails there.
+- **An expression of the columns is a computed column**
+  (`columnar_scan.rs`, `Derived`): a key, an aggregate's argument or a
+  condition made of the row's columns, constants and pure functions
+  (`const_fold::is_pure_function`; anything else keeps the query on the
+  rows) is computed once per block and kept for the query (`Cells`,
+  shared by the threads). Arithmetic on numeric columns is computed in
+  the arrays (`Sum`), and must stay `helpers::arithmetic` value for value
+  and kind for kind — `arithmetic_in_the_arrays_is_the_evaluators` holds
+  it to that: a change to SDBQL's arithmetic (null as 0, integers that
+  overflow into floats, a division by zero as null) has to be made in
+  both. Everything else goes through the evaluator, so it is right by
+  construction; an expression of one string column is evaluated once per
+  string of the block, which is only sound because the functions are
+  pure. Integers and floats together make a column only under an
+  aggregate (`ColData::Mixed`, never stored); as a key or a condition
+  they send the block to the rows. `COUNT_DISTINCT` keeps each group's
+  values (`Acc::distinct`, null among them) and hands them to the fold
+  as `Slice::Each`; a query that has one goes a row at a time and is
+  never cut to its top groups by that aggregate.
 - **Nulls in the fold follow SDBQL** (`columnar_scan.rs`): to a
   comparison a null is below every value and equal to none (`select`:
   it passes `!=`, `<`, `<=`); a null key is a group of its own

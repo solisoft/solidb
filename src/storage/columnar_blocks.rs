@@ -152,6 +152,14 @@ pub(crate) enum ColData {
     Bool(Vec<bool>),
     /// Each value as JSON text: values of several kinds, arrays, objects.
     Json(Vec<String>),
+    /// Integers and floats together, each as a float with whether it is
+    /// an integer: what an expression computed over the columns may give
+    /// (`null * 2.5` is the integer 0). Never stored: a block is sealed
+    /// from rows, whose columns of several kinds are JSON text.
+    Mixed {
+        values: Vec<f64>,
+        ints: Vec<bool>,
+    },
 }
 
 /// One column of a block: its values, and which rows hold null (their
@@ -405,6 +413,7 @@ impl ColBlock {
                     ColData::Str { dict, codes } => texts(dict) + codes.len() * 8,
                     ColData::Bool(v) => v.len(),
                     ColData::Json(v) => texts(v),
+                    ColData::Mixed { values, ints } => values.len() * 8 + ints.len(),
                 };
                 data + c.nulls.as_ref().map_or(0, Vec::len)
             })
@@ -643,6 +652,70 @@ impl Column {
         }
     }
 
+    /// A column of floats, made of values computed from others.
+    pub(crate) fn floats(values: Vec<f64>, nulls: Option<Vec<bool>>) -> Self {
+        Column {
+            data: ColData::Float(values),
+            nulls,
+            lists: Default::default(),
+            range: Default::default(),
+            float_range: Default::default(),
+        }
+    }
+
+    /// A column of integers and floats together, each as a float with
+    /// whether it is an integer.
+    pub(crate) fn mixed(values: Vec<f64>, ints: Vec<bool>, nulls: Option<Vec<bool>>) -> Self {
+        Column {
+            data: ColData::Mixed { values, ints },
+            nulls,
+            lists: Default::default(),
+            range: Default::default(),
+            float_range: Default::default(),
+        }
+    }
+
+    /// A column of the values of its rows, when they are of one kind an
+    /// array holds (nulls aside); `None` for values of several kinds,
+    /// arrays or objects. With `numbers`, integers and floats together
+    /// make a column too (`ColData::Mixed`), as long as a float holds
+    /// each integer exactly.
+    pub(crate) fn of_values<'a>(
+        values: impl Iterator<Item = Option<&'a Value>> + Clone,
+        numbers: bool,
+    ) -> Option<Self> {
+        let column = column_of(values.clone());
+        if !matches!(column.data, ColData::Json(_)) {
+            return Some(column);
+        }
+        if !numbers {
+            return None;
+        }
+        let mut floats = Vec::new();
+        let mut ints = Vec::new();
+        for value in values {
+            match value {
+                None | Some(Value::Null) => {
+                    floats.push(0.0);
+                    ints.push(true);
+                }
+                Some(Value::Number(n)) => match n.as_i64() {
+                    Some(i) if i.unsigned_abs() <= 1 << 53 => {
+                        floats.push(i as f64);
+                        ints.push(true);
+                    }
+                    Some(_) => return None,
+                    None => {
+                        floats.push(n.as_f64()?);
+                        ints.push(false);
+                    }
+                },
+                Some(_) => return None,
+            }
+        }
+        Some(Column::mixed(floats, ints, column.nulls))
+    }
+
     /// How many rows the column holds.
     pub(crate) fn len(&self) -> usize {
         match &self.data {
@@ -651,6 +724,7 @@ impl Column {
             ColData::Str { codes, .. } => codes.len(),
             ColData::Bool(values) => values.len(),
             ColData::Json(values) => values.len(),
+            ColData::Mixed { values, .. } => values.len(),
         }
     }
 
@@ -721,6 +795,8 @@ impl Column {
             ColData::Str { dict, codes } => Value::String(dict[codes[at] as usize].clone()),
             ColData::Bool(values) => Value::Bool(values[at]),
             ColData::Json(values) => serde_json::from_str(&values[at]).unwrap_or(Value::Null),
+            ColData::Mixed { values, ints } if ints[at] => Value::from(values[at] as i64),
+            ColData::Mixed { values, .. } => Value::from(values[at]),
         }
     }
 
@@ -734,6 +810,7 @@ impl Column {
             ColData::Int(values) => Some(values[at] as f64),
             ColData::Float(values) => Some(values[at]),
             ColData::Json(values) => serde_json::from_str::<Value>(&values[at]).ok()?.as_f64(),
+            ColData::Mixed { values, .. } => Some(values[at]),
             ColData::Str { .. } | ColData::Bool(_) => None,
         }
     }

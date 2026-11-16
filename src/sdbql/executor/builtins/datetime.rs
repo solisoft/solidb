@@ -1029,7 +1029,7 @@ fn server_timezone() -> &'static str {
 
 /// Default origin for week buckets: Monday 1970-01-05, so weeks start on
 /// Monday (the epoch itself is a Thursday).
-const WEEK_ORIGIN_MS: i64 = 4 * 86_400_000;
+pub(crate) const WEEK_ORIGIN_MS: i64 = 4 * 86_400_000;
 
 /// `TIME_BUCKET(time, interval, [options])`.
 ///

@@ -6,12 +6,15 @@
 //!
 //! - every FILTER is made of comparisons of a column with a constant
 //!   (`==`, `!=`, `<`, `<=`, `>`, `>=` with a string, a number, a
-//!   boolean or null, on either side; `IN` a list of such), joined by
-//!   `AND` and `OR`;
-//! - every group key is a column, or `TIME_BUCKET(column, "<fixed
-//!   interval>")` of a column of integers;
+//!   boolean or null, on either side; `IN` and `NOT IN` a list of such)
+//!   or with another column, joined by `AND`, `OR` and `NOT`, or is any
+//!   other condition computed from the columns (below);
+//! - every group key is a column, `TIME_BUCKET(column, "<fixed
+//!   interval>")` of a column of integers, or an expression computed from
+//!   the columns;
 //! - every aggregate is one that takes whole columns (`COUNT`, `SUM`,
-//!   `AVG`, `MIN`, `MAX`) of a column, or of nothing
+//!   `AVG`, `MIN`, `MAX`) or `COUNT_DISTINCT`, of a column, of an
+//!   expression computed from the columns, or of nothing
 //!
 //! — the blocks (`storage::columnar_blocks`) are read as arrays, on several
 //! threads when they are many: rows are selected by comparing array
@@ -25,6 +28,18 @@
 //! was sealed without) and the rows of the tail are read as objects and
 //! folded the ordinary way, FILTERs included: the answer is the ordinary
 //! path's.
+//!
+//! An expression computed from the columns (`Derived`: `r.price * r.qty`,
+//! `UPPER(r.host)`, `DATE_TRUNC(r.ts, "hour")`, `CONTAINS(r.host, "db")`)
+//! is made of the row's columns, constants and functions that give the
+//! same value for the same arguments. Its values for a block are computed
+//! once, kept as a column for the query and shared by the threads:
+//! arithmetic on columns of numbers in the arrays (`Sum`, held to
+//! `helpers::arithmetic` value for value by a test), an expression of one
+//! column of strings once per string of the block, anything else by the
+//! evaluator, for each row, from the columns it reads. Values that are
+//! not of one kind send the block to the rows, except integers and
+//! floats together under an aggregate (`ColData::Mixed`).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,8 +56,11 @@ use super::collect::CollectFold;
 use super::scan_collect::{bind_in_place, plan, Plan, ScanCollectRun};
 use super::scan_threads::Helpers;
 use crate::error::DbResult;
-use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression};
+use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression, UnaryOperator};
+use crate::sdbql::executor::builtins::datetime::WEEK_ORIGIN_MS;
 use crate::sdbql::executor::builtins::timeseries::{parse_interval, Interval};
+use crate::sdbql::executor::const_fold::is_pure_function;
+use crate::sdbql::executor::helpers::compare_values;
 use crate::storage::columnar_blocks::{ColBlock, ColData, Column};
 
 /// A comparison of a column with a constant.
@@ -59,33 +77,75 @@ enum Pred {
     All(Vec<Pred>),
     /// One of them at least (`OR`, `IN`).
     Any(Vec<Pred>),
+    /// The rows it does not keep (`NOT`, `NOT IN`).
+    Not(Box<Pred>),
+    /// A comparison of two columns.
+    Cols {
+        left: String,
+        op: BinaryOperator,
+        right: String,
+    },
+    /// Any other condition on the columns: the rows where the computed
+    /// column `ColPlan::made[n]` is true.
+    Made(usize),
 }
 
 /// A group key.
 enum Key {
     Column(String),
     /// `TIME_BUCKET(column, "<interval>")` for an interval of `step`
-    /// milliseconds: the instant its bucket starts at.
+    /// milliseconds counted from `origin`: the instant its bucket starts
+    /// at, computed here when the column is of integers, and as
+    /// `ColPlan::made[made]` otherwise.
     Bucket {
         column: String,
         step: i64,
+        origin: i64,
+        made: usize,
     },
+    /// Any other expression of the columns: `ColPlan::made[n]`.
+    Made(usize),
 }
 
-impl Key {
-    /// The column the key is read from.
-    fn column(&self) -> &str {
-        match self {
-            Key::Column(column) | Key::Bucket { column, .. } => column,
-        }
-    }
+/// What an aggregate reads.
+enum Source {
+    Column(String),
+    /// An expression of the columns: `ColPlan::made[n]`.
+    Made(usize),
 }
 
-struct ColPlan {
+/// An expression of the row's columns that the arrays do not compute
+/// themselves (`DATE_TRUNC(r.day, "month")`, `r.price * r.qty`,
+/// `CONTAINS(r.host, "db")`): its value for every row of a block is
+/// computed once, by the evaluator every other query goes through, from
+/// the columns it reads and nothing else of the row, and kept as a column
+/// of the block for the query.
+struct Derived<'q> {
+    expr: &'q Expression,
+    /// The columns of the row it reads.
+    columns: Vec<String>,
+    /// Whether integers and floats together make a column: for what an
+    /// aggregate adds up or compares, not for a key or a condition.
+    numbers: bool,
+}
+
+/// The computed columns of one block, each made when first asked for and
+/// shared by the threads that read the block.
+type Cells = Vec<std::sync::OnceLock<Option<Column>>>;
+
+/// What computing a column needs of the query.
+struct Eval<'a, 'e> {
+    ex: &'a QueryExecutor<'e>,
+    outer: &'a Context,
+    var: &'a str,
+}
+
+struct ColPlan<'q> {
+    made: Vec<Derived<'q>>,
     preds: Vec<Pred>,
     keys: Vec<Key>,
     /// For each aggregate, its argument and what it computes.
-    args: Vec<Option<String>>,
+    args: Vec<Option<Source>>,
     kinds: Vec<AggKind>,
 }
 
@@ -106,6 +166,8 @@ struct Acc {
     /// The rows of the group whose argument is null: what the aggregate
     /// passes over.
     missing: u64,
+    /// The distinct values of the argument, for `COUNT_DISTINCT`.
+    distinct: std::collections::HashSet<Atom, foldhash::fast::RandomState>,
     sum: ExactSum,
     /// The extremes, and whether each is held as an integer.
     min: Option<(f64, bool)>,
@@ -151,6 +213,7 @@ impl Acc {
 
     fn merge(&mut self, other: &Acc) {
         self.missing += other.missing;
+        self.distinct.extend(other.distinct.iter().cloned());
         self.sum.merge(&other.sum);
         if let Some((v, int)) = other.min {
             if self.min.is_none_or(|(held, _)| v < held) {
@@ -531,9 +594,32 @@ impl Table {
         id
     }
 
+    /// The group of `key`, found where the blocks put the groups of that
+    /// kind of key: a single number in `numbers`, anything else in
+    /// `index`. A key is then one group in the table, whichever way its
+    /// rows came.
+    fn slot(&mut self, key: Vec<Atom>, accs: usize) -> u32 {
+        let bits = match key.as_slice() {
+            [Atom::Int(value)] => *value as u64,
+            [Atom::Float(bits)] => *bits,
+            _ => return self.group(key, accs),
+        };
+        if let Some(found) = self.numbers.get(&bits) {
+            return *found;
+        }
+        let id = self.groups.len() as u32;
+        self.groups.push(Group {
+            key,
+            count: 0,
+            accs: (0..accs).map(|_| Acc::default()).collect(),
+        });
+        self.numbers.insert(bits, id);
+        id
+    }
+
     fn merge(&mut self, other: Table) {
         for mut group in other.groups {
-            let id = self.group(group.key, group.accs.len()) as usize;
+            let id = self.slot(group.key, group.accs.len()) as usize;
             let mine = &mut self.groups[id];
             mine.count += group.count;
             for (acc, theirs) in mine.accs.iter_mut().zip(&mut group.accs) {
@@ -562,16 +648,7 @@ fn number((x, int): (f64, bool)) -> Option<serde_json::Number> {
 fn select(column: &Column, cond: &Cond, rows: Option<Vec<u32>>, len: usize) -> Option<Vec<u32>> {
     use std::cmp::Ordering;
     use BinaryOperator::*;
-    // What the comparison keeps of how a value stands to the constant.
-    let wanted: fn(Ordering) -> bool = match cond.op {
-        Equal => |o| o == Ordering::Equal,
-        NotEqual => |o| o != Ordering::Equal,
-        LessThan => |o| o == Ordering::Less,
-        LessThanOrEqual => |o| o != Ordering::Greater,
-        GreaterThan => |o| o == Ordering::Greater,
-        GreaterThanOrEqual => |o| o != Ordering::Less,
-        _ => return None,
-    };
+    let wanted = wanted_of(&cond.op)?;
     let null_passes = matches!(cond.op, NotEqual | LessThan | LessThanOrEqual);
     let nulls = column.nulls.as_deref();
     let keep = |stands: &dyn Fn(usize) -> Ordering| -> Vec<u32> {
@@ -651,14 +728,422 @@ fn select(column: &Column, cond: &Cond, rows: Option<Vec<u32>>, len: usize) -> O
                 values[row].partial_cmp(&c).unwrap_or(Ordering::Equal)
             }))
         }
+        // Values of several kinds, each as JSON text: compared as the
+        // values they are, in SDBQL's order of kinds.
+        (ColData::Json(values), constant) => Some(keep(&|row| {
+            let value = serde_json::from_str::<Value>(&values[row]).unwrap_or(Value::Null);
+            compare_values(&value, constant)
+        })),
         _ => None,
     }
+}
+
+/// What a comparison keeps of how its left side stands to its right.
+fn wanted_of(op: &BinaryOperator) -> Option<fn(std::cmp::Ordering) -> bool> {
+    use std::cmp::Ordering;
+    use BinaryOperator::*;
+    Some(match op {
+        Equal => |o| o == Ordering::Equal,
+        NotEqual => |o| o != Ordering::Equal,
+        LessThan => |o| o == Ordering::Less,
+        LessThanOrEqual => |o| o != Ordering::Greater,
+        GreaterThan => |o| o == Ordering::Greater,
+        GreaterThanOrEqual => |o| o != Ordering::Less,
+        _ => return None,
+    })
+}
+
+/// The rows where column `a` stands to column `b` as `op` asks, among
+/// `rows` (`None`: all of them), ascending. Two columns of one kind are
+/// compared in their arrays; any others value by value, as SDBQL orders
+/// values of different kinds. A null is below every value and equal to
+/// another null.
+fn select_cols(
+    a: &Column,
+    b: &Column,
+    op: &BinaryOperator,
+    rows: Option<Vec<u32>>,
+    len: usize,
+) -> Option<Vec<u32>> {
+    use std::cmp::Ordering;
+    let wanted = wanted_of(op)?;
+    let null = |column: &Column, row: usize| column.nulls.as_ref().is_some_and(|n| n[row]);
+    let stands = |row: usize| -> Ordering {
+        match (null(a, row), null(b, row)) {
+            (true, true) => return Ordering::Equal,
+            (true, false) => return Ordering::Less,
+            (false, true) => return Ordering::Greater,
+            (false, false) => {}
+        }
+        match (&a.data, &b.data) {
+            (ColData::Int(x), ColData::Int(y)) => x[row].cmp(&y[row]),
+            (ColData::Float(x), ColData::Float(y)) => {
+                x[row].partial_cmp(&y[row]).unwrap_or(Ordering::Equal)
+            }
+            (ColData::Bool(x), ColData::Bool(y)) => x[row].cmp(&y[row]),
+            (ColData::Str { dict: d, codes: x }, ColData::Str { dict: e, codes: y }) => {
+                d[x[row] as usize].cmp(&e[y[row] as usize])
+            }
+            _ => compare_values(&a.value(row), &b.value(row)),
+        }
+    };
+    let test = |row: &u32| wanted(stands(*row as usize));
+    Some(match rows {
+        Some(rows) => rows.into_iter().filter(test).collect(),
+        None => (0..len as u32).filter(test).collect(),
+    })
+}
+
+/// The column of `derived` for the rows of `block`: its expression
+/// evaluated for each row from the columns it reads. `None` when the
+/// block lacks one of them, when a row's evaluation fails (the rows then
+/// report it, as any query would) or when the values are not of one kind
+/// an array holds.
+fn derive(ev: &Eval<'_, '_>, derived: &Derived<'_>, block: &ColBlock) -> Option<Column> {
+    let columns: Vec<&Column> = derived
+        .columns
+        .iter()
+        .map(|name| block.column(name))
+        .collect::<Option<_>>()?;
+    if let Some(column) = arithmetic(derived.expr, ev.var, block, derived.numbers) {
+        return Some(column);
+    }
+    let len = block.len();
+    let mut ctx = ev.outer.clone();
+    let mut value_of = |row: serde_json::Map<String, Value>| -> Option<Value> {
+        bind_in_place(&mut ctx, ev.var, Value::Object(row));
+        ev.ex.evaluate_expr_with_context(derived.expr, &ctx).ok()
+    };
+    // One column of strings: once per string the block holds, and once
+    // for null.
+    if let (
+        [name],
+        [Column {
+            data: ColData::Str { dict, codes },
+            nulls,
+            ..
+        }],
+    ) = (derived.columns.as_slice(), columns.as_slice())
+    {
+        let one = |value: Value| serde_json::Map::from_iter([(name.clone(), value)]);
+        let mut per = Vec::with_capacity(dict.len());
+        for held in dict {
+            per.push(value_of(one(Value::String(held.clone())))?);
+        }
+        let for_null = match nulls {
+            Some(_) => Some(value_of(one(Value::Null))?),
+            None => None,
+        };
+        let values = (0..len).map(|row| match (nulls, &for_null) {
+            (Some(nulls), Some(value)) if nulls[row] => Some(value),
+            _ => Some(&per[codes[row] as usize]),
+        });
+        return Column::of_values(values, derived.numbers);
+    }
+    let mut values = Vec::with_capacity(len);
+    for row in 0..len {
+        let object = derived
+            .columns
+            .iter()
+            .zip(&columns)
+            .map(|(name, column)| (name.clone(), column.value(row)))
+            .collect();
+        values.push(value_of(object)?);
+    }
+    Column::of_values(values.iter().map(Some), derived.numbers)
+}
+
+/// A number as SDBQL's arithmetic holds it.
+#[derive(Clone, Copy)]
+enum Num {
+    Int(i64),
+    Float(f64),
+}
+
+/// An arithmetic expression over columns of numbers and numeric literals,
+/// ready to be computed row by row in the arrays.
+enum Sum<'a> {
+    Ints(&'a [i64], Option<&'a [bool]>),
+    Floats(&'a [f64], Option<&'a [bool]>),
+    Const(Num),
+    Op(Box<Sum<'a>>, BinaryOperator, Box<Sum<'a>>),
+}
+
+impl<'a> Sum<'a> {
+    /// `expr` when it is made of `+ - * / %`, columns of numbers of the
+    /// block and numeric literals, and nothing else.
+    fn of(expr: &Expression, var: &str, block: &'a ColBlock) -> Option<Self> {
+        match expr {
+            Expression::FieldAccess(base, field) if matches!(base.as_ref(), Expression::Variable(v) if v == var) =>
+            {
+                let column = block.column(field)?;
+                let nulls = column.nulls.as_deref();
+                match &column.data {
+                    ColData::Int(values) => Some(Sum::Ints(values, nulls)),
+                    ColData::Float(values) => Some(Sum::Floats(values, nulls)),
+                    _ => None,
+                }
+            }
+            Expression::Literal(Value::Number(n)) => Some(Sum::Const(match n.as_i64() {
+                Some(value) => Num::Int(value),
+                None => Num::Float(n.as_f64()?),
+            })),
+            Expression::BinaryOp { left, op, right }
+                if matches!(
+                    op,
+                    BinaryOperator::Add
+                        | BinaryOperator::Subtract
+                        | BinaryOperator::Multiply
+                        | BinaryOperator::Divide
+                        | BinaryOperator::Modulus
+                ) =>
+            {
+                Some(Sum::Op(
+                    Box::new(Sum::of(left, var, block)?),
+                    op.clone(),
+                    Box::new(Sum::of(right, var, block)?),
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// The value for `row`; `None` is null. As `helpers::arithmetic`
+    /// computes it, which the tests hold this to: a null operand counts
+    /// as the integer 0, two integers give an integer unless that
+    /// overflows or a division leaves a remainder, anything else a float,
+    /// and a division by zero or a result that is not finite is null.
+    fn at(&self, row: usize) -> Option<Num> {
+        match self {
+            Sum::Ints(values, nulls) => {
+                (!nulls.is_some_and(|nulls| nulls[row])).then(|| Num::Int(values[row]))
+            }
+            Sum::Floats(values, nulls) => {
+                (!nulls.is_some_and(|nulls| nulls[row])).then(|| Num::Float(values[row]))
+            }
+            Sum::Const(value) => Some(*value),
+            Sum::Op(left, op, right) => {
+                let a = left.at(row).unwrap_or(Num::Int(0));
+                let b = right.at(row).unwrap_or(Num::Int(0));
+                if let (Num::Int(x), Num::Int(y)) = (a, b) {
+                    let exact = match op {
+                        BinaryOperator::Add => x.checked_add(y),
+                        BinaryOperator::Subtract => x.checked_sub(y),
+                        BinaryOperator::Multiply => x.checked_mul(y),
+                        BinaryOperator::Divide => {
+                            if y == 0 {
+                                return None;
+                            }
+                            match x.checked_rem(y) {
+                                Some(0) => x.checked_div(y),
+                                _ => None,
+                            }
+                        }
+                        _ => {
+                            if y == 0 {
+                                return None;
+                            }
+                            Some(x.checked_rem(y).unwrap_or(0))
+                        }
+                    };
+                    if let Some(value) = exact {
+                        return Some(Num::Int(value));
+                    }
+                }
+                let float = |n: Num| match n {
+                    Num::Int(i) => i as f64,
+                    Num::Float(f) => f,
+                };
+                let (x, y) = (float(a), float(b));
+                let value = match op {
+                    BinaryOperator::Add => x + y,
+                    BinaryOperator::Subtract => x - y,
+                    BinaryOperator::Multiply => x * y,
+                    BinaryOperator::Divide => {
+                        if y == 0.0 {
+                            return None;
+                        }
+                        x / y
+                    }
+                    _ => {
+                        if y == 0.0 {
+                            return None;
+                        }
+                        x % y
+                    }
+                };
+                value.is_finite().then_some(Num::Float(value))
+            }
+        }
+    }
+}
+
+/// Arithmetic over columns of numbers, computed in the arrays: a column
+/// of integers, of floats, or (with `numbers`) of both. `None` for any
+/// other expression, and when the values are of both kinds where a column
+/// cannot be: the evaluator then says what each row is.
+fn arithmetic(expr: &Expression, var: &str, block: &ColBlock, numbers: bool) -> Option<Column> {
+    let sum = Sum::of(expr, var, block)?;
+    if !matches!(sum, Sum::Op(..)) {
+        return None;
+    }
+    let len = block.len();
+    let mut values: Vec<f64> = Vec::with_capacity(len);
+    let mut whole: Vec<i64> = Vec::with_capacity(len);
+    let mut ints: Vec<bool> = Vec::with_capacity(len);
+    let mut nulls: Vec<bool> = Vec::with_capacity(len);
+    let (mut any_int, mut any_float, mut any_null, mut wide) = (false, false, false, false);
+    for row in 0..len {
+        let (value, int, is_int, null) = match sum.at(row) {
+            Some(Num::Int(i)) => (i as f64, i, true, false),
+            Some(Num::Float(f)) => (f, 0, false, false),
+            None => (0.0, 0, true, true),
+        };
+        any_null |= null;
+        any_int |= is_int && !null;
+        any_float |= !is_int;
+        // An integer a float does not hold cannot sit beside floats.
+        wide |= is_int && int.unsigned_abs() > 1 << 53;
+        values.push(value);
+        whole.push(int);
+        ints.push(is_int);
+        nulls.push(null);
+    }
+    let nulls = any_null.then_some(nulls);
+    match (any_int, any_float) {
+        (_, false) => Some(Column::ints(whole, nulls)),
+        (false, true) => Some(Column::floats(values, nulls)),
+        (true, true) if numbers && !wide => Some(Column::mixed(values, ints, nulls)),
+        (true, true) => None,
+    }
+}
+
+/// `expr` as a computed column of the plan, when it is made of the row's
+/// columns, constants and functions that give the same value for the same
+/// arguments: its place in `made`.
+fn derived<'q>(
+    expr: &'q Expression,
+    var: &str,
+    known: &[String],
+    numbers: bool,
+    made: &mut Vec<Derived<'q>>,
+) -> Option<usize> {
+    let mut columns = Vec::new();
+    reads(expr, var, known, &mut columns)?;
+    columns.sort();
+    columns.dedup();
+    if columns.is_empty() {
+        return None;
+    }
+    made.push(Derived {
+        expr,
+        columns,
+        numbers,
+    });
+    Some(made.len() - 1)
+}
+
+/// The columns of `var` that `expr` reads, when that is all it reads of
+/// the row and nothing in it depends on anything but its arguments.
+fn reads(expr: &Expression, var: &str, known: &[String], out: &mut Vec<String>) -> Option<()> {
+    use Expression as E;
+    match expr {
+        E::Literal(_) | E::BindVariable(_) => Some(()),
+        // An outer value: the same for every row.
+        E::Variable(name) => (name != var).then_some(()),
+        E::FieldAccess(base, field) => match base.as_ref() {
+            E::Variable(name) if name == var && known.iter().any(|k| k == field) => {
+                out.push(field.clone());
+                Some(())
+            }
+            _ => None,
+        },
+        E::BinaryOp { left, right, .. } => {
+            reads(left, var, known, out)?;
+            reads(right, var, known, out)
+        }
+        E::UnaryOp { operand, .. } => reads(operand, var, known, out),
+        E::FunctionCall { name, args } if is_pure_function(name, args.len()) => {
+            args.iter().try_for_each(|arg| reads(arg, var, known, out))
+        }
+        E::Ternary {
+            condition,
+            true_expr,
+            false_expr,
+        } => {
+            reads(condition, var, known, out)?;
+            reads(true_expr, var, known, out)?;
+            reads(false_expr, var, known, out)
+        }
+        _ => None,
+    }
+}
+
+/// `TIME_BUCKET(column, "<interval>")` for an interval of a fixed length:
+/// the column, the length in milliseconds and the instant buckets are
+/// counted from (a Monday for weeks). Months have no fixed length, and
+/// options are the builtin's own business.
+fn bucket(
+    expr: &Expression,
+    column: &dyn Fn(&Expression) -> Option<String>,
+) -> Option<(String, i64, i64)> {
+    let Expression::FunctionCall { name, args } = expr else {
+        return None;
+    };
+    if !name.eq_ignore_ascii_case("TIME_BUCKET") || args.len() != 2 {
+        return None;
+    }
+    let Expression::Literal(Value::String(interval)) = &args[1] else {
+        return None;
+    };
+    let unit = interval.trim_end().to_ascii_lowercase();
+    let weeks = unit.ends_with('w') || unit.ends_with("week") || unit.ends_with("weeks");
+    match parse_interval(interval).ok()? {
+        Interval::Fixed(step) if step > 0 => Some((
+            column(&args[0])?,
+            step,
+            if weeks { WEEK_ORIGIN_MS } else { 0 },
+        )),
+        _ => None,
+    }
+}
+
+/// A block as a fold reads it: with the plan's computed columns, each
+/// made the first time it is asked for.
+struct Read<'a, 'q, 'e> {
+    plan: &'a ColPlan<'q>,
+    ev: &'a Eval<'a, 'e>,
+    cells: &'a Cells,
+    block: &'a ColBlock,
+}
+
+impl<'a> Read<'a, '_, '_> {
+    /// The computed column `at` of the plan, for this block.
+    fn made(&self, at: usize) -> Option<&'a Column> {
+        self.cells[at]
+            .get_or_init(|| derive(self.ev, &self.plan.made[at], self.block))
+            .as_ref()
+    }
+}
+
+/// The rows of `all` that are not in `out`; all ascending.
+fn minus(all: &[u32], out: &[u32]) -> Vec<u32> {
+    let mut at = 0;
+    all.iter()
+        .copied()
+        .filter(|row| {
+            while at < out.len() && out[at] < *row {
+                at += 1;
+            }
+            at >= out.len() || out[at] != *row
+        })
+        .collect()
 }
 
 /// The rows `pred` keeps among `rows` (`None`: every row of the block),
 /// ascending; the outer `None` when the arrays cannot answer for it.
 fn kept(
-    block: &ColBlock,
+    read: &Read<'_, '_, '_>,
     pred: &Pred,
     rows: Option<Vec<u32>>,
     len: usize,
@@ -666,11 +1151,10 @@ fn kept(
     if rows.as_ref().is_some_and(Vec::is_empty) {
         return Some(rows);
     }
+    let block = read.block;
     match pred {
         Pred::Cmp(cond) => {
-            let column = block
-                .column(&cond.column)
-                .filter(|c| !matches!(c.data, ColData::Json(_)))?;
+            let column = block.column(&cond.column)?;
             // The smallest and largest value of the block may say it all.
             if column.nulls.is_none() {
                 match settled(column, cond) {
@@ -681,17 +1165,47 @@ fn kept(
             }
             Some(Some(select(column, cond, rows, len)?))
         }
+        Pred::Cols { left, op, right } => {
+            let (a, b) = (block.column(left)?, block.column(right)?);
+            Some(Some(select_cols(a, b, op, rows, len)?))
+        }
+        Pred::Made(at) => {
+            // A condition is true or false; anything else is the rows'
+            // to turn into one.
+            let column = read.made(*at)?;
+            let ColData::Bool(values) = &column.data else {
+                return None;
+            };
+            let holds = |row: &u32| {
+                let row = *row as usize;
+                values[row] && !column.nulls.as_ref().is_some_and(|nulls| nulls[row])
+            };
+            Some(Some(match rows {
+                Some(rows) => rows.into_iter().filter(holds).collect(),
+                None => (0..len as u32).filter(holds).collect(),
+            }))
+        }
+        Pred::Not(inner) => {
+            let all: Vec<u32> = match &rows {
+                Some(rows) => rows.clone(),
+                None => (0..len as u32).collect(),
+            };
+            Some(Some(match kept(read, inner, rows, len)? {
+                None => Vec::new(),
+                Some(found) => minus(&all, &found),
+            }))
+        }
         Pred::All(all) => {
             let mut rows = rows;
             for pred in all {
-                rows = kept(block, pred, rows, len)?;
+                rows = kept(read, pred, rows, len)?;
             }
             Some(rows)
         }
         Pred::Any(any) => {
             let mut found: Vec<u32> = Vec::new();
             for pred in any {
-                match kept(block, pred, rows.clone(), len)? {
+                match kept(read, pred, rows.clone(), len)? {
                     // Every row there was.
                     None => return Some(None),
                     Some(more) => found = either(&found, &more),
@@ -739,6 +1253,8 @@ fn atom(column: &Column, row: usize) -> Atom {
         ColData::Str { dict, codes } => Atom::Str(Arc::from(dict[codes[row] as usize].as_str())),
         ColData::Bool(values) => Atom::Bool(values[row]),
         ColData::Json(_) => Atom::Bool(false),
+        ColData::Mixed { values, ints } if ints[row] => Atom::Int(values[row] as i64),
+        ColData::Mixed { values, .. } => Atom::Float(values[row].to_bits()),
     }
 }
 
@@ -751,19 +1267,22 @@ fn local(column: &Column, row: usize) -> u64 {
         ColData::Str { codes, .. } => u64::from(codes[row]),
         ColData::Bool(values) => u64::from(values[row]),
         ColData::Json(_) => 0,
+        ColData::Mixed { values, .. } => values[row].to_bits(),
     }
 }
 
-/// Fold rows whose keys or arguments hold nulls: a row at a time, a null
-/// key being a group of its own and a null argument passed over
-/// (`Acc::missing`). The groups of a single numeric key are found where
-/// the blocks without nulls put them (`Table::numbers`), so that a key is
-/// one group in the table.
-fn fold_with_nulls(
+/// Fold rows a row at a time: those whose keys or arguments hold nulls,
+/// a null key being a group of its own and a null argument passed over
+/// (`Acc::missing`), and those of a query that counts distinct values,
+/// which each group keeps (`Acc::distinct`). The groups of a single
+/// numeric key are found where the blocks without nulls put them
+/// (`Table::numbers`), so that a key is one group in the table.
+fn fold_by_row(
     table: &mut Table,
     share: Share,
     keys: &[&Column],
     args: &[Option<&Column>],
+    kinds: &[AggKind],
     rows: Option<&[u32]>,
     len: usize,
 ) -> Option<()> {
@@ -840,12 +1359,21 @@ fn fold_with_nulls(
         };
         let group = &mut table.groups[group as usize];
         group.count += 1;
-        for (acc, column) in group.accs.iter_mut().zip(args) {
+        for ((acc, column), kind) in group.accs.iter_mut().zip(args).zip(kinds) {
             match column {
+                // Null is one of the values a distinct count holds.
+                Some(column) if *kind == AggKind::CountDistinct => {
+                    let value = atom(column, row);
+                    if !acc.distinct.contains(&value) {
+                        acc.distinct.insert(value);
+                    }
+                }
                 Some(column) if is_null(column, row) => acc.missing += 1,
                 Some(column) => match &column.data {
                     ColData::Int(values) => acc.int(values[row]),
                     ColData::Float(values) => acc.float(values[row]),
+                    ColData::Mixed { values, ints } if ints[row] => acc.int(values[row] as i64),
+                    ColData::Mixed { values, .. } => acc.float(values[row]),
                     _ => {}
                 },
                 None => {}
@@ -885,7 +1413,8 @@ fn settled(column: &Column, cond: &Cond) -> Option<bool> {
 
 /// Fold the rows of `block` the plan keeps into `table`; `None` when the
 /// block has to be read as objects.
-fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share) -> Option<()> {
+fn fold_block(read: &Read<'_, '_, '_>, table: &mut Table, share: Share) -> Option<()> {
+    let (plan, block) = (read.plan, read.block);
     if let Share::Ranged { span, .. } = share {
         if table.dense.is_empty() {
             table.dense = vec![u32::MAX; span as usize + 1];
@@ -899,35 +1428,45 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
     let len = block.len();
     let mut rows: Option<Vec<u32>> = None;
     for pred in &plan.preds {
-        rows = kept(block, pred, rows, len)?;
+        rows = kept(read, pred, rows, len)?;
     }
-    // A key that is a bucket of time: the instants its buckets start at,
-    // as a column of its own. One that overflows is the builtin's to
-    // report, from the rows.
-    let mut made: Vec<Option<Column>> = Vec::with_capacity(plan.keys.len());
+    // A key that is a bucket of time over a column of integers: the
+    // instants its buckets start at, as a column of its own. One that
+    // overflows is the builtin's to report, from the rows.
+    let mut buckets: Vec<Option<Column>> = Vec::with_capacity(plan.keys.len());
     for key in &plan.keys {
-        made.push(match key {
-            Key::Column(_) => None,
-            Key::Bucket { column, step } => {
-                let source = usable(column)?;
-                let ColData::Int(times) = &source.data else {
-                    return None;
-                };
-                let starts = times
-                    .iter()
-                    .map(|time| time.div_euclid(*step).checked_mul(*step))
-                    .collect::<Option<Vec<i64>>>()?;
-                Some(Column::ints(starts, source.nulls.clone()))
-            }
+        buckets.push(match key {
+            Key::Bucket {
+                column,
+                step,
+                origin,
+                ..
+            } => match usable(column).map(|source| (&source.data, source)) {
+                Some((ColData::Int(times), source)) => {
+                    let starts = times
+                        .iter()
+                        .map(|time| {
+                            time.checked_sub(*origin)?
+                                .div_euclid(*step)
+                                .checked_mul(*step)?
+                                .checked_add(*origin)
+                        })
+                        .collect::<Option<Vec<i64>>>()?;
+                    Some(Column::ints(starts, source.nulls.clone()))
+                }
+                _ => None,
+            },
+            _ => None,
         });
     }
     let keys: Vec<&Column> = plan
         .keys
         .iter()
-        .zip(&made)
-        .map(|(key, made)| match made {
-            Some(column) => Some(column),
-            None => usable(key.column()),
+        .zip(&buckets)
+        .map(|(key, bucket)| match (key, bucket) {
+            (_, Some(column)) => Some(column),
+            (Key::Column(name), None) => usable(name),
+            (Key::Bucket { made, .. } | Key::Made(made), None) => read.made(*made),
         })
         .collect::<Option<_>>()?;
     // Numbers for the aggregates that add or compare; a string or a
@@ -936,23 +1475,42 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
     for (arg, kind) in plan.args.iter().zip(&plan.kinds) {
         let column = match arg {
             None => None,
-            Some(name) => Some(usable(name)?),
+            Some(Source::Column(name)) => Some(usable(name)?),
+            Some(Source::Made(made)) => Some(read.made(*made)?),
         };
-        let numeric = column.is_none_or(|c| matches!(c.data, ColData::Int(_) | ColData::Float(_)));
-        if !numeric && !matches!(kind, AggKind::CountNonNull | AggKind::CountRows) {
+        let numeric = column.is_none_or(|c| {
+            matches!(
+                c.data,
+                ColData::Int(_) | ColData::Float(_) | ColData::Mixed { .. }
+            )
+        });
+        let counted = matches!(
+            kind,
+            AggKind::CountNonNull | AggKind::CountRows | AggKind::CountDistinct
+        );
+        if !numeric && !counted {
             return None;
         }
         args.push(column);
     }
     let accs = args.len();
-    // A null among the keys or the arguments: a row at a time, with the
-    // masks. What follows reads whole arrays.
-    let nullable = keys
-        .iter()
-        .chain(args.iter().flatten())
-        .any(|column| column.nulls.is_some());
-    if nullable {
-        return fold_with_nulls(table, share, &keys, &args, rows.as_deref(), len);
+    // A null among the keys or the arguments, or distinct values to
+    // keep: a row at a time. What follows reads whole arrays.
+    let by_row = plan.kinds.contains(&AggKind::CountDistinct)
+        || keys
+            .iter()
+            .chain(args.iter().flatten())
+            .any(|column| column.nulls.is_some() || matches!(column.data, ColData::Mixed { .. }));
+    if by_row {
+        return fold_by_row(
+            table,
+            share,
+            &keys,
+            &args,
+            &plan.kinds,
+            rows.as_deref(),
+            len,
+        );
     }
 
     // The group of each combination of key values met in this block.
@@ -1144,12 +1702,12 @@ fn fold_block(plan: &ColPlan, block: &ColBlock, table: &mut Table, share: Share)
 impl QueryExecutor<'_> {
     /// The plan for `found` over the columns `known`, or `None` when the
     /// query asks for more than the arrays answer.
-    fn columnar_plan(
+    fn columnar_plan<'q>(
         &self,
-        found: &Plan<'_>,
+        found: &Plan<'q>,
         known: &[String],
         outer: &Context,
-    ) -> Option<ColPlan> {
+    ) -> Option<ColPlan<'q>> {
         let var = found.for_clause.variable.as_str();
         let column = |expr: &Expression| -> Option<String> {
             let Expression::FieldAccess(base, field) = expr else {
@@ -1160,6 +1718,7 @@ impl QueryExecutor<'_> {
             .then(|| field.clone())
         };
         let mut plan = ColPlan {
+            made: Vec::new(),
             preds: Vec::new(),
             keys: Vec::new(),
             args: Vec::new(),
@@ -1173,41 +1732,42 @@ impl QueryExecutor<'_> {
             push_conjuncts(&filter.expression, &mut conjuncts);
         }
         for conjunct in conjuncts {
-            plan.preds
-                .push(self.columnar_pred(conjunct, var, &column, outer)?);
+            // What the arrays compare themselves, or the condition as a
+            // computed column of booleans.
+            let pred = match self.columnar_pred(conjunct, var, &column, outer) {
+                Some(pred) => pred,
+                None => Pred::Made(derived(conjunct, var, known, false, &mut plan.made)?),
+            };
+            plan.preds.push(pred);
         }
         for (_, expr) in &found.collect.group_vars {
-            plan.keys.push(match expr {
-                Expression::FunctionCall { name, args }
-                    if name.eq_ignore_ascii_case("TIME_BUCKET") && args.len() == 2 =>
-                {
-                    let Expression::Literal(Value::String(interval)) = &args[1] else {
-                        return None;
-                    };
-                    // Weeks are counted from a Monday, months have no fixed
-                    // length: the builtin's own business.
-                    let unit = interval.trim_end().to_ascii_lowercase();
-                    if unit.ends_with('w') || unit.ends_with("week") || unit.ends_with("weeks") {
-                        return None;
-                    }
-                    match parse_interval(interval).ok()? {
-                        Interval::Fixed(step) if step > 0 => Key::Bucket {
-                            column: column(&args[0])?,
+            let key = match column(expr) {
+                Some(name) => Key::Column(name),
+                None => {
+                    let made = derived(expr, var, known, false, &mut plan.made)?;
+                    match bucket(expr, &column) {
+                        Some((column, step, origin)) => Key::Bucket {
+                            column,
                             step,
+                            origin,
+                            made,
                         },
-                        _ => return None,
+                        None => Key::Made(made),
                     }
                 }
-                other => Key::Column(column(other)?),
-            });
+            };
+            plan.keys.push(key);
         }
         for aggregate in &found.collect.aggregates {
             plan.args.push(match &aggregate.argument {
                 None => None,
-                Some(expr) => Some(column(expr)?),
+                Some(expr) => Some(match column(expr) {
+                    Some(name) => Source::Column(name),
+                    None => Source::Made(derived(expr, var, known, true, &mut plan.made)?),
+                }),
             });
             let kind = AggKind::resolve(&aggregate.function, aggregate.argument.is_some())?;
-            if !AggregateAccumulator::takes_slices(kind) {
+            if !AggregateAccumulator::takes_slices(kind) && kind != AggKind::CountDistinct {
                 return None;
             }
             plan.kinds.push(kind);
@@ -1226,6 +1786,14 @@ impl QueryExecutor<'_> {
         outer: &Context,
     ) -> Option<Pred> {
         use BinaryOperator::*;
+        if let Expression::UnaryOp {
+            op: UnaryOperator::Not,
+            operand,
+        } = expr
+        {
+            let inner = self.columnar_pred(operand, var, column, outer)?;
+            return Some(Pred::Not(Box::new(inner)));
+        }
         let Expression::BinaryOp { left, op, right } = expr else {
             return None;
         };
@@ -1255,6 +1823,15 @@ impl QueryExecutor<'_> {
                     Pred::Any(sides)
                 })
             }
+            NotIn => {
+                let within = Expression::BinaryOp {
+                    left: left.clone(),
+                    op: In,
+                    right: right.clone(),
+                };
+                let within = self.columnar_pred(&within, var, column, outer)?;
+                Some(Pred::Not(Box::new(within)))
+            }
             In => {
                 let name = column(left)?;
                 let Value::Array(values) = constant(right)? else {
@@ -1276,8 +1853,16 @@ impl QueryExecutor<'_> {
                     .map(Pred::Any)
             }
             Equal | NotEqual | LessThan | LessThanOrEqual | GreaterThan | GreaterThanOrEqual => {
-                // `column <op> constant`, or the same the other way round.
+                // `column <op> constant`, or the same the other way round,
+                // or two columns.
                 let (name, value, op) = match (column(left), column(right)) {
+                    (Some(left), Some(right)) => {
+                        return Some(Pred::Cols {
+                            left,
+                            op: op.clone(),
+                            right,
+                        })
+                    }
                     (Some(name), None) => (name, constant(right)?, op.clone()),
                     (None, Some(name)) => {
                         let mirrored = match op {
@@ -1326,11 +1911,38 @@ impl QueryExecutor<'_> {
                     Atom::Null => Datum::Null,
                 })
                 .collect();
+            // The distinct values a `COUNT_DISTINCT` kept.
+            let distinct: Vec<Option<Vec<Value>>> = col_plan
+                .kinds
+                .iter()
+                .zip(&group.accs)
+                .map(|(kind, acc)| {
+                    (*kind == AggKind::CountDistinct).then(|| {
+                        acc.distinct
+                            .iter()
+                            .map(|atom| match atom {
+                                Atom::Int(v) => Value::from(*v),
+                                Atom::Float(bits) => {
+                                    serde_json::Number::from_f64(f64::from_bits(*bits))
+                                        .map_or(Value::Null, Value::Number)
+                                }
+                                Atom::Str(s) => Value::String(s.to_string()),
+                                Atom::Bool(b) => Value::Bool(*b),
+                                Atom::Null => Value::Null,
+                            })
+                            .collect()
+                    })
+                })
+                .collect();
             let args: Vec<Option<Slice<'_>>> = col_plan
                 .args
                 .iter()
                 .zip(&group.accs)
-                .map(|(arg, acc)| {
+                .zip(&distinct)
+                .map(|((arg, acc), distinct)| {
+                    if let Some(values) = distinct {
+                        return Some(Slice::Each(values));
+                    }
                     // The rows of the group whose argument is not null.
                     let rows = group.count.saturating_sub(acc.missing) as usize;
                     arg.as_ref().map(|_| match (acc.min, acc.max, acc.missing) {
@@ -1377,6 +1989,11 @@ impl QueryExecutor<'_> {
         let helpers = Helpers::take(wanted.saturating_sub(1));
         let threads = helpers.count() + 1;
         let mut table = Table::default();
+        let ev = Eval {
+            ex: self,
+            outer,
+            var: found.for_clause.variable.as_str(),
+        };
         // Blocks the arrays cannot answer for, by key: read again below.
         let mut left: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut scanned = 0usize;
@@ -1384,7 +2001,14 @@ impl QueryExecutor<'_> {
             scanned += blocks.iter().map(|b| b.len()).sum::<usize>();
             let work = |block: &Arc<ColBlock>| {
                 let mut table = Table::default();
-                fold_block(col_plan, block, &mut table, Share::All).map(|()| table)
+                let cells: Cells = col_plan.made.iter().map(|_| Default::default()).collect();
+                let read = Read {
+                    plan: col_plan,
+                    ev: &ev,
+                    cells: &cells,
+                    block,
+                };
+                fold_block(&read, &mut table, Share::All).map(|()| table)
             };
             let folded: Vec<Option<Table>> = std::thread::scope(|scope| {
                 let work = &work;
@@ -1551,35 +2175,71 @@ impl QueryExecutor<'_> {
         // shared out by key, every thread reads every block and keeps the
         // rows of its own keys. Otherwise the blocks are shared out, and
         // the few groups of each thread merged.
+        let ev = Eval {
+            ex: self,
+            outer,
+            var: for_clause.variable.as_str(),
+        };
+        // The computed columns of each block, made by the first thread
+        // that asks and read by the others.
+        let cells: Vec<Cells> = set
+            .blocks
+            .iter()
+            .map(|_| col_plan.made.iter().map(|_| Default::default()).collect())
+            .collect();
+        let reading = |at: usize| Read {
+            plan: &col_plan,
+            ev: &ev,
+            cells: &cells[at],
+            block: &set.blocks[at],
+        };
+        let numeric = |column: Option<&Column>| {
+            column.is_some_and(|c| matches!(c.data, ColData::Int(_) | ColData::Float(_)))
+        };
         let by_key = col_plan.keys.len() == 1
-            && set.blocks.iter().find(|b| b.len() > 0).is_some_and(|b| {
-                b.column(col_plan.keys[0].column())
-                    .is_some_and(|c| matches!(c.data, ColData::Int(_) | ColData::Float(_)))
-            });
+            && set
+                .blocks
+                .iter()
+                .position(|b| b.len() > 0)
+                .is_some_and(|at| match &col_plan.keys[0] {
+                    Key::Column(name) => numeric(set.blocks[at].column(name)),
+                    // The start of a bucket of time is a number.
+                    Key::Bucket { .. } => true,
+                    Key::Made(made) => numeric(reading(at).made(*made)),
+                });
         let per = set.blocks.len().div_ceil(threads).max(1);
         // An integer key within a small range: groups by position. Only
-        // for a key that is a column, and when no block holds a null in
-        // the key or in an argument: positions hold neither.
-        let plain_key = matches!(col_plan.keys.first(), Some(Key::Column(_)));
-        let read = col_plan
+        // when the key and the arguments are columns, no block holds a
+        // null in one of them and nothing counts distinct values:
+        // positions hold none of that.
+        let read: Option<Vec<&str>> = col_plan
             .keys
             .iter()
-            .map(Key::column)
-            .chain(col_plan.args.iter().flatten().map(String::as_str));
-        let no_null = plain_key
-            && read.into_iter().all(|name| {
-                set.blocks
-                    .iter()
-                    .all(|b| b.stats(name).is_some_and(|stats| !stats.nulls))
+            .map(|key| match key {
+                Key::Column(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .chain(col_plan.args.iter().flatten().map(|arg| match arg {
+                Source::Column(name) => Some(name.as_str()),
+                Source::Made(_) => None,
+            }))
+            .collect();
+        let no_null = !col_plan.kinds.contains(&AggKind::CountDistinct)
+            && read.as_ref().is_some_and(|names| {
+                names.iter().all(|name| {
+                    set.blocks
+                        .iter()
+                        .all(|b| b.stats(name).is_some_and(|stats| !stats.nulls))
+                })
             });
         let ranged = (by_key && no_null)
             .then(|| {
                 set.blocks
                     .iter()
                     .filter(|b| b.len() > 0)
-                    .map(|b| {
-                        b.column(col_plan.keys[0].column())
-                            .and_then(Column::int_range)
+                    .map(|b| match &col_plan.keys[0] {
+                        Key::Column(name) => b.column(name).and_then(Column::int_range),
+                        _ => None,
                     })
                     .try_fold((i64::MAX, i64::MIN), |(lo, hi), range| {
                         range.map(|(a, b)| (lo.min(a), hi.max(b)))
@@ -1601,9 +2261,9 @@ impl QueryExecutor<'_> {
             let pass = |share: Share| {
                 let mut table = Table::default();
                 let mut left = Vec::new();
-                for (at, block) in blocks.iter().enumerate() {
-                    if fold_block(&col_plan, block, &mut table, share).is_none() {
-                        left.push(from + at);
+                for at in from..from + blocks.len() {
+                    if fold_block(&reading(at), &mut table, share).is_none() {
+                        left.push(at);
                     }
                 }
                 (table, left)
@@ -1799,6 +2459,8 @@ impl QueryExecutor<'_> {
                         AggKind::Avg => acc.sum.value() / group.count as f64,
                         AggKind::Min => acc.min.map_or(f64::NAN, |m| m.0),
                         AggKind::Max => acc.max.map_or(f64::NAN, |m| m.0),
+                        // Not a number the groups can be cut by.
+                        AggKind::CountDistinct => f64::NAN,
                         _ => group.count as f64,
                     }
                 };
@@ -1885,5 +2547,109 @@ impl QueryExecutor<'_> {
                 name
             ),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sdbql::executor::helpers::evaluate_binary_op;
+    use serde_json::json;
+
+    /// Arithmetic computed in the arrays is what the evaluator computes,
+    /// value for value: integers that overflow, divisions that leave a
+    /// remainder or are by zero, nulls, floats beside integers.
+    #[test]
+    fn arithmetic_in_the_arrays_is_the_evaluators() {
+        let ints = [
+            json!(0),
+            json!(1),
+            json!(-1),
+            json!(7),
+            json!(-13),
+            json!(1i64 << 53),
+            json!(i64::MAX),
+            json!(i64::MIN),
+            Value::Null,
+        ];
+        let floats = [
+            json!(0.0),
+            json!(-0.5),
+            json!(2.25),
+            json!(1e300),
+            json!(-1e300),
+            json!(3.0),
+            Value::Null,
+        ];
+        let field = |name: &str| {
+            Expression::FieldAccess(
+                Box::new(Expression::Variable("r".to_string())),
+                name.to_string(),
+            )
+        };
+        let ops = [
+            BinaryOperator::Add,
+            BinaryOperator::Subtract,
+            BinaryOperator::Multiply,
+            BinaryOperator::Divide,
+            BinaryOperator::Modulus,
+        ];
+        for (left, right) in [
+            (&ints[..], &ints[..]),
+            (&ints[..], &floats[..]),
+            (&floats[..], &ints[..]),
+            (&floats[..], &floats[..]),
+        ] {
+            // Every pair of values, as the rows of one block.
+            let rows: Vec<(String, serde_json::Map<String, Value>)> = left
+                .iter()
+                .flat_map(|a| right.iter().map(move |b| (a.clone(), b.clone())))
+                .enumerate()
+                .map(|(n, (a, b))| {
+                    let Value::Object(row) = json!({"a": a, "b": b}) else {
+                        unreachable!()
+                    };
+                    (format!("row-{n:05}"), row)
+                })
+                .collect();
+            let names = ["a".to_string(), "b".to_string()];
+            let block = ColBlock::seal(&names, &rows);
+            // A column of nulls only has no kind: the evaluator's.
+            for op in &ops {
+                let expr = Expression::BinaryOp {
+                    left: Box::new(field("a")),
+                    op: op.clone(),
+                    right: Box::new(field("b")),
+                };
+                let Some(sum) = Sum::of(&expr, "r", &block) else {
+                    panic!("{op:?}: not computed in the arrays");
+                };
+                for (n, (_, row)) in rows.iter().enumerate() {
+                    let wanted = evaluate_binary_op(&row["a"], op, &row["b"]).unwrap();
+                    let got = match sum.at(n) {
+                        Some(Num::Int(i)) => json!(i),
+                        Some(Num::Float(f)) => json!(f),
+                        None => Value::Null,
+                    };
+                    assert_eq!(got, wanted, "{} {op:?} {}", row["a"], row["b"]);
+                    // The same kind of number, not only the same value.
+                    assert_eq!(
+                        got.is_i64(),
+                        wanted.is_i64(),
+                        "{} {op:?} {}",
+                        row["a"],
+                        row["b"]
+                    );
+                }
+                // As a column: of one kind, or of both where that is allowed.
+                let column = arithmetic(&expr, "r", &block, true);
+                if let Some(column) = column {
+                    for (n, (_, row)) in rows.iter().enumerate() {
+                        let wanted = evaluate_binary_op(&row["a"], op, &row["b"]).unwrap();
+                        assert_eq!(column.value(n), wanted, "{} {op:?} {}", row["a"], row["b"]);
+                    }
+                }
+            }
+        }
     }
 }

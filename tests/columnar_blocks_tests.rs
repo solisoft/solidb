@@ -257,6 +257,8 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         ("amount", ColumnType::Float64),
         ("bytes", ColumnType::Int64),
         ("paid", ColumnType::Bool),
+        // Values of several kinds.
+        ("tag", ColumnType::Json),
     ]
     .iter()
     .map(|(name, data_type)| ColumnDef {
@@ -286,6 +288,7 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
             "amount": ((i * 13) % 997) as f64 / 3.0,
             "bytes": (i * 17) % 10_000,
             "paid": i % 5 != 0,
+            "tag": match i % 4 { 0 => json!(i % 9), 1 => json!(i as f64 / 4.0), 2 => json!(format!("t{}", i % 3)), _ => Value::Null },
         })
     };
     // Two blocks of plain columns.
@@ -381,12 +384,53 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         "FOR r IN sales FILTER r.ts >= 9000 COLLECT b = TIME_BUCKET(r.ts, '250ms'), d = r.device AGGREGATE n = COUNT(), a = AVG(r.amount) SORT b, d LIMIT 30 RETURN [b, d, n, a]",
         "FOR r IN sales FILTER r.device == 'web' COLLECT b = TIME_BUCKET(r.ts, '2s') AGGREGATE hi = MAX(r.amount), c = COUNT(r.amount) SORT hi DESC, b LIMIT 4 RETURN [b, hi, c]",
         "FOR r IN sales COLLECT b = TIME_BUCKET(r.bytes, '1s') AGGREGATE n = COUNT() RETURN [b, n]",
-        // Not the arrays' to answer: the ordinary path, same result.
         "FOR r IN sales COLLECT b = TIME_BUCKET(r.ts, '1w') AGGREGATE n = COUNT() RETURN [b, n]",
         "FOR r IN sales FILTER NOT (r.device == 'web') COLLECT AGGREGATE n = COUNT() RETURN n",
         "FOR r IN sales FILTER r.device NOT IN ['web'] COLLECT AGGREGATE n = COUNT() RETURN n",
         "FOR r IN sales FILTER r.user IN [1, null] COLLECT AGGREGATE n = COUNT() RETURN n",
         "FOR r IN sales FILTER r.ts > r.bytes COLLECT AGGREGATE n = COUNT() RETURN n",
+        // `NOT`, and two columns compared: integers, an integer with a
+        // float, strings, a column with nulls on either side.
+        "FOR r IN sales FILTER NOT (r.country == 'c03' OR r.bytes < 5000) AND NOT r.paid COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
+        "FOR r IN sales FILTER r.user NOT IN [1, 2, 3] AND r.country NOT IN ['c01', 'c02'] COLLECT AGGREGATE n = COUNT() RETURN n",
+        "FOR r IN sales FILTER r.bytes < r.user COLLECT d = r.device AGGREGATE n = COUNT(), s = SUM(r.user) RETURN [d, n, s]",
+        "FOR r IN sales FILTER r.bytes >= r.amount AND r.user != r.bytes COLLECT p = r.paid AGGREGATE n = COUNT() RETURN [p, n]",
+        "FOR r IN sales FILTER r.country > r.device OR r.amount == r.bytes COLLECT AGGREGATE n = COUNT() RETURN n",
+        "FOR r IN sales FILTER r.amount <= r.bytes COLLECT c = r.country AGGREGATE n = COUNT() SORT c LIMIT 8 RETURN [c, n]",
+        // Conditions, keys and arguments that are expressions of the
+        // columns: computed once per block by the evaluator.
+        "FOR r IN sales FILTER r.bytes + r.user > 9000 COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
+        "FOR r IN sales FILTER CONTAINS(r.country, '1') AND r.amount * 2 < 50 COLLECT c = r.country AGGREGATE n = COUNT() RETURN [c, n]",
+        "FOR r IN sales FILTER LENGTH(r.device) == 3 OR r.user % 100 == 7 COLLECT p = r.paid AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [p, n, s]",
+        "FOR r IN sales COLLECT k = r.user % 7 AGGREGATE n = COUNT(), s = SUM(r.amount) RETURN [k, n, s]",
+        "FOR r IN sales COLLECT k = UPPER(r.device), p = r.paid AGGREGATE n = COUNT(), hi = MAX(r.bytes) RETURN [k, p, n, hi]",
+        "FOR r IN sales COLLECT k = CONCAT(r.country, '/', r.device) AGGREGATE n = COUNT() SORT k LIMIT 12 RETURN [k, n]",
+        "FOR r IN sales COLLECT k = (r.paid ? 'paid' : 'due'), h = FLOOR(r.amount / 100) AGGREGATE n = COUNT() RETURN [k, h, n]",
+        "FOR r IN sales COLLECT b = TIME_BUCKET(r.ts, '1mo') AGGREGATE n = COUNT() RETURN [b, n]",
+        "FOR r IN sales COLLECT b = TIME_BUCKET(r.ts, '2s', {origin: 500}) AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [b, n, s]",
+        "FOR r IN sales COLLECT b = TIME_BUCKET(r.amount, '100ms') AGGREGATE n = COUNT() RETURN [b, n]",
+        "FOR r IN sales COLLECT d = r.device AGGREGATE a = SUM(r.amount * r.bytes), b = SUM(r.bytes * 2), c = AVG(r.bytes + r.user), m = MAX(r.amount - r.bytes) RETURN [d, a, b, c, m]",
+        "FOR r IN sales COLLECT AGGREGATE a = SUM(r.amount / r.user), b = MIN(ABS(r.amount - 100)), c = COUNT(r.amount * 2), d = AVG(r.user * r.user) RETURN [a, b, c, d]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE s = SUM(r.amount * 2), lo = MIN(r.amount * r.user), n = COUNT(r.bytes + 1) RETURN [c, s, lo, n]",
+        "FOR r IN sales COLLECT u = r.user % 3 AGGREGATE s = SUM(r.bytes * r.bytes * r.bytes * r.bytes * r.bytes) RETURN [u, s]",
+        "FOR r IN sales COLLECT d = r.device AGGREGATE a = SUM(r.bytes % 7), b = AVG(r.amount / r.bytes), c = MAX((r.amount - r.bytes) * r.user % 13), e = MIN(r.user / 4) RETURN [d, a, b, c, e]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT k = r.bytes % 5 AGGREGATE s = SUM(r.amount * r.bytes + 1), n = COUNT(r.amount / r.bytes) RETURN [k, s, n]",
+        "FOR r IN sales FILTER (r.bytes + r.user) % 9 == 0 AND r.amount * 3 >= r.bytes / 2 COLLECT AGGREGATE n = COUNT() RETURN n",
+        // Distinct counts, null among the values.
+        "FOR r IN sales COLLECT d = r.device AGGREGATE u = COUNT_DISTINCT(r.user), n = COUNT() RETURN [d, u, n]",
+        "FOR r IN sales COLLECT AGGREGATE c = COUNT_DISTINCT(r.country), a = COUNT_DISTINCT(r.amount), p = COUNT_DISTINCT(r.paid), b = COUNT_DISTINCT(r.bytes) RETURN [c, a, p, b]",
+        "FOR r IN sales FILTER r.ts >= 9000 COLLECT u = r.user AGGREGATE c = COUNT_DISTINCT(r.device), s = SUM(r.bytes) SORT c DESC, u LIMIT 5 RETURN [u, c, s]",
+        "FOR r IN sales COLLECT c = r.country AGGREGATE k = COUNT_DISTINCT(r.user % 10), d = COUNT_DISTINCT(UPPER(r.device)) RETURN [c, k, d]",
+        // A column of values of several kinds, in a condition.
+        "FOR r IN sales FILTER r.tag == 't1' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
+        "FOR r IN sales FILTER r.tag > 5 AND r.tag != null COLLECT AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [n, s]",
+        "FOR r IN sales FILTER r.tag < 't' OR r.tag IN [3, 't2'] COLLECT p = r.paid AGGREGATE n = COUNT() RETURN [p, n]",
+        "FOR r IN sales FILTER r.tag == 4.0 OR r.tag == null COLLECT AGGREGATE n = COUNT() RETURN n",
+        // Not the arrays' to answer: the ordinary path, same result.
+        "FOR r IN sales COLLECT t = r.tag AGGREGATE n = COUNT() RETURN [t, n]",
+        "FOR r IN sales COLLECT d = r.device AGGREGATE s = SUM(r.tag) RETURN [d, s]",
+        "FOR r IN sales FILTER RAND() >= 0 COLLECT AGGREGATE n = COUNT() RETURN n",
+        "FOR r IN sales COLLECT k = r.bytes / 100 AGGREGATE n = COUNT() SORT k LIMIT 9 RETURN [k, n]",
     ];
     for q in queries {
         let run = |fold: bool| {
@@ -408,7 +452,16 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         // What the arrays answer is answered by them, in every block:
         // otherwise the comparison below is of the ordinary path with
         // itself.
-        let ordinary = ["MEDIAN", "'1w'", "NOT ", "r.ts > r.bytes"];
+        // (The last: integers too large for a float beside floats.)
+        let ordinary = [
+            "MEDIAN",
+            "COLLECT t = r.tag",
+            "SUM(r.tag)",
+            "RAND()",
+            "r.bytes * r.bytes * r.bytes",
+            // A key of integers and floats together.
+            "k = r.bytes / 100",
+        ];
         if !ordinary.iter().any(|shape| q.contains(shape)) {
             assert_eq!(as_rows(), before, "{q}: a block was read as rows");
             let plan = QueryExecutor::with_database_and_bind_vars(
