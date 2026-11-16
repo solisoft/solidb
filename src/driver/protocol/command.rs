@@ -601,6 +601,12 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// Merge the blocks of a columnar collection that are smaller than
+    /// they could be. The rows do not change.
+    CompactColumnar {
+        database: String,
+        collection: String,
+    },
     /// Add a column to a columnar collection: `column` is a column
     /// definition as at creation (`name`, `data_type`), nullable.
     AddColumnarColumn {
@@ -726,6 +732,7 @@ impl Command {
             | DeleteColumnarRows { database, .. }
             | TruncateColumnar { database, .. }
             | SetColumnarRetention { database, .. }
+            | CompactColumnar { database, .. }
             | AddColumnarColumn { database, .. }
             | DropColumnarColumn { database, .. }
             | RenameColumnarColumn { database, .. } => Some(database),

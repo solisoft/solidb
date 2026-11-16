@@ -493,6 +493,28 @@ pub async fn truncate_columnar_handler(
     ))
 }
 
+/// Merge the blocks that are smaller than they could be (many small
+/// inserts, rows deleted since). The rows and what queries answer do not
+/// change.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/compact`
+pub async fn compact_columnar_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let (before, after) =
+        tokio::task::spawn_blocking(move || crate::sync::columnar::compact(&db, &collection))
+            .await
+            .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "blocks_before": before,
+        "blocks_after": after
+    })))
+}
+
 /// `{"name": "new_name"}`.
 #[derive(Debug, Deserialize)]
 pub struct RenameColumnRequest {

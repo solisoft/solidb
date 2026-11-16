@@ -359,6 +359,13 @@ pub fn prune(db: &Database, name: &str) -> DbResult<u64> {
     ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.prune_expired()
 }
 
+/// Merge the small blocks of a collection, on this node: how many blocks
+/// there were, and how many there are. Not logged: the rows are what they
+/// were, and each node holds them in blocks of its own.
+pub fn compact(db: &Database, name: &str) -> DbResult<(usize, usize)> {
+    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.compact()
+}
+
 /// Apply a peer's `ColumnarDelete`. A row that is not there is deleted.
 pub fn apply_delete(db: &Database, name: &str, id: &str) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;

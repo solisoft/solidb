@@ -903,6 +903,13 @@ Rules that keep it sound:
   dropped (an index is stored under the column's name). Replicated as
   `ColumnarAddColumn` / `ColumnarDropColumn` / `ColumnarRenameColumn`,
   each applied once (`apply_column_change`).
+- **Compacting merges runs of neighbouring blocks** that fit in one
+  (`ColumnarCollection::compact`, `POST …/compact`): the rows of a run are
+  sorted by id and sealed again as one block, each run under the write
+  lock, which is released between two. Rows and their order stay, so
+  positions do not move and the indexes are left alone: a change that
+  made compaction reorder or drop rows would have to lower their counts
+  (`cap_indexes`). Local to a node, not logged, and only on demand.
 - **A retention removes the oldest rows, by blocks**
   (`ColumnarCollectionMeta::retention_secs`, `prune_before`): a row's age
   is the instant in its id, rows are in id order, so the old ones are the

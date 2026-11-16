@@ -1377,6 +1377,23 @@ impl DriverHandler {
                 seconds,
             } => database::handle_set_columnar_retention(self, database, collection, seconds),
 
+            Command::CompactColumnar {
+                database,
+                collection,
+            } => {
+                let compacted = self
+                    .storage
+                    .get_database(&database)
+                    .and_then(|db| crate::sync::columnar::compact(&db, &collection));
+                match compacted {
+                    Ok((before, after)) => Response::ok(serde_json::json!({
+                        "blocks_before": before,
+                        "blocks_after": after
+                    })),
+                    Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+                }
+            }
+
             Command::AddColumnarColumn {
                 database,
                 collection,

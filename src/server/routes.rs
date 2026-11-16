@@ -711,6 +711,10 @@ pub fn create_router(
             put(super::columnar_handlers::truncate_columnar_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/compact",
+            post(super::columnar_handlers::compact_columnar_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/columns",
             post(super::columnar_handlers::add_columnar_column_handler),
         )

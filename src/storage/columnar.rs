@@ -1205,6 +1205,88 @@ impl ColumnarCollection {
         Ok(deleted)
     }
 
+    /// Merge the blocks that are smaller than they could be: runs of
+    /// neighbouring blocks that fit together in one block of
+    /// [`BLOCK_ROWS`] rows are sealed again as one. Returns how many blocks
+    /// there were and how many there are.
+    ///
+    /// An insert of 4,096 rows or more is sealed as its own block, so a
+    /// loader sending batches of 5,000 leaves thirteen blocks where one
+    /// fits, and a delete leaves a block with the rows it kept. The rows
+    /// and their order are what they were: positions do not move, so the
+    /// indexes answer as before. Each run is merged under the collection's
+    /// write lock, which is given back between two runs.
+    pub fn compact(&self) -> DbResult<(usize, usize)> {
+        let before = self.row_set()?.blocks.len();
+        while self.merge_one_run()? {}
+        Ok((before, self.row_set()?.blocks.len()))
+    }
+
+    /// Merge the first run of blocks that fit in one. `false` when there
+    /// is none left.
+    fn merge_one_run(&self) -> DbResult<bool> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let meta = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .clone();
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        let blocks = self.blocks(&cf, &meta.compression)?;
+
+        // The first run of two blocks or more that fit together, each run
+        // taking as many neighbours as it can.
+        let mut run: Option<std::ops::Range<usize>> = None;
+        let mut start = 0;
+        while start < blocks.len() {
+            let mut end = start;
+            let mut rows = 0;
+            while end < blocks.len() && rows + blocks[end].len() <= BLOCK_ROWS {
+                rows += blocks[end].len();
+                end += 1;
+            }
+            if end - start >= 2 {
+                run = Some(start..end);
+                break;
+            }
+            start = end.max(start + 1);
+        }
+        let Some(run) = run else {
+            return Ok(false);
+        };
+
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        let merged_from = &blocks[run];
+        let mut rows: Vec<(String, serde_json::Map<String, Value>)> = merged_from
+            .iter()
+            .flat_map(|block| {
+                (0..block.len()).map(move |row| (block.uuids.text(row), block.row(row)))
+            })
+            .collect();
+        // Blocks follow each other by their first id; a row that came by
+        // replication may sit in a later block under an older id.
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        let merged = ColBlock::seal(&names, &rows);
+
+        let mut batch = KvBatch::default();
+        for block in merged_from {
+            batch.delete_ks(&cf, format!("{}{}", COL_BLOCK_PREFIX, block.key).as_bytes());
+        }
+        self.stage_block(&cf, &mut batch, &meta.compression, &merged)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let gone: Vec<String> = merged_from.iter().map(|b| b.key.clone()).collect();
+        if let Some(held) = self.store().blocks.write().as_mut() {
+            held.retain(|b| !gone.contains(&b.key));
+            held.push(Arc::new(merged));
+            held.sort_by(|a, b| a.key.cmp(&b.key));
+        }
+        keep_within_budget();
+        Ok(true)
+    }
+
     /// Add a column to the schema. The rows already stored hold nothing
     /// for it and read as null, so the column is nullable; nothing is
     /// written but the schema: a block sealed before has no array of that
