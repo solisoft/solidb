@@ -153,8 +153,12 @@ impl Engine for Soli {
         if std::env::var("SOLIDB_TS_BLOCKS").as_deref() == Ok("0") {
             return Ok(());
         }
+        let began = std::time::Instant::now();
         if let Some(said) = blocks(&self.s, reqwest::Method::POST, "/seal", None).await? {
-            eprintln!("column blocks: {said}");
+            eprintln!(
+                "column blocks: {said} (what was left sealed in {:.1} s)",
+                began.elapsed().as_secs_f64()
+            );
         }
         Ok(())
     }

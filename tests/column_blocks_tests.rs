@@ -187,6 +187,31 @@ fn blocks_answer_what_the_documents_answer() {
     same(&engine, true, "all sealed");
 }
 
+/// More documents than two blocks hold, with no block yet: one call seals
+/// them all, several blocks at a time on as many threads, and the blocks
+/// follow one another.
+#[test]
+fn a_seal_builds_several_blocks_at_once() {
+    let points = 150_000;
+    let (engine, _tmp) = engine_with(points);
+    let coll = points_of(&engine);
+    // What the sealing thread did behind the writes (it too takes several
+    // blocks at once when it is that far behind) answers already.
+    sealed_behind(&coll);
+    same(&engine, true, "sealed behind the writes");
+
+    // Again from nothing, by the call.
+    let def = coll.column_blocks_definition().unwrap();
+    coll.drop_column_blocks().unwrap();
+    coll.set_column_blocks(def).unwrap();
+    let sealed = coll.seal_column_blocks().unwrap();
+    let status = coll.column_blocks_status().unwrap();
+    assert!(sealed >= 3, "{sealed} blocks sealed, {status:?}");
+    assert_eq!(status.sealed_documents, points as u64, "{status:?}");
+    assert_eq!(status.opaque_blocks, 0, "{status:?}");
+    same(&engine, true, "sealed by one call");
+}
+
 #[test]
 fn a_write_throws_away_the_block_it_falls_in() {
     let points = 3 * BLOCK_ROWS as i64;

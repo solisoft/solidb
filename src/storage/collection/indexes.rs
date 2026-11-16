@@ -2692,6 +2692,16 @@ impl Collection {
         // One snapshot of the definitions, read in place: this runs for every
         // document written.
         let meta = self.index_meta().unwrap_or_default();
+        Self::index_entries_for_insert(&meta, doc_key, doc_value)
+    }
+
+    /// [`Self::compute_index_entries_for_insert`] with the definitions in
+    /// hand: a batch looks them up once, not once per document.
+    pub(crate) fn index_entries_for_insert(
+        meta: &super::index_meta::IndexMetaSnapshot,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> DbResult<(IndexEntries, IndexEntries)> {
         let mut regular_entries = Vec::new();
 
         for index in &meta.indexes {

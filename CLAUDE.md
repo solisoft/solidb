@@ -709,7 +709,12 @@ Rules that keep it sound:
   the blocks — new points, or a range whose block it threw away — queues
   its collection, and does not wait. The thread seals 1,024 documents at a
   time, the newest 512 left out, and merges adjacent small blocks up to
-  65,536 rows. `StorageEngine`'s `Drop` stops and joins it
+  65,536 rows. When whole blocks wait (a bulk load writes faster than one
+  thread seals) a pass reads up to several blocks' documents under one
+  registration and one snapshot and builds the blocks on as many threads
+  (`seal_range`, `at_once`: half the CPUs for the thread, all of them, at
+  most 8, for `POST …/blocks/seal`); the blocks follow one another, and
+  the first one a write fell in is dropped with those after it. `StorageEngine`'s `Drop` stops and joins it
   (`blocks::stop_sealer`) before the database closes, as it joins the
   column-family droppers: a thread still holding a collection at exit is
   what crashed `rbac_admin_endpoints_tests`. After a restart nothing is

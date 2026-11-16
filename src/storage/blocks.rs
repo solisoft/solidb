@@ -731,8 +731,9 @@ impl BlockSet {
     }
 
     /// Seal the first range no block covers. `whole` seals a tail shorter
-    /// than a block too. Returns whether a block was added.
-    fn seal_next(&self, coll: &Collection, whole: bool) -> DbResult<bool> {
+    /// than a block too, and several blocks at once. Returns how many
+    /// blocks were added.
+    fn seal_next(&self, coll: &Collection, whole: bool, at_once: usize) -> DbResult<usize> {
         // The range: from the end of the blocks that follow one another
         // from the start, to the next block if there is one.
         let (lo, bound) = {
@@ -775,32 +776,40 @@ impl BlockSet {
             whole,
             generated.then_some(now),
             writes,
+            at_once,
         );
         let mut inner = self.inner.lock();
         let pending = inner.pending.take();
-        let stored = match sealed {
-            Ok(Some(stored)) => stored,
-            other => return other.map(|_| false),
-        };
-        let disturbed = pending
-            .and_then(|p| p.written_from)
-            .is_some_and(|from| from.as_str() < stored.hi.as_str());
-        if disturbed || self.state.is_dead() {
-            return Ok(false);
+        let blocks = sealed?;
+        if blocks.is_empty() || self.state.is_dead() {
+            return Ok(0);
         }
-        // Written before it is listed: a restart reads what is on disk.
-        {
-            let cf = coll.ks.handle(&coll.db).ok_or_else(|| {
-                DbError::CollectionNotFound(format!("{} (dropped while sealing)", coll.name))
-            })?;
-            coll.db
-                .put_ks(&cf, block_key(&stored.lo), encoded(&stored)?)
-                .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
+        // The blocks follow one another: the first that holds a key written
+        // since the range was registered goes, and those after it.
+        let written_from = pending.and_then(|p| p.written_from);
+        let mut kept = 0;
+        for stored in blocks {
+            if written_from
+                .as_deref()
+                .is_some_and(|from| from < stored.hi.as_str())
+            {
+                break;
+            }
+            // Written before it is listed: a restart reads what is on disk.
+            {
+                let cf = coll.ks.handle(&coll.db).ok_or_else(|| {
+                    DbError::CollectionNotFound(format!("{} (dropped while sealing)", coll.name))
+                })?;
+                coll.db
+                    .put_ks(&cf, block_key(&stored.lo), encoded(&stored)?)
+                    .map_err(|e| DbError::InternalError(format!("column block: {e}")))?;
+            }
+            let entry = self.entry(stored, true, true);
+            inner.blocks.insert(entry.lo.clone(), entry);
+            inner.changes += 1;
+            kept += 1;
         }
-        let entry = self.entry(stored, true, true);
-        inner.blocks.insert(entry.lo.clone(), entry);
-        inner.changes += 1;
-        Ok(true)
+        Ok(kept)
     }
 
     /// Merge the first run of small adjacent blocks into one: the points of
@@ -903,6 +912,13 @@ impl BlockSet {
 
     /// Build the block of the first documents of `[lo, bound)`.
     /// `None` when the range is an open tail too short to seal.
+    /// The blocks of the documents from `lo` to `bound` (the tail's end
+    /// without one): at most `at_once` of them, each of up to
+    /// [`BLOCK_ROWS`] documents, in key order and following one another.
+    /// Read in one pass, then built on as many threads: what a block costs
+    /// is decoding its documents and arranging them, and no block needs
+    /// another's.
+    #[allow(clippy::too_many_arguments)]
     fn seal_range(
         &self,
         coll: &Collection,
@@ -911,47 +927,37 @@ impl BlockSet {
         whole: bool,
         before: Option<u64>,
         writes: u64,
-    ) -> DbResult<Option<Stored>> {
+        at_once: usize,
+    ) -> DbResult<Vec<Stored>> {
         let fields = self.def.projection();
         let snapshot = coll.db.snapshot();
+        let most = BLOCK_ROWS * at_once.max(1);
         let mut keys: Vec<String> = Vec::with_capacity(BLOCK_ROWS + 1);
-        let mut rows: Option<Vec<Vec<Value>>> = Some(Vec::with_capacity(BLOCK_ROWS));
-        let mut fingerprint = 0u64;
+        // The stored documents end to end, and where each ends; `None`
+        // once a key is not text.
+        let mut docs: Option<(Vec<u8>, Vec<usize>)> = Some((Vec::new(), Vec::new()));
         for_each_doc(coll, lo, bound, snapshot.as_ref(), |key, bytes| {
             let Ok(text) = std::str::from_utf8(&key[DOC_PREFIX.len()..]) else {
-                rows = None;
+                docs = None;
                 return true;
             };
             keys.push(text.to_string());
-            if keys.len() > BLOCK_ROWS {
+            if keys.len() > most {
                 return false;
             }
-            fingerprint ^= key_hash(key);
-            if let Some(held) = &mut rows {
-                match row_of(bytes, &fields) {
-                    Some(row) => held.push(row),
-                    None => rows = None,
-                }
+            if let Some((all, ends)) = &mut docs {
+                all.extend_from_slice(bytes);
+                ends.push(all.len());
             }
             true
         })?;
         // Nothing past the last block, as of `writes` announcements.
         if bound.is_none() && keys.is_empty() {
             self.tail_clean_at.store(writes, Ordering::Release);
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        // Drop the keys from `at` on, with their part of the fingerprint
-        // and their rows; the first of them.
-        let mut cut = |keys: &mut Vec<String>, at: usize| -> String {
-            let dropped = keys.split_off(at);
-            fingerprint = keys.iter().fold(0, |f, key| f ^ key_hash(&doc_key(key)));
-            if let Some(held) = &mut rows {
-                held.truncate(at);
-            }
-            dropped[0].clone()
-        };
         // With `before`, writes of keys generated from that instant on do
-        // not announce themselves: the block must end before them, and
+        // not announce themselves: the blocks must end before them, and
         // every key in sight must be a generated one for that to mean
         // anything. One that is not ends the arrangement, and this seal.
         let mut clamped = false;
@@ -960,46 +966,100 @@ impl BlockSet {
                 || bound.is_some_and(|bound| key_ms(bound).is_none());
             if foreign {
                 self.frontier.store(u64::MAX, Ordering::Release);
-                return Ok(None);
+                return Ok(Vec::new());
             }
             if let Some(at) = keys
                 .iter()
                 .position(|key| key_ms(key).is_some_and(|ms| ms >= before))
             {
-                cut(&mut keys, at);
+                keys.truncate(at);
                 clamped = true;
             }
         }
-        // The block ends where the next one will start: at the first key
-        // left out, at the bound, or just past the last key of the tail.
-        // A write leaves the newest keys of the tail out: a late write is
-        // likely to fall among them.
+        // The last block ends where the next seal will start: at the first
+        // key left out, at the bound, or just past the last key of the
+        // tail. A write leaves the newest keys of the tail out: a late
+        // write is likely to fall among them.
         let hi = if clamped {
             match keys.last() {
                 Some(last) => format!("{last}\u{0}"),
-                None => return Ok(None),
+                None => return Ok(Vec::new()),
             }
-        } else if keys.len() > BLOCK_ROWS {
-            keys.pop().expect("more than a block")
+        } else if keys.len() > most {
+            keys.pop().expect("more than asked")
         } else if let Some(bound) = bound {
             bound.to_string()
         } else if whole && !keys.is_empty() {
             format!("{}\u{0}", keys.last().expect("not empty"))
         } else if keys.len() >= SEAL_ROWS + TAIL_KEPT {
             let kept = keys.len() - TAIL_KEPT;
-            cut(&mut keys, kept)
+            keys.split_off(kept).swap_remove(0)
         } else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
-        let stored = Stored {
-            lo: lo.to_string(),
-            hi,
-            rows: keys.len() as u64,
-            fingerprint,
-            columns: rows.and_then(columns_of),
+
+        // One block per `BLOCK_ROWS` keys, each ending at the next one's
+        // first key.
+        let starts: Vec<usize> = (0..keys.len().max(1)).step_by(BLOCK_ROWS).collect();
+        let build = |n: usize| -> Stored {
+            let from = starts[n];
+            let to = starts.get(n + 1).copied().unwrap_or(keys.len());
+            let block_lo = if n == 0 { lo } else { keys[from].as_str() };
+            let block_hi = starts
+                .get(n + 1)
+                .map_or(hi.as_str(), |next| keys[*next].as_str());
+            let fingerprint = keys[from..to]
+                .iter()
+                .fold(0, |f, key| f ^ key_hash(&doc_key(key)));
+            let rows: Option<Vec<Vec<Value>>> = docs.as_ref().and_then(|(all, ends)| {
+                (from..to)
+                    .map(|i| {
+                        let start = if i == 0 { 0 } else { ends[i - 1] };
+                        row_of(&all[start..ends[i]], &fields)
+                    })
+                    .collect()
+            });
+            Stored {
+                lo: block_lo.to_string(),
+                hi: block_hi.to_string(),
+                rows: (to - from) as u64,
+                fingerprint,
+                columns: rows.and_then(columns_of),
+            }
         };
-        Ok(Some(stored))
+        if starts.len() == 1 {
+            return Ok(vec![build(0)]);
+        }
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let built: parking_lot::Mutex<Vec<(usize, Stored)>> = parking_lot::Mutex::new(Vec::new());
+        std::thread::scope(|scope| {
+            for _ in 0..starts.len().min(at_once) {
+                scope.spawn(|| loop {
+                    let n = next.fetch_add(1, Ordering::Relaxed);
+                    if n >= starts.len() {
+                        return;
+                    }
+                    let block = build(n);
+                    built.lock().push((n, block));
+                });
+            }
+        });
+        let mut built = built.into_inner();
+        // (A thread that died left its block out: nothing after it either.)
+        built.sort_by_key(|(n, _)| *n);
+        Ok(built
+            .into_iter()
+            .enumerate()
+            .take_while(|(at, (n, _))| at == n)
+            .map(|(_, (_, block))| block)
+            .collect())
     }
+}
+
+/// Threads the seal of a whole collection builds blocks on: the CPUs, at
+/// most 8.
+fn seal_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
 }
 
 /// Each document with a key in `[lo, hi)`, as its `doc:` key and stored
@@ -1361,8 +1421,12 @@ impl Collection {
         // Points generated in the very millisecond a seal starts in are
         // left to the next one: a moment later they are sealed too.
         for _ in 0..5 {
-            while set.seal_next(self, true)? {
-                added += 1;
+            loop {
+                let sealed = set.seal_next(self, true, seal_threads())?;
+                if sealed == 0 {
+                    break;
+                }
+                added += sealed;
             }
             if set.uncovered(self) == 0 {
                 break;
@@ -1379,10 +1443,20 @@ impl Collection {
     fn seal_behind(&self, set: &BlockSet) {
         let waiting = (SEAL_ROWS + TAIL_KEPT) as u64;
         let _sealing = set.sealing.lock();
-        while set.uncovered(self) >= waiting {
-            match set.seal_next(self, false) {
-                Ok(true) => {}
-                Ok(false) => break,
+        loop {
+            let uncovered = set.uncovered(self);
+            if uncovered < waiting {
+                break;
+            }
+            // Beside the writes, one block at a time. When whole blocks
+            // wait (a bulk load writes faster than one thread seals),
+            // several at once, on half the threads a full seal takes: the
+            // rest are the writers'.
+            let behind = (uncovered / BLOCK_ROWS as u64) as usize;
+            let at_once = behind.clamp(1, (seal_threads() / 2).max(1));
+            match set.seal_next(self, false, at_once) {
+                Ok(0) => break,
+                Ok(_) => {}
                 Err(e) => {
                     tracing::warn!("sealing a column block of '{}' failed: {}", self.name, e);
                     break;

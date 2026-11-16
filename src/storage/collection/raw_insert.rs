@@ -182,7 +182,7 @@ impl Collection {
             Err(e) => return Some(Err(e)),
         };
         let written = self.with_key_locked(&header.key, || {
-            self.insert_raw_locked(&header.key, &stored, &view, fresh)
+            self.insert_raw_locked(meta, &header.key, &stored, &view, fresh)
         });
         Some(
             written
@@ -195,6 +195,7 @@ impl Collection {
     /// `fresh`: the key was made for this document (see `document_key`).
     fn insert_raw_locked(
         &self,
+        meta: &IndexMetaSnapshot,
         key: &str,
         stored: &[u8],
         view: &Value,
@@ -224,7 +225,7 @@ impl Collection {
 
         let mut batch = KvBatch::default();
         batch.put_ks(&cf, Self::doc_key(key), stored);
-        self.add_insert_entries(&mut batch, &cf, key, view)?;
+        self.add_insert_entries_with(Some(meta), &mut batch, &cf, key, view)?;
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
@@ -251,12 +252,13 @@ impl Collection {
 
         // Pass 1: keys in batch order, the first problem reported.
         let mut headers: Vec<NewHeader> = Vec::with_capacity(docs.len());
-        let mut batch_keys: HashSet<String> = HashSet::with_capacity(docs.len());
+        let mut batch_keys: HashSet<String> = HashSet::new();
         let mut all_fresh = true;
         for doc in docs {
             let (key, fresh) = document_key(None, doc)?;
             all_fresh &= fresh;
-            if !batch_keys.insert(key.clone()) {
+            // (A key made here repeats no other.)
+            if !fresh && !batch_keys.insert(key.clone()) {
                 return Some(Err(DbError::InvalidDocument(format!(
                     "Duplicate _key '{}' within batch",
                     key
@@ -269,11 +271,12 @@ impl Collection {
             .zip(docs)
             .map(|(header, doc)| indexed_view(&header.view(), &doc.data, &meta.read_fields))
             .collect::<Option<_>>()?;
-        Some(self.insert_batch_raw_checked(docs, &headers, &views, all_fresh))
+        Some(self.insert_batch_raw_checked(meta, docs, &headers, &views, all_fresh))
     }
 
     fn insert_batch_raw_checked(
         &self,
+        meta: &IndexMetaSnapshot,
         docs: &[CanonicalDoc],
         headers: &[NewHeader],
         views: &[Value],
@@ -291,7 +294,7 @@ impl Collection {
             let bytes = header.stored(&doc.data)?;
             let doc_key = Self::doc_key(&header.key);
             batch.put_ks(&cf, &doc_key, &bytes);
-            self.add_insert_entries(&mut batch, &cf, &header.key, view)?;
+            self.add_insert_entries_with(Some(meta), &mut batch, &cf, &header.key, view)?;
             stored.push(bytes);
             doc_keys.push(doc_key);
         }

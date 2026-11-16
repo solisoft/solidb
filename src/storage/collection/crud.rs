@@ -178,13 +178,29 @@ impl Collection {
         key: &str,
         doc_value: &Value,
     ) -> DbResult<()> {
-        let (regular, geo) = self.compute_index_entries_for_insert(key, doc_value)?;
+        let meta = self.index_meta();
+        self.add_insert_entries_with(meta.as_deref(), batch, cf, key, doc_value)
+    }
+
+    /// [`Self::add_insert_entries`] with the index definitions in hand
+    /// (`None`: they could not be read).
+    pub(super) fn add_insert_entries_with(
+        &self,
+        meta: Option<&super::index_meta::IndexMetaSnapshot>,
+        batch: &mut KvBatch,
+        cf: &KsCf,
+        key: &str,
+        doc_value: &Value,
+    ) -> DbResult<()> {
+        let (regular, geo) = match meta {
+            Some(meta) => Self::index_entries_for_insert(meta, key, doc_value)?,
+            None => self.compute_index_entries_for_insert(key, doc_value)?,
+        };
         for (entry_key, entry_value) in regular.into_iter().chain(geo) {
             batch.put_ks(cf, entry_key, entry_value);
         }
         // Fulltext and TTL entries only where such an index exists: each
         // lookup copies its definitions.
-        let meta = self.index_meta();
         if meta.as_ref().is_none_or(|m| !m.fulltext.is_empty()) {
             for (entry_key, entry_value) in self.compute_fulltext_entries_for_insert(key, doc_value)
             {
