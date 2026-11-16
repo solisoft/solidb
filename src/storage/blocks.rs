@@ -345,6 +345,11 @@ pub(crate) enum Segment {
     Documents(String, Option<String>),
 }
 
+/// Reads of a series' newest row answered from blocks, since the process
+/// started (`block_scan::newest_from_blocks`): for tests, which must know
+/// the blocks answered and not the index beside them.
+pub static NEWEST_FROM_BLOCKS: AtomicU64 = AtomicU64::new(0);
+
 /// The keys a write touched.
 pub(crate) enum Wrote<'a> {
     Key(&'a str),
@@ -718,6 +723,11 @@ impl BlockSet {
             self.delete_stored(coll, &entry.lo);
         }
         false
+    }
+
+    /// The columns of `entry` if they are in memory.
+    pub(crate) fn cached_columns(&self, entry: &Entry) -> Option<Arc<Columns>> {
+        entry.cached.clone()
     }
 
     /// The columns of `entry`: from memory, or read again.

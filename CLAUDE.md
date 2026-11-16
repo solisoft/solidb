@@ -719,6 +719,16 @@ Rules that keep it sound:
   column-family droppers: a thread still holding a collection at exit is
   what crashed `rbac_admin_endpoints_tests`. After a restart nothing is
   queued until a write: `POST …/blocks/seal` seals what is left.
+- **The newest row of a series** (`FILTER p.series == x SORT p.time DESC
+  LIMIT 1`, the small sorted read of the driver) is answered from the
+  blocks by `block_scan::newest_from_blocks` when they hold every
+  document (`tail_is_empty`, no gap, every block checked and in memory),
+  the series is the blocks' one string column and the row is the only one
+  at its instant: ties are ordered by key, which a block does not hold,
+  so a tie, like any FILTER the row fails, is the index's to answer. It
+  must return what the index walk returns
+  (`the_newest_point_of_a_series_comes_from_the_blocks`), calls
+  `note_range_read`, and sits behind the guards of `sorted_read_target`.
 - Blocks are local to a node: not replicated, not in a full sync, not
   dumped. The definition is not replicated either; declare it on each node.
 

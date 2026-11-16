@@ -361,6 +361,10 @@ impl QueryExecutor<'_> {
         let Some((_, fields)) = super::super::projection::scan_projection(query) else {
             return Ok(None);
         };
+        // The newest row of a series, when column blocks hold it.
+        if let Some(rows) = self.newest_from_blocks(&target, &bindings, &fields) {
+            return self.sorted_rows_out(query, &target, rows).map(Some);
+        }
         let max_scan = max_rows.saturating_mul(4);
         let Some(rows) = self.walk_sorted_projected(&target, &bindings, &fields, max_scan)? else {
             return Ok(None);

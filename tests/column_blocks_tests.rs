@@ -212,6 +212,104 @@ fn a_seal_builds_several_blocks_at_once() {
     same(&engine, true, "sealed by one call");
 }
 
+/// `FILTER p.series == x SORT p.ts DESC LIMIT 1`, as the driver runs it:
+/// answered from the blocks when they hold every document and the answer
+/// is one row beyond doubt, and always what the index answers.
+#[test]
+fn the_newest_point_of_a_series_comes_from_the_blocks() {
+    use solidb::storage::blocks::NEWEST_FROM_BLOCKS;
+    use std::sync::atomic::Ordering;
+    let tmp = TempDir::new().unwrap();
+    let engine = open(&tmp);
+    engine.create_database(DB.to_string()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("last".to_string(), Some("timeseries".to_string()))
+        .unwrap();
+    let coll = db.get_collection("last").unwrap();
+    coll.create_index(
+        "by_series_ts".to_string(),
+        vec!["series".to_string(), "ts".to_string()],
+        solidb::storage::IndexType::Persistent,
+        false,
+    )
+    .unwrap();
+    coll.set_column_blocks(BlocksDef {
+        time: "ts".to_string(),
+        fields: vec!["series".to_string(), "v".to_string(), "m".to_string()],
+    })
+    .unwrap();
+    let row = |i: i64| {
+        let mut p = point(i);
+        p.as_object_mut().unwrap().remove("host");
+        p
+    };
+    for chunk in (0..30_000i64).collect::<Vec<_>>().chunks(5_000) {
+        coll.insert_batch(chunk.iter().map(|i| row(*i)).collect())
+            .unwrap();
+    }
+    // Two points of s007 at its newest instant: which comes first is the
+    // keys' business.
+    let newest = T0 + (29_999 / SERIES) * 10_000;
+    coll.insert(json!({"series": "s007", "ts": newest, "v": -1.0, "m": 1}))
+        .unwrap();
+    coll.seal_column_blocks().unwrap();
+
+    let both = |q: &str| -> (Vec<Value>, bool) {
+        let query = parse(q).unwrap();
+        let executor =
+            || QueryExecutor::with_database_and_bind_vars(&engine, DB.to_string(), BindVars::new());
+        let before = NEWEST_FROM_BLOCKS.load(Ordering::Relaxed);
+        let small = executor().execute_small_sorted(&query, 64).unwrap();
+        let from_blocks = NEWEST_FROM_BLOCKS.load(Ordering::Relaxed) > before;
+        let ordinary = executor().execute(&query).unwrap();
+        if let Some(small) = &small {
+            assert_eq!(small, &ordinary, "{q}");
+        }
+        (ordinary, from_blocks)
+    };
+    let last = |series: &str, ret: &str| {
+        format!("FOR p IN last FILTER p.series == '{series}' SORT p.ts DESC LIMIT 1 RETURN {ret}")
+    };
+
+    for series in ["s000", "s013", "s039"] {
+        let (rows, from_blocks) = both(&last(series, "[p.ts, p.v]"));
+        assert_eq!(rows.len(), 1, "{series}");
+        assert!(from_blocks, "{series}");
+        let (_, from_blocks) = both(&last(series, "{at: p.ts, m: p.m, s: p.series}"));
+        assert!(from_blocks, "{series}");
+    }
+    // A series that is not there: no row, known from the blocks.
+    let (rows, from_blocks) = both(&last("nope", "p.ts"));
+    assert!(rows.is_empty() && from_blocks);
+    // Left to the index: two rows at the newest instant, a field the
+    // blocks do not hold, a FILTER the newest row does not pass, the
+    // oldest row, two rows.
+    for q in [
+        last("s007", "[p.ts, p.v]"),
+        last("s003", "[p.ts, p.n]"),
+        "FOR p IN last FILTER p.series == 's003' AND p.v < -5 SORT p.ts DESC LIMIT 1 RETURN p.ts"
+            .to_string(),
+        "FOR p IN last FILTER p.series == 's003' SORT p.ts LIMIT 1 RETURN p.ts".to_string(),
+        "FOR p IN last FILTER p.series == 's003' SORT p.ts DESC LIMIT 2 RETURN p.ts".to_string(),
+    ] {
+        let (_, from_blocks) = both(&q);
+        assert!(!from_blocks, "{q}");
+    }
+
+    // A point written since: the index answers until it is sealed, and
+    // the answer is the new point both times.
+    let later = newest + 60_000;
+    coll.insert(json!({"series": "s013", "ts": later, "v": 2.5, "m": 2.5}))
+        .unwrap();
+    let (rows, from_blocks) = both(&last("s013", "[p.ts, p.v]"));
+    assert_eq!(rows, vec![json!([later, 2.5])]);
+    assert!(!from_blocks);
+    coll.seal_column_blocks().unwrap();
+    let (rows, from_blocks) = both(&last("s013", "[p.ts, p.v, p.m]"));
+    assert_eq!(rows, vec![json!([later, 2.5, 2.5])]);
+    assert!(from_blocks);
+}
+
 #[test]
 fn a_write_throws_away_the_block_it_falls_in() {
     let points = 3 * BLOCK_ROWS as i64;

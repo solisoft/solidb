@@ -263,6 +263,160 @@ impl QueryExecutor<'_> {
         ))
     }
 
+    /// The newest row of one series, for an index-ordered read that asks
+    /// for it (`FILTER p.series == x SORT p.time DESC LIMIT 1`), from the
+    /// column blocks: the row an index walk would keep, bound as that walk
+    /// binds it, or no row. `None` when the walk has to run.
+    ///
+    /// The blocks answer only when they hold every document (nothing waits
+    /// outside them, each has its columns in memory and was checked) and
+    /// when the answer is one row beyond doubt: the series is the blocks'
+    /// one string column, so that its rows are a run ordered by time, and
+    /// no other row of the series has the newest instant — which of two
+    /// such documents comes first is decided by their keys, which a block
+    /// does not hold. Anything else, a FILTER the row does not pass
+    /// included, is the index's to answer.
+    pub(super) fn newest_from_blocks(
+        &self,
+        target: &super::index_sort::SortedTarget<'_>,
+        bindings: &Context,
+        fields: &[String],
+    ) -> Option<Vec<Context>> {
+        let plan = &target.plan;
+        if plan.ascending || target.offset != 0 || target.count != 1 {
+            return None;
+        }
+        let set = target.collection.column_blocks()?;
+        let def = &set.def;
+        if plan.sort_field != def.time {
+            return None;
+        }
+        // The read planned: every row of one string value, by time.
+        let [series, time] = target.read.index.fields.as_slice() else {
+            return None;
+        };
+        let [Value::String(wanted)] = target.read.eq_values.as_slice() else {
+            return None;
+        };
+        if time != &def.time || !matches!(target.read.bounds(), (None, None)) {
+            return None;
+        }
+        let series_at = def.fields.iter().position(|f| f == series)?;
+        if !fields
+            .iter()
+            .all(|f| f == &def.time || def.fields.contains(f))
+        {
+            return None;
+        }
+        // Asked before the blocks are listed, as the fold does.
+        if !set.tail_is_empty() {
+            return None;
+        }
+        let segments = set.segments(&target.collection);
+        // The newest row of the series, and whether another has its time.
+        let mut best: Option<(i64, Arc<Columns>, usize)> = None;
+        let mut tied = false;
+        for segment in segments.iter().rev() {
+            let entry = match segment {
+                Segment::Block(entry) => entry,
+                Segment::Documents(_, None) => continue,
+                Segment::Documents(..) => return None,
+            };
+            if entry.opaque || !set.verified(&target.collection, entry) {
+                return None;
+            }
+            if best.as_ref().is_some_and(|(t, ..)| entry.max_time < *t) {
+                continue;
+            }
+            let columns = set.cached_columns(entry)?;
+            let strings = columns
+                .cols
+                .iter()
+                .filter(|c| matches!(c, Column::Str { .. }))
+                .count();
+            let Column::Str { dict, codes } = columns.cols.get(series_at)? else {
+                return None;
+            };
+            if strings != 1 {
+                return None;
+            }
+            let Ok(code) = dict.binary_search_by(|d| d.as_str().cmp(wanted.as_str())) else {
+                continue;
+            };
+            // Rows are ordered by the string then by time: the series is a
+            // run, its newest row the last.
+            let code = code as u32;
+            let from = codes.partition_point(|c| *c < code);
+            let to = codes.partition_point(|c| *c <= code);
+            if from == to {
+                continue;
+            }
+            let at = to - 1;
+            let t = *columns.time.get(at)?;
+            let twice = at > from && columns.time[at - 1] == t;
+            match &best {
+                Some((held, ..)) if *held > t => {}
+                Some((held, ..)) if *held == t => tied = true,
+                _ => {
+                    tied = twice;
+                    best = Some((t, columns.clone(), at));
+                }
+            }
+        }
+        if tied {
+            return None;
+        }
+        // It did not come from the stored documents: a transaction that
+        // checks its reads holds it to the range rule.
+        target.collection.note_range_read();
+        let answered = || {
+            blocks::NEWEST_FROM_BLOCKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        };
+        let Some((t, columns, at)) = best else {
+            answered();
+            return Some(Vec::new());
+        };
+        let mut row = serde_json::Map::new();
+        for field in fields {
+            let value = if field == &def.time {
+                Value::from(t)
+            } else {
+                let column = columns
+                    .cols
+                    .get(def.fields.iter().position(|f| f == field)?)?;
+                match column {
+                    Column::Int(values) => Value::from(*values.get(at)?),
+                    Column::Float(values) => Value::from(*values.get(at)?),
+                    Column::Mixed { values, ints } => {
+                        let v = *values.get(at)?;
+                        if *ints.get(at)? {
+                            Value::from(v as i64)
+                        } else {
+                            Value::from(v)
+                        }
+                    }
+                    Column::Str { dict, codes } => {
+                        Value::String(dict.get(*codes.get(at)? as usize)?.clone())
+                    }
+                }
+            };
+            row.insert(field.clone(), value);
+        }
+        let mut ctx = bindings.clone();
+        ctx.insert(plan.for_clause.variable.clone(), Value::Object(row));
+        // A FILTER beyond the equality, which this row may not pass while
+        // an older one does.
+        if !plan
+            .filters
+            .iter()
+            .all(|filter| self.filter_row(filter, &ctx))
+        {
+            return None;
+        }
+        answered();
+        Some(vec![ctx])
+    }
+
     /// Run `clauses[i]`, a FOR, and the clauses up to its COLLECT from the
     /// column blocks of its collection; `Ok(None)` when the ordinary path
     /// has to run them (see the module's notes).
