@@ -76,6 +76,18 @@
     <tr><td><code>insert</code></td><td>204,467</td><td>250,359</td><td>82,846</td></tr>
   </tbody>
 </table>
+<p><strong>Updated November 16.</strong> The tables above are the first measurement, and they are kept as they were published. SoliDB has since been measured again on the same machine, after changes that the two rows it lost pointed to. Requests per second, median of three runs of 20 seconds, at one client and at eight; QuestDB's figures are those above:</p>
+<table>
+  <thead><tr><th>SoliDB, second measurement</th><th>1 client</th><th>8 clients</th><th>QuestDB, 8 clients</th></tr></thead>
+  <tbody>
+    <tr><td><code>range</code></td><td>44,200</td><td>211,765</td><td>62,763</td></tr>
+    <tr><td><code>bucket</code></td><td>9,693</td><td>55,174</td><td>14,105</td></tr>
+    <tr><td><code>last</code></td><td>73,110</td><td>393,825</td><td>338,912</td></tr>
+    <tr><td><code>window_all</code></td><td>39,369</td><td>177,183</td><td>129,426</td></tr>
+    <tr><td><code>insert</code></td><td>68,779</td><td>291,008</td><td>250,359</td></tr>
+  </tbody>
+</table>
+<p>What changed. On the insert at eight clients the server used less than half of its processor and made one futex call per request: its worker threads went to sleep between two requests and each request paid for waking one. A connection that was just answered now stays awake a few tens of microseconds for its next request, as long as there are no more busy connections than threads. A time series collection takes the write path that stores a document without decoding it, which only plain collections took. And the latest point of a series is read from the column blocks when they hold every point, as they do here, where the readings follow a load and a seal: with points arriving, the newest are not in a block yet, the index answers as before, and that figure is 308,119 at eight clients, 10% under QuestDB's. The load went from 1.09 to 1.74 million points a second (QuestDB: 6.65) and the directory after the run from 9.3 to 6.8 GB (QuestDB: 4.0): QuestDB is still well ahead on both. The repository's README has the full table and what was tried and not kept.</p>
 <p>SoliDB has the highest figure in eight rows of ten, QuestDB in two: the latest point and the insert at eight clients. Two of SoliDB's leads are narrow: the latest point at one client (5%) and <code>window_all</code> at one client (6%). Against TimescaleDB it leads every row.</p>
 <p>The figures hide one difference that matters to whoever pays for the cores. QuestDB keeps its worker threads spinning: it used its eight threads in every series, with one client as with eight. SoliDB and TimescaleDB used about one core at one client. The tables compare answers per second, not answers per core.</p>
 <p>Loading the 8,640,000 points: QuestDB 1.3 seconds, TimescaleDB 7.4, SoliDB 7.9. QuestDB appends to columns; SoliDB writes a document per point, two index entries, and the blocks described below, which are about a fifth of its time.</p>
