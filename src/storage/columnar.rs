@@ -2020,27 +2020,83 @@ impl ColumnarCollection {
             let rows = self.row_set_with(&compression)?;
             rows.positions().map(|at| rows.value(at, column)).collect()
         };
-        for (row_id, value) in values.iter().enumerate() {
-            match index_type {
-                ColumnarIndexType::Bitmap => {
-                    let idx_key = self.encode_bitmap_key(column, value);
-                    self.append_row_to_bitmap_index(
-                        db,
+        // The entries are built in memory and written once, with the
+        // schema, in one batch. They used to be written a row at a time,
+        // each row reading the list of its value back, adding itself and
+        // writing the list again: time quadratic in the rows (0.8 s for
+        // 20,000 rows, 11.7 s for 80,000), and an index half written when
+        // one of those writes failed.
+        let mut batch = KvBatch::default();
+        match index_type {
+            ColumnarIndexType::Bitmap => {
+                let mut bitmaps: HashMap<String, Vec<u8>> = HashMap::new();
+                for (row_id, value) in values.iter().enumerate() {
+                    let bitmap = bitmaps
+                        .entry(self.encode_bitmap_key(column, value))
+                        .or_default();
+                    let byte = row_id / 8;
+                    if byte >= bitmap.len() {
+                        bitmap.resize(byte + 1, 0);
+                    }
+                    bitmap[byte] |= 1 << (row_id % 8);
+                }
+                for (key, bitmap) in bitmaps {
+                    batch.put_ks(
                         &cf,
-                        &idx_key,
-                        row_id as u64,
-                        &compression,
-                    )?;
+                        key.as_bytes(),
+                        self.compress_data(&bitmap, &CompressionType::Lz4),
+                    );
                 }
-                ColumnarIndexType::MinMax => {
-                    self.update_minmax_index(db, &cf, column, value, row_id as u64)?;
+            }
+            ColumnarIndexType::MinMax => {
+                for (chunk_id, chunk) in values.chunks(MINMAX_CHUNK_SIZE as usize).enumerate() {
+                    let Some(first) = chunk.first() else {
+                        continue;
+                    };
+                    let mut summary = MinMaxChunk {
+                        min: first.clone(),
+                        max: first.clone(),
+                        count: 0,
+                    };
+                    for value in chunk {
+                        if compare_values(value, &summary.min) == std::cmp::Ordering::Less {
+                            summary.min = value.clone();
+                        }
+                        if compare_values(value, &summary.max) == std::cmp::Ordering::Greater {
+                            summary.max = value.clone();
+                        }
+                        summary.count += 1;
+                    }
+                    batch.put_ks(
+                        &cf,
+                        self.encode_minmax_key(column, chunk_id as u64).as_bytes(),
+                        serde_json::to_vec(&summary)?,
+                    );
                 }
-                ColumnarIndexType::Bloom => {
-                    self.update_bloom_index(db, &cf, column, value, row_id as u64)?;
+            }
+            ColumnarIndexType::Bloom => {
+                for (chunk_id, chunk) in values.chunks(MINMAX_CHUNK_SIZE as usize).enumerate() {
+                    let mut filter = BloomFilter::with_num_bits(10_000).expected_items(1000);
+                    for value in chunk {
+                        filter.insert(&value.to_string());
+                    }
+                    batch.put_ks(
+                        &cf,
+                        self.encode_bloom_key(column, chunk_id as u64).as_bytes(),
+                        serde_json::to_vec(&filter)?,
+                    );
                 }
-                _ => {
-                    let idx_key = self.encode_index_key(column, value);
-                    self.append_row_to_index(db, &cf, &idx_key, row_id as u64)?;
+            }
+            _ => {
+                let mut lists: HashMap<String, Vec<u64>> = HashMap::new();
+                for (row_id, value) in values.iter().enumerate() {
+                    lists
+                        .entry(self.encode_index_key(column, value))
+                        .or_default()
+                        .push(row_id as u64);
+                }
+                for (key, rows) in lists {
+                    batch.put_ks(&cf, key.as_bytes(), serde_json::to_vec(&rows)?);
                 }
             }
         }
@@ -2052,21 +2108,20 @@ impl ColumnarCollection {
             created_at: chrono::Utc::now().timestamp(),
         };
         let idx_meta_key = format!("{}{}", COL_IDX_META_PREFIX, column);
-        let idx_meta_bytes = serde_json::to_vec(&idx_meta)?;
-        db.put_ks(&cf, idx_meta_key.as_bytes(), &idx_meta_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        batch.put_ks(&cf, idx_meta_key.as_bytes(), serde_json::to_vec(&idx_meta)?);
 
-        // Mark column as indexed, over the rows that were read.
-        meta.columns[col_idx].indexed = true;
-        meta.columns[col_idx].index_type = Some(index_type.clone());
-        meta.index_rows
+        // The schema, with the entries.
+        let mut new_meta = meta.clone();
+        new_meta.columns[col_idx].indexed = true;
+        new_meta.columns[col_idx].index_type = Some(index_type.clone());
+        new_meta
+            .index_rows
             .insert(column.to_string(), values.len() as u64);
-
-        // Update collection metadata
         let meta_key = format!("{}{}", COL_META_PREFIX, self.name);
-        let meta_bytes = serde_json::to_vec(&*meta)?;
-        db.put_ks(&cf, meta_key.as_bytes(), &meta_bytes)
+        batch.put_ks(&cf, meta_key.as_bytes(), serde_json::to_vec(&new_meta)?);
+        db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
 
         Ok(())
     }
@@ -2476,122 +2531,6 @@ impl ColumnarCollection {
             }
             _ => None,
         }
-    }
-
-    /// Append a row ID to an index entry
-    fn append_row_to_index(&self, db: &DB, cf: &KsCf, idx_key: &str, row_id: u64) -> DbResult<()> {
-        let mut row_ids: Vec<u64> = match db.get_ks(cf, idx_key.as_bytes()) {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
-            Ok(None) => Vec::new(),
-            Err(e) => return Err(DbError::InternalError(e.to_string())),
-        };
-
-        row_ids.push(row_id);
-
-        let row_ids_bytes = serde_json::to_vec(&row_ids)?;
-        db.put_ks(cf, idx_key.as_bytes(), &row_ids_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Update Bitmap index with a new row
-    fn append_row_to_bitmap_index(
-        &self,
-        db: &DB,
-        cf: &KsCf,
-        idx_key: &str,
-        row_id: u64,
-        _compression: &CompressionType,
-    ) -> DbResult<()> {
-        let bmp_compression = CompressionType::Lz4;
-        let mut bitmap = match db.get_ks(cf, idx_key.as_bytes()) {
-            Ok(Some(bytes)) => self.decompress_data(&bytes, &bmp_compression)?,
-            Ok(None) => Vec::new(),
-            Err(e) => return Err(DbError::InternalError(e.to_string())),
-        };
-
-        // Ensure bitmap is large enough
-        let byte_idx = (row_id / 8) as usize;
-        if byte_idx >= bitmap.len() {
-            bitmap.resize(byte_idx + 1, 0);
-        }
-
-        // Set bit
-        let bit_offset = (row_id % 8) as usize;
-        bitmap[byte_idx] |= 1 << bit_offset;
-
-        // Compress and store
-        let compressed = self.compress_data(&bitmap, &bmp_compression);
-        db.put_ks(cf, idx_key.as_bytes(), &compressed)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Update Bloom index with a new row
-    fn update_bloom_index(
-        &self,
-        db: &DB,
-        cf: &KsCf,
-        column: &str,
-        value: &Value,
-        row_id: u64,
-    ) -> DbResult<()> {
-        let chunk_id = row_id / MINMAX_CHUNK_SIZE;
-        let idx_key = self.encode_bloom_key(column, chunk_id);
-
-        let mut filter: BloomFilter = match db.get_ks(cf, idx_key.as_bytes()) {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
-            Ok(None) => BloomFilter::with_num_bits(10_000).expected_items(1000),
-            Err(e) => return Err(DbError::InternalError(e.to_string())),
-        };
-
-        filter.insert(&value.to_string());
-
-        let filter_bytes = serde_json::to_vec(&filter)?;
-        db.put_ks(cf, idx_key.as_bytes(), &filter_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        Ok(())
-    }
-
-    /// Update MinMax index with a new row
-    fn update_minmax_index(
-        &self,
-        db: &DB,
-        cf: &KsCf,
-        column: &str,
-        value: &Value,
-        row_id: u64,
-    ) -> DbResult<()> {
-        let chunk_id = row_id / MINMAX_CHUNK_SIZE;
-        let idx_key = self.encode_minmax_key(column, chunk_id);
-
-        let mut chunk: MinMaxChunk = match db.get_ks(cf, idx_key.as_bytes()) {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes)?,
-            Ok(None) => MinMaxChunk {
-                min: value.clone(),
-                max: value.clone(),
-                count: 0,
-            },
-            Err(e) => return Err(DbError::InternalError(e.to_string())),
-        };
-
-        // Update min/max
-        if compare_values(value, &chunk.min) == std::cmp::Ordering::Less {
-            chunk.min = value.clone();
-        }
-        if compare_values(value, &chunk.max) == std::cmp::Ordering::Greater {
-            chunk.max = value.clone();
-        }
-        chunk.count += 1;
-
-        let chunk_bytes = serde_json::to_vec(&chunk)?;
-        db.put_ks(cf, idx_key.as_bytes(), &chunk_bytes)
-            .map_err(|e| DbError::InternalError(e.to_string()))?;
-
-        Ok(())
     }
 
     // Private helper methods

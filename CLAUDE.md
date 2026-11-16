@@ -880,7 +880,9 @@ Rules that keep it sound:
   columnar operation belongs in `columnar_in_full_sync`.
 - **An index answers only for the rows it holds.** It is written once, by
   `create_index`, and names rows by position in id order; inserts do not
-  add to it. `ColumnarCollectionMeta::index_rows` says how many rows from
+  add to it. Its entries are built in memory and written in one batch with
+  the schema: written a row at a time, each row rewrote the list of its
+  value, which was quadratic (11.7 s for 80,000 rows, card #916). `ColumnarCollectionMeta::index_rows` says how many rows from
   the first it holds; `apply_filter` asks it for those and compares the
   rows after them as rows. Every write that moves a position — a delete,
   a row with an older id (replication), a truncate — must lower that count
