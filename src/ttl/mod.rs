@@ -71,6 +71,35 @@ impl TtlWorker {
             };
 
             for coll_name in coll_names {
+                // A columnar collection keeps its rows beside the document
+                // collection that backs it, and expires them by its own
+                // retention.
+                if let Some(columnar) = coll_name.strip_prefix("_columnar_") {
+                    match Self::guarded(|| crate::sync::columnar::prune(&db, columnar)) {
+                        Some(Ok(0)) => {}
+                        Some(Ok(count)) => {
+                            tracing::info!(
+                                "Retention: removed {} rows from columnar {}.{}",
+                                count,
+                                db_name,
+                                columnar
+                            );
+                            total_deleted += count as usize;
+                        }
+                        Some(Err(e)) => tracing::warn!(
+                            "Retention failed for columnar {}.{}: {}",
+                            db_name,
+                            columnar,
+                            e
+                        ),
+                        None => tracing::error!(
+                            "Retention panicked for columnar {}.{}; skipping it this interval",
+                            db_name,
+                            columnar
+                        ),
+                    }
+                    continue;
+                }
                 let collection = match db.system_collection(&coll_name) {
                     Ok(coll) => coll,
                     Err(_) => continue,

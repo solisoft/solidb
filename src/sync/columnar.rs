@@ -36,6 +36,15 @@ struct Definition {
     columns: Vec<ColumnDef>,
     #[serde(default)]
     compression: CompressionType,
+    /// How long rows are kept; an older node neither sends nor reads it.
+    #[serde(default)]
+    retention_secs: Option<u64>,
+}
+
+/// The payload of a `ColumnarSetRetention`.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Retention {
+    seconds: Option<u64>,
 }
 
 /// The log, if it takes entries (a deferred or disabled one does not, and
@@ -69,6 +78,7 @@ pub fn create(
             serde_json::to_vec(&Definition {
                 columns,
                 compression,
+                retention_secs: None,
             })
             .ok(),
         ));
@@ -191,6 +201,43 @@ pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()
     Ok(())
 }
 
+/// Set how long a collection keeps its rows (`None`: until they are
+/// deleted), and log it for the peers. Each node removes its own old rows
+/// ([`prune`]): what a node removed is not logged, since every node would
+/// remove the same rows by the same rule.
+pub fn set_retention(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    seconds: Option<u64>,
+) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.set_retention(seconds)?;
+    if let Some(log) = writing(log) {
+        log.append(LogEntry::new_op(
+            db.name.as_str(),
+            name,
+            Operation::ColumnarSetRetention,
+            "",
+            serde_json::to_vec(&Retention { seconds }).ok(),
+        ));
+    }
+    Ok(())
+}
+
+/// Apply a peer's `ColumnarSetRetention`.
+pub fn apply_set_retention(db: &Database, name: &str, data: &[u8]) -> DbResult<()> {
+    let retention: Retention = serde_json::from_slice(data)?;
+    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?
+        .set_retention(retention.seconds)
+}
+
+/// Remove the rows a collection's retention no longer keeps, on this node.
+/// Returns how many went.
+pub fn prune(db: &Database, name: &str) -> DbResult<u64> {
+    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.prune_expired()
+}
+
 /// Apply a peer's `ColumnarDelete`. A row that is not there is deleted.
 pub fn apply_delete(db: &Database, name: &str, id: &str) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
@@ -210,10 +257,15 @@ pub fn apply_truncate(db: &Database, name: &str) -> DbResult<()> {
 /// its start by a joining node, and creating it again would reset the row
 /// count of one that has rows.
 pub fn apply_create(db: &Database, name: &str, data: &[u8]) -> DbResult<()> {
-    if ColumnarCollection::load(name.to_string(), &db.name, db.db_arc()).is_ok() {
+    let definition: Definition = serde_json::from_slice(data)?;
+    if let Ok(col) = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc()) {
+        // What a full sync says of the retention holds for a collection
+        // that is already here; a replayed create says nothing of it.
+        if definition.retention_secs.is_some() {
+            col.set_retention(definition.retention_secs)?;
+        }
         return Ok(());
     }
-    let definition: Definition = serde_json::from_slice(data)?;
     // The backing collection may be left from a create that stopped half
     // way; `new` says so if it is really missing.
     let _ = db.create_collection(backing(name), None);
@@ -223,7 +275,8 @@ pub fn apply_create(db: &Database, name: &str, data: &[u8]) -> DbResult<()> {
         db.db_arc(),
         definition.columns,
         definition.compression,
-    )?;
+    )?
+    .set_retention(definition.retention_secs)?;
     Ok(())
 }
 
@@ -332,6 +385,7 @@ pub(crate) fn full_sync_definition(col: &ColumnarCollection) -> DbResult<Vec<u8>
     Ok(serde_json::to_vec(&Definition {
         columns,
         compression: meta.compression,
+        retention_secs: meta.retention_secs,
     })?)
 }
 

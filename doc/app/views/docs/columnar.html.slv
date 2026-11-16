@@ -262,6 +262,48 @@
         </div>
       </section>
 
+      <section id="retention" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+              <i class="fas fa-hourglass-half text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Retention</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            A collection can keep its rows for a set time. A row's age is counted from the instant it was inserted, which is in its id; the rows older than the retention are removed by a background pass, once a minute. Rows are stored in the order they were inserted, so a block whose rows are all too old goes as one key, with nothing read or written again; at most one block, the one the cutoff falls in, is written again with the rows it keeps.
+          </p>
+
+          <div class="space-y-6">
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/retention</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Needs Admin: it removes rows for good. <code>seconds</code> is one or more; <code>null</code> keeps every row again. Nothing is removed by the call itself. <code>GET &hellip;/columnar/:collection</code> shows the setting as <code>retention_secs</code>.</p>
+              <pre><code class="language-json text-sm">{ "seconds": 2592000 }</code></pre>
+              <pre class="mt-4"><code class="language-json text-sm">{ "name": "metrics", "retention_secs": 2592000 }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/prune</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Removes now what the retention no longer keeps, instead of waiting for the next pass. With no retention it removes nothing.</p>
+              <pre><code class="language-json text-sm">{ "status": "ok", "deleted": 6000 }</code></pre>
+            </div>
+          </div>
+
+          <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
+            <li>In a cluster the retention is replicated and each node removes its own old rows; the removals are not.</li>
+            <li>Removing the oldest rows moves every row that stays, so an index on a column answers for none of them afterwards: filters are still answered right, by comparing rows. Create the index again to have it used.</li>
+            <li>A row replicated or restored under an older id is as old as that id says.</li>
+          </ul>
+        </div>
+      </section>
+
       <!-- Aggregations Section -->
       <section id="aggregations" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">

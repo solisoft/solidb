@@ -888,6 +888,18 @@ Rules that keep it sound:
   forgets it brings card #901 back (rows missing from filtered results).
   A column with no entry was indexed by 2.10.4 or earlier: its index is
   not used.
+- **A retention removes the oldest rows, by blocks**
+  (`ColumnarCollectionMeta::retention_secs`, `prune_before`): a row's age
+  is the instant in its id, rows are in id order, so the old ones are the
+  first blocks. A block wholly older than the cutoff goes as one key; the
+  one the cutoff falls in is sealed again from the rows it keeps. The TTL
+  worker calls it for every `_columnar_` collection (`ttl::TtlWorker`),
+  and `POST …/prune` on demand. It lowers the indexes' counts like any
+  delete (`cap_indexes`). The setting is replicated
+  (`ColumnarSetRetention`, and the definition a full sync sends); what a
+  node removes is not logged, since each node removes by the same rule.
+  A new way to give a row an id that is not the instant it was inserted
+  changes what a retention removes.
 - **SDBQL writes one way**: `INSERT … INTO` a columnar name is taken by
   `QueryExecutor::insert_into_columnar` before the document path (and the
   streaming insert steps aside for it); `get_collection_for_write` refuses

@@ -1211,6 +1211,21 @@ impl SyncWorker {
                     }
                 }
             }
+            Operation::ColumnarSetRetention => {
+                if let (Ok(db), Some(data)) = (
+                    self.storage.get_database(&entry.database),
+                    entry.document_data.as_deref(),
+                ) {
+                    if let Err(e) =
+                        super::columnar::apply_set_retention(&db, &entry.collection, data)
+                    {
+                        warn!(
+                            "apply_entry: columnar retention not set for {}: {}",
+                            entry.collection, e
+                        );
+                    }
+                }
+            }
         }
 
         // Update origin sequence
@@ -2223,6 +2238,7 @@ fn columnar_in_full_sync(operation: Operation) -> bool {
             | Operation::ColumnarTruncate
             | Operation::ColumnarCreateIndex
             | Operation::ColumnarDropIndex
+            | Operation::ColumnarSetRetention
     )
 }
 
@@ -2274,6 +2290,7 @@ mod tests {
             Operation::ColumnarTruncate,
             Operation::ColumnarCreateIndex,
             Operation::ColumnarDropIndex,
+            Operation::ColumnarSetRetention,
         ] {
             assert!(columnar_in_full_sync(columnar), "{columnar:?}");
         }

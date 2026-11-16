@@ -1370,6 +1370,12 @@ impl DriverHandler {
                 database,
                 collection,
             } => database::handle_truncate_columnar(self, database, collection),
+
+            Command::SetColumnarRetention {
+                database,
+                collection,
+                seconds,
+            } => database::handle_set_columnar_retention(self, database, collection, seconds),
         }
     }
 

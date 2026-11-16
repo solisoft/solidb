@@ -327,6 +327,7 @@ pub async fn get_columnar_handler(
         "compression": meta.compression,
         "created_at": meta.created_at,
         "last_updated_at": meta.last_updated_at,
+        "retention_secs": meta.retention_secs,
         "stats": {
             "compressed_size_bytes": stats.compressed_size_bytes,
             "uncompressed_size_bytes": stats.uncompressed_size_bytes,
@@ -489,6 +490,55 @@ pub async fn truncate_columnar_handler(
     crate::sync::columnar::truncate(&db, state.replication_log.as_deref(), &collection)?;
     Ok(Json(
         serde_json::json!({"status": "truncated", "name": collection}),
+    ))
+}
+
+/// `{"seconds": n}`, or `{"seconds": null}` to keep every row.
+#[derive(Debug, Deserialize)]
+pub struct RetentionRequest {
+    #[serde(default)]
+    pub seconds: Option<u64>,
+}
+
+/// Set how long a columnar collection keeps its rows, counted from the
+/// instant each row was inserted.
+///
+/// # Endpoint
+/// `PUT /_api/database/{db}/columnar/{collection}/retention`
+pub async fn set_columnar_retention_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    Json(req): Json<RetentionRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    crate::sync::columnar::set_retention(
+        &db,
+        state.replication_log.as_deref(),
+        &collection,
+        req.seconds,
+    )?;
+    Ok(Json(serde_json::json!({
+        "name": collection,
+        "retention_secs": req.seconds
+    })))
+}
+
+/// Remove now the rows a collection's retention no longer keeps, instead
+/// of waiting for the next pass of the background worker.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/prune`
+pub async fn prune_columnar_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let deleted =
+        tokio::task::spawn_blocking(move || crate::sync::columnar::prune(&db, &collection))
+            .await
+            .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(
+        serde_json::json!({"status": "ok", "deleted": deleted}),
     ))
 }
 

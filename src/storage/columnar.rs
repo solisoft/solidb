@@ -124,6 +124,12 @@ pub struct ColumnarCollectionMeta {
     /// used.
     #[serde(default)]
     pub index_rows: std::collections::HashMap<String, u64>,
+    /// How long a row is kept, in seconds, counted from the instant in its
+    /// id (a UUIDv7): rows older than that are removed by
+    /// [`ColumnarCollection::prune_expired`], which the TTL worker calls.
+    /// `None`: rows are kept until they are deleted.
+    #[serde(default)]
+    pub retention_secs: Option<u64>,
 }
 
 /// The storage format new collections are created in.
@@ -453,6 +459,7 @@ impl ColumnarCollection {
             format: BLOCK_FORMAT,
             tail_rows: 0,
             index_rows: Default::default(),
+            retention_secs: None,
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -1196,6 +1203,152 @@ impl ColumnarCollection {
         }
 
         Ok(deleted)
+    }
+
+    /// Set how long rows are kept (`None`: until they are deleted). Nothing
+    /// is removed here: the next [`Self::prune_expired`] does it.
+    pub fn set_retention(&self, seconds: Option<u64>) -> DbResult<()> {
+        if seconds == Some(0) {
+            return Err(DbError::BadRequest(
+                "A retention is one second or more; leave it out to keep every row".to_string(),
+            ));
+        }
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        self.refresh_meta(db, &cf, &mut meta);
+        let mut new_meta = meta.clone();
+        new_meta.retention_secs = seconds;
+        let mut batch = KvBatch::default();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        Ok(())
+    }
+
+    /// Remove the rows older than the collection's retention. Returns how
+    /// many went; 0 at once for a collection that keeps its rows.
+    pub fn prune_expired(&self) -> DbResult<u64> {
+        let retention = self
+            .meta
+            .read()
+            .map_err(|e| DbError::InternalError(e.to_string()))?
+            .retention_secs;
+        let Some(seconds) = retention else {
+            return Ok(0);
+        };
+        let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
+        self.prune_before(now.saturating_sub(seconds.saturating_mul(1000)))
+    }
+
+    /// Remove the rows whose id was made before `cutoff_ms` (milliseconds
+    /// since the epoch, as a UUIDv7 holds it). Returns how many went.
+    ///
+    /// Rows are in the order of their ids, so the old ones are the first: a
+    /// block whose rows are all older goes as one key, with nothing read or
+    /// written again, and at most one block, the one the cutoff falls in,
+    /// is sealed again from the rows it keeps. A row whose id is not a
+    /// UUIDv7 of that time is compared as the text it is.
+    pub fn prune_before(&self, cutoff_ms: u64) -> DbResult<u64> {
+        // The lowest id of that instant: every id below it is older.
+        let cutoff = uuid::Uuid::from_u128((cutoff_ms as u128) << 80).to_string();
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        self.refresh_meta(db, &cf, &mut meta);
+
+        let rows = self.row_set_with(&meta.compression)?;
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        let mut batch = KvBatch::default();
+        let mut removed = 0u64;
+        let mut first: Option<String> = None;
+        let mut rewritten: Vec<(String, Option<ColBlock>)> = Vec::new();
+        for block in &rows.blocks {
+            if block.key.as_str() >= cutoff.as_str() {
+                continue;
+            }
+            let len = block.len();
+            // Rows of a block are in id order: the old ones are a prefix.
+            let (mut low, mut high) = (0, len);
+            while low < high {
+                let mid = (low + high) / 2;
+                if block.uuids.text(mid).as_str() < cutoff.as_str() {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+            let old = low;
+            if old == 0 {
+                continue;
+            }
+            let old_key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
+            batch.delete_ks(&cf, old_key.as_bytes());
+            let smaller = if old == len {
+                None
+            } else {
+                let kept: Vec<(String, serde_json::Map<String, Value>)> = (old..len)
+                    .map(|row| (block.uuids.text(row), block.row(row)))
+                    .collect();
+                let smaller = ColBlock::seal(&names, &kept);
+                self.stage_block(&cf, &mut batch, &meta.compression, &smaller)?;
+                Some(smaller)
+            };
+            removed += old as u64;
+            if first.as_ref().is_none_or(|f| block.key < *f) {
+                first = Some(block.key.clone());
+            }
+            rewritten.push((block.key.clone(), smaller));
+        }
+        let mut from_tail = 0u64;
+        for (id, _) in &rows.tail {
+            if id.as_str() < cutoff.as_str() {
+                batch.delete_ks(&cf, format!("{}{}", COL_ROW_PREFIX, id).as_bytes());
+                from_tail += 1;
+                if first.as_ref().is_none_or(|f| id < f) {
+                    first = Some(id.clone());
+                }
+            }
+        }
+        removed += from_tail;
+        let Some(first) = first else {
+            return Ok(0);
+        };
+
+        let mut new_meta = meta.clone();
+        // The rows that stay all move down: no index answers for them any
+        // more, until it is created again.
+        self.cap_indexes(&meta, &mut new_meta, &first)?;
+        new_meta.tail_rows = new_meta.tail_rows.saturating_sub(from_tail);
+        new_meta.row_count = new_meta.row_count.saturating_sub(removed);
+        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        if !rewritten.is_empty() {
+            if let Some(blocks) = self.store().blocks.write().as_mut() {
+                for (old_key, smaller) in rewritten {
+                    blocks.retain(|b| b.key != old_key);
+                    if let Some(smaller) = smaller {
+                        blocks.push(Arc::new(smaller));
+                    }
+                }
+                blocks.sort_by(|a, b| a.key.cmp(&b.key));
+            }
+        }
+        Ok(removed)
     }
 
     /// Delete the rows `filter` keeps. Returns their ids.

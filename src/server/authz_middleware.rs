@@ -139,6 +139,10 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     if path.ends_with("/truncate") {
         return PermissionAction::Admin;
     }
+    // A retention removes rows for good, on its own.
+    if path.ends_with("/retention") {
+        return PermissionAction::Admin;
+    }
     if path.ends_with("/repl") {
         return PermissionAction::Admin;
     }
@@ -469,6 +473,19 @@ mod tests {
                 "/_api/database/{db}/collection/{name}/foreign-keys/check"
             ),
             PermissionAction::Read
+        );
+
+        // A columnar collection's retention removes rows on its own.
+        assert_eq!(
+            required_action(
+                &Method::PUT,
+                "/_api/database/{db}/columnar/{collection}/retention"
+            ),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&post, "/_api/database/{db}/columnar/{collection}/prune"),
+            PermissionAction::Write
         );
 
         // Counter fields: read to list, Admin for anything that changes

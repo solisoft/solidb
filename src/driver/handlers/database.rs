@@ -635,6 +635,26 @@ pub fn handle_truncate_columnar(
     }
 }
 
+pub fn handle_set_columnar_retention(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    seconds: Option<u64>,
+) -> Response {
+    let set = handler.storage.get_database(&database).and_then(|db| {
+        crate::sync::columnar::set_retention(
+            &db,
+            handler.replication.as_deref(),
+            &collection,
+            seconds,
+        )
+    });
+    match set {
+        Ok(()) => Response::ok_empty(),
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

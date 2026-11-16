@@ -61,6 +61,10 @@ pub enum Operation {
     PutCounter,
     /// A counter dropped: the key is the field, the payload `{"epoch": …}`.
     DropCounter,
+    /// How long a columnar collection keeps its rows: the payload is
+    /// `{"seconds": n}` or `{"seconds": null}`. Each node removes its own
+    /// old rows; the removals are not logged.
+    ColumnarSetRetention,
 }
 
 /// A single entry in the sync log

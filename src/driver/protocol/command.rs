@@ -601,6 +601,14 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// Set how long a columnar collection keeps its rows; no `seconds`
+    /// keeps every row.
+    SetColumnarRetention {
+        database: String,
+        collection: String,
+        #[serde(default)]
+        seconds: Option<u64>,
+    },
 }
 
 fn default_true() -> bool {
@@ -696,7 +704,8 @@ impl Command {
             | ListColumnarIndexes { database, .. }
             | DeleteColumnarIndex { database, .. }
             | DeleteColumnarRows { database, .. }
-            | TruncateColumnar { database, .. } => Some(database),
+            | TruncateColumnar { database, .. }
+            | SetColumnarRetention { database, .. } => Some(database),
             TransactionCommand { command, .. } => command.database(),
             RunTransaction { database, .. } => Some(database),
             _ => None,
@@ -785,7 +794,8 @@ impl Command {
             TruncateCollection { .. }
             | DeleteCollection { .. }
             | DeleteColumnar { .. }
-            | TruncateColumnar { .. } => Some(A::Admin),
+            | TruncateColumnar { .. }
+            | SetColumnarRetention { .. } => Some(A::Admin),
 
             // What numbers a counter gives — Admin, same as HTTP
             CreateCounter { .. }
