@@ -70,6 +70,19 @@ pub fn move_to(
     Ok(record)
 }
 
+/// Take the numbering for this node, without the node that numbers.
+pub fn take_over(
+    collection: &Collection,
+    log: Option<&SyncLog>,
+    database: &str,
+    name: &str,
+    field: &str,
+) -> DbResult<CounterRecord> {
+    let record = collection.take_over_counter(field)?;
+    log_record(log, database, name, &record);
+    Ok(record)
+}
+
 /// Drop the counter on `field`.
 pub fn drop(
     collection: &Collection,

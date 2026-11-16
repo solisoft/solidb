@@ -639,7 +639,13 @@ Rules that keep it sound:
   nothing. The numbering moves by a handover the owner makes
   (`move_counter`), which stops it numbering in the same write and
   replicates the exact state; a peer's state is otherwise only as fresh as
-  the last record it was sent.
+  the last record it was sent. When the owner is lost, another node takes
+  the counter (`take_over_counter`, `force` on the node endpoint): it reads
+  the numbers back out of the documents it holds (`CounterDef::parse`,
+  which must read every value `render` writes) and goes on after the
+  highest of the current period. That is best effort by nature: a number
+  given to a document that was not replicated is given again, and
+  replication does not check unique values when that document arrives.
 - **Records are applied in any order** (`PutCounter` / `DropCounter`,
   `SyncMessage::FullSyncCounters`): the higher `epoch` wins, then the state
   further along (`counters::supersedes`), and a dropped counter keeps its

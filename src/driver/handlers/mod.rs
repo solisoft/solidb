@@ -728,10 +728,15 @@ impl DriverHandler {
                 collection,
                 field,
                 node,
+                force,
             } => {
                 self.counter(database, collection, move |coll, log, db, name| {
-                    crate::sync::counters::move_to(coll, log, db, name, &field, node)
-                        .map(|record| serde_json::json!(record))
+                    if force {
+                        crate::sync::counters::take_over(coll, log, db, name, &field)
+                    } else {
+                        crate::sync::counters::move_to(coll, log, db, name, &field, node)
+                    }
+                    .map(|record| serde_json::json!(record))
                 })
                 .await
             }

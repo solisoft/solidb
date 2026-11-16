@@ -166,13 +166,16 @@ pub enum Command {
         field: String,
         next: u64,
     },
-    /// Hand the numbering to `node`.
+    /// Hand the numbering to `node`. With `force`, take it for the node
+    /// that receives the command, without the node that numbers.
     MoveCounter {
         database: String,
         collection: String,
         field: String,
         #[serde(default)]
         node: Option<String>,
+        #[serde(default)]
+        force: bool,
     },
     BeginTransaction {
         database: String,

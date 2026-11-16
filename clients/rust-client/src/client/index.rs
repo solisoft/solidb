@@ -267,6 +267,32 @@ impl SoliDBClient {
                 collection: collection.to_string(),
                 field: field.to_string(),
                 node: node.map(str::to_string),
+                force: false,
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Take the numbering of `field` for the node this client is connected
+    /// to, without the node that numbers: for when that node is lost. The
+    /// count goes on after the highest number this node holds; a number
+    /// the lost node gave to a document that never reached this one is
+    /// given again. Prefer [`Self::move_counter`] while the numbering node
+    /// answers.
+    pub async fn take_over_counter(
+        &mut self,
+        database: &str,
+        collection: &str,
+        field: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::MoveCounter {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                field: field.to_string(),
+                node: None,
+                force: true,
             })
             .await?;
         Self::extract_data(response)?

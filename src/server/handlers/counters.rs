@@ -27,7 +27,12 @@ pub struct CounterNextRequest {
 pub struct CounterNodeRequest {
     /// The node that numbers from now on; null for whichever node receives
     /// the insert (an instance that runs alone).
+    #[serde(default)]
     pub node: Option<String>,
+    /// Take the counter for the node that receives this request, without
+    /// the node that numbers: for when that node is lost.
+    #[serde(default)]
+    pub force: bool,
 }
 
 async fn blocking<T: Send + 'static>(
@@ -111,7 +116,9 @@ pub async fn set_counter_next(
     Ok(Json(record))
 }
 
-/// Hand the numbering to another node. Asked of the node that numbers.
+/// Hand the numbering to another node: asked of the node that numbers.
+/// With `force`, asked of the node that takes it, when the one that
+/// numbers is lost.
 pub async fn set_counter_node(
     State(state): State<AppState>,
     Path((db_name, coll_name, field)): Path<(String, String, String)>,
@@ -123,14 +130,18 @@ pub async fn set_counter_node(
         .get_collection(&coll_name)?;
     let log = state.replication_log.clone();
     let record = blocking(move || {
-        counters::move_to(
-            &collection,
-            log.as_deref(),
-            &db_name,
-            &coll_name,
-            &field,
-            req.node,
-        )
+        if req.force {
+            counters::take_over(&collection, log.as_deref(), &db_name, &coll_name, &field)
+        } else {
+            counters::move_to(
+                &collection,
+                log.as_deref(),
+                &db_name,
+                &coll_name,
+                &field,
+                req.node,
+            )
+        }
     })
     .await?;
     Ok(Json(record))

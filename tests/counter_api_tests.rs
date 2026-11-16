@@ -428,3 +428,58 @@ async fn an_import_takes_a_last_line_without_a_newline() {
     assert_eq!((&body["count"], &body["failed"]), (&json!(1), &json!(1)));
     assert!(body["error"].is_string(), "{body}");
 }
+
+/// The node that numbers is lost: another takes the counter over and goes
+/// on after the highest number it holds, which is all it knows.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_counter_is_taken_over_from_a_lost_node() {
+    let n1 = node(Some("n1"), true);
+    let n2 = node(Some("n2"), true);
+    let body = json!({"field": "number", "reset": "year", "prefix": "{YYYY}/", "padding": 3});
+    call(&n1, "POST", COUNTERS, Some(body)).await;
+    for _ in 0..3 {
+        call(&n1, "POST", DOCS, Some(json!({}))).await;
+    }
+    // What reached n2 before n1 was lost: the counter and three documents.
+    let reached = entries(&n1);
+    apply(&n2, &reached);
+    // n1 gives two more numbers that never leave it.
+    call(&n1, "POST", DOCS, Some(json!({"_key": "late-a"}))).await;
+    call(&n1, "POST", DOCS, Some(json!({"_key": "late-b"}))).await;
+
+    let node_url = format!("{COUNTERS}/number/node");
+    // Without `force` only the node that numbers hands the counter over.
+    let (status, _) = call(&n2, "PUT", &node_url, Some(json!({"node": "n2"}))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, body) = call(&n2, "PUT", &node_url, Some(json!({"force": true}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["node"], "n2");
+    // n2 was last told "next is 1": the three documents it holds say 4.
+    assert_eq!(body["state"]["next"], 4);
+    let (status, doc) = call(&n2, "POST", DOCS, Some(json!({}))).await;
+    assert!(status.is_success(), "{status} {doc}");
+    let number = doc["number"].as_str().unwrap().to_string();
+    assert!(number.ends_with("/004"), "{number}");
+
+    // Taking it twice changes nothing more.
+    let (status, _) = call(&n2, "PUT", &node_url, Some(json!({"force": true}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // n1 comes back and hears of it: it no longer numbers.
+    apply(&n1, &entries(&n2));
+    let (status, body) = call(&n1, "POST", DOCS, Some(json!({}))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body.to_string().contains("n2"), "{body}");
+
+    // What the takeover cannot know: the number n1 gave to a document that
+    // had not reached n2 was given again. Both documents exist once n1's
+    // log arrives, with the same number.
+    apply(&n2, &entries(&n1));
+    let (_, rows) = query(
+        &n2,
+        &format!("FOR d IN invoices FILTER d.number == '{number}' RETURN d._key"),
+    )
+    .await;
+    assert_eq!(rows["result"].as_array().map(Vec::len), Some(2), "{rows}");
+}

@@ -656,6 +656,67 @@ impl Collection {
         })
     }
 
+    /// Take the numbering of `field` for this node without the node that
+    /// numbers, which is lost: a handover ([`Self::move_counter`]) is what
+    /// to ask for while it answers.
+    ///
+    /// This node knows the counter as it was last declared, set or handed
+    /// over, and the documents that reached it. It goes on after the
+    /// highest number it holds for the current period, or from the state it
+    /// was last sent when that is further. **A number the lost node gave to
+    /// a document that never reached this one is given again**: if that
+    /// document arrives later, two documents hold the number (replication
+    /// does not check unique values).
+    pub fn take_over_counter(&self, field: &str) -> DbResult<CounterRecord> {
+        let local = counters::local(&self.db).node;
+        let _lock = self.ks.state().hold_counter_lock();
+        let mut defs = self.counter_defs().to_vec();
+        let at = defs
+            .iter()
+            .position(|d| d.field == field)
+            .ok_or_else(|| not_a_counter(field))?;
+        if defs[at].node == local {
+            return Err(DbError::BadRequest(format!(
+                "The counter on '{}' is already numbered here",
+                field
+            )));
+        }
+        if local.is_none() {
+            return Err(DbError::BadRequest(
+                "A node that takes a counter over needs a name: start it with --node-id"
+                    .to_string(),
+            ));
+        }
+        let cf = self.live_cf()?;
+        let mut state = self.read_counter_state(&cf, &defs[at])?;
+        let def = &defs[at];
+        let date = def.date_at(&state, counters::now())?;
+        let period = def.period(date);
+        // Where the state this node was sent stands, if it is of the
+        // period the next number will be of.
+        let known = match state.date {
+            Some(last) if def.period(last) != period => 1,
+            _ => state.next,
+        };
+        let mut highest = 0u64;
+        let fields = [field.to_string()];
+        self.for_each_value(Some(&fields), |doc| {
+            if let Some((n, of)) = doc.get(field).and_then(|value| def.parse(value)) {
+                if of == period {
+                    highest = highest.max(n);
+                }
+            }
+            Ok(())
+        })?;
+        state.next = known.max(highest.saturating_add(1));
+        state.date = Some(date);
+        state.epoch = counters::next_epoch(state.epoch);
+        defs[at].node = local;
+        let def = defs[at].clone();
+        self.store_counters(&defs, &[(&def, &state)])?;
+        Ok(CounterRecord { def, state })
+    }
+
     /// Store a counter as another node declared, changed or handed it
     /// over. Its index is created if missing. Idempotent, and an older
     /// record than the one stored changes nothing.

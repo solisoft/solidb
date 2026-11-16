@@ -199,7 +199,7 @@ impl CounterDef {
     }
 
     /// What tells two periods apart.
-    fn period(&self, date: NaiveDate) -> (i32, u32) {
+    pub(crate) fn period(&self, date: NaiveDate) -> (i32, u32) {
         match self.reset {
             None => (0, 0),
             Some(Reset::Year) => (date.year(), 0),
@@ -244,9 +244,28 @@ impl CounterDef {
     /// The date `state`'s next number is rendered with at `now`: today in
     /// the counter's timezone, or the last date used when the clock is
     /// behind it.
-    fn date_at(&self, state: &CounterState, now: DateTime<Utc>) -> DbResult<NaiveDate> {
+    pub(crate) fn date_at(&self, state: &CounterState, now: DateTime<Utc>) -> DbResult<NaiveDate> {
         let today = now.with_timezone(&self.tz()?).date_naive();
         Ok(state.date.map_or(today, |last| last.max(today)))
+    }
+
+    /// Read a stored value back: the number it holds and the period it was
+    /// given in, or `None` for a value this counter could not have written.
+    /// Used when a node takes a counter over without the state of the node
+    /// that numbered (`Collection::take_over_counter`): the documents it
+    /// holds are then all it knows of the numbers given.
+    pub fn parse(&self, value: &Value) -> Option<(u64, (i32, u32))> {
+        if self.plain() {
+            return Some((value.as_u64()?, (0, 0)));
+        }
+        let text = value.as_str()?;
+        let mut parts = DateParts::default();
+        let rest = parts.strip_front(&pieces(&self.prefix), text)?;
+        let digits = parts.strip_back(&pieces(&self.suffix), rest)?;
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some((digits.parse().ok()?, parts.period(self.reset)?))
     }
 
     /// The value the next insert would get at `now`, without taking it.
@@ -278,6 +297,108 @@ impl CounterDef {
             date: None,
             next: self.start,
             dropped: false,
+        }
+    }
+}
+
+/// One piece of a prefix or suffix: text as written, or a part of the date.
+enum Piece<'a> {
+    Text(&'a str),
+    /// A placeholder and how many digits it renders as.
+    Part(&'static str, usize),
+}
+
+fn pieces(text: &str) -> Vec<Piece<'_>> {
+    let mut found = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let placeholder = PLACEHOLDERS.iter().find(|p| rest.starts_with(**p));
+        match placeholder {
+            Some(p) => {
+                found.push(Piece::Part(p, if *p == "{YYYY}" { 4 } else { 2 }));
+                rest = &rest[p.len()..];
+            }
+            None => {
+                let end = rest[1..]
+                    .find('{')
+                    .filter(|at| PLACEHOLDERS.iter().any(|p| rest[at + 1..].starts_with(p)))
+                    .map_or(rest.len(), |at| at + 1);
+                found.push(Piece::Text(&rest[..end]));
+                rest = &rest[end..];
+            }
+        }
+    }
+    found
+}
+
+/// The parts of a date read back out of a value.
+#[derive(Default)]
+struct DateParts {
+    year: Option<i32>,
+    month: Option<u32>,
+    day: Option<u32>,
+    week: Option<u32>,
+}
+
+impl DateParts {
+    fn take(&mut self, placeholder: &str, digits: &str) -> Option<()> {
+        if !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let n: u32 = digits.parse().ok()?;
+        match placeholder {
+            "{YYYY}" => self.year = Some(n as i32),
+            // A two-digit year is this century's.
+            "{YY}" => self.year = Some(2000 + n as i32),
+            "{MM}" => self.month = Some(n),
+            "{DD}" => self.day = Some(n),
+            _ => self.week = Some(n),
+        }
+        Some(())
+    }
+
+    /// Match `pieces` at the start of `text`; what follows them.
+    fn strip_front<'t>(&mut self, pieces: &[Piece], mut text: &'t str) -> Option<&'t str> {
+        for piece in pieces {
+            match piece {
+                Piece::Text(literal) => text = text.strip_prefix(literal)?,
+                Piece::Part(placeholder, width) => {
+                    let (digits, rest) = text.split_at_checked(*width)?;
+                    self.take(placeholder, digits)?;
+                    text = rest;
+                }
+            }
+        }
+        Some(text)
+    }
+
+    /// Match `pieces` at the end of `text`; what precedes them.
+    fn strip_back<'t>(&mut self, pieces: &[Piece], mut text: &'t str) -> Option<&'t str> {
+        for piece in pieces.iter().rev() {
+            match piece {
+                Piece::Text(literal) => text = text.strip_suffix(literal)?,
+                Piece::Part(placeholder, width) => {
+                    let at = text.len().checked_sub(*width)?;
+                    let (rest, digits) = text.split_at_checked(at)?;
+                    self.take(placeholder, digits)?;
+                    text = rest;
+                }
+            }
+        }
+        Some(text)
+    }
+
+    /// What [`CounterDef::period`] gives for the date these parts are of.
+    fn period(&self, reset: Option<Reset>) -> Option<(i32, u32)> {
+        match reset {
+            None => Some((0, 0)),
+            Some(Reset::Year) => Some((self.year?, 0)),
+            Some(Reset::Month) => Some((self.year?, self.month?)),
+            Some(Reset::Week) => Some((self.year?, self.week?)),
+            Some(Reset::Day) => {
+                let date = NaiveDate::from_ymd_opt(self.year?, self.month?, self.day?)?;
+                Some((date.year(), date.ordinal()))
+            }
         }
     }
 }
@@ -553,6 +674,48 @@ mod tests {
         let mut zone = def(None, "");
         zone.timezone = "Mars/Olympus".into();
         assert!(zone.check().is_err());
+    }
+
+    #[test]
+    fn a_value_is_read_back_into_its_number_and_period() {
+        let plain = def(None, "");
+        assert_eq!(plain.parse(&Value::from(42)), Some((42, (0, 0))));
+        assert_eq!(plain.parse(&Value::from("42")), None);
+
+        let mut monthly = def(Some(Reset::Month), "INV-{YYYY}-{MM}-");
+        monthly.padding = 4;
+        monthly.suffix = "/A".into();
+        let mut state = monthly.initial();
+        let value = monthly.take(&mut state, at(2026, 11, 16, 9)).unwrap();
+        assert_eq!(value, Value::from("INV-2026-11-0001/A"));
+        assert_eq!(monthly.parse(&value), Some((1, (2026, 11))));
+        assert_eq!(
+            monthly.parse(&Value::from("INV-2025-03-12345/A")),
+            Some((12345, (2025, 3)))
+        );
+        for other in [
+            "INV-2026-11-0001",
+            "X-2026-11-0001/A",
+            "INV-2026-1x-0001/A",
+            "INV-2026-11-/A",
+        ] {
+            assert_eq!(monthly.parse(&Value::from(other)), None, "{other}");
+        }
+
+        // Every value a counter writes is read back as written.
+        let daily = def(Some(Reset::Day), "{YY}{MM}{DD}.");
+        let weekly = def(Some(Reset::Week), "{YYYY}W{WW}-");
+        for (counter, when) in [(&daily, at(2026, 2, 28, 9)), (&weekly, at(2025, 12, 29, 9))] {
+            let mut state = counter.initial();
+            state.next = 77;
+            let value = counter.take(&mut state, when).unwrap();
+            let date = state.date.unwrap();
+            assert_eq!(
+                counter.parse(&value),
+                Some((77, counter.period(date))),
+                "{value}"
+            );
+        }
     }
 
     #[test]

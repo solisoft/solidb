@@ -167,7 +167,18 @@
   -d '{"node": "n2"}'</code></pre>
             </div>
             <p class="text-gray-300 leading-relaxed">
-              It stops numbering in the write that records the change, and the record it replicates tells the other node which number comes next. A node that does not number shows, in <code class="text-indigo-300">state</code>, where the counter stood when it was last declared, set or handed over, not the numbers given since.
+              It stops numbering in the write that records the change, and the record it replicates tells the other node which number comes next.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              If the node that numbers is lost, there is nobody to hand the counter over. Ask the node that should number from now on, with <code class="text-indigo-300">force</code>:
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X PUT http://n2:6745/_api/database/shop/collection/invoices/counters/number/node \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"force": true}'</code></pre>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              That node reads the numbers of the documents it holds and goes on after the highest of the current period (or from the state it was last sent, when that is further). It is all it can know: a number the lost node gave to a document that was not replicated yet is given a second time. When the lost node comes back it learns that it no longer numbers; the documents it had not sent arrive with their numbers, and one of them may then be held twice. Use a handover whenever the numbering node still answers. A node that does not number shows, in <code class="text-indigo-300">state</code>, where the counter stood when it was last declared, set or handed over, not the numbers given since.
             </p>
           </div>
         </div>
@@ -182,7 +193,7 @@
             <ul class="list-disc pl-6 space-y-2 text-gray-300">
               <li><strong class="text-white">No sharded collections.</strong> A counter cannot be declared on a sharded collection, and a collection with a counter cannot be sharded: each shard would count on its own.</li>
               <li><strong class="text-white">Document and edge collections</strong>; no time series, blob or system collection.</li>
-              <li><strong class="text-white">No takeover from a dead node.</strong> The numbering is handed over by the node that holds it. If that node is lost, the counter has to be dropped and declared again on another, with the next number set by hand.</li>
+              <li><strong class="text-white">A takeover is best effort.</strong> When the node that numbers is lost, another takes the counter with <code class="text-indigo-300">force</code> and goes on after the highest number it holds. A number the lost node gave to a document that had not been replicated is given again; if that document arrives later, two documents hold the number.</li>
               <li><strong class="text-white">Merges by key.</strong> An import in upsert mode and an offline client's sync merge documents into what is stored: a document whose key is there keeps its number, and one whose key is not is numbered like an insert. Neither may carry a value for the field.</li>
               <li><strong class="text-white">A deleted document's number is not given again.</strong> Without a gap means no number is skipped when it is given, not that the stored numbers stay contiguous after deletes.</li>
               <li><strong class="text-white">Dump and restore.</strong> <code class="text-indigo-300">solidb-dump</code> writes each counter with its state; <code class="text-indigo-300">solidb-restore</code> loads the documents with their numbers, then declares the counter where the dump left it.</li>
