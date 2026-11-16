@@ -1204,6 +1204,14 @@ impl StorageEngine {
         super::foreign_keys::observe_cascades(&self.db, Arc::new(observer));
     }
 
+    /// Say which node of a cluster this instance is: `node` is the id it
+    /// was started with (`None` when it was given none), `peers` whether
+    /// it replicates with others. Counter fields are numbered by one node,
+    /// which they name (`storage::counters`).
+    pub fn set_local_node(&self, node: Option<String>, peers: bool) {
+        super::counters::set_local(&self.db, super::counters::Local { node, peers });
+    }
+
     /// Whether commits can be handed to the group committer: the engine
     /// must be able to write several commits' batches as one.
     pub fn groups_commits(&self) -> bool {
@@ -1334,6 +1342,7 @@ impl Drop for StorageEngine {
 
         if last {
             super::foreign_keys::forget_engine(&self.db);
+            super::counters::forget_local(&self.db);
             // The thread that seals column blocks holds collections of this
             // database while it works: joined before the database closes.
             super::blocks::stop_sealer(&self.db);

@@ -148,6 +148,9 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     if *method == Method::DELETE && is_collection_drop(path) {
         return PermissionAction::Admin;
     }
+    if is_counter_change(method, path) {
+        return PermissionAction::Admin;
+    }
 
     if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
         return PermissionAction::Read;
@@ -199,6 +202,20 @@ fn is_script_or_service_mutation(method: &Method, path: &str) -> bool {
         || rest.starts_with("scripts/")
         || rest == "services"
         || rest.starts_with("services/")
+}
+
+/// Declaring, dropping or moving a counter field, or setting its next
+/// number (`…/collection/{name}/counters…`): a next number set lower gives
+/// numbers twice. Listing them stays a Read.
+fn is_counter_change(method: &Method, path: &str) -> bool {
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return false;
+    }
+    let mut parts = path
+        .strip_prefix("/_api/database/")
+        .unwrap_or_default()
+        .split('/');
+    parts.nth(1) == Some("collection") && parts.nth(1) == Some("counters")
 }
 
 fn is_collection_drop(path: &str) -> bool {
@@ -452,6 +469,28 @@ mod tests {
                 "/_api/database/{db}/collection/{name}/foreign-keys/check"
             ),
             PermissionAction::Read
+        );
+
+        // Counter fields: read to list, Admin for anything that changes
+        // what numbers are given.
+        let counters = "/_api/database/{db}/collection/{name}/counters";
+        assert_eq!(
+            required_action(&Method::GET, counters),
+            PermissionAction::Read
+        );
+        assert_eq!(required_action(&post, counters), PermissionAction::Admin);
+        assert_eq!(
+            required_action(&Method::DELETE, &format!("{counters}/{{field}}")),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&Method::PUT, &format!("{counters}/{{field}}/next")),
+            PermissionAction::Admin
+        );
+        // A collection or a document named "counters" is not one.
+        assert_eq!(
+            required_action(&post, "/_api/database/{db}/document/{collection}"),
+            PermissionAction::Write
         );
 
         // Deeper DELETE paths are plain writes, not drops

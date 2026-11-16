@@ -518,7 +518,10 @@ pub async fn pull_changes(
         .filter(|entry| {
             !matches!(
                 entry.operation,
-                Operation::CreateForeignKey | Operation::DropForeignKey
+                Operation::CreateForeignKey
+                    | Operation::DropForeignKey
+                    | Operation::PutCounter
+                    | Operation::DropCounter
             )
         })
         .map(log_entry_to_sync_change)

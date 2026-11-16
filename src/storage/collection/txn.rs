@@ -125,6 +125,11 @@ impl Collection {
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
         }
+        // A counter's number is given when the transaction commits
+        // (`number_operations`): until then the document has none.
+        if let Some(defs) = self.counters() {
+            self.refuse_given_numbers(&defs, &data)?;
+        }
 
         let key = if let Some(obj) = data.as_object_mut() {
             if let Some(key_value) = obj.remove("_key") {
@@ -253,6 +258,7 @@ impl Collection {
             }
         }
         let new_data = Self::updated_value(&self.name, key, &old_data, data);
+        self.numbers_unchanged(&old_data, &new_data)?;
 
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&new_data)?;

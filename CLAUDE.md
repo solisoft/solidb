@@ -575,6 +575,71 @@ Rules that keep it sound:
 |---|---|---|
 | `SOLIDB_FK_MAX_CASCADE` | 100000 | Documents one delete may cascade into (deleted or nulled) before it is refused. |
 
+### Counter fields
+
+A `document` collection declares that a top-level field is numbered by the
+database on insert (`storage/counters.rs` for the definition and the rules,
+`storage/collection/counters.rs` for the collection side, `sync/counters.rs`
+for what is logged; endpoints in `server/handlers/counters.rs`). Each insert
+gets the next number, never twice the same and with no gap; the number may
+restart each day, week, month or year of a timezone, between a prefix and a
+suffix that hold the date. Definitions are stored on the collection under
+`_stats:counters`, each counter's state (`next`, the `date` of the last
+number, an `epoch`) under `_stats:counter:<field>`.
+
+Rules that keep it sound:
+
+- **The state is written in the batch that stores the numbered documents**
+  (`Numbering::stage`, `Collection::write_numbered`), never apart: that is
+  what gives a number back when a write is refused or lost. Nothing is kept
+  in memory; the state is read under the lock.
+- **One lock per collection, held from the number to the write**
+  (`KsState::hold_counter_lock`, a value that can cross threads like the
+  commit gates). Order: foreign-key gate, commit gates (commits only), then
+  per collection in name order the counter lock, the key locks, the unique
+  stripes. A number must be in the document before its unique values are
+  read and before it is serialized: `insert_batch` numbers before its
+  second pass when a counter exists.
+- **Every path that creates a document numbers it or refuses.**
+  `insert_internal`, `insert_or_replace` (for a key that is not stored) and
+  `insert_batch` number; a transaction's inserts are numbered when its
+  commit is prepared (`number_operations`, before
+  `lock_for_transaction_reading`), the number carried into the updates the
+  transaction made to the same key, and a key inserted then deleted takes
+  none; `upsert_batch` refuses to create (`refuse_unnumbered`);
+  `raw_write_ready` sends the collection the decoded way. A new insert path
+  must do one of the two.
+- **The client neither sets nor changes the field**: `expect_numbers` /
+  `refuse_given_numbers` on insert, `numbers_unchanged` in
+  `write_update_core`, `update_batch_guarded` and `update_tx_guarded`,
+  `keep_numbers` where a replace would drop it. An update path that reaches
+  storage without one of them lets a number be rewritten.
+- **A replicated write is not numbered**: `Collection::counters` returns
+  nothing inside `foreign_keys::unchecked`, which every apply path runs in.
+  The numbers travel in the documents.
+- **One node numbers** (`CounterDef::node`, checked by `check_owner` under
+  the lock). It is pinned only when the instance was given `--node-id`
+  (`StorageEngine::set_local_node`): an id made up at startup names
+  nothing. The numbering moves by a handover the owner makes
+  (`move_counter`), which stops it numbering in the same write and
+  replicates the exact state; a peer's state is otherwise only as fresh as
+  the last record it was sent.
+- **Records are applied in any order** (`PutCounter` / `DropCounter`,
+  `SyncMessage::FullSyncCounters`): the higher `epoch` wins, then the state
+  further along (`counters::supersedes`), and a dropped counter keeps its
+  state key as a record of the drop, so that an older record replayed from
+  a log does not declare it again. That is why these operations are not in
+  `in_full_sync`.
+- **The date a number is rendered with never goes back**
+  (`CounterDef::take`): a clock stepping back must not give a closed
+  period's numbers again. With a reset, the prefix and suffix must name the
+  period (`CounterDef::check`).
+- The unique index a counter stands on cannot be dropped while it is
+  declared, and a collection with a counter cannot be sharded.
+- `solidb-dump` writes `counter` records with their state; `solidb-restore`
+  takes the same counter off the target, loads the documents with their
+  numbers and declares it afterwards.
+
 ### What a joining node replays after its full sync
 
 A node that joins asks one peer for a full sync, then pulls every peer's

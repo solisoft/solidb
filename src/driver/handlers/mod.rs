@@ -674,6 +674,68 @@ impl DriverHandler {
                 }
             }
 
+            // ==================== Counter Fields ====================
+            Command::ListCounters {
+                database,
+                collection,
+            } => {
+                self.counter(database, collection, |coll, _, _, _| {
+                    coll.counter_records()
+                        .map(|records| serde_json::json!({ "counters": records }))
+                })
+                .await
+            }
+
+            Command::CreateCounter {
+                database,
+                collection,
+                counter,
+            } => {
+                self.counter(database, collection, move |coll, log, db, name| {
+                    crate::sync::counters::declare(coll, log, db, name, counter)
+                        .map(|record| serde_json::json!(record))
+                })
+                .await
+            }
+
+            Command::DeleteCounter {
+                database,
+                collection,
+                field,
+            } => {
+                self.counter(database, collection, move |coll, log, db, name| {
+                    crate::sync::counters::drop(coll, log, db, name, &field)
+                        .map(|()| serde_json::Value::Null)
+                })
+                .await
+            }
+
+            Command::SetCounterNext {
+                database,
+                collection,
+                field,
+                next,
+            } => {
+                self.counter(database, collection, move |coll, log, db, name| {
+                    crate::sync::counters::set_next(coll, log, db, name, &field, next)
+                        .map(|record| serde_json::json!(record))
+                })
+                .await
+            }
+
+            Command::MoveCounter {
+                database,
+                collection,
+                field,
+                node,
+            } => {
+                self.counter(database, collection, move |coll, log, db, name| {
+                    crate::sync::counters::move_to(coll, log, db, name, &field, node)
+                        .map(|record| serde_json::json!(record))
+                })
+                .await
+            }
+
             // ==================== Transaction Operations ====================
             Command::BeginTransaction {
                 database,
@@ -1385,6 +1447,39 @@ impl DriverHandler {
             .map_err(|e| DriverError::DatabaseError(e.to_string()))
     }
 
+    /// Run `work` on a collection's counter fields, off the runtime (a
+    /// declaration reads every stored document), with the replication log
+    /// its change is written to.
+    async fn counter<F>(&self, database: String, collection: String, work: F) -> Response
+    where
+        F: FnOnce(
+                &crate::storage::Collection,
+                Option<&crate::sync::log::SyncLog>,
+                &str,
+                &str,
+            ) -> crate::error::DbResult<serde_json::Value>
+            + Send
+            + 'static,
+    {
+        let coll = match self.get_collection(&database, &collection) {
+            Ok(coll) => coll,
+            Err(e) => return Response::error(e),
+        };
+        let log = self.replication.clone();
+        let done = tokio::task::spawn_blocking(move || {
+            work(&coll, log.as_deref(), &database, &collection)
+        })
+        .await;
+        match done {
+            Ok(Ok(value)) => Response::ok(value),
+            Ok(Err(e)) => Response::error(DriverError::DatabaseError(e.to_string())),
+            Err(e) => Response::error(DriverError::DatabaseError(format!(
+                "Task join error: {}",
+                e
+            ))),
+        }
+    }
+
     /// Helper to get a collection
     pub(crate) fn get_collection(
         &self,
@@ -1433,4 +1528,93 @@ pub fn spawn_driver_handler(
     });
 
     tx
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageEngine;
+    use serde_json::json;
+
+    fn data(response: Response) -> serde_json::Value {
+        match response {
+            Response::Ok { data, .. } => data.unwrap_or_default(),
+            other => panic!("{:?}", other),
+        }
+    }
+
+    /// Counter fields over the driver: declared, listed, numbering the
+    /// driver's own inserts (which leave the path that stores a document
+    /// without decoding it), changed and dropped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn counters_over_the_driver() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+        engine.create_database("d".to_string()).unwrap();
+        engine
+            .get_database("d")
+            .unwrap()
+            .create_collection("c".to_string(), None)
+            .unwrap();
+        let mut h = DriverHandler::new(engine, None);
+        h.authenticated_db = Some("d".to_string());
+        h.session_permissions
+            .insert(crate::server::Permission::global_admin());
+        let command =
+            |value: serde_json::Value| -> Command { serde_json::from_value(value).unwrap() };
+        let on = |name: &str, mut rest: serde_json::Value| {
+            rest["database"] = json!("d");
+            rest["collection"] = json!("c");
+            rest["cmd"] = json!(name);
+            command(rest)
+        };
+
+        let declared = data(
+            h.execute_command(on(
+                "create_counter",
+                json!({"counter": {"field": "n", "start": 5, "prefix": "T-"}}),
+            ))
+            .await,
+        );
+        assert_eq!(declared["state"]["next"], 5);
+
+        let inserted = data(
+            h.execute_command(on("insert", json!({"document": {"label": "a"}})))
+                .await,
+        );
+        assert_eq!(inserted["n"], "T-5");
+        let bulk = h
+            .execute_command(on(
+                "bulk_insert",
+                json!({"documents": [{"label": "b"}, {"label": "c"}]}),
+            ))
+            .await;
+        assert!(matches!(bulk, Response::Ok { .. }), "{:?}", bulk);
+        let stored: Vec<String> = h
+            .get_collection("d", "c")
+            .unwrap()
+            .scan(None)
+            .iter()
+            .filter_map(|d| d.data["n"].as_str().map(str::to_string))
+            .collect();
+        assert_eq!(stored.len(), 3);
+        for n in ["T-5", "T-6", "T-7"] {
+            assert!(stored.iter().any(|s| s == n), "{n} in {stored:?}");
+        }
+
+        let moved = data(
+            h.execute_command(on("set_counter_next", json!({"field": "n", "next": 40})))
+                .await,
+        );
+        assert_eq!(moved["state"]["next"], 40);
+        let listed = data(h.execute_command(on("list_counters", json!({}))).await);
+        assert_eq!(listed["counters"][0]["state"]["next"], 40);
+
+        data(
+            h.execute_command(on("delete_counter", json!({"field": "n"})))
+                .await,
+        );
+        let listed = data(h.execute_command(on("list_counters", json!({}))).await);
+        assert_eq!(listed["counters"], json!([]));
+    }
 }

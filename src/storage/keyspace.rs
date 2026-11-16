@@ -25,6 +25,7 @@
 //! still cannot walk into the next collection.
 
 use crate::error::{DbError, DbResult};
+use crate::storage::counters::CounterDef;
 use crate::storage::kv::{
     Direction, IterMode, Kv, KvBatch, KvCf, KvError, KvIter, KvPinned, KvReadOptions, KvSnapshot,
 };
@@ -32,7 +33,7 @@ use crate::storage::RocksDb as DB;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 
 /// The column family every shared-layout collection lives in. No `:` in the
@@ -133,7 +134,26 @@ pub struct KsState {
     /// write of the keyspace loads: on one cache line, each commit would
     /// take that line from all the other cores.
     commits: OwnCacheLines<CommitState>,
+    /// The collection's counter fields (`storage::counters`).
+    counters: CounterSlot,
 }
+
+/// What every handle of a keyspace shares about its counter fields.
+#[derive(Debug, Default)]
+struct CounterSlot {
+    /// [`COUNTERS_UNKNOWN`], [`COUNTERS_NONE`] or [`COUNTERS_SOME`]: a
+    /// collection without a counter pays one load of it per insert.
+    known: AtomicU8,
+    defs: parking_lot::RwLock<Arc<Vec<CounterDef>>>,
+    /// Held by an insert from the number it takes until its batch is
+    /// written, so that numbers are stored in the order they were given
+    /// and a write that fails gives its number back.
+    lock: parking_lot::Mutex<()>,
+}
+
+const COUNTERS_UNKNOWN: u8 = 0;
+const COUNTERS_NONE: u8 = 1;
+const COUNTERS_SOME: u8 = 2;
 
 #[derive(Debug, Default)]
 struct CommitState {
@@ -178,6 +198,45 @@ impl KsState {
         self.commits.0.write_gen.fetch_add(1, Ordering::AcqRel);
     }
 
+    /// The counters of the collection as last stored by this process:
+    /// `None` when they have not been read yet, an empty list when it has
+    /// none.
+    pub fn counters(&self) -> Option<Arc<Vec<CounterDef>>> {
+        match self.counters.known.load(Ordering::Acquire) {
+            COUNTERS_UNKNOWN => None,
+            COUNTERS_NONE => Some(Arc::new(Vec::new())),
+            _ => Some(Arc::clone(&self.counters.defs.read())),
+        }
+    }
+
+    /// Whether the collection is known to have no counter: the one check a
+    /// write to a collection without one makes.
+    pub fn has_no_counter(&self) -> bool {
+        self.counters.known.load(Ordering::Acquire) == COUNTERS_NONE
+    }
+
+    /// Remember the counters just read from, or written to, the collection.
+    pub fn set_counters(&self, defs: Vec<CounterDef>) {
+        let known = if defs.is_empty() {
+            COUNTERS_NONE
+        } else {
+            COUNTERS_SOME
+        };
+        let mut slot = self.counters.defs.write();
+        *slot = Arc::new(defs);
+        self.counters.known.store(known, Ordering::Release);
+    }
+
+    /// Take the lock every numbered insert of the collection holds, as a
+    /// value that owns its hold: a commit prepared on one thread may be
+    /// written on another.
+    pub fn hold_counter_lock(self: &Arc<Self>) -> HeldCounterLock {
+        std::mem::forget(self.counters.lock.lock());
+        HeldCounterLock {
+            state: Arc::clone(self),
+        }
+    }
+
     pub fn commit_gate(&self) -> &parking_lot::RwLock<()> {
         &self.commits.0.commit_gate
     }
@@ -194,6 +253,21 @@ impl KsState {
         HeldCommitGate {
             state: Arc::clone(self),
             exclusive,
+        }
+    }
+}
+
+/// A hold on a collection's counter lock, released when dropped.
+pub struct HeldCounterLock {
+    state: Arc<KsState>,
+}
+
+impl Drop for HeldCounterLock {
+    fn drop(&mut self) {
+        // SAFETY: `hold_counter_lock` took the lock and forgot its guard;
+        // this value is the only thing that releases it, once.
+        unsafe {
+            self.state.counters.lock.force_unlock();
         }
     }
 }
@@ -257,6 +331,8 @@ const METADATA_KEY_PREFIXES: &[&[u8]] = &[
     b"ft_meta:",
     b"ttl_meta:",
     b"vec_meta:",
+    // A collection's counters and their state (`storage::counters`).
+    b"_stats:counter",
 ];
 
 impl ReadTracker {

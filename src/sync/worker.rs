@@ -1066,6 +1066,23 @@ impl SyncWorker {
                     }
                 }
             }
+            Operation::PutCounter | Operation::DropCounter => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    if let Ok(coll) = db.system_collection(&entry.collection) {
+                        if let Err(e) = super::counters::apply(
+                            &coll,
+                            entry.operation,
+                            &entry.document_key,
+                            entry.document_data.as_deref(),
+                        ) {
+                            warn!(
+                                "apply_entry: counter '{}' of {}.{} not applied: {}",
+                                entry.document_key, entry.database, entry.collection, e
+                            );
+                        }
+                    }
+                }
+            }
             Operation::DropForeignKey => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
@@ -1309,6 +1326,19 @@ impl SyncWorker {
                         "Synced {} documents to {}.{}",
                         doc_count, database, collection
                     );
+                }
+                SyncMessage::FullSyncCounters {
+                    database,
+                    collection,
+                    counters,
+                } => {
+                    if let Ok(coll) = self
+                        .storage
+                        .get_database(&database)
+                        .and_then(|db| db.system_collection(&collection))
+                    {
+                        super::counters::apply_full_sync(&coll, &counters);
+                    }
                 }
                 SyncMessage::FullSyncDefinitions {
                     database,
@@ -1666,6 +1696,15 @@ impl SyncWorker {
                             foreign_keys,
                         };
                         ConnectionPool::write_message(stream, &definitions).await?;
+                    }
+                    let counters = super::counters::full_sync_records(&coll);
+                    if !counters.is_empty() {
+                        let message = SyncMessage::FullSyncCounters {
+                            database: db_name.clone(),
+                            collection: coll_name.clone(),
+                            counters,
+                        };
+                        ConnectionPool::write_message(stream, &message).await?;
                     }
                     stream_collection_documents(stream, db_name, &coll_name, coll).await?;
                 }

@@ -54,6 +54,13 @@ pub enum Operation {
     /// column; the payload of a create is the JSON `ColumnarIndexType`.
     ColumnarCreateIndex,
     ColumnarDropIndex,
+    /// A counter field (`storage::counters`), declared, changed or handed
+    /// to another node: the key is the field, the payload the JSON
+    /// `CounterRecord` (definition and state). The later one wins on a
+    /// node that applies it, so these are replayed in any order.
+    PutCounter,
+    /// A counter dropped: the key is the field, the payload `{"epoch": …}`.
+    DropCounter,
 }
 
 /// A single entry in the sync log
@@ -389,6 +396,15 @@ pub enum SyncMessage {
         database: String,
         collection: String,
         part: ColumnarPart,
+    },
+    /// Full sync: the counter fields of a collection, each a JSON
+    /// `CounterRecord` (`storage::counters`), sent before its documents.
+    /// They are in no log when they were declared while the log was
+    /// deferred.
+    FullSyncCounters {
+        database: String,
+        collection: String,
+        counters: Vec<Vec<u8>>,
     },
 }
 

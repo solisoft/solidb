@@ -88,6 +88,7 @@ fn control_record_type(record: &Value) -> Option<String> {
         "collection"
             | "index"
             | "foreign_key"
+            | "counter"
             | "document"
             | "columnar"
             | "columnar_row"
@@ -719,6 +720,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    // Declared once every document is in, like a foreign
+                    // key: the documents hold their numbers, which a
+                    // counter already on the target would refuse.
+                    if record_type.as_deref() == Some("counter") {
+                        if let Some((db, coll)) = resolve_target(&doc, &args) {
+                            hold_counter(&client, &base_url, &db, &coll, doc).await;
+                        }
+                        buffer.clear();
+                        continue;
+                    }
+
                     if record_type.as_deref() == Some("index") {
                         if let Some((db, coll)) = current_batch_meta.clone() {
                             flush_batch(
@@ -868,6 +880,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
 
     declare_foreign_keys(&client, &base_url, &mut total_imported, &mut total_failed).await;
+    declare_counters(&client, &base_url, &mut total_imported, &mut total_failed).await;
 
     eprintln!("✓ Restore completed");
     eprintln!("  → {} items imported", total_imported.to_string().green());
@@ -1749,6 +1762,86 @@ async fn declare_foreign_keys(
     }
 }
 
+/// Counter fields to declare once the data is in: `(database, collection,
+/// record)`.
+static COUNTERS: std::sync::Mutex<Vec<(String, String, Value)>> = std::sync::Mutex::new(Vec::new());
+
+fn counters_url(base_url: &str, database: &str, collection: &str) -> String {
+    format!(
+        "{}/_api/database/{}/collection/{}/counters",
+        base_url,
+        path_seg(database),
+        path_seg(collection)
+    )
+}
+
+/// Keep a dumped counter for [`declare_counters`], and take the same
+/// counter off the target meanwhile: the documents about to be loaded hold
+/// their numbers, which a counter refuses from a client.
+async fn hold_counter(
+    client: &reqwest::Client,
+    base_url: &str,
+    database: &str,
+    collection: &str,
+    record: Value,
+) {
+    if let Some(field) = record["field"].as_str() {
+        let url = format!(
+            "{}/{}",
+            counters_url(base_url, database, collection),
+            path_seg(field)
+        );
+        let _ = client.delete(&url).send().await;
+    }
+    COUNTERS.lock().unwrap_or_else(|e| e.into_inner()).push((
+        database.to_string(),
+        collection.to_string(),
+        record,
+    ));
+}
+
+/// Declare the counters held back during the restore, each where the dump
+/// left it. One whose next number a restored document holds is reported
+/// and left out.
+async fn declare_counters(
+    client: &reqwest::Client,
+    base_url: &str,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) {
+    let held = std::mem::take(&mut *COUNTERS.lock().unwrap_or_else(|e| e.into_inner()));
+    for (database, collection, record) in held {
+        let mut body = record.clone();
+        if let Some(fields) = body.as_object_mut() {
+            fields.retain(|name, _| !name.starts_with('_'));
+        }
+        let field = record["field"].as_str().unwrap_or("?");
+        let url = counters_url(base_url, &database, &collection);
+        let failed = match client.post(&url).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => None,
+            Ok(resp) => {
+                let status = resp.status();
+                Some(format!(
+                    "{} {}",
+                    status,
+                    resp.text().await.unwrap_or_default()
+                ))
+            }
+            Err(e) => Some(e.to_string()),
+        };
+        match failed {
+            None => *total_imported += 1,
+            Some(why) => {
+                eprintln!(
+                    " Warning: counter '{}' of {}/{} was not declared: {}",
+                    field, database, collection, why
+                );
+                *total_failed += 1;
+            }
+        }
+    }
+}
+
 /// Create the database unless we already tried during this run.
 ///
 /// `ensured` is the same map used for collections; collection keys are
@@ -2275,6 +2368,7 @@ COMMIT;
             "collection",
             "index",
             "foreign_key",
+            "counter",
             "document",
             "columnar",
             "columnar_row",

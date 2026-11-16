@@ -465,6 +465,13 @@ impl Collection {
                 self.name
             )));
         }
+        // A counter is one sequence: each shard would count its own.
+        if config.num_shards > 0 && !self.counter_defs().is_empty() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{}' has a counter and cannot be sharded",
+                self.name
+            )));
+        }
         let cf = self
             .ks
             .handle(&self.db)

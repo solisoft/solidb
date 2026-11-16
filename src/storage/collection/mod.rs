@@ -22,6 +22,7 @@ use fastbloom::BloomFilter;
 pub mod auto_index;
 pub mod blobs;
 pub mod core;
+pub mod counters;
 pub mod crud;
 pub mod fulltext;
 pub mod geo;

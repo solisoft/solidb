@@ -153,6 +153,10 @@ impl Collection {
         if self.stored_schema().is_some() || self.is_versioned() {
             return None;
         }
+        // A counter's number goes into the decoded document.
+        if !self.ks.state().has_no_counter() && !self.counter_defs().is_empty() {
+            return None;
+        }
         let meta = self.index_meta()?;
         // A foreign key is checked on the indexed view, which holds its
         // field as long as its index is there.

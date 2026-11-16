@@ -438,6 +438,12 @@ impl Collection {
                 name, key.name
             )));
         }
+        if let Some(field) = self.counter_using_index(name) {
+            return Err(DbError::ConflictError(format!(
+                "Index '{}' serves the counter on '{}': drop the counter first",
+                name, field
+            )));
+        }
 
         let _invalidate = self.invalidate_cached_queries_on_exit();
 

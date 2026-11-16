@@ -647,6 +647,23 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/foreign-keys/{key}",
             delete(super::handlers::delete_foreign_key),
         )
+        // Counter field routes
+        .route(
+            "/_api/database/{db}/collection/{name}/counters",
+            get(super::handlers::list_counters).post(super::handlers::create_counter),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/counters/{field}",
+            delete(super::handlers::delete_counter),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/counters/{field}/next",
+            put(super::handlers::set_counter_next),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/counters/{field}/node",
+            put(super::handlers::set_counter_node),
+        )
         // Env var routes
         .route(
             "/_api/database/{db}/env",

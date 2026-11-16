@@ -141,6 +141,39 @@ pub enum Command {
         #[serde(default)]
         by: Option<String>,
     },
+    /// The counter fields of a collection, each with its state
+    /// (`storage::counters`).
+    ListCounters {
+        database: String,
+        collection: String,
+    },
+    /// Declare that the database numbers a field on insert. `counter` is
+    /// the body of `POST …/collection/{name}/counters`.
+    CreateCounter {
+        database: String,
+        collection: String,
+        counter: crate::storage::collection::counters::CounterSpec,
+    },
+    DeleteCounter {
+        database: String,
+        collection: String,
+        field: String,
+    },
+    /// Make `next` the number the next insert gets.
+    SetCounterNext {
+        database: String,
+        collection: String,
+        field: String,
+        next: u64,
+    },
+    /// Hand the numbering to `node`.
+    MoveCounter {
+        database: String,
+        collection: String,
+        field: String,
+        #[serde(default)]
+        node: Option<String>,
+    },
     BeginTransaction {
         database: String,
         #[serde(default)]
@@ -596,6 +629,11 @@ impl Command {
             | CreateForeignKey { database, .. }
             | DeleteForeignKey { database, .. }
             | CheckForeignKey { database, .. }
+            | ListCounters { database, .. }
+            | CreateCounter { database, .. }
+            | DeleteCounter { database, .. }
+            | SetCounterNext { database, .. }
+            | MoveCounter { database, .. }
             | BeginTransaction { database, .. }
             | BulkInsert { database, .. }
             | CreateScript { database, .. }
@@ -706,6 +744,7 @@ impl Command {
             | Explain { .. }
             | ListIndexes { .. }
             | ListForeignKeys { .. }
+            | ListCounters { .. }
             | CheckForeignKey { .. }
             | CheckIndexes { .. }
             | ListScripts { .. }
@@ -744,6 +783,12 @@ impl Command {
             | DeleteCollection { .. }
             | DeleteColumnar { .. }
             | TruncateColumnar { .. } => Some(A::Admin),
+
+            // What numbers a counter gives — Admin, same as HTTP
+            CreateCounter { .. }
+            | DeleteCounter { .. }
+            | SetCounterNext { .. }
+            | MoveCounter { .. } => Some(A::Admin),
 
             // `_env` holds provider credentials, so reading it is an Admin
             // operation on this database — matching the HTTP env endpoints.

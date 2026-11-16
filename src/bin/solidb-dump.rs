@@ -1213,6 +1213,32 @@ async fn dump_collection_indexes(
         }
     }
 
+    // Counter fields, each with where it stands: restore declares them
+    // once the documents, which hold their numbers, are in, and the count
+    // goes on from there. The node that numbers is not dumped: it is the
+    // target's business. A server from before counters answers 404.
+    let url = format!(
+        "{}/_api/database/{}/collection/{}/counters",
+        base_url, db, coll
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                for counter in body["counters"].as_array().into_iter().flatten() {
+                    let mut record = counter.clone();
+                    if let Some(fields) = record.as_object_mut() {
+                        fields.remove("node");
+                        fields.remove("index");
+                    }
+                    record["_type"] = Value::String("counter".to_string());
+                    record["_database"] = Value::String(database.to_string());
+                    record["_collection"] = Value::String(collection.to_string());
+                    writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

@@ -1,0 +1,193 @@
+<div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <a href="/docs" class="inline-flex items-center text-indigo-400 hover:text-indigo-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Documentation
+    </a>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-12 lg:gap-12">
+    <main class="lg:col-span-12 space-y-12">
+      <div class="relative">
+        <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg blur opacity-25"></div>
+        <div class="relative">
+          <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 mb-4 tracking-tight">
+            Counters
+          </h1>
+          <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
+            Declare that a field is numbered by the database, and every inserted document gets the next number: never the same one twice, and with no gap.
+          </p>
+        </div>
+      </div>
+
+      <section id="overview" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Overview</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A counter is declared on a <code class="text-indigo-300">document</code> collection and names one of its top-level fields. From then on every document inserted gets the next number in that field: 1, 2, 3&hellip; The database gives each number once, and leaves no gap: a number is taken only by an insert that is stored.
+            </p>
+            <ul class="list-disc pl-6 space-y-2 text-gray-300">
+              <li>an insert that is refused (a key or a unique value already there, a schema, a foreign key), a transaction that is rolled back and a commit that is refused take no number;</li>
+              <li>the client neither sets nor changes the field: an insert that gives it a value is refused with <code class="text-indigo-300">400</code>, and so is an update that changes it. <code class="text-indigo-300">null</code> is the same as leaving it out, and a replace that leaves it out keeps the number;</li>
+              <li>declaring the counter creates a unique index on the field, so a document is found by its number;</li>
+              <li>the number may start again each day, week, month or year, and be written between a prefix and a suffix that hold the date.</li>
+            </ul>
+            <p class="text-gray-300 leading-relaxed">
+              The number is given by storage, so it is the same count for every writer: the document API, SDBQL, the native driver, Lua scripts and transactions.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="declare" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Declaring a counter</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X POST http://localhost:6745/_api/database/shop/collection/invoices/counters \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"field": "number", "start": 41, "reset": "month", "timezone": "Europe/Paris",
+       "prefix": "INV-{YYYY}-{MM}-", "padding": 4}'
+
+{"field": "number", "start": 41, "reset": "month", "timezone": "Europe/Paris",
+ "prefix": "INV-{YYYY}-{MM}-", "suffix": "", "padding": 4, "durable": true,
+ "node": null, "index": "counter_number",
+ "state": {"epoch": 1794837472772, "date": null, "next": 41}}</code></pre>
+            </div>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-sdbql text-sm">FOR i IN 1..3 INSERT {total: i} INTO invoices RETURN NEW.number
+
+["INV-2026-11-0041", "INV-2026-11-0042", "INV-2026-11-0043"]</code></pre>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs uppercase text-gray-300 border-b border-white/10">
+                  <tr><th class="py-2 pr-4">Field</th><th class="py-2">Meaning</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">field</code></td><td class="py-2">A top-level field that is not a system attribute. One counter per field; a collection may have several.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">start</code></td><td class="py-2">The first number, 1 by default. It is used once: after a reset the count starts at 1.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">reset</code></td><td class="py-2"><code class="text-indigo-300">day</code>, <code class="text-indigo-300">week</code> (ISO weeks, which start on Monday), <code class="text-indigo-300">month</code> or <code class="text-indigo-300">year</code>. Left out, the counter never starts again.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">timezone</code></td><td class="py-2">The IANA timezone the date is read in, <code class="text-indigo-300">UTC</code> by default: it decides when a day, and so a period, begins.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">prefix</code>, <code class="text-indigo-300">suffix</code></td><td class="py-2">Text written before and after the number. They may hold <code class="text-indigo-300">{YYYY}</code>, <code class="text-indigo-300">{YY}</code>, <code class="text-indigo-300">{MM}</code>, <code class="text-indigo-300">{DD}</code> and <code class="text-indigo-300">{WW}</code> (the ISO week). With a <code class="text-indigo-300">reset</code> they must name the period (<code class="text-indigo-300">{YYYY}</code> and <code class="text-indigo-300">{MM}</code> for a month), or the declaration is refused: two periods would give the same values. With weekly resets <code class="text-indigo-300">{YYYY}</code> is the week's year.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">padding</code></td><td class="py-2">The number is left-padded with zeros to this many digits. A longer number is written whole.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">durable</code></td><td class="py-2"><code class="text-indigo-300">true</code> by default: the write that takes a number is synced to disk before the insert is acknowledged, so that a number given out is never given again after a power loss. That is one fsync per insert. With <code class="text-indigo-300">false</code> the write is as durable as any other of the instance.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">node</code></td><td class="py-2">The node that numbers, in a cluster: see <a href="#cluster" class="text-cyan-400 hover:underline">below</a>.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              Without a prefix, a suffix or padding the value is an integer (<code class="text-indigo-300">41</code>); otherwise it is a string (<code class="text-indigo-300">&quot;INV-2026-11-0041&quot;</code>).
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              The date a number is written with never goes back: if the server's clock steps back into a period that has closed, the count goes on in the latest period it reached.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="existing" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">An existing collection, and the endpoints</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              Documents already in the collection are left as they are. If they hold numbers in the field, the declaration checks that no two hold the same value and that the first number it would give is free; otherwise it is refused with <code class="text-indigo-300">409</code> and nothing is kept. Declare the counter with the number to go on from, or set it afterwards:
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X PUT http://localhost:6745/_api/database/shop/collection/invoices/counters/number/next \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"next": 1288}'</code></pre>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              <code class="text-indigo-300">next</code> is the number the next insert gets, in the current period for a counter that restarts. A number a document already holds is refused.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left text-gray-400">
+                <thead class="text-xs uppercase text-gray-300 border-b border-white/10">
+                  <tr><th class="py-2 pr-4">Endpoint</th><th class="py-2">Does</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">GET &hellip;/collection/{name}/counters</code></td><td class="py-2">The counters, each with its <code class="text-indigo-300">state</code>: <code class="text-indigo-300">next</code>, and the <code class="text-indigo-300">date</code> the last number was written with.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">POST &hellip;/collection/{name}/counters</code></td><td class="py-2">Declare a counter.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">DELETE &hellip;/collection/{name}/counters/{field}</code></td><td class="py-2">Stop numbering. The field of the stored documents and its unique index stay.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">PUT &hellip;/counters/{field}/next</code></td><td class="py-2">Set the next number.</td></tr>
+                  <tr><td class="py-2 pr-4"><code class="text-indigo-300">PUT &hellip;/counters/{field}/node</code></td><td class="py-2">Hand the numbering to another node.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              Listing needs Read. Everything that changes a counter needs <strong class="text-white">Admin</strong> on the database: a next number set lower gives numbers twice. The native driver has <code class="text-indigo-300">list_counters</code>, <code class="text-indigo-300">create_counter</code>, <code class="text-indigo-300">delete_counter</code>, <code class="text-indigo-300">set_counter_next</code> and <code class="text-indigo-300">move_counter</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="transactions" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Transactions and throughput</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              A document inserted in a transaction has no number until the transaction commits: <code class="text-indigo-300">RETURN NEW</code> and the transaction's own reads show it without the field. The commit numbers the documents it inserts, in the order they were inserted, as part of its one atomic write. A document inserted and deleted in the same transaction takes no number.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              Inserts into a collection with a counter are stored one after the other: each holds the counter from the number it takes until its write is done, which is what makes the numbers follow each other without a gap. With <code class="text-indigo-300">durable</code> that is one insert per fsync. A batch (<code class="text-indigo-300">FOR &hellip; INSERT</code>, a bulk insert, a transaction) is one write and one fsync for all its documents.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="cluster" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">In a cluster</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              One node numbers. The counter names it in <code class="text-indigo-300">node</code>: by default the node that received the declaration, which must have been started with <code class="text-indigo-300">--node-id</code> (an id made up at startup changes at each start and names nothing; with peers configured and no <code class="text-indigo-300">--node-id</code> the declaration is refused). An insert that reaches another node is refused with <code class="text-indigo-300">409</code> and the name of the node to send it to.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              The counter, its unique index and the numbered documents are replicated, and a node that joins receives them with its full sync. To move the numbering, ask the node that numbers:
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X PUT http://n1:6745/_api/database/shop/collection/invoices/counters/number/node \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"node": "n2"}'</code></pre>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              It stops numbering in the write that records the change, and the record it replicates tells the other node which number comes next. A node that does not number shows, in <code class="text-indigo-300">state</code>, where the counter stood when it was last declared, set or handed over, not the numbers given since.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="limits" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Limits</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <ul class="list-disc pl-6 space-y-2 text-gray-300">
+              <li><strong class="text-white">No sharded collections.</strong> A counter cannot be declared on a sharded collection, and a collection with a counter cannot be sharded: each shard would count on its own.</li>
+              <li><strong class="text-white">Document collections only</strong>, and no system collection.</li>
+              <li><strong class="text-white">No takeover from a dead node.</strong> The numbering is handed over by the node that holds it. If that node is lost, the counter has to be dropped and declared again on another, with the next number set by hand.</li>
+              <li><strong class="text-white">Merges by key do not create documents.</strong> An import in upsert mode and an offline client's sync merge documents into what is stored: they update a numbered document, and are refused (<code class="text-indigo-300">501</code>) when the key is not there. Insert instead.</li>
+              <li><strong class="text-white">A deleted document's number is not given again.</strong> Without a gap means no number is skipped when it is given, not that the stored numbers stay contiguous after deletes.</li>
+              <li><strong class="text-white">Dump and restore.</strong> <code class="text-indigo-300">solidb-dump</code> writes each counter with its state; <code class="text-indigo-300">solidb-restore</code> loads the documents with their numbers, then declares the counter where the dump left it.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

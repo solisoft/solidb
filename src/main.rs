@@ -663,6 +663,10 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         .init();
 
     // 1. Setup Node Identity
+    // A counter field names the node that numbers it, which only an id
+    // given on the command line can do: the one made up below changes at
+    // every start.
+    let given_node_id = args.node_id.clone();
     let node_id = args
         .node_id
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -803,6 +807,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     log_storage_profile(base, &storage_profile, &block_cache_from);
 
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
+    storage.set_local_node(given_node_id, !args.peers.is_empty());
     storage.initialize()?;
     tracing::info!("Storage engine initialized");
     if args.migrate_only {

@@ -68,6 +68,14 @@ describe("Docs pages") do
     expect(blog.include?("href=\"/#perf\"")).to_equal(true)
   end
 
+  test("counters has a page, linked from the sidebar") do
+    response = get("/docs/counters")
+    expect(res_status(response)).to_equal(200)
+    body = res_body(response)
+    expect(body.include?("/counters/number/next")).to_equal(true)
+    expect(res_body(get("/docs/indexes")).include?("/docs/counters")).to_equal(true)
+  end
+
   test("foreign keys has a page, linked from the sidebar") do
     response = get("/docs/foreign-keys")
     expect(res_status(response)).to_equal(200)

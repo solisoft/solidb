@@ -681,6 +681,26 @@ impl ClusterManager {
                         }
                     }
                 }
+                Operation::PutCounter | Operation::DropCounter => {
+                    if let Ok(db) = storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                            if let Err(e) = crate::sync::counters::apply(
+                                &coll,
+                                entry.operation,
+                                &entry.document_key,
+                                entry.document_data.as_deref(),
+                            ) {
+                                tracing::warn!(
+                                    "Failed to apply replicated counter '{}' on {}.{}: {}",
+                                    entry.document_key,
+                                    entry.database,
+                                    entry.collection,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
                 Operation::DropForeignKey => {
                     if let Ok(db) = storage.get_database(&entry.database) {
                         if let Ok(coll) = db.get_collection(&entry.collection) {

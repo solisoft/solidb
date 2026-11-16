@@ -1,3 +1,4 @@
+use super::counters::Numbering;
 use super::*;
 use crate::error::{DbError, DbResult};
 use crate::storage::blocks::Wrote;
@@ -332,6 +333,10 @@ impl Collection {
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&data)?;
         }
+        let counters = self.counters();
+        if let Some(defs) = &counters {
+            self.expect_numbers(defs, &mut data)?;
+        }
 
         // Validate against JSON schema if defined
         if let Some(validator) = self.get_cached_schema_validator()? {
@@ -341,10 +346,23 @@ impl Collection {
         }
 
         let key = take_key(&mut data)?;
-        let doc = Document::with_key(&self.name, key.clone(), data);
+        let Some(defs) = counters else {
+            let doc = Document::with_key(&self.name, key.clone(), data);
+            let written = self.with_key_locked(&key, || {
+                self.insert_locked(doc, update_indexes, returning, None)
+            })?;
+            return Ok((key, written));
+        };
 
-        let written =
-            self.with_key_locked(&key, || self.insert_locked(doc, update_indexes, returning))?;
+        // A numbered insert: the gate, then the counters' lock, then the
+        // key. The number is in the document before its unique values are
+        // read, and the lock is held until the batch is written.
+        let _gate = self.enter_gate(false)?;
+        let numbering = self.number(&defs, std::iter::once(&mut data))?;
+        let doc = Document::with_key(&self.name, key.clone(), data);
+        let written = self.with_key_locked(&key, || {
+            self.insert_locked(doc, true, returning, Some(&numbering))
+        })?;
         Ok((key, written))
     }
 
@@ -387,11 +405,14 @@ impl Collection {
     }
 
     /// Insert `doc`; the caller holds its key stripe (audit D4).
+    /// `numbering` holds the numbers `doc` was given, whose states are
+    /// written with it.
     fn insert_locked(
         &self,
         doc: Document,
         update_indexes: bool,
         returning: Returning,
+        numbering: Option<&Numbering>,
     ) -> DbResult<Written> {
         let key = doc.key.clone();
         let versioned = self.is_versioned();
@@ -437,7 +458,7 @@ impl Collection {
         }
 
         // Atomic write: document + indexes together
-        db.write(batch)
+        self.write_numbered(batch, &cf, numbering)
             .map_err(|e| DbError::InternalError(format!("Failed to insert document: {}", e)))?;
 
         // Update vector indexes in-memory (separate from KvBatch)
@@ -484,15 +505,36 @@ impl Collection {
         }
 
         let key = take_key(&mut data)?;
+        // With a counter, a key that is not stored is a numbered insert:
+        // the lock is taken before the key, as every numbered insert does,
+        // and given back unused when the key turns out to be stored.
+        let _gate = self.enter_gate(false)?;
+        let numbering = match self.counters() {
+            Some(defs) if self.get(&key).is_err() => {
+                let mut numbered = data.clone();
+                self.expect_numbers(&defs, &mut numbered)?;
+                let numbering = self.number(&defs, std::iter::once(&mut numbered))?;
+                Some((numbering, numbered))
+            }
+            _ => None,
+        };
         let mut doc = Document::with_key(&self.name, key.clone(), data);
 
         self.with_key_locked(&key, || {
             let old_doc = match self.get(&key) {
                 Ok(old) => old,
                 Err(DbError::DocumentNotFound(_)) => {
-                    return self
-                        .insert_locked(doc, true, Returning::Document)
-                        .map(Written::into_document)
+                    return match &numbering {
+                        Some((numbering, numbered)) => {
+                            let doc = Document::with_key(&self.name, key.clone(), numbered.clone());
+                            self.insert_locked(doc, true, Returning::Document, Some(numbering))
+                        }
+                        None => {
+                            self.refuse_unnumbered("a replace")?;
+                            self.insert_locked(doc, true, Returning::Document, None)
+                        }
+                    }
+                    .map(Written::into_document)
                 }
                 Err(e) => return Err(e),
             };
@@ -502,6 +544,7 @@ impl Collection {
                 ));
             }
             doc.created_at = old_doc.created_at;
+            self.keep_numbers(&old_doc.data, &mut doc.data)?;
             let old_value = old_doc.to_value();
             let new_value = doc.to_value();
             self.write_update_locked(&key, old_value, doc, new_value)
@@ -608,6 +651,7 @@ impl Collection {
             }
         }
         doc.created_at = old_doc.created_at;
+        self.keep_numbers(&old_doc.data, &mut doc.data)?;
         let old_value = old_doc.to_value();
         let new_value = doc.to_value();
         self.write_update_locked(key, old_value, doc, new_value)
@@ -923,6 +967,7 @@ impl Collection {
     ) -> DbResult<()> {
         // A unique value the update claims is checked and written under that
         // value's stripe (audit D4; updates used not to check at all).
+        self.numbers_unchanged(old_value, new_value)?;
         let tokens = self.unique_tokens(new_value);
         let _unique_guard = self.lock_unique_tokens(&tokens);
         if !tokens.is_empty() {
@@ -1107,7 +1152,10 @@ impl Collection {
                     existing.update(data);
                     (Some(old_value), existing)
                 }
-                None => (None, Document::with_key(&self.name, key.clone(), data)),
+                None => {
+                    self.refuse_unnumbered("a merge of documents by key")?;
+                    (None, Document::with_key(&self.name, key.clone(), data))
+                }
             };
             positions.insert(key.clone(), pending.len());
             pending.push((key, old_value, doc, existed));
@@ -1362,6 +1410,7 @@ impl Collection {
         // Pass 2: claim unique values under their stripes (audit D4).
         let new_values: Vec<Value> = pending.iter().map(|(_, _, doc)| doc.to_value()).collect();
         for ((key, old_value, _), new_value) in pending.iter().zip(&new_values) {
+            self.numbers_unchanged(old_value, new_value)?;
             self.check_references(key, new_value, Some(old_value), |_| false)?;
         }
         let tokens: Vec<String> = new_values
@@ -1455,6 +1504,7 @@ impl Collection {
 
         let is_edge = self.collection_type.read().as_str() == "edge";
         let schema_validator = self.get_cached_schema_validator()?;
+        let counters = self.counters();
 
         // Pass 1: validate and assign keys (all keys are needed up front to
         // take their stripes).
@@ -1464,6 +1514,9 @@ impl Collection {
             // Validate edge documents
             if is_edge {
                 self.validate_edge_document(&data)?;
+            }
+            if let Some(defs) = &counters {
+                self.expect_numbers(defs, &mut data)?;
             }
 
             // Validate against JSON schema if defined
@@ -1485,6 +1538,20 @@ impl Collection {
 
             inserted_docs.push(Document::with_key(&self.name, key, data));
         }
+
+        // With a counter the documents are numbered first, in batch order,
+        // under the gate and the counters' lock, both held until the write:
+        // pass 2 then runs under them, since what it serializes holds the
+        // numbers.
+        let numbering = match &counters {
+            Some(defs) => {
+                let gate = self.enter_gate(false)?;
+                let numbering =
+                    self.number(defs, inserted_docs.iter_mut().map(|doc| &mut doc.data))?;
+                Some((gate, numbering))
+            }
+            None => None,
+        };
 
         // Pass 2, before any lock: a new document's entries depend on nothing
         // but the document, so it is serialized and its index, geo, fulltext
@@ -1565,8 +1632,9 @@ impl Collection {
         }
 
         // Atomic write: all documents + indexes together
-        db.write(batch)
+        self.write_numbered(batch, &cf, numbering.as_ref().map(|(_, n)| n))
             .map_err(|e| DbError::InternalError(format!("Failed to batch insert: {}", e)))?;
+        drop(numbering);
 
         // Update vector indexes in-memory (separate from KvBatch)
         for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {

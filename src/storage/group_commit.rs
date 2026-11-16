@@ -40,6 +40,10 @@ pub(crate) struct PreparedCommit {
     pub(crate) staged: Vec<(Collection, StagedTransaction)>,
     /// Key and unique-value locks, released before the collections are
     /// finished.
+    /// The numbers the commit's inserts took (`storage::counters`), whose
+    /// lock is taken before a collection's key locks and released with
+    /// them.
+    pub(crate) counters: Vec<super::collection::counters::Numbering>,
     pub(crate) guards: Vec<super::collection::locks::WriteGuard>,
     /// Commit gates, released after the locks.
     pub(crate) gates: Vec<HeldCommitGate>,
@@ -151,7 +155,13 @@ pub(crate) fn prepare(
     }
 
     for (coll_name, collection) in order.iter().zip(collections) {
-        let ops = ops_by_collection.remove(coll_name).unwrap_or_default();
+        let mut ops = ops_by_collection.remove(coll_name).unwrap_or_default();
+        // Counters before the keys: the numbers are in the documents
+        // before their unique values are locked and checked.
+        if let Some(numbering) = collection.number_operations(&mut ops)? {
+            numbering.stage(&mut prepared.batch, &collection.live_cf()?);
+            prepared.counters.push(numbering);
+        }
         let tracker = read_by.get(coll_name.as_str());
         let read_keys: Vec<(String, Option<Box<str>>)> = tracker
             .map(|t| {
@@ -180,6 +190,7 @@ impl PreparedCommit {
     /// publish the changes, then open the gates.
     pub(crate) fn finish(self) {
         drop(self.guards);
+        drop(self.counters);
         for (collection, plan) in self.staged {
             collection.finish_transaction_operations(plan);
         }
