@@ -65,6 +65,14 @@ pub enum Operation {
     /// `{"seconds": n}` or `{"seconds": null}`. Each node removes its own
     /// old rows; the removals are not logged.
     ColumnarSetRetention,
+    /// A column added to a columnar collection (the payload is its JSON
+    /// `ColumnDef`), dropped (the key is its name) or renamed (the key is
+    /// the old name, the payload `{"name": new}`). Each is applied once: a
+    /// column that is already there, already gone or already renamed is
+    /// left as it is.
+    ColumnarAddColumn,
+    ColumnarDropColumn,
+    ColumnarRenameColumn,
 }
 
 /// A single entry in the sync log

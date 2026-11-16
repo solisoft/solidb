@@ -262,6 +262,58 @@
         </div>
       </section>
 
+      <section id="columns" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-sky-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(14,165,233,0.5)]">
+              <i class="fas fa-table-columns text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Changing the Columns</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            A column can be added, renamed or dropped while the collection holds rows. All three need Admin.
+          </p>
+
+          <div class="space-y-6">
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/columns</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Adds a column. Only the schema is written: the rows already stored read <code>null</code> in it, which is why a column added this way is always nullable. Rows inserted afterwards may hold it.</p>
+              <pre><code class="language-json text-sm">{ "name": "region", "type": "string" }</code></pre>
+              <pre class="mt-4"><code class="language-json text-sm">{ "status": "added", "column": "region" }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/columns/:column</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Renames a column. Its values are kept; queries use the new name from then on and a row that names the old one is refused.</p>
+              <pre><code class="language-json text-sm">{ "name": "value" }</code></pre>
+              <pre class="mt-4"><code class="language-json text-sm">{ "status": "renamed", "column": "value", "was": "v" }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/columns/:column</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Drops a column and its values, for good: a column added later under the same name starts empty. The last column cannot be dropped.</p>
+              <pre><code class="language-json text-sm">{ "status": "dropped", "column": "junk" }</code></pre>
+            </div>
+          </div>
+
+          <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
+            <li>A rename and a drop write every block again, without its rows being read one by one: on 200,000 rows of three columns each took about 40&nbsp;ms. An add writes nothing but the schema.</li>
+            <li>A column with an index is neither renamed nor dropped: drop its index first.</li>
+            <li>The change is replicated, and a node that joins receives the collection with its columns as they are.</li>
+          </ul>
+        </div>
+      </section>
+
       <section id="retention" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
           <div class="flex items-center mb-6">

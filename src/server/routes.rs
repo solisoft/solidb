@@ -711,6 +711,15 @@ pub fn create_router(
             put(super::columnar_handlers::truncate_columnar_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/columns",
+            post(super::columnar_handlers::add_columnar_column_handler),
+        )
+        .route(
+            "/_api/database/{db}/columnar/{collection}/columns/{column}",
+            put(super::columnar_handlers::rename_columnar_column_handler)
+                .delete(super::columnar_handlers::drop_columnar_column_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/retention",
             put(super::columnar_handlers::set_columnar_retention_handler),
         )

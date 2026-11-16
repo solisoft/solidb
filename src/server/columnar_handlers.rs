@@ -493,6 +493,80 @@ pub async fn truncate_columnar_handler(
     ))
 }
 
+/// `{"name": "new_name"}`.
+#[derive(Debug, Deserialize)]
+pub struct RenameColumnRequest {
+    pub name: String,
+}
+
+/// Add a column: `{"name", "type"}`. The rows already stored read null in
+/// it, so it is nullable whatever the request says of that.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/columns`
+pub async fn add_columnar_column_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    Json(req): Json<ColumnDefRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let column = ColumnDef {
+        name: req.name.clone(),
+        data_type: parse_column_type(&req.data_type)?,
+        nullable: true,
+        indexed: false,
+        index_type: None,
+    };
+    crate::sync::columnar::add_column(&db, state.replication_log.as_deref(), &collection, column)?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({"status": "added", "column": req.name})),
+    ))
+}
+
+/// Drop a column and its values.
+///
+/// # Endpoint
+/// `DELETE /_api/database/{db}/columnar/{collection}/columns/{column}`
+pub async fn drop_columnar_column_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, column)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let log = state.replication_log.clone();
+    let dropped = column.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::sync::columnar::drop_column(&db, log.as_deref(), &collection, &dropped)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(
+        serde_json::json!({"status": "dropped", "column": column}),
+    ))
+}
+
+/// Rename a column.
+///
+/// # Endpoint
+/// `PUT /_api/database/{db}/columnar/{collection}/columns/{column}`
+pub async fn rename_columnar_column_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, column)): Path<(String, String, String)>,
+    Json(req): Json<RenameColumnRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let log = state.replication_log.clone();
+    let (from, to) = (column.clone(), req.name.clone());
+    tokio::task::spawn_blocking(move || {
+        crate::sync::columnar::rename_column(&db, log.as_deref(), &collection, &from, &to)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(
+        serde_json::json!({"status": "renamed", "column": req.name, "was": column}),
+    ))
+}
+
 /// `{"seconds": n}`, or `{"seconds": null}` to keep every row.
 #[derive(Debug, Deserialize)]
 pub struct RetentionRequest {

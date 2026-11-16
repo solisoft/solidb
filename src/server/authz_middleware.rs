@@ -143,6 +143,9 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     if path.ends_with("/retention") {
         return PermissionAction::Admin;
     }
+    if is_columnar_schema_change(method, path) {
+        return PermissionAction::Admin;
+    }
     if path.ends_with("/repl") {
         return PermissionAction::Admin;
     }
@@ -206,6 +209,19 @@ fn is_script_or_service_mutation(method: &Method, path: &str) -> bool {
         || rest.starts_with("scripts/")
         || rest == "services"
         || rest.starts_with("services/")
+}
+
+/// Adding, dropping or renaming a column of a columnar collection
+/// (`…/columnar/{collection}/columns…`): a drop takes the column's values.
+fn is_columnar_schema_change(method: &Method, path: &str) -> bool {
+    if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
+        return false;
+    }
+    let mut parts = path
+        .strip_prefix("/_api/database/")
+        .unwrap_or_default()
+        .split('/');
+    parts.nth(1) == Some("columnar") && parts.nth(1) == Some("columns")
 }
 
 /// Declaring, dropping or moving a counter field, or setting its next
@@ -485,6 +501,23 @@ mod tests {
         );
         assert_eq!(
             required_action(&post, "/_api/database/{db}/columnar/{collection}/prune"),
+            PermissionAction::Write
+        );
+
+        // A columnar collection's columns: Admin to add, rename or drop.
+        let columns = "/_api/database/{db}/columnar/{collection}/columns";
+        assert_eq!(required_action(&post, columns), PermissionAction::Admin);
+        assert_eq!(
+            required_action(&Method::DELETE, &format!("{columns}/{{column}}")),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&Method::PUT, &format!("{columns}/{{column}}")),
+            PermissionAction::Admin
+        );
+        // An insert into a columnar collection named "columns" is a write.
+        assert_eq!(
+            required_action(&post, "/_api/database/{db}/columnar/{collection}/insert"),
             PermissionAction::Write
         );
 

@@ -888,6 +888,19 @@ Rules that keep it sound:
   forgets it brings card #901 back (rows missing from filtered results).
   A column with no entry was indexed by 2.10.4 or earlier: its index is
   not used.
+- **A block names its columns**, so the schema can change
+  (`add_column`, `drop_column`, `rename_column`, all through
+  `change_schema`). An add writes the schema only: a block sealed before
+  has no array of that name, and every reader takes a missing array as a
+  null column (`ColBlock::column` is an `Option`; keep it read that way).
+  That is why an added column is nullable. A drop and a rename write every
+  block and tail row again without the column, or under its new name, in
+  the batch that stores the schema, and empty the decoded blocks kept in
+  memory: values left behind would be found by a column added later under
+  the same name. A column with an index is left alone until the index is
+  dropped (an index is stored under the column's name). Replicated as
+  `ColumnarAddColumn` / `ColumnarDropColumn` / `ColumnarRenameColumn`,
+  each applied once (`apply_column_change`).
 - **A retention removes the oldest rows, by blocks**
   (`ColumnarCollectionMeta::retention_secs`, `prune_before`): a row's age
   is the instant in its id, rows are in id order, so the old ones are the

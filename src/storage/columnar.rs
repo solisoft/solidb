@@ -1205,6 +1205,174 @@ impl ColumnarCollection {
         Ok(deleted)
     }
 
+    /// Add a column to the schema. The rows already stored hold nothing
+    /// for it and read as null, so the column is nullable; nothing is
+    /// written but the schema: a block sealed before has no array of that
+    /// name, which is how a null column of it reads.
+    pub fn add_column(&self, column: ColumnDef) -> DbResult<()> {
+        if column.name.is_empty() || column.name.starts_with('_') || column.name.contains(':') {
+            return Err(DbError::BadRequest(format!(
+                "'{}' is not a column name: it is not empty, does not start with '_' and holds no ':'",
+                column.name
+            )));
+        }
+        if !column.nullable {
+            return Err(DbError::BadRequest(format!(
+                "Column '{}' is added to rows that hold nothing for it: it must be nullable",
+                column.name
+            )));
+        }
+        self.change_schema(|meta| {
+            if meta.columns.iter().any(|c| c.name == column.name) {
+                return Err(DbError::ConflictError(format!(
+                    "Column '{}' already exists",
+                    column.name
+                )));
+            }
+            meta.columns.push(ColumnDef {
+                indexed: false,
+                index_type: None,
+                ..column
+            });
+            Ok(None)
+        })
+    }
+
+    /// Remove a column from the schema and its values from every block and
+    /// tail row, which are written again: a column added later under the
+    /// same name must not find them. Refused for the last column, and for
+    /// a column with an index (drop the index first).
+    pub fn drop_column(&self, name: &str) -> DbResult<()> {
+        self.change_schema(|meta| {
+            let at = Self::column_to_change(meta, name)?;
+            if meta.columns.len() == 1 {
+                return Err(DbError::BadRequest(format!(
+                    "'{}' is the only column: drop the collection instead",
+                    name
+                )));
+            }
+            meta.columns.remove(at);
+            Ok(Some((name.to_string(), None)))
+        })
+    }
+
+    /// Rename a column, in the schema and in every block and tail row,
+    /// which are written again (a block names its columns). Refused for a
+    /// column with an index (drop the index first).
+    pub fn rename_column(&self, from: &str, to: &str) -> DbResult<()> {
+        if to.is_empty() || to.starts_with('_') || to.contains(':') {
+            return Err(DbError::BadRequest(format!(
+                "'{}' is not a column name: it is not empty, does not start with '_' and holds no ':'",
+                to
+            )));
+        }
+        self.change_schema(|meta| {
+            let at = Self::column_to_change(meta, from)?;
+            if meta.columns.iter().any(|c| c.name == to) {
+                return Err(DbError::ConflictError(format!(
+                    "Column '{}' already exists",
+                    to
+                )));
+            }
+            meta.columns[at].name = to.to_string();
+            Ok(Some((from.to_string(), Some(to.to_string()))))
+        })
+    }
+
+    /// The position of a column that may be dropped or renamed.
+    fn column_to_change(meta: &ColumnarCollectionMeta, name: &str) -> DbResult<usize> {
+        let at = meta
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .ok_or_else(|| DbError::BadRequest(format!("Column '{}' not found", name)))?;
+        if meta.columns[at].indexed {
+            return Err(DbError::ConflictError(format!(
+                "Column '{}' has an index: drop the index first",
+                name
+            )));
+        }
+        Ok(at)
+    }
+
+    /// Change the schema under the collection's write lock. `change` edits
+    /// the columns and says which stored column, if any, is to be removed
+    /// (`None`) or renamed (`Some(new name)`) in the blocks and the tail,
+    /// which are then written again in the batch that stores the schema.
+    fn change_schema(
+        &self,
+        change: impl FnOnce(&mut ColumnarCollectionMeta) -> DbResult<Option<(String, Option<String>)>>,
+    ) -> DbResult<()> {
+        let shared = self.shared_write_lock();
+        let _shared_guard = shared.lock();
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let db = &self.db;
+        let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
+        self.refresh_meta(db, &cf, &mut meta);
+
+        let mut new_meta = meta.clone();
+        let stored = change(&mut new_meta)?;
+        new_meta.last_updated_at = chrono::Utc::now().timestamp();
+        let mut batch = KvBatch::default();
+        if let Some((column, renamed)) = &stored {
+            let prefix = COL_BLOCK_PREFIX.as_bytes();
+            for (key, bytes) in db.prefix_iterator_ks(&cf, prefix).flatten() {
+                if !key.starts_with(prefix) {
+                    break;
+                }
+                let mut block = self
+                    .decompress_data(&bytes, &meta.compression)
+                    .ok()
+                    .and_then(|plain| ColBlock::decode(&plain))
+                    .ok_or_else(|| {
+                        DbError::InternalError(format!(
+                            "columnar block '{}' of '{}' cannot be read",
+                            String::from_utf8_lossy(&key),
+                            self.name
+                        ))
+                    })?;
+                let Some(at) = block.names.iter().position(|n| n == column) else {
+                    continue;
+                };
+                match renamed {
+                    Some(to) => block.names[at] = to.clone(),
+                    None => {
+                        block.names.remove(at);
+                        block.cols.remove(at);
+                    }
+                }
+                self.stage_block(&cf, &mut batch, &meta.compression, &block)?;
+            }
+            for (id, mut row) in self.tail(&cf, &meta.compression)? {
+                let Some(value) = row.remove(column) else {
+                    continue;
+                };
+                if let Some(to) = renamed {
+                    row.insert(to.clone(), value);
+                }
+                let bytes = rmp_serde::to_vec(&row)
+                    .map_err(|e| DbError::InternalError(format!("columnar row: {e}")))?;
+                batch.put_ks(
+                    &cf,
+                    format!("{}{}", COL_ROW_PREFIX, id).as_bytes(),
+                    self.compress_data(&bytes, &meta.compression),
+                );
+            }
+        }
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        if stored.is_some() {
+            // The decoded blocks hold the column as it was: read again.
+            *self.store().blocks.write() = None;
+        }
+        Ok(())
+    }
+
     /// Set how long rows are kept (`None`: until they are deleted). Nothing
     /// is removed here: the next [`Self::prune_expired`] does it.
     pub fn set_retention(&self, seconds: Option<u64>) -> DbResult<()> {

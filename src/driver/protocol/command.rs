@@ -601,6 +601,26 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// Add a column to a columnar collection: `column` is a column
+    /// definition as at creation (`name`, `data_type`), nullable.
+    AddColumnarColumn {
+        database: String,
+        collection: String,
+        column: Value,
+    },
+    /// Drop a column of a columnar collection, with its values.
+    DropColumnarColumn {
+        database: String,
+        collection: String,
+        column: String,
+    },
+    /// Rename a column of a columnar collection to `name`.
+    RenameColumnarColumn {
+        database: String,
+        collection: String,
+        column: String,
+        name: String,
+    },
     /// Set how long a columnar collection keeps its rows; no `seconds`
     /// keeps every row.
     SetColumnarRetention {
@@ -705,7 +725,10 @@ impl Command {
             | DeleteColumnarIndex { database, .. }
             | DeleteColumnarRows { database, .. }
             | TruncateColumnar { database, .. }
-            | SetColumnarRetention { database, .. } => Some(database),
+            | SetColumnarRetention { database, .. }
+            | AddColumnarColumn { database, .. }
+            | DropColumnarColumn { database, .. }
+            | RenameColumnarColumn { database, .. } => Some(database),
             TransactionCommand { command, .. } => command.database(),
             RunTransaction { database, .. } => Some(database),
             _ => None,
@@ -795,7 +818,10 @@ impl Command {
             | DeleteCollection { .. }
             | DeleteColumnar { .. }
             | TruncateColumnar { .. }
-            | SetColumnarRetention { .. } => Some(A::Admin),
+            | SetColumnarRetention { .. }
+            | AddColumnarColumn { .. }
+            | DropColumnarColumn { .. }
+            | RenameColumnarColumn { .. } => Some(A::Admin),
 
             // What numbers a counter gives — Admin, same as HTTP
             CreateCounter { .. }

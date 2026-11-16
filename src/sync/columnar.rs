@@ -201,6 +201,127 @@ pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()
     Ok(())
 }
 
+fn log_column(
+    log: Option<&SyncLog>,
+    db: &Database,
+    name: &str,
+    operation: Operation,
+    column: &str,
+    data: Option<Vec<u8>>,
+) {
+    if let Some(log) = writing(log) {
+        log.append(LogEntry::new_op(
+            db.name.as_str(),
+            name,
+            operation,
+            column,
+            data,
+        ));
+    }
+}
+
+/// Add a column to a collection, and log it for the peers.
+pub fn add_column(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    column: ColumnDef,
+) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.add_column(column.clone())?;
+    log_column(
+        log,
+        db,
+        name,
+        Operation::ColumnarAddColumn,
+        &column.name,
+        serde_json::to_vec(&column).ok(),
+    );
+    Ok(())
+}
+
+/// Drop a column of a collection, and log it for the peers.
+pub fn drop_column(db: &Database, log: Option<&SyncLog>, name: &str, column: &str) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.drop_column(column)?;
+    log_column(log, db, name, Operation::ColumnarDropColumn, column, None);
+    Ok(())
+}
+
+/// Rename a column of a collection, and log it for the peers.
+pub fn rename_column(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    from: &str,
+    to: &str,
+) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    col.rename_column(from, to)?;
+    log_column(
+        log,
+        db,
+        name,
+        Operation::ColumnarRenameColumn,
+        from,
+        serde_json::to_vec(&serde_json::json!({ "name": to })).ok(),
+    );
+    Ok(())
+}
+
+/// Apply a peer's change of a collection's columns. A replayed entry
+/// finds its work done and changes nothing: a column that is there is not
+/// added, one that is gone is not dropped, one that has its new name is
+/// not renamed.
+pub fn apply_column_change(
+    db: &Database,
+    name: &str,
+    operation: Operation,
+    column: &str,
+    data: Option<&[u8]>,
+) -> DbResult<()> {
+    let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
+    let has = |column: &str| -> DbResult<bool> {
+        Ok(col.metadata()?.columns.iter().any(|c| c.name == column))
+    };
+    match operation {
+        Operation::ColumnarAddColumn => {
+            let definition: ColumnDef = serde_json::from_slice(data.unwrap_or_default())?;
+            if has(&definition.name)? {
+                return Ok(());
+            }
+            col.add_column(definition)
+        }
+        Operation::ColumnarDropColumn => {
+            if !has(column)? {
+                return Ok(());
+            }
+            // The origin dropped the column's index before it; here the
+            // index may still be on its way out.
+            if col.has_index(column) {
+                col.drop_index(column)?;
+            }
+            col.drop_column(column)
+        }
+        Operation::ColumnarRenameColumn => {
+            let to = serde_json::from_slice::<Value>(data.unwrap_or_default())
+                .ok()
+                .and_then(|v| v.get("name").and_then(Value::as_str).map(str::to_string))
+                .ok_or_else(|| {
+                    crate::error::DbError::BadRequest("a rename without a name".to_string())
+                })?;
+            if !has(column)? || has(&to)? {
+                return Ok(());
+            }
+            if col.has_index(column) {
+                col.drop_index(column)?;
+            }
+            col.rename_column(column, &to)
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Set how long a collection keeps its rows (`None`: until they are
 /// deleted), and log it for the peers. Each node removes its own old rows
 /// ([`prune`]): what a node removed is not logged, since every node would

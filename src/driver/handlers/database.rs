@@ -635,6 +635,26 @@ pub fn handle_truncate_columnar(
     }
 }
 
+/// Change the columns of a columnar collection of `database`: `change`
+/// gets the database and the replication log its change is written to.
+pub fn handle_columnar_column(
+    handler: &DriverHandler,
+    database: String,
+    change: impl FnOnce(
+        &crate::storage::Database,
+        Option<&crate::sync::log::SyncLog>,
+    ) -> crate::error::DbResult<()>,
+) -> Response {
+    let changed = handler
+        .storage
+        .get_database(&database)
+        .and_then(|db| change(&db, handler.replication.as_deref()));
+    match changed {
+        Ok(()) => Response::ok_empty(),
+        Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+    }
+}
+
 pub fn handle_set_columnar_retention(
     handler: &DriverHandler,
     database: String,

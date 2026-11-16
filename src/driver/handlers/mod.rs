@@ -1376,6 +1376,39 @@ impl DriverHandler {
                 collection,
                 seconds,
             } => database::handle_set_columnar_retention(self, database, collection, seconds),
+
+            Command::AddColumnarColumn {
+                database,
+                collection,
+                column,
+            } => database::handle_columnar_column(self, database, |db, log| {
+                let mut column: crate::storage::columnar::ColumnDef =
+                    serde_json::from_value(column).map_err(|e| {
+                        crate::error::DbError::BadRequest(format!(
+                            "Invalid column definition: {}",
+                            e
+                        ))
+                    })?;
+                column.nullable = true;
+                crate::sync::columnar::add_column(db, log, &collection, column)
+            }),
+
+            Command::DropColumnarColumn {
+                database,
+                collection,
+                column,
+            } => database::handle_columnar_column(self, database, |db, log| {
+                crate::sync::columnar::drop_column(db, log, &collection, &column)
+            }),
+
+            Command::RenameColumnarColumn {
+                database,
+                collection,
+                column,
+                name,
+            } => database::handle_columnar_column(self, database, |db, log| {
+                crate::sync::columnar::rename_column(db, log, &collection, &column, &name)
+            }),
         }
     }
 

@@ -1211,6 +1211,24 @@ impl SyncWorker {
                     }
                 }
             }
+            Operation::ColumnarAddColumn
+            | Operation::ColumnarDropColumn
+            | Operation::ColumnarRenameColumn => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    if let Err(e) = super::columnar::apply_column_change(
+                        &db,
+                        &entry.collection,
+                        entry.operation,
+                        &entry.document_key,
+                        entry.document_data.as_deref(),
+                    ) {
+                        warn!(
+                            "apply_entry: column '{}' of columnar {} not changed: {}",
+                            entry.document_key, entry.collection, e
+                        );
+                    }
+                }
+            }
             Operation::ColumnarSetRetention => {
                 if let (Ok(db), Some(data)) = (
                     self.storage.get_database(&entry.database),
@@ -2239,6 +2257,9 @@ fn columnar_in_full_sync(operation: Operation) -> bool {
             | Operation::ColumnarCreateIndex
             | Operation::ColumnarDropIndex
             | Operation::ColumnarSetRetention
+            | Operation::ColumnarAddColumn
+            | Operation::ColumnarDropColumn
+            | Operation::ColumnarRenameColumn
     )
 }
 
@@ -2291,6 +2312,9 @@ mod tests {
             Operation::ColumnarCreateIndex,
             Operation::ColumnarDropIndex,
             Operation::ColumnarSetRetention,
+            Operation::ColumnarAddColumn,
+            Operation::ColumnarDropColumn,
+            Operation::ColumnarRenameColumn,
         ] {
             assert!(columnar_in_full_sync(columnar), "{columnar:?}");
         }
