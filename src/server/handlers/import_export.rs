@@ -312,6 +312,9 @@ pub async fn import_collection(
 
     let mut imported_count = 0;
     let mut failed_count = 0;
+    // Why the first failed document or batch was refused: the answer used to
+    // give a count only, and the reason was in the server's log.
+    let mut first_error: Option<String> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -415,6 +418,8 @@ pub async fn import_collection(
                                                         e
                                                     );
                                                     failed_count += 1;
+                                                    first_error
+                                                        .get_or_insert_with(|| e.to_string());
                                                 }
                                             }
                                         }
@@ -440,6 +445,8 @@ pub async fn import_collection(
                                                             e
                                                         );
                                                         failed_count += 1;
+                                                        first_error
+                                                            .get_or_insert_with(|| e.to_string());
                                                     }
                                                 }
                                             }
@@ -456,6 +463,7 @@ pub async fn import_collection(
                                             Err(e) => {
                                                 tracing::error!("Batch import error: {}", e);
                                                 failed_count += batch_len;
+                                                first_error.get_or_insert_with(|| e.to_string());
                                             }
                                         }
                                     }
@@ -464,6 +472,7 @@ pub async fn import_collection(
                             Err(e) => {
                                 tracing::warn!("Failed to parse JSON line during import: {}", e);
                                 failed_count += 1;
+                                first_error.get_or_insert_with(|| e.to_string());
                             }
                         }
                     }
@@ -476,6 +485,29 @@ pub async fn import_collection(
                     }
                 }
 
+                // A last line the file does not end with a newline. It used
+                // to be dropped without a word: the documents before it were
+                // counted and this one was neither imported nor failed.
+                if !buffer.iter().all(|b| b.is_ascii_whitespace()) {
+                    match serde_json::from_slice::<Value>(&buffer) {
+                        Ok(doc)
+                            if doc.get("_type").and_then(|t| t.as_str()) == Some("blob_chunk") =>
+                        {
+                            failed_count += 1;
+                            first_error.get_or_insert_with(|| {
+                                "the file ends on a blob chunk header with no data after it"
+                                    .to_string()
+                            });
+                        }
+                        Ok(doc) => batch_docs.push(doc),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse JSON line during import: {}", e);
+                            failed_count += 1;
+                            first_error.get_or_insert_with(|| e.to_string());
+                        }
+                    }
+                }
+
                 // Process remaining documents
                 if !batch_docs.is_empty() {
                     let batch_len = batch_docs.len();
@@ -484,6 +516,7 @@ pub async fn import_collection(
                         Err(e) => {
                             tracing::error!("Batch import error: {}", e);
                             failed_count += batch_len;
+                            first_error.get_or_insert_with(|| e.to_string());
                         }
                     }
                 }
@@ -521,9 +554,13 @@ pub async fn import_collection(
         }
     }
 
-    Ok(Json(serde_json::json!({
+    let mut answer = serde_json::json!({
         "status": "imported",
         "count": imported_count,
         "failed": failed_count
-    })))
+    });
+    if let Some(error) = first_error {
+        answer["error"] = Value::String(error);
+    }
+    Ok(Json(answer))
 }

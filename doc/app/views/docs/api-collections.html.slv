@@ -389,7 +389,7 @@
                 <div class="mb-4">
                  <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Supported Formats</h4>
                  <div class="bg-gray-950/50 rounded-lg overflow-hidden border border-white/5 font-mono text-xs p-3 text-gray-400">
-                   <p class="mb-2">Send raw data in the request body. Format is auto-detected:</p>
+                   <p class="mb-2">Send the data as the <code class="bg-gray-800 px-1 rounded">file</code> field of a multipart form (<code class="bg-gray-800 px-1 rounded">curl -F file=@docs.jsonl</code>). <code class="bg-gray-800 px-1 rounded">?mode=upsert</code> merges a document into the stored one with the same <code class="bg-gray-800 px-1 rounded">_key</code> instead of refusing its batch. The answer is <code class="bg-gray-800 px-1 rounded">{"status": "imported", "count": 3, "failed": 1, "error": "…"}</code>: <code class="bg-gray-800 px-1 rounded">error</code>, present when something failed, is why the first document or batch was refused. Format is auto-detected:</p>
                    <ul class="list-disc list-inside space-y-1 ml-2">
                      <li><strong class="text-gray-300">JSON Array</strong>: <code class="bg-gray-800 px-1 rounded">[{"name": "a"}, {"name": "b"}]</code></li>
                      <li><strong class="text-gray-300">JSONL</strong>: Newline-delimited JSON objects.</li>

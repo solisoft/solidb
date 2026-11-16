@@ -321,3 +321,110 @@ async fn one_node_numbers_and_hands_over() {
         "an old record revived the counter"
     );
 }
+
+/// `POST …/collection/{name}/import` with `lines` as a JSONL file, which
+/// does not end with a newline: the last line is a document like the
+/// others.
+async fn import(node: &Node, query: &str, lines: &str) -> (StatusCode, Value) {
+    const BOUNDARY: &str = "counter-import-boundary";
+    let body = format!(
+        "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"docs.jsonl\"\r\nContent-Type: application/x-ndjson\r\n\r\n{lines}\r\n--{BOUNDARY}--\r\n"
+    );
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/_api/database/shop/collection/invoices/import{query}"
+        ))
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .header("Authorization", format!("Bearer {}", node.token))
+        .body(Body::from(body))
+        .unwrap();
+    let response = node.app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_import_numbers_what_it_creates_and_says_why_it_fails() {
+    let n = node(None, false);
+    call(
+        &n,
+        "POST",
+        COUNTERS,
+        Some(json!({"field": "number", "prefix": "N-", "padding": 3})),
+    )
+    .await;
+    call(&n, "POST", DOCS, Some(json!({"_key": "a"}))).await;
+
+    // Upsert mode: the stored document keeps its number, the new ones get
+    // the next.
+    let (status, body) = import(
+        &n,
+        "?mode=upsert",
+        "{\"_key\":\"a\",\"paid\":true}\n{\"_key\":\"b\"}\n{\"_key\":\"c\"}",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["count"], 3);
+    assert_eq!(body["failed"], 0);
+    assert_eq!(body.get("error"), None);
+    let (_, rows) = query(
+        &n,
+        "FOR d IN invoices SORT d._key RETURN [d._key, d.number, d.paid]",
+    )
+    .await;
+    assert_eq!(
+        rows["result"],
+        json!([
+            ["a", "N-001", true],
+            ["b", "N-002", null],
+            ["c", "N-003", null]
+        ])
+    );
+
+    // A document that carries a number is refused, and the answer says why.
+    let (status, body) = import(&n, "?mode=upsert", "{\"_key\":\"d\",\"number\":\"N-900\"}").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["failed"], 1);
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("the database assigns it")),
+        "{body}"
+    );
+
+    // Insert mode numbers too.
+    let (_, body) = import(&n, "", "{\"label\":\"x\"}\n{\"label\":\"y\"}").await;
+    assert_eq!(body["count"], 2);
+    let (_, rows) = query(&n, "FOR d IN invoices SORT d.number RETURN d.number").await;
+    assert_eq!(
+        rows["result"],
+        json!(["N-001", "N-002", "N-003", "N-004", "N-005"])
+    );
+}
+
+/// The last line of an imported file is a document whether or not the file
+/// ends with a newline: it used to be dropped, counted neither as imported
+/// nor as failed. And a line that is not JSON is reported with its reason.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_import_takes_a_last_line_without_a_newline() {
+    let n = node(None, false);
+    let (status, body) = import(&n, "", "{\"_key\":\"a\"}\n{\"_key\":\"b\"}").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!((&body["count"], &body["failed"]), (&json!(2), &json!(0)));
+    let (_, rows) = query(&n, "FOR d IN invoices SORT d._key RETURN d._key").await;
+    assert_eq!(rows["result"], json!(["a", "b"]));
+
+    let (_, body) = import(&n, "", "{\"_key\":\"c\"}\n{\"_key\": oops").await;
+    assert_eq!((&body["count"], &body["failed"]), (&json!(1), &json!(1)));
+    assert!(body["error"].is_string(), "{body}");
+}
