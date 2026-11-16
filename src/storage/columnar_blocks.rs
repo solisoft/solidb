@@ -177,6 +177,9 @@ pub(crate) struct ColBlock {
     /// The columns of the schema, by name, and their values.
     pub(crate) names: Vec<String>,
     pub(crate) cols: Vec<Column>,
+    /// [`Self::bytes`], counted once.
+    #[serde(skip)]
+    size: std::sync::OnceLock<usize>,
 }
 
 impl ColBlock {
@@ -191,6 +194,7 @@ impl ColBlock {
             uuids: Ids::of(rows.iter().map(|(id, _)| id.clone()).collect()),
             names: names.to_vec(),
             cols,
+            size: std::sync::OnceLock::new(),
         }
     }
 
@@ -206,6 +210,7 @@ impl ColBlock {
                 .iter()
                 .map(|name| column_of(rows.iter().map(|row| row.get(name))))
                 .collect(),
+            size: std::sync::OnceLock::new(),
         }
     }
 
@@ -213,11 +218,44 @@ impl ColBlock {
     pub(crate) fn identified(mut self, uuids: Vec<String>) -> Self {
         self.key = uuids.first().cloned().unwrap_or_default();
         self.uuids = Ids::of(uuids);
+        self.size = std::sync::OnceLock::new();
         self
     }
 
     pub(crate) fn len(&self) -> usize {
         self.uuids.len()
+    }
+
+    /// About what the block takes decoded: its ids and its arrays, a
+    /// string counted with its header, and the rows of each string a
+    /// column of strings lists once an equality has asked.
+    pub(crate) fn bytes(&self) -> usize {
+        *self.size.get_or_init(|| self.count_bytes())
+    }
+
+    fn count_bytes(&self) -> usize {
+        const TEXT: usize = std::mem::size_of::<String>();
+        let texts = |texts: &[String]| texts.iter().map(|t| TEXT + t.len()).sum::<usize>();
+        let rows = self.len();
+        let ids = match &self.uuids {
+            Ids::Uuids(ids) => ids.len() * 16,
+            Ids::Texts(ids) => texts(ids),
+        };
+        let cols: usize = self
+            .cols
+            .iter()
+            .map(|c| {
+                let data = match &c.data {
+                    ColData::Int(v) => v.len() * 8,
+                    ColData::Float(v) => v.len() * 8,
+                    ColData::Str { dict, codes } => texts(dict) + codes.len() * 8,
+                    ColData::Bool(v) => v.len(),
+                    ColData::Json(v) => texts(v),
+                };
+                data + c.nulls.as_ref().map_or(0, Vec::len)
+            })
+            .sum();
+        ids + cols + texts(&self.names) + rows.min(1) * 64
     }
 
     pub(crate) fn column(&self, name: &str) -> Option<&Column> {

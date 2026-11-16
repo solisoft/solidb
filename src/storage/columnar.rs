@@ -132,10 +132,94 @@ const BLOCK_FORMAT: u8 = 2;
 /// The decoded blocks of a collection, `None` until they are read from
 /// disk, and the database they belong to: the entry keeps that address
 /// from being used again by another one.
-type BlockStore = (
-    std::sync::Weak<DB>,
-    Arc<parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>>,
-);
+type BlockStore = (std::sync::Weak<DB>, Arc<Kept>);
+
+/// What is kept of one collection's blocks, and when it was last read.
+#[derive(Default)]
+struct Kept {
+    blocks: parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>,
+    /// [`USES`] at the last read.
+    used: std::sync::atomic::AtomicU64,
+}
+
+/// Counts the reads of decoded blocks, to tell which collection was read
+/// longest ago.
+static USES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `SOLIDB_COLUMNAR_BLOCKS_MB`: what the decoded blocks of every columnar
+/// collection together may take in memory. By default a quarter of the
+/// memory the process may use (its cgroup's limit, else the host's), at
+/// least 1 GiB. Past it, the collections read longest ago give their
+/// blocks back, and read and decode them again at their next query.
+fn decoded_budget() -> usize {
+    static BUDGET: once_cell::sync::Lazy<usize> = once_cell::sync::Lazy::new(|| {
+        std::env::var("SOLIDB_COLUMNAR_BLOCKS_MB")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .map(|mb| mb << 20)
+            .unwrap_or_else(|| {
+                let memory = super::memory_limit::detected().map_or(4 << 30, |limit| limit.bytes);
+                ((memory / 4) as usize).max(1 << 30)
+            })
+    });
+    *BUDGET
+}
+
+/// Bytes of decoded blocks kept for every columnar collection of the
+/// process, as [`ColBlock::bytes`] counts them.
+pub fn decoded_blocks_kept() -> usize {
+    BLOCK_STORES
+        .iter()
+        .map(|entry| {
+            entry
+                .value()
+                .1
+                .blocks
+                .read()
+                .as_ref()
+                .map_or(0, |blocks| blocks.iter().map(|block| block.bytes()).sum())
+        })
+        .sum()
+}
+
+/// Hold the decoded blocks kept for all collections to the budget: the
+/// collections read longest ago stop keeping theirs, this one included if
+/// it alone is past it (the query that asked still has them).
+fn keep_within_budget() {
+    let budget = decoded_budget();
+    let mut held: Vec<(u64, usize, Arc<Kept>)> = BLOCK_STORES
+        .iter()
+        .filter_map(|entry| {
+            let kept = entry.value().1.clone();
+            let bytes: usize = kept
+                .blocks
+                .read()
+                .as_ref()?
+                .iter()
+                .map(|block| block.bytes())
+                .sum();
+            (bytes > 0).then(|| {
+                (
+                    kept.used.load(std::sync::atomic::Ordering::Relaxed),
+                    bytes,
+                    kept,
+                )
+            })
+        })
+        .collect();
+    let mut total: usize = held.iter().map(|(_, bytes, _)| bytes).sum();
+    if total <= budget {
+        return;
+    }
+    held.sort_by_key(|(used, ..)| *used);
+    for (_, bytes, kept) in held {
+        if total <= budget {
+            break;
+        }
+        *kept.blocks.write() = None;
+        total -= bytes;
+    }
+}
 /// By (database, backing collection), shared by every handle.
 static BLOCK_STORES: once_cell::sync::Lazy<dashmap::DashMap<(usize, String), BlockStore>> =
     once_cell::sync::Lazy::new(dashmap::DashMap::new);
@@ -391,7 +475,7 @@ impl ColumnarCollection {
             meta: Arc::new(RwLock::new(meta)),
         };
         // Nothing of an earlier collection of that name is kept.
-        *created.store().write() = Some(Vec::new());
+        *created.store().blocks.write() = Some(Vec::new());
         Ok(created)
     }
 
@@ -471,7 +555,7 @@ impl ColumnarCollection {
     }
 
     /// The decoded blocks of this collection, shared by every handle.
-    fn store(&self) -> Arc<parking_lot::RwLock<Option<Vec<Arc<ColBlock>>>>> {
+    fn store(&self) -> Arc<Kept> {
         let key = (Arc::as_ptr(&self.db) as usize, self.cf_name.clone());
         if let Some(found) = BLOCK_STORES.get(&key) {
             return found.1.clone();
@@ -491,10 +575,14 @@ impl ColumnarCollection {
     /// The blocks, in the order of their keys: from memory, or read once.
     fn blocks(&self, cf: &KsCf, compression: &CompressionType) -> DbResult<Vec<Arc<ColBlock>>> {
         let store = self.store();
-        if let Some(blocks) = store.read().as_ref() {
+        store.used.store(
+            USES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        if let Some(blocks) = store.blocks.read().as_ref() {
             return Ok(blocks.clone());
         }
-        let mut held = store.write();
+        let mut held = store.blocks.write();
         if let Some(blocks) = held.as_ref() {
             return Ok(blocks.clone());
         }
@@ -518,6 +606,8 @@ impl ColumnarCollection {
             blocks.push(Arc::new(block));
         }
         *held = Some(blocks.clone());
+        drop(held);
+        keep_within_budget();
         Ok(blocks)
     }
 
@@ -680,10 +770,14 @@ impl ColumnarCollection {
         if sealed.is_empty() {
             return;
         }
-        if let Some(blocks) = self.store().write().as_mut() {
+        if let Some(blocks) = self.store().blocks.write().as_mut() {
+            // (Not twice a block that a load, started after this write
+            // reached the disk, already read.)
+            blocks.retain(|held| !sealed.iter().any(|new| new.key == held.key));
             blocks.extend(sealed.into_iter().map(Arc::new));
             blocks.sort_by(|a, b| a.key.cmp(&b.key));
         }
+        keep_within_budget();
     }
 
     /// Convert a collection stored one key per cell: its rows (`col_row:`
@@ -728,7 +822,7 @@ impl ColumnarCollection {
         db.write(batch)
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
-        *self.store().write() = None;
+        *self.store().blocks.write() = None;
         tracing::info!(
             "columnar collection '{}': {} rows converted to blocks",
             self.name,
@@ -1008,7 +1102,7 @@ impl ColumnarCollection {
             .map_err(|e| DbError::InternalError(e.to_string()))?;
         *meta = new_meta;
         if !rewritten.is_empty() {
-            if let Some(blocks) = self.store().write().as_mut() {
+            if let Some(blocks) = self.store().blocks.write().as_mut() {
                 for (old_key, smaller) in rewritten {
                     blocks.retain(|b| b.key != old_key);
                     if let Some(smaller) = smaller {
@@ -1452,7 +1546,7 @@ impl ColumnarCollection {
         db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate: {}", e)))?;
         *meta = new_meta;
-        *self.store().write() = Some(Vec::new());
+        *self.store().blocks.write() = Some(Vec::new());
 
         Ok(())
     }

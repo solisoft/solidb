@@ -822,8 +822,18 @@ Rules that keep it sound:
   kinds, a constant of another kind) and the tail are read as objects and
   folded the ordinary way: `tests/columnar_blocks_tests.rs` runs each query
   both ways.
-- **The decoded blocks are all kept in memory**, ids of the rows included
-  (0.9 GB for ten million rows of six columns): there is no ceiling yet.
+- **The decoded blocks are kept in memory up to a budget**, ids of the
+  rows included (0.9 GB for ten million rows of six columns).
+  `SOLIDB_COLUMNAR_BLOCKS_MB` (default: a quarter of the memory the
+  process may use, at least 1 GiB) bounds what every collection keeps
+  together (`columnar::keep_within_budget`): past it the collections read
+  longest ago give their blocks back (`Kept::blocks` goes back to `None`,
+  as after a start) and read and decode them at their next use. A
+  collection that alone is past the budget keeps nothing between two
+  queries; a query still holds all of its blocks while it runs, so the
+  budget bounds what is kept, not what a full scan needs. Every place that
+  sets the store goes on treating `None` as "read the disk"; `keep_blocks`
+  drops a block of the same key before adding one.
   The ids of a block are its rows' UUIDs as 16 bytes each when every one
   is a UUID in its usual text (`columnar_blocks::Ids`), texts otherwise;
   they are stored as texts either way, so the format did not change.

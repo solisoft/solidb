@@ -16,6 +16,7 @@
     </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>SOLIDB_COLUMNAR_BLOCKS_MB</code>: a budget for the decoded blocks of columnar collections</strong> &mdash; every block of a columnar collection was decoded once and kept for good, so memory grew with the data and nothing bounded it. The blocks kept for all collections together are now held to a budget, by default a quarter of the memory the process may use and at least 1 GiB: past it, the collections read longest ago give their blocks back and read them again at their next query. A collection that alone is larger than the budget is read from disk at each query, which is much slower than from memory; a query still needs all the blocks it reads in memory while it runs.</li>
         <li><strong class="text-white">A columnar collection takes a third less memory</strong> &mdash; the blocks of a columnar collection are kept decoded in memory with the ids of their rows, and each id was a string of 36 characters: about 70 bytes a row, half of what a row of a few columns takes. Ids that are UUIDs written the usual way, which is what the server generates, are now kept as their 16 bytes; a block holding any other id keeps texts. Measured on ten million rows of six columns: 1.40 GB of resident memory before, 0.90 GB after, the same query rates and load time. Nothing changes on disk, where ids are still stored as text.</li>
       </ul>
     </div>
