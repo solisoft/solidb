@@ -655,3 +655,48 @@ async fn the_endpoints_build_in_the_background_and_aggregate_with_a_filter() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// An index holds the rows present when it was built. When inserts leave
+/// it with fewer than half of the rows, it is built again in the
+/// background, and answers for all of them; a small insert starts nothing.
+#[test]
+fn an_index_that_falls_behind_is_rebuilt_on_its_own() {
+    let dir = TempDir::new().unwrap();
+    let engine = open(&dir);
+    let col = fixture(&engine, 6_000);
+    let db = engine.get_database("app").unwrap();
+    col.create_index("metric", ColumnarIndexType::Sorted)
+        .unwrap();
+    assert_eq!(col.index_coverage("metric"), 6_000);
+
+    // A few rows more: the index is left as it is.
+    columnar::insert(&db, None, "metrics", some_rows(6_000, 6_500)).unwrap();
+    assert!(col.index_build("metric").is_none());
+    assert_eq!(col.index_coverage("metric"), 6_000);
+
+    // More than it holds: rebuilt, without anyone asking.
+    columnar::insert(&db, None, "metrics", some_rows(6_500, 13_000)).unwrap();
+    let started = Instant::now();
+    let fresh = || ColumnarCollection::load("metrics".to_string(), "app", db.db_arc()).unwrap();
+    while fresh().index_coverage("metric") < 13_000 {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "the index was not rebuilt: {:?}, holds {}",
+            col.index_build("metric").map(|build| build.state()),
+            fresh().index_coverage("metric")
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let col = fresh();
+    let wanted = some_rows(0, 13_000)
+        .iter()
+        .filter(|row| row["metric"] == json!(7))
+        .count();
+    let found = col
+        .scan_filtered(
+            &ColumnFilter::Eq("metric".to_string(), json!(7)),
+            &["metric"],
+        )
+        .unwrap();
+    assert_eq!(found.len(), wanted);
+}

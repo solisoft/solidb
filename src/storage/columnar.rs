@@ -425,6 +425,10 @@ pub enum ColumnarIndexType {
     Bloom,  // Probabilistic existence check per chunk
 }
 
+/// Rows an index must lack before it is rebuilt on its own
+/// ([`ColumnarCollection::refresh_stale_indexes`]).
+pub const INDEX_REFRESH_MIN: u64 = 4096;
+
 /// Metadata for a columnar index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnarIndexMeta {
@@ -2940,6 +2944,45 @@ impl ColumnarCollection {
     /// are compared in their blocks.
     pub fn index_coverage(&self, column: &str) -> u64 {
         self.index_rows(column)
+    }
+
+    /// Build again, in the background, each index that has fallen behind:
+    /// one that holds fewer than half of the rows, and lacks
+    /// [`INDEX_REFRESH_MIN`] of them or more. An index is written once and
+    /// inserts do not add to it, so with a load every night its share
+    /// shrank until someone asked for a rebuild. Rebuilding when the rows
+    /// have doubled keeps the work proportional to the rows inserted.
+    /// Returns how many builds it started; a build already running is
+    /// left to finish.
+    pub fn refresh_stale_indexes(&self) -> usize {
+        let indexed = self
+            .meta
+            .read()
+            .map(|m| m.columns.iter().any(|c| c.indexed))
+            .unwrap_or(false);
+        if !indexed {
+            return 0;
+        }
+        let total = self.count() as u64;
+        let mut started = 0;
+        for index in self.list_indexes().unwrap_or_default() {
+            let held = self.index_coverage(&index.column);
+            let behind = total.saturating_sub(held);
+            if held * 2 >= total || behind < INDEX_REFRESH_MIN {
+                continue;
+            }
+            let running = self
+                .index_build(&index.column)
+                .is_some_and(|build| build.state() == BuildState::Building);
+            if !running
+                && self
+                    .start_index_build(&index.column, index.index_type.clone(), true)
+                    .is_ok()
+            {
+                started += 1;
+            }
+        }
+        started
     }
 
     /// Check if a column has an index

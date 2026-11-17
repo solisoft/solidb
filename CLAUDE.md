@@ -1107,6 +1107,11 @@ Rules that keep it sound:
   build that read the rows before it start again. A column with no entry
   in `index_rows` was indexed by 2.10.4 or earlier: its index is not
   used.
+- **An index that falls behind is rebuilt by the insert that leaves it
+  so** (`refresh_stale_indexes`, called by `sync::columnar::insert`):
+  fewer than half of the rows held and `INDEX_REFRESH_MIN` or more
+  outside. Local, like `?rebuild=true`: not logged, and not triggered by
+  rows a peer applies.
 - **An index is built outside the write lock** (`build_index`): the lock
   is held to take the rows as they stand and again to write, and the
   write goes ahead only if no position moved in between (`Kept::moved`);

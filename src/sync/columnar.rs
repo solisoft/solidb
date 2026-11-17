@@ -114,11 +114,16 @@ pub fn insert(
 ) -> DbResult<Vec<String>> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let Some(log) = writing(log) else {
-        return col.insert_rows(rows);
+        let ids = col.insert_rows(rows)?;
+        col.refresh_stale_indexes();
+        return Ok(ids);
     };
     // Encoded before the insert, which takes the rows.
     let encoded: Vec<Option<Vec<u8>>> = rows.iter().map(|r| serde_json::to_vec(r).ok()).collect();
     let ids = col.insert_rows(rows)?;
+    // An index that has fallen behind is built again, on this node (as
+    // `?rebuild=true`, it is not logged: a peer rebuilds its own).
+    col.refresh_stale_indexes();
     let mut entries = Vec::with_capacity(LOG_BATCH.min(ids.len()));
     for (id, data) in ids.iter().zip(encoded) {
         entries.push(LogEntry::new_op(
