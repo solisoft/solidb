@@ -18,6 +18,22 @@ $B probe-client-tx --bin /path/to/solidb
 `--data DIR` (deleted first) and `--port N` (default 6900) place the server.
 Its output is appended to `DIR.server.log`.
 
+## The short pass, and CI
+
+`faults/ci.sh <solidb> [<solidb-faults>] [<output dir>]` runs four kill
+cycles on RocksDB, on solistore `eventual` and on solistore `full`, then
+five seconds of the isolation workload on each path (`cursor`, `sdbql` at
+`read_committed` and `serializable`, `doc`, and `sdbql` on RocksDB): 45
+seconds on a workstation. It exits 1 when a run finds a violation or an
+anomaly, or does not complete, and keeps that run's report, history and
+server log. `FAULTS_SEED` repeats a run; `FAULTS_CYCLES` and `FAULTS_SECS`
+lengthen it.
+
+The `faults` job of `.github/workflows/ci.yml` runs it on every push, on a
+server built from that commit. It does not gate a release yet. The runs of
+"Results" below are longer and made by hand, as is Elle's cycle search,
+which needs a JVM.
+
 ## `crash`
 
 Each cycle starts the server, runs the writers for a random 0.5 to 4 seconds

@@ -126,6 +126,64 @@ jobs:
       - name: Run tests on solistore
         run: cargo test --profile ci --features engine-solistore --lib --bins --tests
 
+  # A short pass of the fault harness (faults/, card #864): the server is
+  # killed with SIGKILL while transactions and single inserts are written,
+  # restarted, and everything acknowledged so far is checked, on each engine
+  # and durability mode; then a few seconds of concurrent transactions on
+  # each path, checked for lost appends, aborted reads and duplicates. It
+  # found #793, #796 and #802 when it was run by hand only. Under a minute
+  # of run once built. Not among `release`'s needs: it drives a real server
+  # by the clock on a shared runner, so let it prove stable first.
+  faults:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # rust-cache, for the reasons spelled out on the `test` job above. The
+      # harness is a workspace of its own.
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: faults
+          workspaces: |
+            . -> target
+            faults -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+
+      # Both engines in the binary, whatever the default features are.
+      - name: Build the server
+        run: cargo build --profile ci --features engine-solistore --bin solidb
+
+      - name: Build the harness
+        run: cargo build --release --manifest-path faults/Cargo.toml
+
+      - name: Kill -9 cycles and the isolation workload
+        run: faults/ci.sh target/ci/solidb faults/target/release/solidb-faults faults-out
+
+      # Reports, histories and server logs of the runs that failed.
+      - name: Keep what the failed runs left
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faults-out
+          path: faults-out
+          retention-days: 14
+
   # Compile-only gate for Windows. The full test suite is not run here: a cold RocksDB C++
   # build on windows-latest is slow enough to dominate CI, and the value of this job is
   # catching portability breakage on the PR rather than at tag time in build-binaries.

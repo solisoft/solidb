@@ -98,6 +98,14 @@ on the solistore engine). The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
+The `faults` job runs the short pass of the fault harness
+(`faults/ci.sh <solidb binary>`: kill -9 cycles on each engine and
+durability mode, then the isolation workload on each path, 45 seconds once
+built). It does not gate a release. Run it by hand after a change to the
+commit path, the WAL, locks or transaction isolation: it needs the harness
+(`cargo build --release --manifest-path faults/Cargo.toml`, a workspace of
+its own, small enough to build locally) and a server binary.
+
 ### Known local-only failures
 
 There are none right now.
