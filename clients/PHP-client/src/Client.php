@@ -561,6 +561,90 @@ class Client
         ]);
     }
 
+    // --- Foreign keys ---
+
+    /**
+     * The foreign keys declared on $collection ("foreign_keys") and those of
+     * other collections that refer to it ("referenced_by").
+     */
+    public function listForeignKeys(string $database, string $collection): array
+    {
+        $res = $this->sendCommand('list_foreign_keys', [
+            'database' => $database,
+            'collection' => $collection
+        ]);
+        return $res['data'] ?? [];
+    }
+
+    /**
+     * Declare that $field of $collection holds the _key (with $by = "id",
+     * the _id) of a document of $references, a collection of the same
+     * database, or null. $onDelete is "restrict" (the default), "cascade"
+     * or "set_null". Refused when stored documents already refer to a
+     * missing parent: checkForeignKey() lists them. Returns the key as
+     * declared.
+     */
+    public function createForeignKey(
+        string $database,
+        string $collection,
+        string $field,
+        string $references,
+        ?string $onDelete = null,
+        ?string $by = null,
+        ?string $name = null
+    ): array {
+        $args = [
+            'database' => $database,
+            'collection' => $collection,
+            'field' => $field,
+            'references' => $references
+        ];
+        if ($onDelete !== null) {
+            $args['on_delete'] = $onDelete;
+        }
+        if ($by !== null) {
+            $args['by'] = $by;
+        }
+        if ($name !== null) {
+            $args['name'] = $name;
+        }
+        $res = $this->sendCommand('create_foreign_key', $args);
+        return $res['data'] ?? [];
+    }
+
+    public function deleteForeignKey(string $database, string $collection, string $name): void
+    {
+        $this->sendCommand('delete_foreign_key', [
+            'database' => $database,
+            'collection' => $collection,
+            'name' => $name
+        ]);
+    }
+
+    /**
+     * The documents of $collection whose $field names a document that is
+     * not in $references: ["count" => n, "sample" => [...]].
+     */
+    public function checkForeignKey(
+        string $database,
+        string $collection,
+        string $field,
+        string $references,
+        ?string $by = null
+    ): array {
+        $args = [
+            'database' => $database,
+            'collection' => $collection,
+            'field' => $field,
+            'references' => $references
+        ];
+        if ($by !== null) {
+            $args['by'] = $by;
+        }
+        $res = $this->sendCommand('check_foreign_key', $args);
+        return $res['data'] ?? [];
+    }
+
     // --- Transactions ---
 
     /**

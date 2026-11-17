@@ -294,6 +294,41 @@ module SoliDB
          nil
     end
 
+    # --- Foreign keys ---
+
+    # The foreign keys declared on `collection` ("foreign_keys") and those of
+    # other collections that refer to it ("referenced_by").
+    def list_foreign_keys(database, collection)
+        send_command("list_foreign_keys", database: database, collection: collection)
+    end
+
+    # Declare that `field` of `collection` holds the `_key` (with `by: "id"`,
+    # the `_id`) of a document of `references`, a collection of the same
+    # database, or null. `on_delete` is "restrict" (the default), "cascade"
+    # or "set_null". Refused when stored documents already refer to a
+    # missing parent: `check_foreign_key` lists them. Returns the key as
+    # declared.
+    def create_foreign_key(database, collection, field, references, on_delete: nil, by: nil, name: nil)
+        args = { database: database, collection: collection, field: field, references: references }
+        args[:on_delete] = on_delete unless on_delete.nil?
+        args[:by] = by unless by.nil?
+        args[:name] = name unless name.nil?
+        send_command("create_foreign_key", **args)
+    end
+
+    def delete_foreign_key(database, collection, name)
+        send_command("delete_foreign_key", database: database, collection: collection, name: name)
+        nil
+    end
+
+    # The documents of `collection` whose `field` names a document that is
+    # not in `references`: {"count" => n, "sample" => [...]}.
+    def check_foreign_key(database, collection, field, references, by: nil)
+        args = { database: database, collection: collection, field: field, references: references }
+        args[:by] = by unless by.nil?
+        send_command("check_foreign_key", **args)
+    end
+
 
     def send_command(cmd_name, params = {})
       connect unless @connected && !@pool.empty?

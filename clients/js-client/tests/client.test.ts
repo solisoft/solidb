@@ -63,6 +63,36 @@ async function runTests() {
         }
         console.log('Delete OK');
 
+        // Foreign keys
+        await client.createCollection(DB, 'customers');
+        await client.createCollection(DB, 'orders');
+        await client.insert(DB, 'customers', { _key: 'c1', name: 'Ada' });
+        await client.insert(DB, 'orders', { _key: 'o1', customer: 'c1' });
+        await client.insert(DB, 'orders', { _key: 'o2', customer: 'ghost' });
+        client.useDatabase(DB);
+        const orphans = await client.indexes.checkForeignKey('orders', 'customer', 'customers');
+        assert.strictEqual(orphans.count, 1);
+        assert.strictEqual(orphans.sample[0]._key, 'o2');
+        await assert.rejects(client.indexes.createForeignKey('orders', 'customer', 'customers'));
+        await client.delete(DB, 'orders', 'o2');
+        const fk = await client.indexes.createForeignKey('orders', 'customer', 'customers', {
+            onDelete: 'cascade',
+            name: 'fk_customer'
+        });
+        assert.strictEqual(fk.name, 'fk_customer');
+        assert.strictEqual(fk.on_delete, 'cascade');
+        assert.strictEqual((await client.indexes.listForeignKeys('orders')).foreign_keys[0].field, 'customer');
+        assert.strictEqual(
+            (await client.indexes.listForeignKeys('customers')).referenced_by[0].collection,
+            'orders'
+        );
+        await assert.rejects(client.insert(DB, 'orders', { _key: 'o3', customer: 'nobody' }));
+        await client.delete(DB, 'customers', 'c1');
+        assert.deepStrictEqual(await client.query(DB, 'FOR o IN orders RETURN o._key'), []);
+        await client.indexes.deleteForeignKey('orders', 'fk_customer');
+        assert.deepStrictEqual((await client.indexes.listForeignKeys('orders')).foreign_keys, []);
+        console.log('Foreign keys OK');
+
     } catch (e: any) {
         console.error('TEST FAILED:', e);
         process.exit(1);

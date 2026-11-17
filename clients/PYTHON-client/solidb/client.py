@@ -311,6 +311,39 @@ class Client:
     def delete_index(self, database, collection, name):
          self._send_command("delete_index", database=database, collection=collection, name=name)
 
+    # --- Foreign keys ---
+
+    def list_foreign_keys(self, database, collection):
+        """The foreign keys declared on `collection` (`foreign_keys`) and
+        those of other collections that refer to it (`referenced_by`)."""
+        return self._send_command("list_foreign_keys", database=database, collection=collection)
+
+    def create_foreign_key(self, database, collection, field, references,
+                           on_delete=None, by=None, name=None):
+        """Declare that `field` of `collection` holds the `_key` (with
+        `by="id"`, the `_id`) of a document of `references`, a collection of
+        the same database, or null. `on_delete` is "restrict" (the default),
+        "cascade" or "set_null". Refused when stored documents already refer
+        to a missing parent: `check_foreign_key` lists them. Returns the key
+        as declared."""
+        args = {"database": database, "collection": collection,
+                "field": field, "references": references}
+        if on_delete is not None: args["on_delete"] = on_delete
+        if by is not None: args["by"] = by
+        if name is not None: args["name"] = name
+        return self._send_command("create_foreign_key", **args)
+
+    def delete_foreign_key(self, database, collection, name):
+        self._send_command("delete_foreign_key", database=database, collection=collection, name=name)
+
+    def check_foreign_key(self, database, collection, field, references, by=None):
+        """The documents of `collection` whose `field` names a document that
+        is not in `references`: `{"count": n, "sample": [...]}`."""
+        args = {"database": database, "collection": collection,
+                "field": field, "references": references}
+        if by is not None: args["by"] = by
+        return self._send_command("check_foreign_key", **args)
+
     # --- Database Context for Management APIs ---
 
     def use_database(self, name: str) -> 'Client':

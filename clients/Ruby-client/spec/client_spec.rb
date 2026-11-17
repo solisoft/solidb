@@ -96,4 +96,37 @@ RSpec.describe SoliDB::Client do
       client.rollback_transaction(tx_id)
       client.delete_database(db_name)
   end
+
+  it "declares, checks and drops foreign keys" do
+      db = "ruby_fk_db"
+      client.delete_database(db) rescue nil
+      client.create_database(db)
+      client.create_collection(db, "customers")
+      client.create_collection(db, "orders")
+      client.insert(db, "customers", {"_key" => "c1", "name" => "Ada"})
+      client.insert(db, "orders", {"_key" => "o1", "customer" => "c1"})
+      client.insert(db, "orders", {"_key" => "o2", "customer" => "ghost"})
+
+      # A document that refers to a missing parent: the key is refused, and
+      # the check says which.
+      found = client.check_foreign_key(db, "orders", "customer", "customers")
+      expect(found["count"]).to eq(1)
+      expect(found["sample"][0]["_key"]).to eq("o2")
+      expect { client.create_foreign_key(db, "orders", "customer", "customers") }.to raise_error(StandardError)
+
+      client.delete(db, "orders", "o2")
+      key = client.create_foreign_key(db, "orders", "customer", "customers", on_delete: "set_null", name: "fk_customer")
+      expect(key["name"]).to eq("fk_customer")
+      expect(key["on_delete"]).to eq("set_null")
+      expect(client.list_foreign_keys(db, "orders")["foreign_keys"][0]["field"]).to eq("customer")
+      expect(client.list_foreign_keys(db, "customers")["referenced_by"][0]["collection"]).to eq("orders")
+
+      expect { client.insert(db, "orders", {"_key" => "o3", "customer" => "nobody"}) }.to raise_error(StandardError)
+      client.delete(db, "customers", "c1")
+      expect(client.query(db, "FOR o IN orders RETURN o.customer")).to eq([nil])
+
+      client.delete_foreign_key(db, "orders", "fk_customer")
+      expect(client.list_foreign_keys(db, "orders")["foreign_keys"]).to eq([])
+      client.delete_database(db)
+  end
 end

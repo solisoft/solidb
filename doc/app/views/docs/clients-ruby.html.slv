@@ -431,6 +431,26 @@ indexes = client.list_indexes('mydb', 'users')
 client.delete_index('mydb', 'users', 'idx_email')</code></pre>
         </div>
       </section>
+
+      <!-- Foreign keys -->
+      <section id="foreign-keys" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Foreign Keys</h3>
+        <p class="text-sm text-gray-400 mb-4">A field of a collection declared to hold the <code>_key</code> of a document of another collection of the database. A key is refused while stored documents refer to a missing parent; the check lists them. See <a href="/docs/foreign-keys" class="text-cyan-400 hover:underline">Foreign keys</a>.</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-ruby"># Documents of "orders" whose customer does not exist
+client.check_foreign_key('mydb', 'orders', 'customer', 'customers')
+# {"count" =&gt; 1, "sample" =&gt; [{"_key" =&gt; "o2", "customer" =&gt; "ghost"}]}
+
+# Declare the key. on_delete: "restrict" (default), "cascade" or "set_null"
+client.create_foreign_key('mydb', 'orders', 'customer', 'customers',
+                          on_delete: 'cascade', name: 'fk_customer')
+
+# Keys declared on a collection, and those that refer to it
+client.list_foreign_keys('mydb', 'orders')     # {"foreign_keys" =&gt; [...], "referenced_by" =&gt; [...]}
+
+client.delete_foreign_key('mydb', 'orders', 'fk_customer')</code></pre>
+        </div>
+      </section>
     </div>
 
     <!-- ========================================== -->

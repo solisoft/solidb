@@ -97,3 +97,42 @@ def test_transaction(client):
     client.rollback_transaction(tx_id_2)
     
     client.delete_database(DB_NAME)
+
+
+def test_foreign_keys(client):
+    db = "python_fk_db"
+    try:
+        client.delete_database(db)
+    except ServerError:
+        pass
+    client.create_database(db)
+    client.create_collection(db, "customers")
+    client.create_collection(db, "orders")
+    client.insert(db, "customers", {"_key": "c1", "name": "Ada"})
+    client.insert(db, "orders", {"_key": "o1", "customer": "c1"})
+    client.insert(db, "orders", {"_key": "o2", "customer": "ghost"})
+
+    # A document that refers to a missing parent: the key is refused, and
+    # the check says which.
+    found = client.check_foreign_key(db, "orders", "customer", "customers")
+    assert found["count"] == 1
+    assert found["sample"][0]["_key"] == "o2"
+    with pytest.raises(ServerError):
+        client.create_foreign_key(db, "orders", "customer", "customers")
+
+    client.delete(db, "orders", "o2")
+    key = client.create_foreign_key(
+        db, "orders", "customer", "customers", on_delete="cascade", name="fk_customer")
+    assert key["name"] == "fk_customer"
+    assert key["on_delete"] == "cascade"
+    assert client.list_foreign_keys(db, "orders")["foreign_keys"][0]["field"] == "customer"
+    assert client.list_foreign_keys(db, "customers")["referenced_by"][0]["collection"] == "orders"
+
+    with pytest.raises(ServerError):
+        client.insert(db, "orders", {"_key": "o3", "customer": "nobody"})
+    client.delete(db, "customers", "c1")
+    assert client.query(db, "FOR o IN orders RETURN o._key") == []
+
+    client.delete_foreign_key(db, "orders", "fk_customer")
+    assert client.list_foreign_keys(db, "orders")["foreign_keys"] == []
+    client.delete_database(db)
