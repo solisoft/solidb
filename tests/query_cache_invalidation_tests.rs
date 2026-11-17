@@ -469,3 +469,70 @@ fn storage_delete_database_rejects_in_flight_results() {
     query_cache::get_query_cache().put_if_current(key.clone(), vec![json!("ghost1")], generation);
     assert_evicted(&key, "in-flight result stored after database drop");
 }
+
+/// Card #931: an answer that fits in one batch is handed to the cache and to
+/// the response without a copy. The fresh answer and the cached one are the
+/// same rows; an answer cut into batches still pages.
+#[tokio::test]
+async fn a_fresh_answer_and_its_cached_copy_are_the_same_rows() {
+    let (app, _tmp, token) = create_test_app();
+    let (db, coll) = ("shared_rows_db", "shared_rows_coll");
+    create_database(&app, &token, db).await;
+    create_layouts(&app, &token, db, coll).await;
+    for i in 0..5 {
+        let (status, body) = call(
+            &app,
+            &token,
+            "POST",
+            &format!("/_api/database/{db}/document/{coll}"),
+            Some(json!({ "_key": format!("k{i}"), "n": i })),
+        )
+        .await;
+        assert!(status.is_success(), "insert: {status} {body}");
+    }
+    let ask = |batch: Option<u64>| {
+        let (app, token) = (app.clone(), token.clone());
+        async move {
+            let mut request = json!({
+                "query": format!("FOR d IN {coll} SORT d.n RETURN {{k: d._key, n: d.n}}"),
+            });
+            if let Some(batch) = batch {
+                request["batchSize"] = json!(batch);
+            }
+            let (status, body) = call(
+                &app,
+                &token,
+                "POST",
+                &format!("/_api/database/{db}/cursor"),
+                Some(request),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "cursor: {body}");
+            body
+        }
+    };
+    let expected: Vec<Value> = (0..5)
+        .map(|i| json!({"k": format!("k{i}"), "n": i}))
+        .collect();
+    let mut cached = false;
+    for _ in 0..50 {
+        let body = ask(None).await;
+        assert_eq!(body["result"], json!(expected), "{body}");
+        assert_eq!(body["count"], json!(5));
+        assert_eq!(body["has_more"], json!(false));
+        if body["cached"] == json!(true) {
+            cached = true;
+            break;
+        }
+    }
+    assert!(cached, "the query never came back from the cache");
+
+    // Cut into batches: the first two rows and a cursor for the rest.
+    query_cache::get_query_cache().invalidate_all();
+    let body = ask(Some(2)).await;
+    if body["cached"] != json!(true) {
+        assert_eq!(body["result"], json!(expected[..2]), "{body}");
+        assert_eq!(body["has_more"], json!(true));
+        assert!(body["id"].is_string(), "{body}");
+    }
+}

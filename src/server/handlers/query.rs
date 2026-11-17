@@ -913,7 +913,7 @@ pub async fn execute_query(
     // (mutations or range iterations). Simple reads run directly.
     let mutates = query.has_mutations();
     let principal = principal_for_writes(&state, &claims, &db_name, mutates).await;
-    let (query_result, execution_time_ms) =
+    let (mut query_result, execution_time_ms) =
         if is_long_running_query(query) && !is_small_local_scan(query, &state.storage, &db_name) {
             let storage = state.storage.clone();
             let bind_vars = req.bind_vars.clone();
@@ -1018,10 +1018,9 @@ pub async fn execute_query(
         };
 
     let total_count = query_result.results.len();
-    let mutations = &query_result.mutations;
 
     // Increment write counter for mutation queries
-    if mutations.has_mutations() {
+    if query_result.mutations.has_mutations() {
         state
             .write_counter
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1030,12 +1029,27 @@ pub async fn execute_query(
     // Cache read-only query results. The cache evicts by entry count, so
     // one large result set per entry is the whole heap; only small ones are
     // worth keeping, and those are the ones a cache hit helps.
+    // An answer that fits in one batch is shared between the cache and the
+    // response: copying 500 small rows for the cache took 0.15 ms of a
+    // query that ran in 2.6 (card #931).
+    let mut shared_rows = None;
     if let Some(key) = cache_key {
-        if query_result.results.len() <= query_cache::MAX_CACHED_ROWS {
-            let result_clone: Vec<serde_json::Value> = query_result.results.clone();
-            query_cache::get_query_cache().put_if_current(key, result_clone, cache_generation);
+        if total_count <= query_cache::MAX_CACHED_ROWS {
+            if total_count <= batch_size {
+                let rows = std::sync::Arc::new(std::mem::take(&mut query_result.results));
+                query_cache::get_query_cache().put_shared_if_current(
+                    key,
+                    rows.clone(),
+                    cache_generation,
+                );
+                shared_rows = Some(rows);
+            } else {
+                let result_clone: Vec<serde_json::Value> = query_result.results.clone();
+                query_cache::get_query_cache().put_if_current(key, result_clone, cache_generation);
+            }
         }
     }
+    let mutations = &query_result.mutations;
 
     // Invalidate query cache when mutations occurred
     if mutations.has_mutations() {
@@ -1059,15 +1073,22 @@ pub async fn execute_query(
         cf_ops_before.ms_since(&cf_ops_after),
     );
 
-    let (cursor_id, result_batch, has_more) = state.cursor_store.store_and_get_first_batch(
-        db_name_for_cursor,
-        query_result.results,
-        batch_size,
-    );
+    let (cursor_id, result_batch, has_more) = match shared_rows {
+        Some(rows) => (None, QueryRows::Shared(rows), false),
+        None => {
+            let (id, batch, more) = state.cursor_store.store_and_get_first_batch(
+                db_name_for_cursor,
+                std::mem::take(&mut query_result.results),
+                batch_size,
+            );
+            (id, batch.into(), more)
+        }
+    };
+    let mutations = &query_result.mutations;
 
     Ok(ApiResponse::new(
         ExecuteQueryResponse {
-            result: result_batch.into(),
+            result: result_batch,
             count: total_count,
             has_more,
             id: cursor_id,

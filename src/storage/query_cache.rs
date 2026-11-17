@@ -122,13 +122,13 @@ impl QueryCache {
     /// Store a query result in cache. Parses the cache key to maintain the
     /// per-collection invalidation index.
     pub fn put(&self, query_hash: String, result: Vec<serde_json::Value>) {
-        self.put_checked(query_hash, result, None);
+        self.put_checked(query_hash, Arc::new(result), None);
     }
 
     fn put_checked(
         &self,
         query_hash: String,
-        result: Vec<serde_json::Value>,
+        result: Arc<Vec<serde_json::Value>>,
         generation: Option<u64>,
     ) {
         let collections = extract_collections_from_key(&query_hash);
@@ -166,7 +166,7 @@ impl QueryCache {
         inner.entries.insert(
             query_hash,
             CachedQueryResult {
-                result: Arc::new(result),
+                result,
                 cached_at: Instant::now(),
                 collections,
             },
@@ -366,6 +366,17 @@ impl QueryCache {
         &self,
         query_hash: String,
         result: Vec<serde_json::Value>,
+        generation: u64,
+    ) {
+        self.put_checked(query_hash, Arc::new(result), Some(generation));
+    }
+
+    /// [`Self::put_if_current`] for rows the caller goes on reading: the
+    /// cache keeps them without a copy.
+    pub fn put_shared_if_current(
+        &self,
+        query_hash: String,
+        result: Arc<Vec<serde_json::Value>>,
         generation: u64,
     ) {
         self.put_checked(query_hash, result, Some(generation));

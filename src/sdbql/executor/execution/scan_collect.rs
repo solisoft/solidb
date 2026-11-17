@@ -700,10 +700,10 @@ impl QueryExecutor<'_> {
         }
         // Stretches waiting for a thread.
         let waiting: parking_lot::Mutex<Vec<Stretch>> = parking_lot::Mutex::new(Vec::new());
-        // Read the first `limit` entries of `stretch` into `h`. What is
-        // left of it goes back to wait, before its documents are fetched:
+        // The documents the first `limit` entries of `stretch` name. What
+        // is left of it goes back to wait, before those are fetched:
         // another thread can go on with the index meanwhile.
-        let read = |h: &mut Hand<'c, '_>, stretch: Stretch, limit: usize| -> DbResult<()> {
+        let take = |stretch: Stretch, limit: usize| -> (u64, Vec<Vec<u8>>) {
             let (doc_keys, resume) =
                 collection.index_entry_doc_keys(prefix, &stretch.lo, &stretch.hi, limit);
             if let Some(lo) = resume {
@@ -713,24 +713,29 @@ impl QueryExecutor<'_> {
                     hi: stretch.hi,
                 });
             }
-            // The deadline, and what a fold that is not merged holds.
-            self.check_budget(h.fold.held())?;
-            h.fold.number_from(stretch.first);
-            collection.for_each_doc_bytes_of(&doc_keys, |bytes| {
-                if doc.fold(
-                    self,
-                    bytes,
-                    &mut h.reader,
-                    &mut h.fold,
-                    &mut h.scratch,
-                    &mut h.passes,
-                )? {
-                    h.scanned += 1;
-                }
-                Ok(())
-            })?;
-            Ok(())
+            (stretch.first, doc_keys)
         };
+        // Fold those documents into `h`, numbered from `first`.
+        let fold_docs =
+            |h: &mut Hand<'c, '_>, first: u64, doc_keys: Vec<Vec<u8>>| -> DbResult<()> {
+                // The deadline, and what a fold that is not merged holds.
+                self.check_budget(h.fold.held())?;
+                h.fold.number_from(first);
+                collection.for_each_doc_bytes_of(&doc_keys, |bytes| {
+                    if doc.fold(
+                        self,
+                        bytes,
+                        &mut h.reader,
+                        &mut h.fold,
+                        &mut h.scratch,
+                        &mut h.passes,
+                    )? {
+                        h.scanned += 1;
+                    }
+                    Ok(())
+                })?;
+                Ok(())
+            };
         // Stretches, one after the other, until none is waiting. A thread
         // that leaves a rest is still here to take it: none is left behind
         // by the threads that found nothing and went.
@@ -739,7 +744,8 @@ impl QueryExecutor<'_> {
                 let Some(stretch) = waiting.lock().pop() else {
                     break;
                 };
-                let done = read(h, stretch, RANGE_FOLD_STRETCH);
+                let (first, doc_keys) = take(stretch, RANGE_FOLD_STRETCH);
+                let done = fold_docs(h, first, doc_keys);
                 if done.is_err() {
                     stop.store(true, Ordering::Relaxed);
                 }
@@ -748,17 +754,25 @@ impl QueryExecutor<'_> {
             Ok(())
         };
 
-        // The first entries here: a small range ends with them.
+        // The first entries here: a small range ends with them. Only their
+        // index entries are read before the other threads are asked: the
+        // documents they name are fetched while those threads read theirs
+        // (fetched first, they were a tenth of a 15,000-document range's
+        // time with every other thread idle, card #931).
         let mut mine = hand();
         let whole = Stretch {
             first: 0,
             lo: start.clone(),
             hi: end.clone(),
         };
-        read(&mut mine, whole, RANGE_FOLD_FIRST)?;
+        let (_, first_keys) = take(whole, RANGE_FOLD_FIRST);
+        let mut first_keys = Some(first_keys);
         let mut hands = Vec::new();
         let rest = waiting.lock().pop();
-        if let Some(rest) = rest.filter(|_| !stop.load(Ordering::Relaxed)) {
+        if rest.is_none() {
+            fold_docs(&mut mine, 0, first_keys.take().unwrap_or_default())?;
+        }
+        if let Some(rest) = rest {
             let threads = if spread && CollectFold::mergeable(collect) {
                 self.scan
                     .threads
@@ -836,7 +850,11 @@ impl QueryExecutor<'_> {
                             .ok()
                     })
                     .collect();
-                let mut results = vec![work(&mut mine)];
+                let own = fold_docs(&mut mine, 0, first_keys.take().unwrap_or_default());
+                if own.is_err() {
+                    stop.store(true, Ordering::Relaxed);
+                }
+                let mut results = vec![own.and_then(|()| work(&mut mine))];
                 for handle in others {
                     results.push(handle.join().unwrap_or_else(|_| {
                         stop.store(true, Ordering::Relaxed);
