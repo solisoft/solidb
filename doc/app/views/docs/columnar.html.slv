@@ -549,7 +549,10 @@
               <code>STDDEV</code> / <code>VARIANCE</code>, <code>MEDIAN</code>, <code>PERCENTILE(col, p)</code> or
               <code>APPROX_COUNT_DISTINCT</code>, <code>BIT_AND</code> / <code>BIT_OR</code> /
               <code>BIT_XOR</code> of a column (the sums in milliseconds for millions of rows, a
-              median or a percentile a few times that, an exact distinct count the slowest). Any other query over a columnar
+              median or a percentile a few times that, an exact distinct count the slowest). <code>UNIQUE</code>,
+              <code>SORTED_UNIQUE</code>, <code>COLLECT_LIST</code> and <code>COLLECT &hellip; INTO</code> return the
+              values themselves, in the order of the rows: they build each row, as does a query that reads the
+              collection under a row policy or inside a window function. Any other query over a columnar
               collection (a <code>RETURN</code> of rows, <code>!=</code>, <code>OR</code>, a function in a key) builds
               each row first, then filters: correct, and slower on a large collection.</p>
           </div>
