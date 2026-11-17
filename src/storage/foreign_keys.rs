@@ -98,6 +98,12 @@ pub struct ForeignKey {
     pub on_delete: OnDelete,
     /// The index on `field` the constraint looks children up through.
     pub index: String,
+    /// The other collections `field` may name a document of, each under a
+    /// key of its own on the same field (a key by `_id` only: an edge end
+    /// that links several vertex collections). A reference to one of them
+    /// is that key's to check, not this one's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<String>,
 }
 
 /// A constraint seen from the child: where its parent's documents live.
@@ -611,6 +617,9 @@ pub(crate) fn reference<'a>(
     };
     match local.and_then(|id| id.split_once('/')) {
         Some((collection, parent_key)) if collection == key.references => Ok(Some(parent_key)),
+        // A document of another collection the field may name: the key
+        // that names that collection checks it.
+        Some((collection, _)) if key.also.iter().any(|other| other == collection) => Ok(None),
         _ => Err(violation(format!(
             "'{}' in {} is '{}', which is not the _id of a document of '{}'",
             key.field,

@@ -613,6 +613,7 @@ pub async fn import_collection(
                         on_delete: key.on_delete,
                         by: Some(key.by),
                         name: Some(key.name.clone()),
+                        also: key.also.clone(),
                     };
                     checked.foreign_key_orphans(&spec).map(|found| {
                         serde_json::json!({

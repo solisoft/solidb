@@ -752,6 +752,14 @@ Rules that keep it sound:
 - A full sync sends each collection's foreign keys and indexes
   (`SyncMessage::FullSyncDefinitions`, `Collection::index_specs`): a
   definition made while the replication log was deferred is in no log.
+- **A field that names documents of several collections** has one key
+  per collection, by `_id`, each listing the others in `also`
+  (`Collection::add_foreign_keys_to`, `references` as a list over HTTP).
+  `foreign_keys::reference` answers "not mine" for a value that names a
+  collection of `also`: the key of that collection checks it. So a key
+  dropped from such a group leaves its collection's references
+  unchecked, and anything that reads a reference without going through
+  `reference` would refuse the siblings' values.
 - **A deferred load** (`foreign_keys::deferring`, the import's
   `?foreign_keys=defer`): `check_references` looks no parent up on that
   thread, and the caller checks afterwards (`foreign_key_orphans`).

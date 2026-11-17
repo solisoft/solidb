@@ -70,6 +70,7 @@ pub fn sweep(storage: &StorageEngine) -> Vec<Found> {
                         on_delete: key.on_delete,
                         by: Some(key.by),
                         name: Some(key.name.clone()),
+                        also: key.also.clone(),
                     };
                     if let Ok(found) = collection.foreign_key_orphans(&spec) {
                         orphans += found.count;

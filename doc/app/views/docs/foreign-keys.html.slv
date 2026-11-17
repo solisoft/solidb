@@ -122,6 +122,9 @@
 {"from": {"name": "fk_from", "field": "_from", "references": "people", ...},
  "to":   {"name": "fk_to",   "field": "_to",   "references": "firms", ...}}</code></pre>
             </div>
+            <p class="text-gray-300 leading-relaxed">
+              An end that links vertices of several collections takes a list: <code class="text-indigo-300">{"field": "_from", "references": ["people", "firms"], "on_delete": "cascade"}</code> on <code class="text-indigo-300">POST &hellip;/foreign-keys</code> declares one key per collection (<code>fk_from_people</code>, <code>fk_from_firms</code>), all or none. An edge is then checked against the collection its <code>_from</code> names, an edge to any other collection is refused, and a delete in either collection restricts or cascades. Any field that holds an <code>_id</code> (<code>"by": "id"</code>) can take a list the same way. Dropping one of the keys leaves the references to its collection unchecked.
+            </p>
             <p class="text-sm text-gray-400">
               An edge whose end names a vertex that is not there is then refused, and deleting a vertex deletes its edges (<code class="text-indigo-300">cascade</code>) or is refused while it has some (<code class="text-indigo-300">restrict</code>). <code class="text-indigo-300">set_null</code> is not offered for an edge's ends: an edge without one is not an edge. A key names one collection, so an edge collection that links vertices of several collections cannot declare one on that end.
             </p>

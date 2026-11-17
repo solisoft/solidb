@@ -73,12 +73,54 @@ pub async fn list_foreign_keys(
 }
 
 /// Declare a constraint. Refused (409) when stored documents break it.
+///
+/// `references` as a list (`["people", "firms"]`) declares one key per
+/// collection on the same field, by `_id`: an edge end that links several
+/// vertex collections. All or none; the answer is then
+/// `{"foreign_keys": [...]}`.
 pub async fn create_foreign_key(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
-    Json(req): Json<ForeignKeySpec>,
-) -> Result<(StatusCode, Json<ForeignKey>), DbError> {
+    Json(mut req): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<serde_json::Value>), DbError> {
     let collection = child(&state, &db_name, &coll_name)?;
+    if let Some(parents) = req.get("references").and_then(|r| r.as_array()).cloned() {
+        let parents: Vec<String> = parents
+            .iter()
+            .map(|p| p.as_str().map(str::to_string))
+            .collect::<Option<_>>()
+            .ok_or_else(|| {
+                DbError::BadRequest("'references' is a collection, or a list of them".to_string())
+            })?;
+        req["references"] = serde_json::Value::String(String::new());
+        let spec: ForeignKeySpec = serde_json::from_value(req)
+            .map_err(|e| DbError::BadRequest(format!("Invalid foreign key: {}", e)))?;
+        if spec.name.is_some() || spec.by == Some(crate::storage::foreign_keys::ReferenceBy::Key) {
+            return Err(DbError::BadRequest(
+                "A list of collections is declared by _id, and its keys are named after them"
+                    .to_string(),
+            ));
+        }
+        let keys =
+            blocking(move || collection.add_foreign_keys_to(&spec.field, &parents, spec.on_delete))
+                .await?;
+        for key in &keys {
+            log_definition(
+                &state,
+                &db_name,
+                &coll_name,
+                Operation::CreateForeignKey,
+                &key.name,
+                serde_json::to_vec(key).ok(),
+            );
+        }
+        return Ok((
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "foreign_keys": keys })),
+        ));
+    }
+    let req: ForeignKeySpec = serde_json::from_value(req)
+        .map_err(|e| DbError::BadRequest(format!("Invalid foreign key: {}", e)))?;
     let key = blocking(move || collection.add_foreign_key(req)).await?;
     // Peers store the definition as declared here; the writes its deletes
     // cascade into reach them as entries of their own (`observe_cascades`).
@@ -90,7 +132,9 @@ pub async fn create_foreign_key(
         &key.name,
         serde_json::to_vec(&key).ok(),
     );
-    Ok((StatusCode::CREATED, Json(key)))
+    let answer = serde_json::to_value(&key)
+        .map_err(|e| DbError::InternalError(format!("Failed to write the key: {}", e)))?;
+    Ok((StatusCode::CREATED, Json(answer)))
 }
 
 /// Both ends of an edge collection: the collections its `_from` and its

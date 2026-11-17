@@ -31,8 +31,13 @@ pub struct ForeignKeySpec {
     /// Whether the field holds the parent's `_key` or its `_id`. When
     /// absent: `id` for an edge's `_from` / `_to`, else `key`.
     pub by: Option<ReferenceBy>,
-    /// `fk_<field>` when absent.
+    /// `fk_<field>` when absent (`fk_<field>_<references>` with `also`).
     pub name: Option<String>,
+    /// The other collections the field may name a document of, each
+    /// declared by a key of its own on the same field: see
+    /// [`Collection::add_foreign_keys_to`]. By `_id` only.
+    #[serde(default)]
+    pub also: Vec<String>,
 }
 
 impl ForeignKeySpec {
@@ -327,10 +332,29 @@ impl Collection {
                     .to_string(),
             ));
         }
-        let name = spec
-            .name
-            .clone()
-            .unwrap_or_else(|| format!("fk_{}", field.trim_start_matches('_')));
+        if !spec.also.is_empty() {
+            if by != ReferenceBy::Id {
+                return Err(DbError::BadRequest(
+                    "A field names documents of several collections by their _id only: \
+                     a _key does not say which collection it is of"
+                        .to_string(),
+                ));
+            }
+            if spec.also.iter().any(|other| other == references) {
+                return Err(DbError::BadRequest(format!(
+                    "'{}' is the collection the key refers to: 'also' lists the others",
+                    references
+                )));
+            }
+        }
+        let name = spec.name.clone().unwrap_or_else(|| {
+            let field = field.trim_start_matches('_');
+            if spec.also.is_empty() {
+                format!("fk_{}", field)
+            } else {
+                format!("fk_{}_{}", field, references)
+            }
+        });
         if name.is_empty() {
             return Err(DbError::BadRequest(
                 "A foreign key's name cannot be empty".to_string(),
@@ -372,7 +396,17 @@ impl Collection {
                 name
             )));
         }
-        if before.iter().any(|k| k.field == field) {
+        // One key per field, unless the field names documents of several
+        // collections: then one key per collection, each listing the
+        // others.
+        let beside = |held: &ForeignKey| {
+            held.by == ReferenceBy::Id
+                && by == ReferenceBy::Id
+                && held.references != references
+                && held.also.iter().any(|other| other == references)
+                && spec.also.iter().any(|other| other == &held.references)
+        };
+        if before.iter().any(|k| k.field == field && !beside(k)) {
             return Err(DbError::ConflictError(format!(
                 "'{}' already has a foreign key",
                 field
@@ -409,6 +443,7 @@ impl Collection {
             references: references.to_string(),
             on_delete,
             index,
+            also: spec.also.clone(),
         };
         let mut after = before.clone();
         after.push(key.clone());
@@ -489,6 +524,56 @@ impl Collection {
         }
     }
 
+    /// Declare that `field` holds the `_id` of a document of one of
+    /// `parents`: one key per collection, each naming the others, so that
+    /// a reference is checked by the key of the collection it names, and a
+    /// delete in any of them restricts or cascades. All or none: when one
+    /// is refused, those declared before it are taken back.
+    pub fn add_foreign_keys_to(
+        &self,
+        field: &str,
+        parents: &[String],
+        on_delete: OnDelete,
+    ) -> DbResult<Vec<ForeignKey>> {
+        if parents.len() < 2 {
+            return Err(DbError::BadRequest(
+                "'references' as a list names two collections or more".to_string(),
+            ));
+        }
+        let mut declared: Vec<ForeignKey> = Vec::new();
+        for parent in parents {
+            let spec = ForeignKeySpec {
+                field: field.to_string(),
+                references: parent.clone(),
+                on_delete,
+                by: Some(ReferenceBy::Id),
+                name: None,
+                also: parents
+                    .iter()
+                    .filter(|other| *other != parent)
+                    .cloned()
+                    .collect(),
+            };
+            match self.add_foreign_key(spec) {
+                Ok(key) => declared.push(key),
+                Err(e) => {
+                    for key in &declared {
+                        if let Err(undo) = self.drop_foreign_key(&key.name) {
+                            tracing::warn!(
+                                "The key '{}' of '{}' could not be taken back: {}",
+                                key.name,
+                                self.name,
+                                undo
+                            );
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(declared)
+    }
+
     /// Remove a constraint dropped on another node. Idempotent.
     pub fn apply_foreign_key_drop(&self, name: &str) -> DbResult<()> {
         match self.drop_foreign_key(name) {
@@ -540,6 +625,7 @@ impl Collection {
             references: references.to_string(),
             on_delete: spec.on_delete,
             index: String::new(),
+            also: spec.also.clone(),
         };
 
         let mut known: HashMap<String, bool> = HashMap::new();

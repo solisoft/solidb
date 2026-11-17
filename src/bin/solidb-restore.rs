@@ -1746,7 +1746,7 @@ async fn declare_foreign_keys(
             path_seg(&collection)
         );
         let mut body = serde_json::Map::new();
-        for field in ["name", "field", "references", "on_delete", "by"] {
+        for field in ["name", "field", "references", "on_delete", "by", "also"] {
             if let Some(value) = key.get(field).filter(|v| !v.is_null()) {
                 body.insert(field.to_string(), value.clone());
             }

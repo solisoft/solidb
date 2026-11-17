@@ -846,3 +846,101 @@ fn the_constraint_check_reports_orphans_and_duplicates() {
     assert_eq!(s.orders.count(), 2);
     assert_eq!(s.customers.count(), 4);
 }
+
+/// Card #964: an edge end that links several vertex collections. One key
+/// per collection on the same field, each naming the others: a reference
+/// is checked by the key of the collection it names, and a delete in any
+/// of them cascades.
+#[test]
+fn an_edge_end_may_name_documents_of_several_collections() {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.initialize().unwrap();
+    engine.create_database("app".to_string()).unwrap();
+    let db = engine.get_database("app").unwrap();
+    for name in ["people", "firms", "things"] {
+        db.create_collection(name.to_string(), None).unwrap();
+    }
+    db.create_collection("links".to_string(), Some("edge".to_string()))
+        .unwrap();
+    engine.initialize_transactions().unwrap();
+    let (people, firms, links) = (
+        db.get_collection("people").unwrap(),
+        db.get_collection("firms").unwrap(),
+        db.get_collection("links").unwrap(),
+    );
+    people.insert(json!({"_key": "alice"})).unwrap();
+    firms.insert(json!({"_key": "acme"})).unwrap();
+    db.get_collection("things")
+        .unwrap()
+        .insert(json!({"_key": "x"}))
+        .unwrap();
+    // An edge stored before the keys exist, from a firm.
+    links
+        .insert(json!({"_key": "e0", "_from": "firms/acme", "_to": "people/alice"}))
+        .unwrap();
+
+    let parents = ["people".to_string(), "firms".to_string()];
+    // One collection is an ordinary key; one that does not exist takes
+    // back what was declared before it.
+    assert!(links
+        .add_foreign_keys_to("_from", &parents[..1], OnDelete::Cascade)
+        .is_err());
+    assert!(links
+        .add_foreign_keys_to(
+            "_from",
+            &["people".to_string(), "nowhere".to_string()],
+            OnDelete::Cascade
+        )
+        .is_err());
+    assert!(links.foreign_keys().is_empty());
+
+    let keys = links
+        .add_foreign_keys_to("_from", &parents, OnDelete::Cascade)
+        .unwrap();
+    let names: Vec<&str> = keys.iter().map(|key| key.name.as_str()).collect();
+    assert_eq!(names, ["fk_from_people", "fk_from_firms"]);
+    assert_eq!(keys[0].also, ["firms"]);
+    assert_eq!(keys[1].also, ["people"]);
+    // A third key on the field that does not belong with them is refused.
+    assert!(links
+        .add_foreign_key(ForeignKeySpec::new("_from", "things", OnDelete::Cascade))
+        .is_err());
+
+    // A reference is checked by the key of the collection it names.
+    let edge = |key: &str, from: &str| json!({"_key": key, "_from": from, "_to": "people/alice"});
+    links.insert(edge("e1", "people/alice")).unwrap();
+    links.insert(edge("e2", "firms/acme")).unwrap();
+    for (key, from) in [
+        ("e3", "people/nobody"),
+        ("e4", "firms/nobody"),
+        ("e5", "things/x"),
+    ] {
+        assert!(is_violation(&links.insert(edge(key, from))), "{from}");
+    }
+    assert_eq!(links.count(), 3);
+    // No orphan, seen from either key.
+    for (parent, other) in [("people", "firms"), ("firms", "people")] {
+        let spec = ForeignKeySpec {
+            also: vec![other.to_string()],
+            by: Some(solidb::storage::foreign_keys::ReferenceBy::Id),
+            ..ForeignKeySpec::new("_from", parent, OnDelete::Cascade)
+        };
+        assert_eq!(
+            links.foreign_key_orphans(&spec).unwrap().count,
+            0,
+            "{parent}"
+        );
+    }
+
+    // A delete in either collection takes its edges, and only them.
+    firms.delete("acme").unwrap();
+    let left: Vec<String> = {
+        let mut keys: Vec<String> = links.all().into_iter().map(|doc| doc.key).collect();
+        keys.sort();
+        keys
+    };
+    assert_eq!(left, ["e1"]);
+    people.delete("alice").unwrap();
+    assert_eq!(links.count(), 0);
+}

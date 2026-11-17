@@ -502,4 +502,56 @@ async fn both_ends_of_an_edge_collection_in_one_call() {
     assert!(status.is_client_error(), "{status} {out}");
     let (_, listed) = call(&app, t, "GET", &keys, None).await;
     assert_eq!(listed["foreign_keys"].as_array().unwrap().len(), 2);
+
+    // An end that links several vertex collections: `references` as a
+    // list declares one key per collection (card #964).
+    let (status, _) = call(&app, t, "DELETE", &format!("{keys}/fk_to"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &keys,
+        Some(json!({"field": "_to", "references": ["firms", "people"], "name": "mine"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{out}");
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &keys,
+        Some(json!({"field": "_to", "references": ["firms", "people"], "on_delete": "cascade"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{out}");
+    let declared: Vec<&str> = out["foreign_keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|key| key["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(declared, ["fk_to_firms", "fk_to_people"]);
+    assert_eq!(out["foreign_keys"][0]["also"], json!(["people"]));
+    let to = |target: &str| json!({"_from": "people/ann", "_to": target});
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/works_at"),
+        Some(to("people/ann")),
+    )
+    .await;
+    assert!(status.is_success(), "{status} {out}");
+    for target in ["people/nobody", "firms/nobody", "works_at/x"] {
+        let (status, out) = call(
+            &app,
+            t,
+            "POST",
+            &format!("{docs}/works_at"),
+            Some(to(target)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{target}: {out}");
+    }
 }
