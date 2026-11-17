@@ -73,6 +73,18 @@ impl Collection {
 
     /// Get or create cached schema validator
     pub fn get_cached_schema_validator(&self) -> Result<Option<SchemaValidator>, DbError> {
+        let rules = self.active_field_rules();
+        let Some(rules) = rules else {
+            return self.schema_validator_alone();
+        };
+        Ok(Some(match self.schema_validator_alone()? {
+            Some(validator) => validator.with_rules(rules),
+            None => SchemaValidator::of_rules(rules),
+        }))
+    }
+
+    /// The validator of the collection's JSON Schema, if it has one.
+    fn schema_validator_alone(&self) -> Result<Option<SchemaValidator>, DbError> {
         if let Some(stored) = self.stored_schema() {
             let (schema_hash, ref schema) = *stored;
 
@@ -156,6 +168,59 @@ impl Collection {
             .ok()
             .flatten()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    // ==================== Field rules ====================
+
+    /// The collection's field rules, in the order they were declared.
+    pub fn field_rules(&self) -> Arc<Vec<crate::storage::field_rules::FieldRule>> {
+        self.index_meta()
+            .map(|meta| meta.rules.clone())
+            .unwrap_or_default()
+    }
+
+    /// The rules a write through this handle is held to: none for a write
+    /// another node already accepted (`foreign_keys::unchecked`), which a
+    /// replica that refused it would diverge from.
+    pub(crate) fn active_field_rules(
+        &self,
+    ) -> Option<Arc<Vec<crate::storage::field_rules::FieldRule>>> {
+        let rules = self.index_meta()?.rules.clone();
+        (!rules.is_empty() && !crate::storage::foreign_keys::is_unchecked()).then_some(rules)
+    }
+
+    /// Refuse `view` when it breaks a rule. `view` holds at least the
+    /// fields `IndexMetaSnapshot::read_fields` names, which the rules'
+    /// fields are among: the raw write path checks its documents here.
+    pub(crate) fn check_field_rules(&self, view: &Value) -> DbResult<()> {
+        let Some(rules) = self.active_field_rules() else {
+            return Ok(());
+        };
+        match crate::storage::field_rules::broken(&rules, view) {
+            Some(what) => Err(crate::storage::field_rules::refused(&what)),
+            None => Ok(()),
+        }
+    }
+
+    /// Declare the collection's field rules, in place of those it had; an
+    /// empty list removes them. Documents already stored are not checked:
+    /// a rule holds the writes made from now on.
+    pub fn set_field_rules(
+        &self,
+        rules: Vec<crate::storage::field_rules::FieldRule>,
+    ) -> DbResult<()> {
+        crate::storage::field_rules::check_definition(&rules)?;
+        let cf = self.live_cf()?;
+        let written = if rules.is_empty() {
+            self.db.delete_ks(&cf, FIELD_RULES_KEY.as_bytes())
+        } else {
+            self.db
+                .put_ks(&cf, FIELD_RULES_KEY.as_bytes(), serde_json::to_vec(&rules)?)
+        };
+        // After the write, as for an index: a snapshot read before it is
+        // not served under the new epoch.
+        self.invalidate_index_meta();
+        written.map_err(|e| DbError::InternalError(format!("Failed to set field rules: {}", e)))
     }
 
     /// Remove JSON schema

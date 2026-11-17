@@ -68,6 +68,7 @@ pub const LEGACY_TTL_EXPIRY_PREFIX: &str = "doc:ttl_exp:";
 pub const BLO_IDX_PREFIX: &str = "blo_idx:"; // Bloom filter index prefix
 pub const CFO_IDX_PREFIX: &str = "cfo_idx:"; // Cuckoo filter index prefix
 pub const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
+pub const FIELD_RULES_KEY: &str = "_stats:field_rules"; // storage::field_rules
 pub const VEC_META_PREFIX: &str = "vec_meta:"; // Vector index metadata
 pub const VEC_DATA_PREFIX: &str = "vec_data:"; // Vector index data (serialized VectorIndex)
 pub const EMBED_PENDING_PREFIX: &str = "embed_pending:"; // Pending auto-embedding markers (index:doc_key -> empty)

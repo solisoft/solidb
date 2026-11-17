@@ -1260,6 +1260,9 @@ impl Collection {
             positions.insert(key.clone(), pending.len());
             pending.push((key, old_value, doc, existed));
         }
+        for (_, _, doc, _) in &pending {
+            self.check_field_rules(&doc.data)?;
+        }
 
         // The documents this batch creates are numbered, in batch order;
         // those it merges into keep the number they have.

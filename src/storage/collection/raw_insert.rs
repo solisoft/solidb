@@ -181,6 +181,9 @@ impl Collection {
         let (key, fresh) = document_key(key, doc)?;
         let header = NewHeader::new(&self.name, key);
         let view = indexed_view(&header.view(), &doc.data, &meta.read_fields)?;
+        if let Err(e) = self.check_field_rules(&view) {
+            return Some(Err(e));
+        }
         let stored = match header.stored(&doc.data) {
             Ok(stored) => stored,
             Err(e) => return Some(Err(e)),
@@ -275,6 +278,12 @@ impl Collection {
             .zip(docs)
             .map(|(header, doc)| indexed_view(&header.view(), &doc.data, &meta.read_fields))
             .collect::<Option<_>>()?;
+        if let Some(e) = views
+            .iter()
+            .find_map(|view| self.check_field_rules(view).err())
+        {
+            return Some(Err(e));
+        }
         Some(self.insert_batch_raw_checked(meta, docs, &headers, &views, all_fresh))
     }
 
@@ -445,6 +454,7 @@ impl Collection {
         ) else {
             return Ok(None);
         };
+        self.check_field_rules(&new_view)?;
         let (created_text, updated_text) =
             (stored_timestamp(&created_at), stored_timestamp(&updated_at));
         let stored = serialize_doc_raw(doc_key, id, &rev, &created_text, &updated_text, &data)?;

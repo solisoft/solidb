@@ -623,6 +623,13 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/schema",
             delete(super::handlers::delete_collection_schema),
         )
+        // Field rules: required, type and bounds of top-level fields
+        .route(
+            "/_api/database/{db}/collection/{name}/rules",
+            get(super::handlers::get_field_rules)
+                .put(super::handlers::set_field_rules)
+                .delete(super::handlers::delete_field_rules),
+        )
         // Column blocks of a time series collection
         .route(
             "/_api/database/{db}/collection/{name}/blocks",

@@ -90,6 +90,57 @@ pub async fn get_collection_schema(
     }))
 }
 
+// ==================== Field rules ====================
+
+/// The field rules of a collection, or those to declare.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FieldRulesBody {
+    pub rules: Vec<crate::storage::field_rules::FieldRule>,
+}
+
+/// The field rules of a collection.
+pub async fn get_field_rules(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<Json<FieldRulesBody>, DbError> {
+    let collection = state
+        .storage
+        .get_database(&db_name)?
+        .get_collection(&coll_name)?;
+    Ok(Json(FieldRulesBody {
+        rules: collection.field_rules().as_ref().clone(),
+    }))
+}
+
+/// Declare the field rules of a collection, in place of those it had.
+pub async fn set_field_rules(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(body): Json<FieldRulesBody>,
+) -> Result<Json<FieldRulesBody>, DbError> {
+    let collection = state
+        .storage
+        .get_database(&db_name)?
+        .get_collection(&coll_name)?;
+    collection.set_field_rules(body.rules)?;
+    Ok(Json(FieldRulesBody {
+        rules: collection.field_rules().as_ref().clone(),
+    }))
+}
+
+/// Remove the field rules of a collection.
+pub async fn delete_field_rules(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+) -> Result<StatusCode, DbError> {
+    let collection = state
+        .storage
+        .get_database(&db_name)?
+        .get_collection(&coll_name)?;
+    collection.set_field_rules(Vec::new())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Remove JSON schema from a collection
 pub async fn delete_collection_schema(
     State(state): State<AppState>,

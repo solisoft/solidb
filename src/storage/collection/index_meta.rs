@@ -32,6 +32,9 @@ pub(crate) struct IndexMetaSnapshot {
     /// Vector index configurations (`vec_meta:`). Every document write reads
     /// them, which used to open an iterator per write.
     pub vector: Vec<VectorIndexConfig>,
+    /// The collection's field rules (`storage::field_rules`): every
+    /// document write checks them, on the same view as the index entries.
+    pub rules: Arc<Vec<crate::storage::field_rules::FieldRule>>,
     /// The top-level fields any of the definitions above reads: see
     /// [`Collection::indexed_view`].
     pub read_fields: Vec<String>,
@@ -52,6 +55,7 @@ impl IndexMetaSnapshot {
                     .iter()
                     .filter_map(|v| v.embedding_source.as_ref()),
             );
+        let paths = paths.chain(self.rules.iter().map(|rule| &rule.field));
         let mut fields: Vec<String> = Vec::new();
         for path in paths {
             let top = path.split('.').next().unwrap_or_default();
@@ -139,6 +143,15 @@ impl Collection {
         load!(GEO_META_PREFIX, snapshot.geo);
         load!(TTL_META_PREFIX, snapshot.ttl);
         load!(VEC_META_PREFIX, snapshot.vector);
+        if let Some(rules) = self
+            .db
+            .get_ks(&cf, FIELD_RULES_KEY.as_bytes())
+            .ok()
+            .flatten()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        {
+            snapshot.rules = Arc::new(rules);
+        }
         snapshot.collect_read_fields();
 
         let snapshot = Arc::new(snapshot);

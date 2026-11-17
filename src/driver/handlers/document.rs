@@ -732,6 +732,148 @@ mod tests {
         assert_eq!(raw_coll.count(), dec_coll.count());
     }
 
+    /// Card #848: a collection with field rules stays on the raw path, and
+    /// a write that breaks one is refused there as the decoded path refuses
+    /// it, with nothing written; a rule on a field no index reads is
+    /// checked too.
+    #[test]
+    fn raw_writes_are_held_to_the_field_rules() {
+        let (_t1, raw_engine, rh) = engine_with_indexes();
+        let (_t2, dec_engine, dh) = engine_with_indexes();
+        let rules: Vec<crate::storage::field_rules::FieldRule> = serde_json::from_value(json!([
+            {"field": "status", "required": true, "in": ["pending", "shipped"]},
+            {"field": "n", "type": "number", "min": 0},
+            {"field": "label", "type": "string"},
+            {"field": "qty", "type": "integer", "max": 10},
+        ]))
+        .unwrap();
+        for engine in [&raw_engine, &dec_engine] {
+            let coll = engine
+                .get_database("d")
+                .unwrap()
+                .get_collection("c")
+                .unwrap();
+            coll.set_field_rules(rules.clone()).unwrap();
+            assert!(coll.raw_write_ready().is_some());
+        }
+        let insert = |key: &str, doc: serde_json::Value| Command::Insert {
+            database: "d".into(),
+            collection: "c".into(),
+            key: Some(key.into()),
+            document: doc,
+        };
+        let update = |key: &str, doc: serde_json::Value| Command::Update {
+            database: "d".into(),
+            collection: "c".into(),
+            key: key.into(),
+            document: doc,
+            merge: true,
+        };
+        let bulk = |documents: Vec<serde_json::Value>| Command::BulkInsert {
+            database: "d".into(),
+            collection: "c".into(),
+            documents,
+        };
+        // (command, refused)
+        let commands = vec![
+            (
+                insert(
+                    "ok1",
+                    json!({"status": "pending", "n": 1, "label": "a", "qty": 3}),
+                ),
+                false,
+            ),
+            (
+                insert(
+                    "ok2",
+                    json!({"status": "shipped", "n": 0.5, "qty": 10.0, "other": [1]}),
+                ),
+                false,
+            ),
+            (
+                insert("ok3", json!({"status": "pending", "n": null})),
+                false,
+            ),
+            (insert("no-status", json!({"n": 1})), true),
+            (insert("null-status", json!({"status": null})), true),
+            (insert("bad-status", json!({"status": "lost"})), true),
+            (
+                insert("bad-n", json!({"status": "pending", "n": "1"})),
+                true,
+            ),
+            (
+                insert("low-n", json!({"status": "pending", "n": -0.5})),
+                true,
+            ),
+            (
+                insert("bad-label", json!({"status": "pending", "label": 7})),
+                true,
+            ),
+            (
+                insert("bad-qty", json!({"status": "pending", "qty": 2.5})),
+                true,
+            ),
+            (
+                insert("high-qty", json!({"status": "pending", "qty": 11})),
+                true,
+            ),
+            // Broken and already stored: the rule is what is reported.
+            (insert("ok1", json!({"status": "lost"})), true),
+            (
+                bulk(vec![
+                    json!({"_key": "b1", "status": "pending"}),
+                    json!({"_key": "b2", "status": "shipped", "label": "x"}),
+                ]),
+                false,
+            ),
+            // One document of a batch breaks a rule: none is written.
+            (
+                bulk(vec![
+                    json!({"_key": "b3", "status": "pending"}),
+                    json!({"_key": "b4", "status": "pending", "label": false}),
+                ]),
+                true,
+            ),
+            (update("ok1", json!({"label": "b", "n": 2})), false),
+            (update("ok1", json!({"status": "lost"})), true),
+            (update("ok1", json!({"status": null})), true),
+            (update("ok2", json!({"qty": 12})), true),
+            (update("ok2", json!({"label": [1]})), true),
+            (update("ok3", json!({"n": 3, "extra": {"a": 1}})), false),
+        ];
+        for (cmd, refused) in commands {
+            let r = raw(&rh, &cmd).unwrap_or_else(|| panic!("{cmd:?} went the decoded way"));
+            let d = decoded(&dh, cmd.clone());
+            assert_eq!(
+                matches!(&r, Response::Error { .. }),
+                refused,
+                "{cmd:?}: {r:?}"
+            );
+            if refused {
+                assert!(
+                    format!("{r:?}").contains("Schema validation failed"),
+                    "{r:?}"
+                );
+            }
+            assert_eq!(reply(r), reply(d), "{cmd:?}");
+            assert_eq!(
+                contents(&raw_engine),
+                contents(&dec_engine),
+                "after {cmd:?}"
+            );
+        }
+        let coll = raw_engine
+            .get_database("d")
+            .unwrap()
+            .get_collection("c")
+            .unwrap();
+        assert_eq!(coll.count(), 5);
+        // Without the rules the same write is taken.
+        coll.set_field_rules(Vec::new()).unwrap();
+        let taken = raw(&rh, &insert("free", json!({"status": "lost", "n": -1}))).unwrap();
+        assert!(!matches!(taken, Response::Error { .. }), "{taken:?}");
+    }
+
     /// What the raw path leaves to the decoded one.
     #[test]
     fn raw_writes_fall_back() {

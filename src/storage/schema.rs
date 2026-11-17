@@ -57,6 +57,9 @@ impl CollectionSchema {
 pub struct SchemaValidator {
     schema: CollectionSchema,
     validator: Option<jsonschema::Validator>,
+    /// The collection's field rules (`storage::field_rules`), checked
+    /// before the schema whatever its mode.
+    rules: std::sync::Arc<Vec<super::field_rules::FieldRule>>,
 }
 
 impl SchemaValidator {
@@ -71,11 +74,37 @@ impl SchemaValidator {
             None
         };
 
-        Ok(Self { schema, validator })
+        Ok(Self {
+            schema,
+            validator,
+            rules: Default::default(),
+        })
+    }
+
+    /// A validator for a collection that has field rules and no schema.
+    pub fn of_rules(rules: std::sync::Arc<Vec<super::field_rules::FieldRule>>) -> Self {
+        Self {
+            schema: CollectionSchema::new(
+                "rules".to_string(),
+                Value::Null,
+                SchemaValidationMode::Off,
+            ),
+            validator: None,
+            rules,
+        }
+    }
+
+    /// This validator, checking `rules` as well.
+    pub fn with_rules(mut self, rules: std::sync::Arc<Vec<super::field_rules::FieldRule>>) -> Self {
+        self.rules = rules;
+        self
     }
 
     /// Validate a document against the schema
     pub fn validate(&self, document: &Value) -> Result<(), SchemaValidationError> {
+        if let Some(broken) = super::field_rules::broken(&self.rules, document) {
+            return Err(SchemaValidationError::Rule(broken));
+        }
         if let Some(ref validator) = self.validator {
             match self.schema.validation_mode {
                 SchemaValidationMode::Off => Ok(()),
@@ -129,6 +158,9 @@ pub enum SchemaCompilationError {
 pub enum SchemaValidationError {
     #[error("Schema validation failed with violations")]
     SchemaViolations(Vec<ValidationViolation>),
+    /// A field rule (`storage::field_rules`) is broken.
+    #[error("{0}")]
+    Rule(String),
 }
 
 /// Individual schema violation detail

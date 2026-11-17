@@ -605,6 +605,39 @@ way. `compute_index_entries_for_update` writes nothing for an index whose
 values did not change: a repair that counts on an update rewriting an
 entry has to call for it.
 
+### Field rules
+
+A collection declares what it asks of top-level fields of its documents:
+required, a type, bounds, a list of values (`storage/field_rules.rs`; stored
+under `_stats:field_rules`; `Collection::set_field_rules` and friends in
+`collection/schema.rs`; endpoints in `server/handlers/schema.rs`). Unlike a
+JSON schema, rules keep the raw write path.
+
+Rules that keep it sound:
+
+- **The rules live in `IndexMetaSnapshot`**, and their fields are among its
+  `read_fields`: the view the raw path decodes (`raw_write::indexed_view`)
+  holds them, and `Collection::check_field_rules` runs on it in
+  `insert_raw`, `insert_batch_raw` and `merge_update_raw`. Setting rules
+  calls `invalidate_index_meta`, after the write.
+- **The decoded path checks them through the schema validator**:
+  `get_cached_schema_validator` returns a validator when the collection has
+  a schema *or* rules, so every site that validates a schema checks the
+  rules, with the same error (`field_rules::refused`). A validator is
+  therefore present for a collection with rules alone: code that asks
+  "is there a schema" for another reason must ask `stored_schema()`.
+- **One function decides**, `field_rules::broken`, on both paths: the raw
+  path's answer and error are the decoded path's
+  (`raw_writes_are_held_to_the_field_rules` compares replies and stored
+  bytes).
+- **A write path that validates no schema must call `check_field_rules`
+  itself**: `insert_tx`, `update_tx_guarded` and `upsert_batch` do. A new
+  write path does one or the other.
+- A replicated write is not checked (`active_field_rules` returns nothing
+  inside `foreign_keys::unchecked`): the origin accepted it.
+- Rules are local to a node, as a JSON schema is: not replicated, not in a
+  full sync, not dumped.
+
 ### Foreign keys
 
 A child collection declares that a top-level field holds the `_key` of a

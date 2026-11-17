@@ -534,6 +534,66 @@
         </div>
       </section>
 
+      <!-- Field Rules Section -->
+      <section id="field-rules" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+               Field Rules
+            </h2>
+            <p class="text-sm text-gray-400 mt-3">What a collection asks of a top-level field of its documents: that it is there, its type, its bounds, a list of values. A rule is checked on every write of the collection (the document API, SDBQL, the native driver, transactions, imports) and a write that breaks one is refused with <code class="text-indigo-300">400</code>, nothing written. Unlike a JSON schema, rules keep the native driver's fast write path: measured in process, an insert costs 6% more with three rules, 67% more with the equivalent JSON schema. Use a schema when you need more than this (nested fields, patterns, combinations).</p>
+          </div>
+          <div class="divide-y divide-white/5">
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-4">
+                 <span class="px-2 py-1 bg-amber-500/20 text-amber-400 text-xs font-bold rounded">PUT</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/rules</code>
+               </div>
+               <p class="text-sm text-gray-400 mb-4">Declare the collection's rules, in place of those it had. The response is the rules as stored. Documents already in the collection are not checked: a rule holds the writes made from now on, an update of an older document included.</p>
+               <div class="overflow-x-auto mb-4">
+                 <table class="w-full text-sm text-left">
+                   <thead class="text-xs text-gray-400 uppercase bg-white/5">
+                     <tr><th class="p-3">Key</th><th class="p-3">Meaning</th></tr>
+                   </thead>
+                   <tbody class="divide-y divide-white/5 text-gray-400">
+                     <tr><td class="p-3 text-fuchsia-400 font-mono">field</td><td class="p-3">A top-level field of the document. Not a path (<code class="text-indigo-300">a.b</code>), not a system field.</td></tr>
+                     <tr><td class="p-3 text-fuchsia-400 font-mono">required</td><td class="p-3">The field is present and not null. Without it, a document that leaves the field out, or sets it to null, passes the rule.</td></tr>
+                     <tr><td class="p-3 text-fuchsia-400 font-mono">type</td><td class="p-3"><code class="text-indigo-300">string</code>, <code class="text-indigo-300">number</code>, <code class="text-indigo-300">integer</code> (a number without a fractional part), <code class="text-indigo-300">bool</code>, <code class="text-indigo-300">object</code> or <code class="text-indigo-300">array</code>.</td></tr>
+                     <tr><td class="p-3 text-fuchsia-400 font-mono">min, max</td><td class="p-3">The value is a number, at least <code class="text-indigo-300">min</code> and at most <code class="text-indigo-300">max</code>.</td></tr>
+                     <tr><td class="p-3 text-fuchsia-400 font-mono">in</td><td class="p-3">The value is one of these strings, numbers or booleans (<code class="text-indigo-300">1</code> and <code class="text-indigo-300">1.0</code> are the same value).</td></tr>
+                   </tbody>
+                 </table>
+               </div>
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 whitespace-pre">{
+  "rules": [
+    {"field": "name", "required": true, "type": "string"},
+    {"field": "price", "type": "number", "min": 0, "max": 1000},
+    {"field": "status", "in": ["open", "paid"]}
+  ]
+}</div>
+               <p class="text-sm text-gray-400 mt-4">A write that breaks a rule, whatever the transport:</p>
+               <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 whitespace-pre mt-2">400 {"code": 400, "error": "Schema validation failed: 'price' must be at least 0", "type": "InvalidDocument"}</div>
+               <p class="text-sm text-gray-400 mt-4">At most 64 rules, one per field. A rule that asks for nothing, or names a key that is not listed above, is refused. Rules are stored on the node that takes the request: like a JSON schema they are not replicated and not part of a dump, so declare them on each node.</p>
+             </div>
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded">GET</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/rules</code>
+               </div>
+               <p class="text-sm text-gray-400">The collection's rules, in the order they were declared: <code class="text-indigo-300">{"rules": [&hellip;]}</code>, an empty list when it has none.</p>
+             </div>
+             <div class="p-6 hover:bg-white/5 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                 <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                 <code class="text-gray-300">/_api/database/:db/collection/:name/rules</code>
+               </div>
+               <p class="text-sm text-gray-400">Remove the rules (<code class="text-indigo-300">204</code>).</p>
+             </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Columnar Collections Section -->
       <section id="columnar" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
