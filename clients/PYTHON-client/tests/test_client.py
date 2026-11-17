@@ -165,3 +165,42 @@ def test_counters(client):
     client.delete_counter(db, "invoices", "number")
     assert client.list_counters(db, "invoices")["counters"] == []
     client.delete_database(db)
+
+
+def test_field_rules(client):
+    db = "python_rules_db"
+    try:
+        client.delete_database(db)
+    except ServerError:
+        pass
+    client.create_database(db)
+    client.create_collection(db, "goods")
+
+    assert client.get_field_rules(db, "goods")["rules"] == []
+    declared = client.set_field_rules(db, "goods", [
+        {"field": "name", "required": True, "type": "string"},
+        {"field": "price", "min": 0},
+        {"field": "status", "in": ["open", "paid"]},
+    ])
+    assert [rule["field"] for rule in declared["rules"]] == ["name", "price", "status"]
+    assert client.get_field_rules(db, "goods") == declared
+
+    # A write that breaks a rule is refused, and nothing is stored.
+    with pytest.raises(ServerError):
+        client.insert(db, "goods", {"price": 3})
+    with pytest.raises(ServerError):
+        client.insert(db, "goods", {"name": "A", "price": -1})
+    with pytest.raises(ServerError):
+        client.insert(db, "goods", {"name": "A", "status": "lost"})
+    doc = client.insert(db, "goods", {"name": "A", "price": 3, "status": "open"})
+    with pytest.raises(ServerError):
+        client.update(db, "goods", doc["_key"], {"price": -1})
+
+    # A definition that cannot be declared changes nothing.
+    with pytest.raises(ServerError):
+        client.set_field_rules(db, "goods", [{"field": "x"}])
+    assert client.get_field_rules(db, "goods") == declared
+
+    assert client.set_field_rules(db, "goods", [])["rules"] == []
+    client.insert(db, "goods", {"price": -5})
+    client.delete_database(db)

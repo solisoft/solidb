@@ -69,6 +69,26 @@ defmodule SoliDB.IndexesOps do
     Client.send_command(client, "check_foreign_key", args)
   end
 
+  # --- Field rules ---
+
+  @doc """
+  The field rules of `collection`, in the order they were declared.
+  """
+  def get_field_rules(client, collection) do
+    Client.send_command(client, "get_field_rules", %{database: Client.get_database(client), collection: collection})
+  end
+
+  @doc """
+  Declare what `collection` asks of top-level fields of its documents, in
+  place of the rules it had; an empty list removes them. A rule is a map
+  with `field` and any of `required`, `type` ("string", "number",
+  "integer", "bool", "object", "array"), `min`, `max` and `in`. Every write
+  is then held to them; documents already stored are not checked.
+  """
+  def set_field_rules(client, collection, rules) do
+    Client.send_command(client, "set_field_rules", %{database: Client.get_database(client), collection: collection, rules: rules})
+  end
+
   # --- Counter fields ---
 
   @doc """

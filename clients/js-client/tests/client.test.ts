@@ -93,6 +93,22 @@ async function runTests() {
         assert.deepStrictEqual((await client.indexes.listForeignKeys('orders')).foreign_keys, []);
         console.log('Foreign keys OK');
 
+        // Field rules
+        await client.createCollection(DB, 'goods');
+        assert.deepStrictEqual((await client.indexes.getFieldRules('goods')).rules, []);
+        const declared = await client.indexes.setFieldRules('goods', [
+            { field: 'name', required: true, type: 'string' },
+            { field: 'price', min: 0 }
+        ]);
+        assert.deepStrictEqual(declared.rules.map((rule: any) => rule.field), ['name', 'price']);
+        assert.deepStrictEqual(await client.indexes.getFieldRules('goods'), declared);
+        await assert.rejects(client.insert(DB, 'goods', { price: 3 }));
+        await assert.rejects(client.insert(DB, 'goods', { name: 'A', price: -1 }));
+        await client.insert(DB, 'goods', { name: 'A', price: 3 });
+        assert.deepStrictEqual((await client.indexes.setFieldRules('goods', [])).rules, []);
+        await client.insert(DB, 'goods', { price: -5 });
+        console.log('Field rules OK');
+
         // Counter fields
         await client.createCollection(DB, 'invoices');
         const counter = await client.indexes.createCounter('invoices', 'number', {

@@ -456,6 +456,24 @@ $client-&gt;deleteForeignKey('mydb', 'orders', 'fk_customer');</code></pre>
         </div>
       </section>
 
+      <!-- Field rules -->
+      <section id="field-rules" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Field Rules</h3>
+        <p class="text-sm text-gray-400 mb-4">What a collection asks of a top-level field of its documents: that it is there, its type, its bounds, the values it may take. Every write is held to them, without slowing the driver's inserts as a JSON schema does; documents already stored are not checked. Setting the rules replaces those the collection had. See <a href="/docs/api-collections#field-rules" class="text-cyan-400 hover:underline">Field Rules</a>.</p>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4">
+          <pre><code class="language-php">$client-&gt;setFieldRules('mydb', 'goods', [
+    ['field' =&gt; 'name', 'required' =&gt; true, 'type' =&gt; 'string'],
+    ['field' =&gt; 'price', 'type' =&gt; 'number', 'min' =&gt; 0, 'max' =&gt; 1000],
+    ['field' =&gt; 'status', 'in' =&gt; ['open', 'paid']],
+]);
+
+$client-&gt;insert('mydb', 'goods', ['price' =&gt; 3]);   // throws: 'name' is required
+
+$client-&gt;getFieldRules('mydb', 'goods');            // ['rules' =&gt; [...]]
+$client-&gt;setFieldRules('mydb', 'goods', []);        // removes them</code></pre>
+        </div>
+      </section>
+
       <!-- Counter fields -->
       <section id="counters" class="mb-12 scroll-mt-24">
         <h3 class="text-xl font-bold text-white mb-4">Counter Fields</h3>

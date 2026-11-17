@@ -167,6 +167,46 @@ func (i *IndexesClient) CheckForeignKey(collection, field, references, by string
 	return nil, nil
 }
 
+// GetFieldRules returns the field rules of a collection ("rules"), in the
+// order they were declared.
+func (i *IndexesClient) GetFieldRules(collection string) (map[string]interface{}, error) {
+	res, err := i.client.SendCommand("get_field_rules", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}
+
+// SetFieldRules declares what a collection asks of top-level fields of its
+// documents, in place of the rules it had; an empty slice removes them. A
+// rule is a map with "field" and any of "required", "type" ("string",
+// "number", "integer", "bool", "object", "array"), "min", "max" and "in".
+// Every write is then held to them; documents already stored are not
+// checked. It returns the rules as stored.
+func (i *IndexesClient) SetFieldRules(collection string, rules []map[string]interface{}) (map[string]interface{}, error) {
+	if rules == nil {
+		rules = []map[string]interface{}{}
+	}
+	res, err := i.client.SendCommand("set_field_rules", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+		"rules":      rules,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}
+
 // ListCounters returns the counter fields of a collection ("counters"),
 // each with its "state" ("next" is the next number).
 func (i *IndexesClient) ListCounters(collection string) (map[string]interface{}, error) {

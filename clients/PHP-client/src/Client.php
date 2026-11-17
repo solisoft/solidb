@@ -621,6 +621,39 @@ class Client
         ]);
     }
 
+    // --- Field rules ---
+
+    /**
+     * The field rules of $collection: ["rules" => [...]], in the order they
+     * were declared.
+     */
+    public function getFieldRules(string $database, string $collection): array
+    {
+        $res = $this->sendCommand('get_field_rules', [
+            'database' => $database,
+            'collection' => $collection
+        ]);
+        return $res['data'] ?? [];
+    }
+
+    /**
+     * Declare what $collection asks of top-level fields of its documents,
+     * in place of the rules it had; an empty array removes them. A rule is
+     * an array with "field" and any of "required", "type" ("string",
+     * "number", "integer", "bool", "object", "array"), "min", "max" and
+     * "in". Every write is then held to them; documents already stored are
+     * not checked. Returns the rules as stored.
+     */
+    public function setFieldRules(string $database, string $collection, array $rules): array
+    {
+        $res = $this->sendCommand('set_field_rules', [
+            'database' => $database,
+            'collection' => $collection,
+            'rules' => array_values($rules)
+        ]);
+        return $res['data'] ?? [];
+    }
+
     // --- Counter fields ---
 
     /**

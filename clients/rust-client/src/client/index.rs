@@ -164,6 +164,48 @@ impl SoliDBClient {
             .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
     }
 
+    /// The field rules of `collection`: `{"rules": [...]}`, in the order
+    /// they were declared.
+    pub async fn get_field_rules(
+        &mut self,
+        database: &str,
+        collection: &str,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::GetFieldRules {
+                database: database.to_string(),
+                collection: collection.to_string(),
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
+    /// Declare what `collection` asks of top-level fields of its
+    /// documents, in place of the rules it had; an empty list removes
+    /// them. A rule is an object with `field` and any of `required`
+    /// (present and not null), `type` ("string", "number", "integer",
+    /// "bool", "object", "array"), `min`, `max` and `in` (a list of
+    /// values). Every write of the collection is then held to them, and
+    /// one that breaks a rule is refused with nothing written; documents
+    /// already stored are not checked. Returns the rules as stored.
+    pub async fn set_field_rules(
+        &mut self,
+        database: &str,
+        collection: &str,
+        rules: Vec<Value>,
+    ) -> Result<Value, DriverError> {
+        let response = self
+            .send_command(Command::SetFieldRules {
+                database: database.to_string(),
+                collection: collection.to_string(),
+                rules,
+            })
+            .await?;
+        Self::extract_data(response)?
+            .ok_or_else(|| DriverError::ProtocolError("Expected data".to_string()))
+    }
+
     /// The counter fields of `collection`: `{"counters": [...]}`, each with
     /// its `state` (`next` is the next number).
     pub async fn list_counters(

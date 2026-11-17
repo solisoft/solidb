@@ -139,6 +139,20 @@ pub enum Command {
         #[serde(default)]
         by: Option<String>,
     },
+    /// The field rules of a collection.
+    GetFieldRules {
+        database: String,
+        collection: String,
+    },
+    /// Declare a collection's field rules in place of those it had; an
+    /// empty list removes them. Each rule is what
+    /// `PUT …/collection/{name}/rules` takes: `field`, and any of
+    /// `required`, `type`, `min`, `max`, `in`.
+    SetFieldRules {
+        database: String,
+        collection: String,
+        rules: Vec<Value>,
+    },
     /// The counter fields of a collection, each with its state.
     ListCounters {
         database: String,

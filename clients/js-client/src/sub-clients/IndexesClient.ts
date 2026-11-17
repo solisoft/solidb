@@ -108,6 +108,43 @@ export class IndexesClient {
         return this.client.sendCommand('check_foreign_key', args);
     }
 
+    // --- Field rules ---
+
+    /**
+     * The field rules of `collection`: `{ rules: [...] }`, in the order they
+     * were declared.
+     */
+    async getFieldRules(collection: string): Promise<any> {
+        return this.client.sendCommand('get_field_rules', {
+            database: this.client.database,
+            collection
+        });
+    }
+
+    /**
+     * Declare what `collection` asks of top-level fields of its documents,
+     * in place of the rules it had; an empty array removes them. Every
+     * write is then held to them; documents already stored are not checked.
+     * Returns the rules as stored.
+     */
+    async setFieldRules(
+        collection: string,
+        rules: Array<{
+            field: string;
+            required?: boolean;
+            type?: 'string' | 'number' | 'integer' | 'bool' | 'object' | 'array';
+            min?: number;
+            max?: number;
+            in?: Array<string | number | boolean>;
+        }>
+    ): Promise<any> {
+        return this.client.sendCommand('set_field_rules', {
+            database: this.client.database,
+            collection,
+            rules
+        });
+    }
+
     // --- Counter fields ---
 
     /**

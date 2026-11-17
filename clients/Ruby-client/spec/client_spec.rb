@@ -130,6 +130,29 @@ RSpec.describe SoliDB::Client do
       client.delete_database(db)
   end
 
+  it "declares field rules and is held to them" do
+      db = "ruby_rules_db"
+      client.delete_database(db) rescue nil
+      client.create_database(db)
+      client.create_collection(db, "goods")
+
+      expect(client.get_field_rules(db, "goods")["rules"]).to eq([])
+      declared = client.set_field_rules(db, "goods", [
+          { field: "name", required: true, type: "string" },
+          { field: "price", min: 0 }
+      ])
+      expect(declared["rules"].map { |rule| rule["field"] }).to eq(["name", "price"])
+      expect(client.get_field_rules(db, "goods")).to eq(declared)
+
+      expect { client.insert(db, "goods", {"price" => 3}) }.to raise_error(StandardError)
+      expect { client.insert(db, "goods", {"name" => "A", "price" => -1}) }.to raise_error(StandardError)
+      client.insert(db, "goods", {"name" => "A", "price" => 3})
+
+      expect(client.set_field_rules(db, "goods", [])["rules"]).to eq([])
+      client.insert(db, "goods", {"price" => -5})
+      client.delete_database(db)
+  end
+
   it "declares a counter field and reads the numbers back" do
       db = "ruby_counter_db"
       client.delete_database(db) rescue nil

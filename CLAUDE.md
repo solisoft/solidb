@@ -648,9 +648,11 @@ Rules that keep it sound:
 - **Rules and the JSON schema travel whole** (`Operation::SetFieldRules`,
   `SetSchema`: the payload replaces what the peer holds, an empty list or
   no payload removes it; `SyncMessage::FullSyncValidation` in a full sync,
-  before the documents; both operations are in `in_full_sync`). The
-  handlers in `server/handlers/schema.rs` log them: a new way to set
-  either has to. A replicated write is checked against neither
+  before the documents; both operations are in `in_full_sync`). Every
+  transport sets them through `sync::validation` (`set_field_rules`,
+  `set_schema`), which writes the log: the HTTP handlers and the driver's
+  `set_field_rules` / `set_collection_schema` do. A schema given when a
+  collection is created (`collections/lifecycle.rs`) is still not logged. A replicated write is checked against neither
   (`get_cached_schema_validator` answers nothing inside
   `foreign_keys::unchecked`): it may be older than the schema.
   `solidb-dump` writes a `field_rules` and a `schema` record per

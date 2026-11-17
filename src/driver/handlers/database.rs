@@ -340,7 +340,13 @@ pub fn handle_set_collection_schema(
 ) -> Response {
     match handler.get_collection(&database, &collection) {
         Ok(coll) => match serde_json::from_value::<CollectionSchema>(schema) {
-            Ok(s) => match coll.set_json_schema(s) {
+            Ok(s) => match crate::sync::validation::set_schema(
+                &coll,
+                handler.replication.as_deref(),
+                &database,
+                &collection,
+                Some(s),
+            ) {
                 Ok(_) => Response::ok_empty(),
                 Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
             },
@@ -373,8 +379,49 @@ pub fn handle_delete_collection_schema(
     collection: String,
 ) -> Response {
     match handler.get_collection(&database, &collection) {
-        Ok(coll) => match coll.remove_json_schema() {
+        Ok(coll) => match crate::sync::validation::set_schema(
+            &coll,
+            handler.replication.as_deref(),
+            &database,
+            &collection,
+            None,
+        ) {
             Ok(_) => Response::ok_empty(),
+            Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
+        },
+        Err(e) => Response::error(e),
+    }
+}
+
+/// The field rules of a collection (`storage::field_rules`).
+pub fn handle_get_field_rules(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+) -> Response {
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => Response::ok(serde_json::json!({ "rules": coll.field_rules().as_ref() })),
+        Err(e) => Response::error(e),
+    }
+}
+
+/// Declare a collection's field rules in place of those it had; an empty
+/// list removes them. Logged for the peers, as over HTTP.
+pub fn handle_set_field_rules(
+    handler: &DriverHandler,
+    database: String,
+    collection: String,
+    rules: Vec<crate::storage::field_rules::FieldRule>,
+) -> Response {
+    match handler.get_collection(&database, &collection) {
+        Ok(coll) => match crate::sync::validation::set_field_rules(
+            &coll,
+            handler.replication.as_deref(),
+            &database,
+            &collection,
+            rules,
+        ) {
+            Ok(rules) => Response::ok(serde_json::json!({ "rules": rules.as_ref() })),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
         },
         Err(e) => Response::error(e),

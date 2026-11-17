@@ -336,6 +336,22 @@ class Client:
     def delete_foreign_key(self, database, collection, name):
         self._send_command("delete_foreign_key", database=database, collection=collection, name=name)
 
+    # --- Field rules ---
+
+    def get_field_rules(self, database, collection):
+        """The field rules of `collection`: `{"rules": [...]}`, in the
+        order they were declared."""
+        return self._send_command("get_field_rules", database=database, collection=collection)
+
+    def set_field_rules(self, database, collection, rules):
+        """Declare what `collection` asks of top-level fields of its
+        documents, in place of the rules it had; an empty list removes
+        them. A rule is a dict with `field` and any of `required`, `type`
+        ("string", "number", "integer", "bool", "object", "array"), `min`,
+        `max` and `in`. Every write is then held to them; documents already
+        stored are not checked. Returns the rules as stored."""
+        return self._send_command("set_field_rules", database=database, collection=collection, rules=list(rules))
+
     # --- Counter fields ---
 
     def list_counters(self, database, collection):

@@ -409,6 +409,19 @@ pub enum Command {
         database: String,
         collection: String,
     },
+    /// The field rules of a collection: what it asks of top-level fields
+    /// of its documents (`storage::field_rules`).
+    GetFieldRules {
+        database: String,
+        collection: String,
+    },
+    /// Declare a collection's field rules in place of those it had; an
+    /// empty list removes them.
+    SetFieldRules {
+        database: String,
+        collection: String,
+        rules: Vec<crate::storage::field_rules::FieldRule>,
+    },
     RebuildIndexes {
         database: String,
         collection: String,
@@ -700,6 +713,8 @@ impl Command {
             | SetCollectionSchema { database, .. }
             | GetCollectionSchema { database, .. }
             | DeleteCollectionSchema { database, .. }
+            | GetFieldRules { database, .. }
+            | SetFieldRules { database, .. }
             | RebuildIndexes { database, .. }
             | HybridSearch { database, .. }
             | GraphNeighbors { database, .. }
@@ -798,6 +813,7 @@ impl Command {
             | GetCollectionSharding { .. }
             | ExportCollection { .. }
             | GetCollectionSchema { .. }
+            | GetFieldRules { .. }
             | HybridSearch { .. }
             | CommunitySearch { .. }
             | ListGeoIndexes { .. }

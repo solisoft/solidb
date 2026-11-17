@@ -321,6 +321,25 @@ module SoliDB
         nil
     end
 
+    # --- Field rules ---
+
+    # The field rules of `collection`: {"rules" => [...]}, in the order they
+    # were declared.
+    def get_field_rules(database, collection)
+        send_command("get_field_rules", database: database, collection: collection)
+    end
+
+    # Declare what `collection` asks of top-level fields of its documents,
+    # in place of the rules it had; an empty array removes them. A rule is a
+    # hash with "field" and any of "required", "type" ("string", "number",
+    # "integer", "bool", "object", "array"), "min", "max" and "in". Every
+    # write is then held to them; documents already stored are not checked.
+    # Returns the rules as stored.
+    def set_field_rules(database, collection, rules)
+        rules = rules.map { |rule| rule.transform_keys(&:to_s) }
+        send_command("set_field_rules", database: database, collection: collection, rules: rules)
+    end
+
     # --- Counter fields ---
 
     # The counter fields of `collection`: {"counters" => [...]}, each with

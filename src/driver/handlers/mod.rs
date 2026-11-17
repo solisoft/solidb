@@ -1088,6 +1088,17 @@ impl DriverHandler {
                 collection,
             } => database::handle_delete_collection_schema(self, database, collection),
 
+            Command::GetFieldRules {
+                database,
+                collection,
+            } => database::handle_get_field_rules(self, database, collection),
+
+            Command::SetFieldRules {
+                database,
+                collection,
+                rules,
+            } => database::handle_set_field_rules(self, database, collection, rules),
+
             // ==================== Advanced Index Operations ====================
             Command::RebuildIndexes {
                 database,

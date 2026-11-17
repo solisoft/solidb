@@ -962,3 +962,100 @@ fn counters_over_a_real_connection() {
         assert_eq!(free["number"], json!("mine"));
     });
 }
+
+/// Field rules through the driver and the Rust client: declared, read and
+/// removed by commands, and held on the driver's own inserts and updates,
+/// which are stored without being decoded.
+#[test]
+fn field_rules_over_a_real_connection() {
+    use solidb::storage::StorageEngine;
+
+    const DB: &str = "ruled";
+    std::env::set_var("SOLIDB_ADMIN_PASSWORD", "reads-password");
+    let tmp = tempfile::TempDir::new().unwrap();
+    let engine = std::sync::Arc::new(StorageEngine::new(tmp.path().to_str().unwrap()).unwrap());
+    engine.create_database("_system".to_string()).unwrap();
+    solidb::server::auth::AuthService::init(&engine, None, tmp.path().to_str().unwrap()).unwrap();
+    engine.create_database(DB.to_string()).unwrap();
+    let db = engine.get_database(DB).unwrap();
+    db.create_collection("goods".to_string(), None).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let listener = rt
+        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+        .unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let storage = engine.clone();
+    rt.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        loop {
+            let (mut stream, peer) = listener.accept().await.unwrap();
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                let mut magic = [0u8; 14];
+                stream.read_exact(&mut magic).await.unwrap();
+                let mut handler = solidb::driver::DriverHandler::new(storage, None);
+                handler.handle_connection(stream, peer.to_string()).await;
+            });
+        }
+    });
+
+    rt.block_on(async {
+        let mut c = SoliDBClientBuilder::new(&addr)
+            .auth(DB, "admin", "reads-password")
+            .build()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            c.get_field_rules(DB, "goods").await.unwrap()["rules"],
+            json!([])
+        );
+        let declared = c
+            .set_field_rules(
+                DB,
+                "goods",
+                vec![
+                    json!({"field": "name", "required": true, "type": "string"}),
+                    json!({"field": "price", "min": 0}),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(declared["rules"][0]["field"], json!("name"));
+        assert_eq!(c.get_field_rules(DB, "goods").await.unwrap(), declared);
+
+        let refused = c
+            .insert(DB, "goods", Some("a"), json!({"price": 3}))
+            .await
+            .unwrap_err();
+        assert!(
+            refused.to_string().contains("'name' is required"),
+            "{refused}"
+        );
+        c.insert(DB, "goods", Some("a"), json!({"name": "A", "price": 3}))
+            .await
+            .unwrap();
+        let refused = c
+            .update(DB, "goods", "a", json!({"price": -1}), true)
+            .await
+            .unwrap_err();
+        assert!(
+            refused.to_string().contains("must be at least 0"),
+            "{refused}"
+        );
+
+        // A definition that cannot be declared changes nothing.
+        let bad = c
+            .set_field_rules(DB, "goods", vec![json!({"field": "x"})])
+            .await;
+        assert!(bad.is_err());
+        assert_eq!(c.get_field_rules(DB, "goods").await.unwrap(), declared);
+
+        let removed = c.set_field_rules(DB, "goods", Vec::new()).await.unwrap();
+        assert_eq!(removed["rules"], json!([]));
+        c.insert(DB, "goods", Some("b"), json!({"price": -5}))
+            .await
+            .unwrap();
+    });
+}

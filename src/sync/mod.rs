@@ -25,6 +25,7 @@ pub mod session;
 pub mod state;
 pub mod tombstone;
 pub mod transport;
+pub mod validation;
 pub mod version_vector;
 pub mod worker;
 
