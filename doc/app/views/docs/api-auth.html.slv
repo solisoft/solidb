@@ -506,6 +506,21 @@
               <p class="text-sm text-gray-400">Delete a user.</p>
             </div>
 
+            <!-- PUT /_api/auth/users/:username/password -->
+            <div class="p-6 hover:bg-white/5 transition-colors">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded">PUT</span>
+                <code class="text-gray-300">/_api/auth/users/:username/password</code>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">Set another user's password (admin only), without the current one: for a user who has lost theirs. To change your own, use <code>PUT /_api/auth/password</code>, which asks for the current password. The old password stops working at once; tokens already issued stay valid until they expire. 12 characters minimum; <code>404</code> for an unknown user. Answers <code>204</code>.</p>
+              <div class="mt-4">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Request Body</h4>
+                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300">
+                  { "password": "new-long-password" }
+                </div>
+              </div>
+            </div>
+
             <!-- GET /_api/auth/users/:username/roles -->
             <div class="p-6 hover:bg-white/5 transition-colors">
               <div class="flex items-center gap-3 mb-4">
