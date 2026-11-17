@@ -868,12 +868,43 @@ impl Parser {
                     Some(self.with_in_allowed(|p| p.parse_expression())?)
                 };
 
+                // What some functions take after their argument: a number,
+                // a string or a bind variable, the same for every row.
+                let mut options = Vec::new();
+                while arg.is_some() && matches!(self.current_token(), Token::Comma) {
+                    let most = match func.as_str() {
+                        "PERCENTILE" | "QUANTILE" => 2,
+                        _ => 0,
+                    };
+                    if options.len() == most {
+                        return Err(DbError::ParseError(match most {
+                            0 => format!("The aggregate {} takes one argument", func),
+                            _ => format!(
+                                "The aggregate {} takes an expression, a rank from 0 to 100 \
+                                 and optionally a method",
+                                func
+                            ),
+                        }));
+                    }
+                    self.advance();
+                    let option = self.with_in_allowed(|p| p.parse_expression())?;
+                    if !matches!(option, Expression::Literal(_) | Expression::BindVariable(_)) {
+                        return Err(DbError::ParseError(format!(
+                            "The aggregate {} takes a constant or a bind variable after its \
+                             first argument",
+                            func
+                        )));
+                    }
+                    options.push(option);
+                }
+
                 self.expect(Token::RightParen)?;
 
                 aggregates.push(AggregateExpr {
                     variable: var,
                     function: func,
                     argument: arg,
+                    options,
                 });
 
                 // Check for comma for more aggregates

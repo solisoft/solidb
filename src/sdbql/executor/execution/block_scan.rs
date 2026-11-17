@@ -804,7 +804,7 @@ impl QueryExecutor<'_> {
                 }
             }
         }
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
         Ok(Some(ScanCollectRun {
             rows: groups,

@@ -342,7 +342,7 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         "FOR r IN sales FILTER r.ts < 9000 COLLECT u = r.user AGGREGATE n = COUNT() SORT n, u LIMIT 4 \
          RETURN [u, n]",
         "FOR r IN sales FILTER r.country != 'c07' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
-        // Not the arrays' to answer: the ordinary path, same result.
+        // The numbers of each group, for a median.
         "FOR r IN sales COLLECT d = r.device AGGREGATE m = MEDIAN(r.bytes) RETURN [d, m]",
         // Comparisons a block's smallest and largest value settle: every
         // row, no row, and one value.
@@ -421,6 +421,22 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         "FOR r IN sales COLLECT AGGREGATE c = COUNT_DISTINCT(r.country), a = COUNT_DISTINCT(r.amount), p = COUNT_DISTINCT(r.paid), b = COUNT_DISTINCT(r.bytes) RETURN [c, a, p, b]",
         "FOR r IN sales FILTER r.ts >= 9000 COLLECT u = r.user AGGREGATE c = COUNT_DISTINCT(r.device), s = SUM(r.bytes) SORT c DESC, u LIMIT 5 RETURN [u, c, s]",
         "FOR r IN sales COLLECT c = r.country AGGREGATE k = COUNT_DISTINCT(r.user % 10), d = COUNT_DISTINCT(UPPER(r.device)) RETURN [c, k, d]",
+        // The variance family: exact sums of the values and of their
+        // squares, so the same number in any order.
+        "FOR r IN sales COLLECT d = r.device AGGREGATE s = STDDEV(r.amount), v = VARIANCE(r.bytes), n = COUNT() RETURN [d, s, v, n]",
+        "FOR r IN sales COLLECT AGGREGATE a = STDDEV_SAMPLE(r.amount), b = VARIANCE_SAMPLE(r.bytes), c = STDDEV(r.user) RETURN [a, b, c]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE s = STDDEV(r.amount), m = MAX(r.amount), a = AVG(r.amount), v = VAR_SAMP(r.bytes) RETURN [c, s, m, a, v]",
+        "FOR r IN sales COLLECT u = r.user AGGREGATE s = VARIANCE(r.amount * r.bytes), t = SUM(r.amount) SORT s DESC, u LIMIT 6 RETURN [u, s, t]",
+        "FOR r IN sales COLLECT b = TIME_BUCKET(r.ts, '2s') AGGREGATE s = STDDEV_SAMPLE(r.bytes), v = VARIANCE(r.amount) RETURN [b, s, v]",
+        "FOR r IN sales FILTER r.amount == null COLLECT d = r.device AGGREGATE s = STDDEV(r.amount), v = VARIANCE_SAMPLE(r.amount) RETURN [d, s, v]",
+        // Medians and percentiles: the numbers of each group. A sketch of
+        // the distinct values, null among them.
+        "FOR r IN sales COLLECT d = r.device AGGREGATE m = MEDIAN(r.amount), p = PERCENTILE(r.bytes, 95), q = PERCENTILE(r.amount, 37.5, 'interpolation') RETURN [d, m, p, q]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE m = MEDIAN(r.amount), p = QUANTILE(r.amount, 10), n = COUNT(), s = SUM(r.amount) RETURN [c, m, p, n, s]",
+        "FOR r IN sales COLLECT AGGREGATE u = APPROX_COUNT_DISTINCT(r.user), c = APPROX_COUNT_DISTINCT(r.country), a = APPROX_COUNT_DISTINCT(r.amount), p = APPROX_COUNT_DISTINCT(r.paid), b = APPROX_COUNT_DISTINCT(r.bytes), e = COUNT_DISTINCT(r.user) RETURN [u, c, a, p, b, e]",
+        "FOR r IN sales COLLECT u = r.user % 20 AGGREGATE d = APPROX_COUNT_DISTINCT(r.bytes), m = MEDIAN(r.bytes * 2), k = APPROX_COUNT_DISTINCT(UPPER(r.device)) SORT d DESC, u LIMIT 5 RETURN [u, d, m, k]",
+        "FOR r IN sales COLLECT d = r.device AGGREGATE p = PERCENTILE(r.amount, 150), z = PERCENTILE(r.amount, 0), h = PERCENTILE(r.amount, 100) RETURN [d, p, z, h]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT u = r.user AGGREGATE a = APPROX_COUNT_DISTINCT(r.amount), m = MEDIAN(r.amount) SORT u LIMIT 12 RETURN [u, a, m]",
         // A column of values of several kinds, in a condition.
         "FOR r IN sales FILTER r.tag == 't1' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
         "FOR r IN sales FILTER r.tag > 5 AND r.tag != null COLLECT AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [n, s]",
@@ -454,7 +470,6 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         // itself.
         // (The last: integers too large for a float beside floats.)
         let ordinary = [
-            "MEDIAN",
             "COLLECT t = r.tag",
             "SUM(r.tag)",
             "RAND()",

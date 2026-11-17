@@ -144,16 +144,19 @@
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, as an array, in first-seen order.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">SORTED_UNIQUE(expr)</td><td class="py-2 text-gray-400">The distinct values, sorted.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">COLLECT_LIST(expr) / PUSH(expr)</td><td class="py-2 text-gray-400">Every value, as an array, in row order.</td></tr>
-                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">VARIANCE(expr) / VARIANCE_POPULATION(expr)<br>VARIANCE_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample variance of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">VARIANCE(expr) / VARIANCE_POPULATION(expr)<br>VARIANCE_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample variance of the numeric values, from their exact sum and the exact sum of their squares: the same number whatever order the documents are read in.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">STDDEV(expr) / STDDEV_POPULATION(expr)<br>STDDEV_SAMPLE(expr)</td><td class="py-2 text-gray-400">Population / sample standard deviation.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">MEDIAN(expr)</td><td class="py-2 text-gray-400">Median of the numeric values.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">PERCENTILE(expr, p) / QUANTILE(expr, p)<br>PERCENTILE(expr, p, "interpolation")</td><td class="py-2 text-gray-400">The <code>p</code>-th percentile (0 to 100) of the numeric values: nearest rank, or interpolated between the closest ranks. <code>p</code> is a number or a bind variable, not an expression of the row; a rank outside 0 to 100 gives <code>null</code>.</td></tr>
+                    <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">APPROX_COUNT_DISTINCT(expr)</td><td class="py-2 text-gray-400">An estimate of the number of distinct values (null is one of them), from a HyperLogLog sketch: at most 16&nbsp;KB per group however many values. A float.</td></tr>
                     <tr class="border-t border-white/5"><td class="py-2 pr-4 font-mono text-orange-300">BIT_AND(expr)<br>BIT_OR(expr)<br>BIT_XOR(expr)</td><td class="py-2 text-gray-400">Bitwise fold of the integer values; nulls are skipped, any other non-integer makes the result <code>null</code>.</td></tr>
                   </tbody>
                 </table>
                 <p class="text-xs text-gray-500">
-                  These mean the same thing whatever the collection's storage layout. <code>PERCENTILE</code> takes
-                  a second argument, so it is not available in <code>AGGREGATE</code>; use
-                  <code>COLLECT … INTO g</code> and <code>PERCENTILE(g[*].u.amount, 95)</code> (each item of <code>g</code> holds the loop variables).
+                  These mean the same thing whatever the collection's storage layout.
+                  <code>PERCENTILE</code> and <code>APPROX_COUNT_DISTINCT</code> answer what the array functions of
+                  those names answer over the group's values (<code>COLLECT … INTO g = u.amount</code>, then
+                  <code>PERCENTILE(g, 95)</code>), without holding the values as rows.
                 </p>
                 <p class="text-xs text-gray-500">
                   Groups are returned in ascending order of their group values. A <code>COLLECT</code> with no
@@ -163,7 +166,9 @@
                 <p class="text-xs text-gray-500">
                   Memory: a <code>COLLECT</code> holds one row per group, plus what <code>INTO</code> and
                   <code>COLLECT_LIST</code>, <code>UNIQUE</code>, <code>SORTED_UNIQUE</code>,
-                  <code>COUNT_DISTINCT</code> and <code>MEDIAN</code> keep. When it reads a collection scan
+                  <code>COUNT_DISTINCT</code>, <code>MEDIAN</code> and <code>PERCENTILE</code> keep (the numbers
+                  of the last two count for an eighth of a row each against
+                  <code>SOLIDB_MAX_INTERMEDIATE_ROWS</code>). When it reads a collection scan
                   directly &mdash; <code>FOR x IN c</code>, then only <code>FILTER</code> and <code>LET</code>
                   clauses, then the <code>COLLECT</code> &mdash; each document is grouped as it is read and
                   dropped, and only the fields of <code>x</code> the clauses use are decoded. The collection's
@@ -189,9 +194,9 @@
                   Threads: on an engine that can read several key ranges at one snapshot (both do), such a scan over
                   a large collection is split into key ranges read on several threads and the partial groups are
                   merged &mdash; when every aggregate merges exactly: <code>COUNT</code>, <code>SUM</code>,
-                  <code>AVG</code>, <code>MIN</code>, <code>MAX</code>, <code>COUNT_DISTINCT</code> and the
-                  <code>BIT_*</code> functions (lists, <code>UNIQUE</code>, <code>MEDIAN</code> and the variance family
-                  stay on one thread). The answer is the one-thread answer, to the bit: sums are exact, and of equal
+                  <code>AVG</code>, <code>MIN</code>, <code>MAX</code>, <code>COUNT_DISTINCT</code>, the variance
+                  family, <code>MEDIAN</code>, <code>PERCENTILE</code>, <code>APPROX_COUNT_DISTINCT</code> and the
+                  <code>BIT_*</code> functions (lists and <code>UNIQUE</code> stay on one thread). The answer is the one-thread answer, to the bit: sums are exact, and of equal
                   extremes or equal keys (<code>1</code> and <code>1.0</code>) the first document's is kept. EXPLAIN
                   adds <code>4 key ranges read in parallel</code>. <code>SOLIDB_SCAN_THREADS</code> sets how many
                   threads a scan may use, its own included (by default the CPUs the server may use); the extra

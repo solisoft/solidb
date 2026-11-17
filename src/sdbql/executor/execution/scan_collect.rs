@@ -388,7 +388,7 @@ impl QueryExecutor<'_> {
                 fold.push(self, ctx)
             })?;
         }
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
 
         let decoded = match (&gate, &plan.fields, &typed) {
@@ -534,7 +534,7 @@ impl QueryExecutor<'_> {
                 })?;
             }
         }
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
         Ok(Some(ScanCollectRun {
             rows: groups,
@@ -643,7 +643,7 @@ impl QueryExecutor<'_> {
             ..
         } = run;
         self.check_budget(fold.held())?;
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
         Ok(Some(ScanCollectRun {
             rows: groups,

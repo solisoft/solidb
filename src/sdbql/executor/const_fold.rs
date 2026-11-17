@@ -297,6 +297,9 @@ impl Folder<'_, '_> {
                     if let Some(e) = &mut a.argument {
                         self.expr(e);
                     }
+                    for e in &mut a.options {
+                        self.expr(e);
+                    }
                 }
             }
             #[allow(unreachable_patterns)]

@@ -306,7 +306,11 @@ fn body_clause_expressions(clause: &BodyClause) -> Vec<&Expression> {
             .group_vars
             .iter()
             .map(|(_, e)| e)
-            .chain(c.aggregates.iter().filter_map(|a| a.argument.as_ref()))
+            .chain(
+                c.aggregates
+                    .iter()
+                    .flat_map(|a| a.argument.iter().chain(&a.options)),
+            )
             .chain(c.into_expr.iter())
             .collect(),
         BodyClause::Window(_) => Vec::new(),
@@ -927,6 +931,11 @@ pub struct AggregateExpr {
     pub function: String,
     /// Argument expression
     pub argument: Option<Expression>,
+    /// What follows the argument, for the functions that take more
+    /// (`PERCENTILE(doc.x, 95)`): constants, read once per query and not
+    /// per row.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<Expression>,
 }
 
 /// SORT expression [ASC|DESC]
@@ -1523,6 +1532,7 @@ mod tests {
                 Box::new(Expression::Variable("doc".to_string())),
                 "price".to_string(),
             )),
+            options: Vec::new(),
         };
 
         assert_eq!(agg.variable, "total");

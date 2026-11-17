@@ -2,7 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`VARIANCE` and `STDDEV` no longer depend on the order of the values.** They were a running mean and spread, rounded at every value, so the last digits changed with the order the documents were read in, which is why they stayed on one thread and out of the columnar arrays. They are now computed from the exact sum of the values and the exact sum of their squares, rounded once: the same number in any order, on any number of threads, and at least as close to the true value (values near `1e9` no longer lose digits). **A result may differ from the one an earlier version gave in its last digits.** The array functions of the same names changed with them. A scan split over several threads now also takes `STDDEV`, `VARIANCE`, `MEDIAN`, `PERCENTILE` and `APPROX_COUNT_DISTINCT`.
+
+- **The numbers a `MEDIAN` or a `PERCENTILE` keeps count for an eighth of a row against `SOLIDB_MAX_INTERMEDIATE_ROWS`.** Each counted as a whole row, so a median over more values than the ceiling (5,000,000 by default) was refused, and three percentiles of one column over 2,000,000 rows too. A number is eight bytes, where a row is at least several times that.
+
 ### Added
+
+- **`PERCENTILE` and `APPROX_COUNT_DISTINCT` are aggregates.** `COLLECT … AGGREGATE p = PERCENTILE(doc.amount, 95)` (also `QUANTILE`, and a third argument `"interpolation"`) and `n = APPROX_COUNT_DISTINCT(doc.user)` answer what the functions of those names answer over the group's values. Until now the only way was `COLLECT … INTO g` and the function over `g`, which holds every value of every group as a row. What follows the first argument is a number, a string or a bind variable (`PERCENTILE(doc.amount, @p)`), not an expression of the row; a rank that is not a number from 0 to 100 gives `null`, as the function does. A second argument to an aggregate that takes one (`SUM(doc.x, 2)`) now says so instead of `Expected RightParen, got Comma`.
+
+- **Columnar: `STDDEV`, `VARIANCE`, `MEDIAN`, `PERCENTILE` and `APPROX_COUNT_DISTINCT` are computed from the column arrays.** Only `COUNT`, `SUM`, `AVG`, `MIN`, `MAX` and `COUNT_DISTINCT` were; any other aggregate built every row first, at about the same cost whatever it computed. On 2,000,000 rows grouped by a string column of 50 values (throwaway server on a workstation, `/cursor`, cache off, best of three): `STDDEV` 1,768 → 8 ms, `MEDIAN` 1,773 → 13 ms, the 95th percentile 1,808 → 12 ms, the approximate distinct count 1,840 → 22 ms. `COUNT_DISTINCT` is unchanged (394 ms). The results are those of the rows.
 
 - **Columnar indexes: the listing says how far behind an index is.** An index holds the rows present when it was built and nothing rebuilds it, so its share of the collection shrinks with every insert, and only `rows` hinted at it. `GET …/columnar/{c}/indexes` and `GET …/index/{column}` now also give `collection_rows` and `missing`, the rows the index does not hold (which are still found, compared in their blocks).
 

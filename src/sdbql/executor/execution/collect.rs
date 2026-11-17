@@ -64,6 +64,10 @@ pub(super) struct CollectFold<'c> {
     // thing the ceiling has to bound. Either way the periodic check is also
     // what lets the deadline interrupt a long fold.
     retained: usize,
+    /// The numbers a median or a percentile keeps: eight bytes each, where
+    /// a retained value is a row's worth. Counted apart, and against the
+    /// ceiling at [`NUMBERS_PER_ROW`] for one row.
+    numbers: usize,
     seen: usize,
     /// Ordinal of this fold's first row: rows are numbered `base + seen`.
     /// A fold over one partition of a scan starts where no earlier
@@ -79,6 +83,11 @@ pub(super) struct CollectFold<'c> {
     key_buf: Vec<Datum<'static>>,
     arg_buf: Vec<Option<Datum<'static>>>,
 }
+
+/// How many numbers kept for a median or a percentile count as one row
+/// against the row ceiling: a number is eight bytes, the smallest value a
+/// row holds several times that.
+const NUMBERS_PER_ROW: usize = 8;
 
 /// An empty buffer of `Datum<'b>` from one of `Datum<'a>`, keeping its
 /// allocation: a row's key and arguments borrow from that row, so the buffer
@@ -97,6 +106,7 @@ impl<'c> CollectFold<'c> {
             groups: Vec::new(),
             index: HashMap::default(),
             retained: 0,
+            numbers: 0,
             seen: 0,
             base: 0,
             check_held: true,
@@ -120,7 +130,7 @@ impl<'c> CollectFold<'c> {
     /// `INTO` or a list aggregate keeps, whichever is more. What the row
     /// ceiling bounds.
     pub(super) fn held(&self) -> usize {
-        self.retained.max(self.groups.len())
+        (self.retained + self.numbers / NUMBERS_PER_ROW).max(self.groups.len())
     }
 
     /// Fold in one row, taking it: `INTO` stores (a projection of) it.
@@ -187,7 +197,12 @@ impl<'c> CollectFold<'c> {
         let group = &mut self.groups[gi];
         group.count += rows as i64 - 1;
         for (acc, values) in group.aggregates.iter_mut().zip(args) {
-            acc.push_slice(rows, values.as_ref(), ordinal);
+            let kept = acc.push_slice(rows, values.as_ref(), ordinal);
+            if acc.holds_numbers() {
+                self.numbers += kept;
+            } else {
+                self.retained += kept;
+            }
         }
         self.seen += rows;
         ex.check_budget(if self.check_held { self.held() } else { 0 })
@@ -287,7 +302,11 @@ impl<'c> CollectFold<'c> {
         group.count += 1;
         for (acc, value) in group.aggregates.iter_mut().zip(args) {
             if acc.push(value, ordinal) {
-                self.retained += 1;
+                if acc.holds_numbers() {
+                    self.numbers += 1;
+                } else {
+                    self.retained += 1;
+                }
             }
         }
         Ok(gi)
@@ -336,10 +355,11 @@ impl<'c> CollectFold<'c> {
             }
         }
         self.retained += other.retained;
+        self.numbers += other.numbers;
     }
 
     /// One row per group, ordered by key.
-    pub(super) fn finish(mut self) -> DbResult<Vec<Context>> {
+    pub(super) fn finish(mut self, ex: &QueryExecutor<'_>) -> DbResult<Vec<Context>> {
         let collect = self.collect;
         // AQL: with no group variables, COLLECT always yields exactly one
         // row — over empty input `WITH COUNT INTO n` is 0 and the aggregates
@@ -360,6 +380,20 @@ impl<'c> CollectFold<'c> {
                 .find(|o| o.is_ne())
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // What follows an aggregate's argument: read once, with no row in
+        // scope (the parser takes a constant or a bind variable there).
+        let none = Context::default();
+        let options: Vec<Vec<Value>> = collect
+            .aggregates
+            .iter()
+            .map(|agg| {
+                agg.options
+                    .iter()
+                    .map(|option| ex.evaluate_expr_with_context(option, &none))
+                    .collect::<DbResult<Vec<Value>>>()
+            })
+            .collect::<DbResult<_>>()?;
 
         let mut out = Vec::with_capacity(self.groups.len());
         for group in self.groups {
@@ -386,8 +420,8 @@ impl<'c> CollectFold<'c> {
             if let Some(count_var) = &collect.count_var {
                 ctx.insert(count_var.clone(), Value::Number(count.into()));
             }
-            for (agg, acc) in collect.aggregates.iter().zip(aggregates) {
-                ctx.insert(agg.variable.clone(), acc.finish());
+            for ((agg, acc), options) in collect.aggregates.iter().zip(aggregates).zip(&options) {
+                ctx.insert(agg.variable.clone(), acc.finish(options));
             }
             out.push(ctx);
         }
@@ -406,7 +440,7 @@ impl<'a> QueryExecutor<'a> {
         for ctx in rows {
             fold.push(self, ctx)?;
         }
-        fold.finish()
+        fold.finish(self)
     }
 }
 

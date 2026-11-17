@@ -9,10 +9,12 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
+use super::builtins::approx::Hll;
 use super::builtins::array::as_int;
-use super::builtins::math::{median_of, Welford};
+use super::builtins::math::{median_of, percentile_of, Moments};
 use super::datum::Datum;
 use super::exact_sum::ExactSum;
+use super::helpers::{hash_f64, hash_str};
 use super::types::Context;
 use super::{compare_values, hash_value, values_equal, QueryExecutor};
 use crate::error::{DbError, DbResult};
@@ -206,6 +208,12 @@ pub(super) enum AggKind {
         sample: bool,
     },
     Median,
+    /// `PERCENTILE(expr, p[, method])` — the function of that name over
+    /// the group's numbers.
+    Percentile,
+    /// `APPROX_COUNT_DISTINCT(expr)` — the estimate the function of that
+    /// name gives for the group's values, null among them.
+    ApproxDistinct,
     BitAnd,
     BitOr,
     BitXor,
@@ -231,6 +239,8 @@ impl AggKind {
             "STDDEV" | "STDDEV_POPULATION" | "STDDEV_POP" => Self::Stddev { sample: false },
             "STDDEV_SAMPLE" | "STDDEV_SAMP" => Self::Stddev { sample: true },
             "MEDIAN" => Self::Median,
+            "PERCENTILE" | "QUANTILE" => Self::Percentile,
+            "APPROX_COUNT_DISTINCT" => Self::ApproxDistinct,
             "BIT_AND" => Self::BitAnd,
             "BIT_OR" => Self::BitOr,
             "BIT_XOR" => Self::BitXor,
@@ -289,6 +299,17 @@ pub(super) enum Slice<'a> {
     /// The distinct values of the rows pushed, null among them if a row
     /// holds it: what `COUNT_DISTINCT` keeps.
     Each(&'a [Value]),
+    /// The estimate of the distinct values of the rows pushed, null among
+    /// them if a row holds it: what `APPROX_COUNT_DISTINCT` keeps.
+    Sketch(&'a Hll),
+    /// `rows` numbers (the other rows pushed hold null) known by their
+    /// exact sum and the exact sum of their squares: what the variance
+    /// family keeps.
+    Moments {
+        rows: usize,
+        sum: &'a ExactSum,
+        squares: &'a ExactSum,
+    },
 }
 
 /// `x` as the number a document holds: an integer when `int`.
@@ -333,11 +354,13 @@ pub(super) enum AggregateAccumulator {
     },
     List(Vec<Value>),
     Stats {
-        acc: Welford,
+        acc: Moments,
         sample: bool,
         sqrt: bool,
     },
     Median(Vec<f64>),
+    Percentile(Vec<f64>),
+    ApproxDistinct(Hll),
     /// Null values are skipped; any other non-integer makes the result null.
     Bits {
         kind: AggKind,
@@ -376,16 +399,18 @@ impl AggregateAccumulator {
             },
             AggKind::List => Self::List(Vec::new()),
             AggKind::Variance { sample } => Self::Stats {
-                acc: Welford::default(),
+                acc: Moments::default(),
                 sample,
                 sqrt: false,
             },
             AggKind::Stddev { sample } => Self::Stats {
-                acc: Welford::default(),
+                acc: Moments::default(),
                 sample,
                 sqrt: true,
             },
             AggKind::Median => Self::Median(Vec::new()),
+            AggKind::Percentile => Self::Percentile(Vec::new()),
+            AggKind::ApproxDistinct => Self::ApproxDistinct(Hll::default()),
             AggKind::BitAnd | AggKind::BitOr | AggKind::BitXor => Self::Bits {
                 kind,
                 acc: None,
@@ -469,13 +494,24 @@ impl AggregateAccumulator {
                 }
                 false
             }
-            Self::Median(nums) => match value.as_ref().and_then(Datum::as_f64) {
-                Some(n) => {
-                    nums.push(n);
-                    true
+            Self::Median(nums) | Self::Percentile(nums) => {
+                match value.as_ref().and_then(Datum::as_f64) {
+                    Some(n) => {
+                        nums.push(n);
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
-            },
+            }
+            Self::ApproxDistinct(sketch) => {
+                match value {
+                    Some(Datum::Num(n)) => sketch.add(hash_f64(n.as_f64().unwrap_or(0.0))),
+                    Some(Datum::Str(s)) => sketch.add(hash_str(s)),
+                    Some(v) => sketch.add(hash_value(&v.into_cow())),
+                    None => {}
+                }
+                false
+            }
             Self::Bits { kind, acc, invalid } => {
                 match &value {
                     None => {}
@@ -503,13 +539,47 @@ impl AggregateAccumulator {
         )
     }
 
+    /// Whether what this aggregate retains is bare numbers (a median, a
+    /// percentile), not values.
+    pub(super) fn holds_numbers(&self) -> bool {
+        matches!(self, Self::Median(_) | Self::Percentile(_))
+    }
+
+    /// Whether [`Self::push_slice`] folds this kind from a
+    /// [`Slice::Moments`], and from nothing else.
+    pub(super) fn takes_moments(kind: AggKind) -> bool {
+        matches!(kind, AggKind::Variance { .. } | AggKind::Stddev { .. })
+    }
+
+    /// Whether [`Self::push_slice`] folds this kind from the group's
+    /// numbers as a [`Slice::Float`], and from nothing else.
+    pub(super) fn takes_numbers(kind: AggKind) -> bool {
+        matches!(kind, AggKind::Median | AggKind::Percentile)
+    }
+
+    /// The kinds that take, of a group met in column arrays, something
+    /// kept for them alone — distinct values, squares, the numbers, a
+    /// sketch — and not what [`Self::takes_slices`] kinds read.
+    pub(super) fn takes_its_own(kind: AggKind) -> bool {
+        Self::takes_moments(kind)
+            || Self::takes_numbers(kind)
+            || matches!(kind, AggKind::CountDistinct | AggKind::ApproxDistinct)
+    }
+
     /// Fold `rows` rows at once: what [`Self::push`] does with each of
     /// `values` in turn (none of them null, unless the slice says how many
     /// of the rows hold a value; `None` for an aggregate without an
     /// argument). Only for the kinds [`Self::takes_slices`] names.
     /// `ordinal` is the first row's: of equal extremes met in other rows,
-    /// which is kept may differ from one row at a time.
-    pub(super) fn push_slice(&mut self, rows: usize, values: Option<&Slice<'_>>, ordinal: u64) {
+    /// which is kept may differ from one row at a time. Returns how many
+    /// values are now retained, as [`Self::push`] says of one.
+    pub(super) fn push_slice(
+        &mut self,
+        rows: usize,
+        values: Option<&Slice<'_>>,
+        ordinal: u64,
+    ) -> usize {
+        let mut retained = 0;
         match self {
             Self::CountRows(n) => *n += rows as i64,
             Self::CountNonNull(n) => match values {
@@ -534,7 +604,12 @@ impl AggregateAccumulator {
                         }
                     }
                 }
-                Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {}
+                Some(Slice::Other)
+                | Some(Slice::OtherOf(_))
+                | Some(Slice::Each(_))
+                | Some(Slice::Moments { .. })
+                | Some(Slice::Sketch(_))
+                | None => {}
             },
             Self::Avg { sum, count } => match values {
                 Some(Slice::Int(xs)) => {
@@ -561,7 +636,12 @@ impl AggregateAccumulator {
                     sum.add_slice(xs);
                     *count += xs.len() as i64;
                 }
-                Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {}
+                Some(Slice::Other)
+                | Some(Slice::OtherOf(_))
+                | Some(Slice::Each(_))
+                | Some(Slice::Moments { .. })
+                | Some(Slice::Sketch(_))
+                | None => {}
             },
             Self::Min(_) | Self::Max(_) => {
                 let least = matches!(self, Self::Min(_));
@@ -593,9 +673,12 @@ impl AggregateAccumulator {
                             }
                         })
                         .and_then(|at| number_of(xs[at], ints[at])),
-                    Some(Slice::Other) | Some(Slice::OtherOf(_)) | Some(Slice::Each(_)) | None => {
-                        None
-                    }
+                    Some(Slice::Other)
+                    | Some(Slice::OtherOf(_))
+                    | Some(Slice::Each(_))
+                    | Some(Slice::Moments { .. })
+                    | Some(Slice::Sketch(_))
+                    | None => None,
                 };
                 if let Some(extreme) = extreme {
                     self.push(Some(Datum::Num(extreme)), ordinal);
@@ -604,21 +687,43 @@ impl AggregateAccumulator {
             Self::CountDistinct(_) => {
                 if let Some(Slice::Each(values)) = values {
                     for value in *values {
-                        self.push(Some(Datum::of(Cow::Borrowed(value))), ordinal);
+                        if self.push(Some(Datum::of(Cow::Borrowed(value))), ordinal) {
+                            retained += 1;
+                        }
                     }
+                }
+            }
+            Self::Stats { acc, .. } => {
+                if let Some(Slice::Moments { rows, sum, squares }) = values {
+                    acc.add(*rows as u64, sum, squares);
+                }
+            }
+            Self::Median(nums) | Self::Percentile(nums) => {
+                if let Some(Slice::Float(xs)) = values {
+                    nums.extend_from_slice(xs);
+                    retained = xs.len();
+                }
+            }
+            Self::ApproxDistinct(sketch) => {
+                if let Some(Slice::Sketch(theirs)) = values {
+                    sketch.merge(theirs);
                 }
             }
             _ => debug_assert!(false, "push_slice on an aggregate that takes rows"),
         }
+        retained
     }
 
     /// Whether [`Self::merge`] gives exactly what one accumulator would have
     /// computed from all the rows, whichever rows each partial result saw
     /// and in whatever order they are merged. Counts, exact sums and bit
     /// operations do not depend on order; MIN and MAX keep their row's
-    /// ordinal to break ties as one pass would. The others keep values in
-    /// arrival order (lists, first-seen distinct values, the median's
-    /// `-0.0`/`0.0`) or round in it (the variance family).
+    /// ordinal to break ties as one pass would; the variance family keeps
+    /// exact sums ([`Moments`]); a median or a percentile is selected from
+    /// the numbers whatever their order (of `-0.0` and `0.0` side by side
+    /// either may be read, and the result is the same number); a sketch
+    /// keeps the largest of each register. The others keep values in
+    /// arrival order (lists, first-seen distinct values).
     pub(super) fn mergeable(kind: AggKind) -> bool {
         matches!(
             kind,
@@ -629,6 +734,11 @@ impl AggregateAccumulator {
                 | AggKind::Min
                 | AggKind::Max
                 | AggKind::CountDistinct
+                | AggKind::Variance { .. }
+                | AggKind::Stddev { .. }
+                | AggKind::Median
+                | AggKind::Percentile
+                | AggKind::ApproxDistinct
                 | AggKind::BitAnd
                 | AggKind::BitOr
                 | AggKind::BitXor
@@ -691,6 +801,18 @@ impl AggregateAccumulator {
                     .count();
                 held - kept
             }
+            (Self::Stats { acc, .. }, Self::Stats { acc: other, .. }) => {
+                acc.merge(&other);
+                0
+            }
+            (Self::Median(a), Self::Median(b)) | (Self::Percentile(a), Self::Percentile(b)) => {
+                a.extend(b);
+                0
+            }
+            (Self::ApproxDistinct(a), Self::ApproxDistinct(b)) => {
+                a.merge(&b);
+                0
+            }
             (
                 Self::Bits { kind, acc, invalid },
                 Self::Bits {
@@ -709,7 +831,9 @@ impl AggregateAccumulator {
         }
     }
 
-    pub(super) fn finish(self) -> Value {
+    /// The aggregate's value. `options` is what the query gave after the
+    /// argument (see `AggregateExpr::options`).
+    pub(super) fn finish(self, options: &[Value]) -> Value {
         match self {
             Self::CountRows(n) | Self::CountNonNull(n) => Value::Number(n.into()),
             Self::Sum(sum) => sum.integer().unwrap_or_else(|| float_value(sum.value())),
@@ -730,6 +854,22 @@ impl AggregateAccumulator {
                 None => Value::Null,
             },
             Self::Median(mut nums) => median_of(&mut nums).map(float_value).unwrap_or(Value::Null),
+            // As the function: a rank that is not a number from 0 to 100
+            // is null.
+            Self::Percentile(mut nums) => {
+                let interpolate = options
+                    .get(1)
+                    .and_then(Value::as_str)
+                    .is_some_and(|method| method.eq_ignore_ascii_case("interpolation"));
+                options
+                    .first()
+                    .and_then(Value::as_f64)
+                    .filter(|p| (0.0..=100.0).contains(p))
+                    .and_then(|p| percentile_of(&mut nums, p, interpolate))
+                    .map(float_value)
+                    .unwrap_or(Value::Null)
+            }
+            Self::ApproxDistinct(sketch) => float_value(sketch.estimate()),
             Self::Bits { acc, invalid, .. } => match (acc, invalid) {
                 (Some(n), false) => Value::Number(n.into()),
                 _ => Value::Null,
@@ -768,7 +908,7 @@ mod tests {
         for (i, v) in values.iter().enumerate() {
             acc.push(Some(Datum::of(Cow::Borrowed(v))), i as u64);
         }
-        acc.finish()
+        acc.finish(&[])
     }
 
     #[test]

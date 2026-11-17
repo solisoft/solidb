@@ -543,6 +543,25 @@ pub fn hash_value(v: &Value) -> u64 {
     h.finish()
 }
 
+/// [`hash_value`] of the number `f` (an integer hashes as the float it is).
+#[inline]
+pub fn hash_f64(f: f64) -> u64 {
+    let mut h = seahash::SeaHasher::new();
+    2u8.hash(&mut h);
+    let f = if f == 0.0 { 0.0 } else { f };
+    f.to_bits().hash(&mut h);
+    h.finish()
+}
+
+/// [`hash_value`] of the string `s`.
+#[inline]
+pub fn hash_str(s: &str) -> u64 {
+    let mut h = seahash::SeaHasher::new();
+    3u8.hash(&mut h);
+    s.hash(&mut h);
+    h.finish()
+}
+
 fn write_value_hash(v: &Value, h: &mut impl Hasher) {
     match v {
         Value::Null => 0u8.hash(h),

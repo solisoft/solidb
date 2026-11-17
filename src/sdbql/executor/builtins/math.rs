@@ -378,7 +378,7 @@ pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
         | "STDDEV_SAMPLE"
             if args.len() == 1 && args[0].is_array() =>
         {
-            let mut w = Welford::default();
+            let mut w = Moments::default();
             for x in args[0].as_array().unwrap().iter().filter_map(Value::as_f64) {
                 w.push(x);
             }
@@ -460,31 +460,70 @@ fn decay(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     }
 }
 
-/// Running mean and variance (Welford). One pass, no buffer, and none of the
-/// cancellation that `Σx² − n·mean²` suffers on large values.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct Welford {
+/// What a variance is computed from: how many numbers, their sum and the
+/// sum of their squares, both exact ([`ExactSum`]).
+///
+/// The variance used to be a running mean and spread (Welford), which
+/// rounds at every value: the answer depended on the order the values came
+/// in, so it could be computed neither on several threads nor from the
+/// arrays of a columnar collection, which read in another order than the
+/// rows. `n·Σx² − (Σx)²` suffers no cancellation when both sums are exact
+/// and the subtraction is too: the result is rounded once, then divided.
+/// It is the same for any order and any partitioning, and at least as
+/// close to the true variance as the running one was.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Moments {
     n: u64,
-    mean: f64,
-    m2: f64,
+    sum: ExactSum,
+    squares: ExactSum,
 }
 
-impl Welford {
+impl Moments {
+    #[inline]
     pub(crate) fn push(&mut self, x: f64) {
         self.n += 1;
-        let delta = x - self.mean;
-        self.mean += delta / self.n as f64;
-        self.m2 += delta * (x - self.mean);
+        self.sum.add(x);
+        self.squares.add_square(x);
+    }
+
+    /// `n` numbers at once, known by their exact sum and the exact sum of
+    /// their squares.
+    pub(crate) fn add(&mut self, n: u64, sum: &ExactSum, squares: &ExactSum) {
+        self.n += n;
+        self.sum.merge(sum);
+        self.squares.merge(squares);
+    }
+
+    /// The numbers of `other` too.
+    pub(crate) fn merge(&mut self, other: &Moments) {
+        self.add(other.n, &other.sum, &other.squares);
     }
 
     /// Population variance (0 for a single value) or sample variance (needs
-    /// two values). `None` when there is not enough data.
+    /// two values). `None` when there is not enough data; not a number when
+    /// the squares leave the range of a double.
     pub(crate) fn variance(&self, sample: bool) -> Option<f64> {
-        if sample {
-            (self.n >= 2).then(|| self.m2 / (self.n - 1) as f64)
-        } else {
-            (self.n >= 1).then(|| self.m2 / self.n as f64)
+        if self.n == 0 || (sample && self.n < 2) {
+            return None;
         }
+        let n = self.n as f64;
+        let (Some(sum), Some(squares)) = (self.sum.parts(), self.squares.parts()) else {
+            return Some(f64::NAN);
+        };
+        // n·Σx² − (Σx)², every product added exactly.
+        let mut spread = ExactSum::default();
+        for part in squares {
+            spread.add_product(n, part);
+        }
+        for a in sum {
+            for b in sum {
+                spread.add_product(-a, b);
+            }
+        }
+        // (Below zero only when squares so small that they are rounded.)
+        let spread = spread.value().max(0.0);
+        let over = if sample { n - 1.0 } else { n };
+        Some(spread / (n * over))
     }
 }
 
@@ -957,11 +996,67 @@ mod tests {
     }
 
     #[test]
-    fn welford_matches_two_pass() {
-        let mut w = Welford::default();
+    fn the_variance_of_large_values_does_not_cancel() {
+        let mut w = Moments::default();
         for x in [1e9 + 4.0, 1e9 + 7.0, 1e9 + 13.0, 1e9 + 16.0] {
             w.push(x);
         }
-        assert!((w.variance(true).unwrap() - 30.0).abs() < 1e-6);
+        assert_eq!(w.variance(true), Some(30.0));
+        assert_eq!(w.variance(false), Some(22.5));
+        // Values a running mean loses: 2^60 apart by one unit.
+        let mut w = Moments::default();
+        let big = (1u64 << 60) as f64;
+        for x in [big, big + 256.0, big + 512.0] {
+            w.push(x);
+        }
+        assert_eq!(w.variance(true), Some(65536.0));
+    }
+
+    #[test]
+    fn the_variance_does_not_depend_on_the_order_or_the_partitioning() {
+        // A generator with a fixed seed: amounts with cents, of mixed size.
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let cents = (state % 10_000_000) as f64 / 100.0;
+            if state & 64 == 0 {
+                cents * 1e6
+            } else {
+                -cents / 3.0
+            }
+        };
+        let values: Vec<f64> = (0..5000).map(|_| next()).collect();
+        let one = |xs: &mut dyn Iterator<Item = f64>| {
+            let mut m = Moments::default();
+            xs.for_each(|x| m.push(x));
+            m
+        };
+        let forward = one(&mut values.iter().copied());
+        let backward = one(&mut values.iter().rev().copied());
+        let mut parts = one(&mut values[..1234].iter().copied());
+        parts.merge(&one(&mut values[1234..].iter().copied()));
+        for sample in [false, true] {
+            let wanted = forward.variance(sample).unwrap();
+            assert_eq!(
+                backward.variance(sample).unwrap().to_bits(),
+                wanted.to_bits()
+            );
+            assert_eq!(parts.variance(sample).unwrap().to_bits(), wanted.to_bits());
+            // Close to the plain two-pass formula.
+            let mean = values.iter().sum::<f64>() / values.len() as f64;
+            let spread: f64 = values.iter().map(|x| (x - mean) * (x - mean)).sum();
+            let plain = spread / (values.len() - usize::from(sample)) as f64;
+            assert!(((wanted - plain) / plain).abs() < 1e-12);
+        }
+        assert_eq!(one(&mut [7.5].into_iter()).variance(false), Some(0.0));
+        assert_eq!(one(&mut [7.5].into_iter()).variance(true), None);
+        assert_eq!(Moments::default().variance(false), None);
+        // Squares past the largest double: not a number.
+        assert!(one(&mut [1e200, 2e200].into_iter())
+            .variance(false)
+            .unwrap()
+            .is_nan());
     }
 }

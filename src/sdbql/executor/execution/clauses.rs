@@ -2017,7 +2017,7 @@ impl<'a> QueryExecutor<'a> {
                     }
                     if let Some(fold) = folded {
                         // The COLLECT that follows is done.
-                        rows = fold.finish()?;
+                        rows = fold.finish(self)?;
                         self.check_budget(rows.len())?;
                         i += 2 + gate.len();
                         continue;

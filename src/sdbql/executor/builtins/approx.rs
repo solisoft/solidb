@@ -15,6 +15,77 @@ const HLL_M: usize = 1 << HLL_P; // 16384
 /// result counts. k sizes the counter table (4k entries).
 const MAX_TOP_K: usize = 10_000;
 
+/// Hashes a sketch keeps as they are before it turns into registers: 8 KiB,
+/// half of what the registers take.
+const HLL_FEW: usize = 1024;
+
+/// The HyperLogLog of `APPROX_COUNT_DISTINCT`, filled one hash at a time:
+/// what the aggregate keeps per group. While few, the hashes themselves
+/// (a query with many groups would otherwise hold 16 KiB for each); the
+/// estimate is always the one of the registers those hashes fill, so it is
+/// the function's, and the same in whatever order or partitioning the
+/// hashes came.
+#[derive(Clone)]
+pub(crate) enum Hll {
+    Few(std::collections::HashSet<u64, foldhash::fast::RandomState>),
+    Registers(Vec<u8>),
+}
+
+impl Default for Hll {
+    fn default() -> Self {
+        Hll::Few(Default::default())
+    }
+}
+
+impl Hll {
+    /// Add a value by its [`hash_value`].
+    #[inline]
+    pub(crate) fn add(&mut self, hash: u64) {
+        match self {
+            Hll::Few(hashes) => {
+                hashes.insert(hash);
+                if hashes.len() > HLL_FEW {
+                    *self = Hll::Registers(self.registers());
+                }
+            }
+            Hll::Registers(regs) => hll_add(regs, hash),
+        }
+    }
+
+    /// The values of `other` too.
+    pub(crate) fn merge(&mut self, other: &Hll) {
+        match other {
+            Hll::Few(hashes) => hashes.iter().for_each(|hash| self.add(*hash)),
+            Hll::Registers(theirs) => {
+                let mut regs = self.registers();
+                for (mine, theirs) in regs.iter_mut().zip(theirs) {
+                    *mine = (*mine).max(*theirs);
+                }
+                *self = Hll::Registers(regs);
+            }
+        }
+    }
+
+    fn registers(&self) -> Vec<u8> {
+        match self {
+            Hll::Few(hashes) => {
+                let mut regs = vec![0u8; HLL_M];
+                hashes.iter().for_each(|hash| hll_add(&mut regs, *hash));
+                regs
+            }
+            Hll::Registers(regs) => regs.clone(),
+        }
+    }
+
+    /// How many values were held, as the function estimates it.
+    pub(crate) fn estimate(&self) -> f64 {
+        match self {
+            Hll::Few(_) => hll_estimate(&self.registers()),
+            Hll::Registers(regs) => hll_estimate(regs),
+        }
+    }
+}
+
 pub fn evaluate(name: &str, args: &[Value]) -> DbResult<Option<Value>> {
     match name {
         "APPROX_COUNT_DISTINCT" => Ok(Some(approx_count_distinct(args)?)),

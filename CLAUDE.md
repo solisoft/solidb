@@ -1035,8 +1035,9 @@ compare columns with constants or with each other (`==` `!=` `<` `<=` `>`
 `>=`, `IN` / `NOT IN` a list, joined by `AND` / `OR` / `NOT`) or are any
 other condition computed from the columns, the keys are columns,
 `TIME_BUCKET(column, "<fixed interval>")` or expressions of the columns,
-and the aggregates are `COUNT`, `SUM`, `AVG`, `MIN`, `MAX` or
-`COUNT_DISTINCT` of a column or of an expression of the columns: on several threads, into a
+and the aggregates are `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`,
+`COUNT_DISTINCT`, the variance family, `MEDIAN`, `PERCENTILE` or
+`APPROX_COUNT_DISTINCT` of a column or of an expression of the columns: on several threads, into a
 table of groups handed to the same `CollectFold` as rows, with the exact
 state of each sum. A single integer key of small range is grouped in plain
 arrays indexed by the key (`Flat`): a sum and, beside it, the total of what
@@ -1251,6 +1252,22 @@ Rules that keep it sound:
   values (`Acc::distinct`, null among them) and hands them to the fold
   as `Slice::Each`; a query that has one goes a row at a time and is
   never cut to its top groups by that aggregate.
+- **An aggregate that keeps something of its own goes a row at a time**
+  (`AggregateAccumulator::takes_its_own`: distinct values, the squares
+  of the variance family, the numbers of a median or a percentile, a
+  sketch): `fold_by_row` fills it in `Acc`, `push_groups` hands it to
+  the fold as its own kind of `Slice`, and it is never cut to its top
+  groups. A new kind that the arrays answer has to be in that function,
+  in `fold_by_row`, in `Acc::merge` and in `push_groups`.
+  `STDDEV` / `VARIANCE` are computed from the exact sum of the values
+  and the exact sum of their squares (`math::Moments`), on every path:
+  that is what makes them the same number in the arrays' order as in
+  the rows', and mergeable. A running formula (Welford) would bring the
+  order back. `APPROX_COUNT_DISTINCT` hashes a column's value as
+  `hash_value` hashes the JSON value (`hash_f64`, `hash_str`): a change
+  to one is a change to both. What follows an aggregate's argument
+  (`PERCENTILE(x, 95)`, `AggregateExpr::options`) is a literal or a bind
+  variable, read once by `CollectFold::finish`.
 - **Nulls in the fold follow SDBQL** (`columnar_scan.rs`): to a
   comparison a null is below every value and equal to none (`select`:
   it passes `!=`, `<`, `<=`); a null key is a group of its own

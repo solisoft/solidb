@@ -186,10 +186,12 @@ fn every_aggregate_over_mixed_values() {
          u = UNIQUE(d.v), su = SORTED_UNIQUE(d.v), l = COLLECT_LIST(d.v), \
          var = VARIANCE(d.v), vs = VARIANCE_SAMPLE(d.v), sd = STDDEV(d.v), \
          sds = STDDEV_SAMPLE(d.v), med = MEDIAN(d.v), ba = BIT_AND(d.i), \
-         bo = BIT_OR(d.i), bx = BIT_XOR(d.i), mi = MIN(d.i), mxs = MAX(d.t)";
+         bo = BIT_OR(d.i), bx = BIT_XOR(d.i), mi = MIN(d.i), mxs = MAX(d.t), \
+         pc = PERCENTILE(d.v, 75), pi = QUANTILE(d.v, 30, 'interpolation'), \
+         ac = APPROX_COUNT_DISTINCT(d.v)";
     for q in [
-        format!("FOR d IN c COLLECT k = d.k AGGREGATE {aggregates} RETURN MERGE({{k}}, {{n, cn, len, s, a, mn, mx, cd, u, su, l, var, vs, sd, sds, med, ba, bo, bx, mi, mxs}})"),
-        format!("FOR d IN c COLLECT AGGREGATE {aggregates} RETURN {{n, cn, len, s, a, mn, mx, cd, u, su, l, var, vs, sd, sds, med, ba, bo, bx, mi, mxs}}"),
+        format!("FOR d IN c COLLECT k = d.k AGGREGATE {aggregates} RETURN MERGE({{k}}, {{n, cn, len, s, a, mn, mx, cd, u, su, l, var, vs, sd, sds, med, ba, bo, bx, mi, mxs, pc, pi, ac}})"),
+        format!("FOR d IN c COLLECT AGGREGATE {aggregates} RETURN {{n, cn, len, s, a, mn, mx, cd, u, su, l, var, vs, sd, sds, med, ba, bo, bx, mi, mxs, pc, pi, ac}}"),
         format!("FOR d IN c COLLECT t = d.t AGGREGATE {aggregates} RETURN {{t, n, s, a, mn, mx, l}}"),
     ] {
         same(&engine, &q);
@@ -777,6 +779,14 @@ fn streaming_collect_holds_groups_not_documents() {
     over_ceiling(run(q, true), q);
     let q = "FOR o IN orders COLLECT n = o.n RETURN n";
     over_ceiling(run(q, true), q);
+    // A list keeps values, one to a row; a median or a percentile keeps
+    // numbers, eight to a row.
+    let q = "FOR o IN orders FILTER o.n < 60000 COLLECT AGGREGATE l = COLLECT_LIST(o.amount) RETURN LENGTH(l)";
+    over_ceiling(run(q, true), q);
+    let q = "FOR o IN orders FILTER o.n < 60000 COLLECT AGGREGATE m = MEDIAN(o.amount) RETURN m";
+    assert_eq!(run(q, true).unwrap(), vec![json!(50.0)]);
+    let q = "FOR o IN orders COLLECT AGGREGATE m = MEDIAN(o.amount) RETURN m";
+    over_ceiling(run(q, true), q);
 }
 
 // ---------------------------------------------------------------------------
@@ -987,6 +997,14 @@ fn parallel_scans_give_the_sequential_answer() {
         "FOR d IN c FILTER d.status == 'late' COLLECT g = d.g WITH COUNT INTO n RETURN {g, n}",
         "FOR d IN c FILTER d.status == 'nobody' COLLECT g = d.g WITH COUNT INTO n RETURN {g, n}",
         "FOR d IN c FILTER d.status == 'nobody' COLLECT AGGREGATE s = SUM(d.amount) RETURN s",
+        // Exact sums of the values and of their squares; the numbers,
+        // selected whatever their order; a sketch.
+        "FOR d IN c COLLECT g = d.g AGGREGATE sd = STDDEV(d.amount), v = VARIANCE_SAMPLE(d.amount), \
+         m = MEDIAN(d.amount), p = PERCENTILE(d.amount, 90), \
+         q = PERCENTILE(d.amount, 12.5, 'interpolation'), ad = APPROX_COUNT_DISTINCT(d.x) \
+         RETURN {g, sd, v, m, p, q, ad}",
+        "FOR d IN c COLLECT AGGREGATE sd = STDDEV_SAMPLE(d.amount), m = MEDIAN(d.x), \
+         ad = APPROX_COUNT_DISTINCT(d.amount) RETURN {sd, m, ad}",
     ] {
         let groups = same_everywhere(&engine, q, &binds).unwrap_or_else(|e| panic!("{q}: {e}"));
         assert!(!groups.is_empty() || q.contains("nobody"), "{q}");
@@ -1041,6 +1059,99 @@ fn parallel_scans_give_the_sequential_answer() {
     // One thread asked for, one used.
     let (note, _) = notes(&engine, q, TYPED, &binds);
     assert!(!parallel(&note), "{note}");
+}
+
+/// `PERCENTILE(expr, p[, method])` and `APPROX_COUNT_DISTINCT(expr)` as
+/// aggregates answer what the functions of those names answer over the
+/// group's values.
+#[test]
+fn aggregates_that_are_also_array_functions() {
+    let (engine, _tmp) = engine_with(tricky_docs(500));
+    let pairs = [
+        ("PERCENTILE(d.amount, 95)", "PERCENTILE(g, 95)"),
+        ("PERCENTILE(d.amount, 0)", "PERCENTILE(g, 0)"),
+        ("QUANTILE(d.amount, 100)", "PERCENTILE(g, 100)"),
+        (
+            "PERCENTILE(d.amount, 33.3, 'interpolation')",
+            "PERCENTILE(g, 33.3, 'interpolation')",
+        ),
+        ("PERCENTILE(d.amount, 150)", "PERCENTILE(g, 150)"),
+        ("PERCENTILE(d.amount, 'high')", "PERCENTILE(g, 'high')"),
+        (
+            "APPROX_COUNT_DISTINCT(d.amount)",
+            "APPROX_COUNT_DISTINCT(g)",
+        ),
+        ("MEDIAN(d.amount)", "MEDIAN(g)"),
+        ("STDDEV(d.amount)", "STDDEV(g)"),
+        ("VARIANCE_SAMPLE(d.amount)", "VARIANCE_SAMPLE(g)"),
+    ];
+    for (aggregate, function) in pairs {
+        let one = same(
+            &engine,
+            &format!("FOR d IN c COLLECT s = d.status AGGREGATE r = {aggregate} RETURN [s, r]"),
+        );
+        let other = same(
+            &engine,
+            &format!("FOR d IN c COLLECT s = d.status INTO g = d.amount RETURN [s, {function}]"),
+        );
+        assert!(!one.is_empty());
+        assert_eq!(one, other, "{aggregate}");
+    }
+    // A value that is not a number is not among a percentile's; null is
+    // among the distinct values. (Rows in memory: no scan to fold into.)
+    assert_eq!(
+        run(
+            &engine,
+            "FOR d IN [{v: 1}, {v: 'x'}, {v: null}, {v: 3}, {v: 1.0}, {}] COLLECT AGGREGATE \
+             p = PERCENTILE(d.v, 100), n = APPROX_COUNT_DISTINCT(d.v) RETURN [p, n]",
+            true,
+            &BindVars::new()
+        )
+        .unwrap(),
+        vec![json!([3.0, 4.0])]
+    );
+    // No row at all.
+    assert_eq!(
+        same(
+            &engine,
+            "FOR d IN c FILTER false COLLECT AGGREGATE p = PERCENTILE(d.amount, 50), \
+             n = APPROX_COUNT_DISTINCT(d.amount) RETURN [p, n]"
+        ),
+        vec![json!([null, 0.0])]
+    );
+    // The rank as a bind variable.
+    let mut binds = BindVars::new();
+    binds.insert("p".to_string(), json!(95));
+    assert_eq!(
+        same_with(
+            &engine,
+            "FOR d IN c COLLECT AGGREGATE r = PERCENTILE(d.amount, @p) RETURN r",
+            &binds
+        )
+        .unwrap(),
+        same(
+            &engine,
+            "FOR d IN c COLLECT AGGREGATE r = PERCENTILE(d.amount, 95) RETURN r"
+        )
+    );
+    // What follows the argument is a constant, and only where one is read.
+    for (q, why) in [
+        (
+            "FOR d IN c COLLECT AGGREGATE r = PERCENTILE(d.amount, d.x) RETURN r",
+            "a constant or a bind variable",
+        ),
+        (
+            "FOR d IN c COLLECT AGGREGATE r = SUM(d.amount, 2) RETURN r",
+            "takes one argument",
+        ),
+        (
+            "FOR d IN c COLLECT AGGREGATE r = PERCENTILE(d.amount, 1, 'rank', 2) RETURN r",
+            "optionally a method",
+        ),
+    ] {
+        let error = parse(q).unwrap_err().to_string();
+        assert!(error.contains(why), "{q}: {error}");
+    }
 }
 
 /// Sums whose value depends on the order of addition give one answer: the

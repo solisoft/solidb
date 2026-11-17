@@ -126,6 +126,43 @@ impl ExactSum {
         }
     }
 
+    /// Add `x · x`, exactly: the product of two doubles is the sum of two,
+    /// its rounding and what that rounding left (exact unless the product
+    /// leaves the range of a double).
+    #[inline]
+    pub(crate) fn add_square(&mut self, x: f64) {
+        self.add_product(x, x);
+    }
+
+    /// Add `a · b`, as [`Self::add_square`] adds a square.
+    #[inline]
+    pub(crate) fn add_product(&mut self, a: f64, b: f64) {
+        let high = a * b;
+        self.add(high);
+        self.add(a.mul_add(b, -high));
+    }
+
+    /// The sum as up to four doubles that add up to it, the largest first
+    /// (zeros after the last): each is what is left, rounded. Exact when
+    /// the sum fits their 212 bits, else its leading bits. `None` when the
+    /// sum is not a finite double.
+    pub(crate) fn parts(&self) -> Option<[f64; 4]> {
+        let mut rest = self.clone();
+        let mut parts = [0.0; 4];
+        for part in &mut parts {
+            let value = rest.value();
+            if !value.is_finite() {
+                return None;
+            }
+            if value == 0.0 {
+                break;
+            }
+            *part = value;
+            rest.add(-value);
+        }
+        Some(parts)
+    }
+
     /// The sum as an integer, when every value added was one (`0` for no
     /// value at all) and it fits a JSON integer; `None` for a float sum.
     pub(crate) fn integer(&self) -> Option<serde_json::Value> {

@@ -47,6 +47,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::super::aggregation::{AggKind, AggregateAccumulator, Slice};
+use super::super::builtins::approx::Hll;
 use super::super::datum::Datum;
 use super::super::exact_sum::ExactSum;
 use super::super::index_opt::{expression_references_var, push_conjuncts, IndexHint};
@@ -60,7 +61,7 @@ use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression, UnaryOperator};
 use crate::sdbql::executor::builtins::datetime::WEEK_ORIGIN_MS;
 use crate::sdbql::executor::builtins::timeseries::{parse_interval, Interval};
 use crate::sdbql::executor::const_fold::is_pure_function;
-use crate::sdbql::executor::helpers::compare_values;
+use crate::sdbql::executor::helpers::{compare_values, hash_f64, hash_str, hash_value};
 use crate::storage::columnar_blocks::{ColBlock, ColData, Column};
 
 /// A comparison of a column with a constant.
@@ -169,6 +170,12 @@ struct Acc {
     /// The distinct values of the argument, for `COUNT_DISTINCT`.
     distinct: std::collections::HashSet<Atom, foldhash::fast::RandomState>,
     sum: ExactSum,
+    /// The sum of the squares, for the variance family.
+    squares: ExactSum,
+    /// The numbers themselves, for a median or a percentile.
+    values: Vec<f64>,
+    /// The sketch of the argument's values, for `APPROX_COUNT_DISTINCT`.
+    sketch: Hll,
     /// The extremes, and whether each is held as an integer.
     min: Option<(f64, bool)>,
     max: Option<(f64, bool)>,
@@ -215,6 +222,9 @@ impl Acc {
         self.missing += other.missing;
         self.distinct.extend(other.distinct.iter().cloned());
         self.sum.merge(&other.sum);
+        self.squares.merge(&other.squares);
+        self.values.extend_from_slice(&other.values);
+        self.sketch.merge(&other.sketch);
         if let Some((v, int)) = other.min {
             if self.min.is_none_or(|(held, _)| v < held) {
                 self.min = Some((v, int));
@@ -625,6 +635,7 @@ impl Table {
             for (acc, theirs) in mine.accs.iter_mut().zip(&mut group.accs) {
                 // Settled, a sum goes in at the cost of an addition.
                 theirs.sum.settle();
+                theirs.squares.settle();
                 acc.merge(theirs);
             }
         }
@@ -1304,10 +1315,38 @@ fn fold_by_row(
             ..
         }]
     );
+    // One key of strings, none of them null: the groups by the block's
+    // codes.
+    let mut by_code: Vec<u32> = match keys {
+        [Column {
+            data: ColData::Str { dict, .. },
+            nulls: None,
+            ..
+        }] if of == 1 => vec![u32::MAX; dict.len()],
+        _ => Vec::new(),
+    };
+    // For a sketch of a column of strings: the hash of each string of the
+    // block, once.
+    let hashes: Vec<Option<Vec<u64>>> = args
+        .iter()
+        .zip(kinds)
+        .map(|(column, kind)| match column.map(|c| &c.data) {
+            Some(ColData::Str { dict, .. }) if *kind == AggKind::ApproxDistinct => {
+                Some(dict.iter().map(|s| hash_str(s)).collect())
+            }
+            _ => None,
+        })
+        .collect();
     let mut seen: HashMap<Vec<u64>, u32, foldhash::fast::RandomState> = HashMap::default();
     let mut scratch: Vec<u64> = Vec::with_capacity(keys.len() + 1);
     let mut each = |row: usize| {
-        let group = if by_number {
+        let group = if !by_code.is_empty() {
+            let code = local(keys[0], row) as usize;
+            if by_code[code] == u32::MAX {
+                by_code[code] = table.group(vec![atom(keys[0], row)], accs);
+            }
+            by_code[code]
+        } else if by_number {
             let key = keys[0];
             if is_null(key, row) {
                 // The null key is the first thread's.
@@ -1359,8 +1398,24 @@ fn fold_by_row(
         };
         let group = &mut table.groups[group as usize];
         group.count += 1;
-        for ((acc, column), kind) in group.accs.iter_mut().zip(args).zip(kinds) {
+        for (((acc, column), kind), hashes) in
+            group.accs.iter_mut().zip(args).zip(kinds).zip(&hashes)
+        {
             match column {
+                // Null is one of the values a sketch holds too: each value
+                // by the hash the function gives it.
+                Some(column) if *kind == AggKind::ApproxDistinct => {
+                    acc.sketch.add(match (&column.data, hashes) {
+                        _ if is_null(column, row) => hash_value(&Value::Null),
+                        (ColData::Str { codes, .. }, Some(hashes)) => hashes[codes[row] as usize],
+                        (ColData::Int(values), _) => hash_f64(values[row] as f64),
+                        (ColData::Float(values) | ColData::Mixed { values, .. }, _) => {
+                            hash_f64(values[row])
+                        }
+                        (ColData::Bool(values), _) => hash_value(&Value::Bool(values[row])),
+                        _ => return,
+                    });
+                }
                 // Null is one of the values a distinct count holds.
                 Some(column) if *kind == AggKind::CountDistinct => {
                     let value = atom(column, row);
@@ -1369,6 +1424,25 @@ fn fold_by_row(
                     }
                 }
                 Some(column) if is_null(column, row) => acc.missing += 1,
+                // The variance family: the number as a float, and its
+                // square.
+                Some(column) if AggregateAccumulator::takes_moments(*kind) => {
+                    let x = match &column.data {
+                        ColData::Int(values) => values[row] as f64,
+                        ColData::Float(values) | ColData::Mixed { values, .. } => values[row],
+                        _ => return,
+                    };
+                    acc.sum.add(x);
+                    acc.squares.add_square(x);
+                }
+                // A median, a percentile: the numbers.
+                Some(column) if AggregateAccumulator::takes_numbers(*kind) => {
+                    acc.values.push(match &column.data {
+                        ColData::Int(values) => values[row] as f64,
+                        ColData::Float(values) | ColData::Mixed { values, .. } => values[row],
+                        _ => return,
+                    });
+                }
                 Some(column) => match &column.data {
                     ColData::Int(values) => acc.int(values[row]),
                     ColData::Float(values) => acc.float(values[row]),
@@ -1486,7 +1560,10 @@ fn fold_block(read: &Read<'_, '_, '_>, table: &mut Table, share: Share) -> Optio
         });
         let counted = matches!(
             kind,
-            AggKind::CountNonNull | AggKind::CountRows | AggKind::CountDistinct
+            AggKind::CountNonNull
+                | AggKind::CountRows
+                | AggKind::CountDistinct
+                | AggKind::ApproxDistinct
         );
         if !numeric && !counted {
             return None;
@@ -1494,13 +1571,15 @@ fn fold_block(read: &Read<'_, '_, '_>, table: &mut Table, share: Share) -> Optio
         args.push(column);
     }
     let accs = args.len();
-    // A null among the keys or the arguments, or distinct values to
-    // keep: a row at a time. What follows reads whole arrays.
-    let by_row = plan.kinds.contains(&AggKind::CountDistinct)
-        || keys
+    // A null among the keys or the arguments, distinct values to keep or
+    // squares to add: a row at a time. What follows reads whole arrays.
+    let by_row =
+        plan.kinds
             .iter()
-            .chain(args.iter().flatten())
-            .any(|column| column.nulls.is_some() || matches!(column.data, ColData::Mixed { .. }));
+            .any(|kind| AggregateAccumulator::takes_its_own(*kind))
+            || keys.iter().chain(args.iter().flatten()).any(|column| {
+                column.nulls.is_some() || matches!(column.data, ColData::Mixed { .. })
+            });
     if by_row {
         return fold_by_row(
             table,
@@ -1767,7 +1846,9 @@ impl QueryExecutor<'_> {
                 }),
             });
             let kind = AggKind::resolve(&aggregate.function, aggregate.argument.is_some())?;
-            if !AggregateAccumulator::takes_slices(kind) && kind != AggKind::CountDistinct {
+            if !AggregateAccumulator::takes_slices(kind)
+                && !AggregateAccumulator::takes_its_own(kind)
+            {
                 return None;
             }
             plan.kinds.push(kind);
@@ -1939,12 +2020,26 @@ impl QueryExecutor<'_> {
                 .iter()
                 .zip(&group.accs)
                 .zip(&distinct)
-                .map(|((arg, acc), distinct)| {
+                .zip(&col_plan.kinds)
+                .map(|(((arg, acc), distinct), kind)| {
                     if let Some(values) = distinct {
                         return Some(Slice::Each(values));
                     }
                     // The rows of the group whose argument is not null.
                     let rows = group.count.saturating_sub(acc.missing) as usize;
+                    if AggregateAccumulator::takes_moments(*kind) {
+                        return arg.as_ref().map(|_| Slice::Moments {
+                            rows,
+                            sum: &acc.sum,
+                            squares: &acc.squares,
+                        });
+                    }
+                    if AggregateAccumulator::takes_numbers(*kind) {
+                        return arg.as_ref().map(|_| Slice::Float(&acc.values));
+                    }
+                    if *kind == AggKind::ApproxDistinct {
+                        return arg.as_ref().map(|_| Slice::Sketch(&acc.sketch));
+                    }
                     arg.as_ref().map(|_| match (acc.min, acc.max, acc.missing) {
                         (Some(min), Some(max), 0) => Slice::Total {
                             sum: &acc.sum,
@@ -2074,7 +2169,7 @@ impl QueryExecutor<'_> {
                 .collect();
             one(object, &mut fold)?;
         }
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
         Ok(ScanCollectRun {
             rows: groups,
@@ -2226,7 +2321,10 @@ impl QueryExecutor<'_> {
                 Source::Made(_) => None,
             }))
             .collect();
-        let no_null = !col_plan.kinds.contains(&AggKind::CountDistinct)
+        let no_null = !col_plan
+            .kinds
+            .iter()
+            .any(|kind| AggregateAccumulator::takes_its_own(*kind))
             && read.as_ref().is_some_and(|names| {
                 names.iter().all(|name| {
                     set.blocks
@@ -2462,7 +2560,7 @@ impl QueryExecutor<'_> {
                         AggKind::Min => acc.min.map_or(f64::NAN, |m| m.0),
                         AggKind::Max => acc.max.map_or(f64::NAN, |m| m.0),
                         // Not a number the groups can be cut by.
-                        AggKind::CountDistinct => f64::NAN,
+                        kind if AggregateAccumulator::takes_its_own(kind) => f64::NAN,
                         _ => group.count as f64,
                     }
                 };
@@ -2537,7 +2635,7 @@ impl QueryExecutor<'_> {
             one(object, &mut fold)?;
         }
 
-        let groups = fold.finish()?;
+        let groups = fold.finish(self)?;
         self.check_budget(groups.len())?;
         Ok(Some(ScanCollectRun {
             rows: groups,

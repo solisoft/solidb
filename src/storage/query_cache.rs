@@ -672,6 +672,9 @@ impl CollectionWalk {
                         if let Some(e) = &a.argument {
                             self.expr(e);
                         }
+                        for e in &a.options {
+                            self.expr(e);
+                        }
                     }
                     if let Some(v) = &c.into_var {
                         self.bound.insert(v.clone());
