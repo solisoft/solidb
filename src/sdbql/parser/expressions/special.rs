@@ -377,18 +377,39 @@ impl Parser {
 
         let mut fields = Vec::new();
 
+        // `{[expr]: value}`: a key computed when the object is built. An
+        // object that has one is kept apart, since `Expression::Object`
+        // holds its keys as written.
+        let mut computed: Vec<Option<Expression>> = Vec::new();
+
         while !matches!(self.current_token(), Token::RightBrace | Token::Eof) {
-            let key = self.parse_object_key()?;
-
-            // Support shorthand syntax: { city } means { city: city }
-            let value = if matches!(self.current_token(), Token::Colon) {
+            if matches!(self.current_token(), Token::LeftBracket) {
                 self.advance();
-                self.parse_expression()?
+                let key = self.parse_expression()?;
+                self.expect(Token::RightBracket)?;
+                if !matches!(self.current_token(), Token::Colon) {
+                    return Err(DbError::ParseError(
+                        "Expected ':' after a computed key ({[expr]: value})".to_string(),
+                    ));
+                }
+                self.advance();
+                let value = self.parse_expression()?;
+                fields.push((String::new(), value));
+                computed.push(Some(key));
             } else {
-                Expression::Variable(key.clone())
-            };
+                let key = self.parse_object_key()?;
 
-            fields.push((key, value));
+                // Support shorthand syntax: { city } means { city: city }
+                let value = if matches!(self.current_token(), Token::Colon) {
+                    self.advance();
+                    self.parse_expression()?
+                } else {
+                    Expression::Variable(key.clone())
+                };
+
+                fields.push((key, value));
+                computed.push(None);
+            }
 
             if matches!(self.current_token(), Token::Comma) {
                 self.advance();
@@ -399,7 +420,29 @@ impl Parser {
 
         self.expect(Token::RightBrace)?;
 
-        Ok(Expression::Object(fields))
+        if computed.iter().all(Option::is_none) {
+            return Ok(Expression::Object(fields));
+        }
+
+        // Built as ZIP_OBJECT(keys, values), in the order written, so that
+        // a key written twice keeps its last value as in any object. A
+        // computed key is made a string the way TO_STRING makes one.
+        let mut keys = Vec::with_capacity(fields.len());
+        let mut values = Vec::with_capacity(fields.len());
+        for ((name, value), key) in fields.into_iter().zip(computed) {
+            keys.push(match key {
+                Some(expr) => Expression::FunctionCall {
+                    name: "TO_STRING".to_string(),
+                    args: vec![expr],
+                },
+                None => Expression::Literal(Value::String(name)),
+            });
+            values.push(value);
+        }
+        Ok(Expression::FunctionCall {
+            name: "ZIP_OBJECT".to_string(),
+            args: vec![Expression::Array(keys), Expression::Array(values)],
+        })
     }
 
     /// Parse object key: identifier, string, or keyword

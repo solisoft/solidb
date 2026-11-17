@@ -555,3 +555,157 @@ fn test_collect_keep_unknown_variable_errors() {
     let err = executor.execute(&query).unwrap_err().to_string();
     assert!(err.contains("nosuch"), "unexpected error: {}", err);
 }
+
+// ---- Card #933: computed object keys, MERGE of an array, a quoted key
+// ---- after an array expansion.
+
+fn one(engine: &StorageEngine, query: &str) -> serde_json::Value {
+    execute_query(engine, query).remove(0)
+}
+
+fn failure(engine: &StorageEngine, query_str: &str) -> String {
+    match parse(query_str) {
+        Err(e) => e.to_string(),
+        Ok(query) => QueryExecutor::new(engine)
+            .execute(&query)
+            .expect_err(query_str)
+            .to_string(),
+    }
+}
+
+#[test]
+fn an_object_key_may_be_computed() {
+    let (engine, _tmp) = create_seeded_engine();
+    assert_eq!(
+        one(&engine, "RETURN {[CONCAT('a', 1)]: 2}"),
+        json!({"a1": 2})
+    );
+    // Beside keys written as they are, and the shorthand.
+    assert_eq!(
+        one(
+            &engine,
+            "LET city = 'Paris' LET k = 'n' RETURN {id: 1, [k]: 2, city, [UPPER(k)]: 3, 'q r': 4}"
+        ),
+        json!({"id": 1, "n": 2, "city": "Paris", "N": 3, "q r": 4})
+    );
+    // One per row, from the row.
+    let mut rows = execute_query(
+        &engine,
+        "FOR u IN users FILTER u.age >= 32 RETURN {[u._key]: u.age}",
+    );
+    rows.sort_by_key(|r| r.to_string());
+    assert_eq!(rows, vec![json!({"carol": 35}), json!({"eve": 32})]);
+    // A key written twice keeps its last value, computed or not.
+    assert_eq!(one(&engine, "RETURN {a: 1, ['a']: 2}"), json!({"a": 2}));
+    assert_eq!(one(&engine, "RETURN {['a']: 1, a: 2}"), json!({"a": 2}));
+    // A key that is not a string is made one, as TO_STRING makes it.
+    assert_eq!(
+        one(&engine, "RETURN {[1 + 1]: 'two', [true]: 't', [null]: 'n'}"),
+        json!({"2": "two", "true": "t", "": "n"})
+    );
+    // Nested, and written into a document.
+    assert_eq!(
+        one(&engine, "RETURN {outer: {['in' + 'ner']: [1, {['x']: 2}]}}"),
+        json!({"outer": {"inner": [1, {"x": 2}]}})
+    );
+    execute_query(
+        &engine,
+        "LET f = 'nick' UPDATE 'alice' WITH {[f]: 'Al'} IN users",
+    );
+    assert_eq!(
+        one(&engine, "RETURN DOCUMENT('users/alice').nick"),
+        json!("Al")
+    );
+    assert!(failure(&engine, "RETURN {['a'] 1}").contains("computed key"));
+}
+
+#[test]
+fn merge_takes_one_array_of_objects() {
+    let (engine, _tmp) = create_seeded_engine();
+    assert_eq!(
+        one(&engine, "RETURN MERGE([{a: 1}, {b: 2}, {a: 3}])"),
+        json!({"a": 3, "b": 2})
+    );
+    assert_eq!(one(&engine, "RETURN MERGE([])"), json!({}));
+    assert_eq!(
+        one(&engine, "RETURN MERGE([{a: 1}, null])"),
+        json!({"a": 1})
+    );
+    // The forms it already took.
+    assert_eq!(
+        one(&engine, "RETURN MERGE({a: 1}, {b: 2})"),
+        json!({"a": 1, "b": 2})
+    );
+    assert_eq!(one(&engine, "RETURN MERGE({a: 1})"), json!({"a": 1}));
+    assert_eq!(
+        one(
+            &engine,
+            "RETURN MERGE(FOR u IN users FILTER u.age > 31 RETURN {[u._key]: u.city})"
+        ),
+        json!({"carol": "Paris", "eve": "London"})
+    );
+    // An array beside other arguments is still not an object.
+    assert!(failure(&engine, "RETURN MERGE([{a: 1}], {b: 2})").contains("must be objects"));
+    assert!(failure(&engine, "RETURN MERGE([{a: 1}, 2])").contains("must be objects"));
+}
+
+#[test]
+fn a_quoted_key_after_an_expansion_is_read_in_each_element() {
+    let (engine, _tmp) = create_seeded_engine();
+    let ds = "LET ds = [{v: {'1': 3, w: {'a b': 1}}}, {v: {'1': 5, w: {'a b': 2}}}]";
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN ds[*].v['1']")),
+        json!([3, 5])
+    );
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN AVG(ds[*].v['1'])")),
+        json!(4.0)
+    );
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN ds[*].v.w['a b']")),
+        json!([1, 2])
+    );
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN ds[*]['v']['1']")),
+        json!([3, 5])
+    );
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN ds[*]['v'].w")),
+        json!([{"a b": 1}, {"a b": 2}])
+    );
+    // What it is the same as.
+    assert_eq!(
+        one(&engine, &format!("{ds} RETURN ds[* RETURN CURRENT.v['1']]")),
+        json!([3, 5])
+    );
+    // A number, or anything else between the brackets, still indexes the
+    // array of results.
+    assert_eq!(
+        one(
+            &engine,
+            "LET ds = [{v: [7, 8]}, {v: [9]}] RETURN ds[*].v[0]"
+        ),
+        json!([7, 8])
+    );
+    assert_eq!(
+        one(&engine, "LET ds = [{v: 7}, {v: 9}] RETURN ds[*].v[-1]"),
+        json!(9)
+    );
+}
+
+#[test]
+fn a_function_given_arguments_it_has_no_form_for_is_not_called_unknown() {
+    let (engine, _tmp) = create_seeded_engine();
+    let message = failure(&engine, "RETURN AVG(3)");
+    assert!(
+        message.contains("AVG: not applicable to (number)"),
+        "{message}"
+    );
+    let message = failure(&engine, "RETURN SUM(null)");
+    assert!(
+        message.contains("SUM: not applicable to (null)"),
+        "{message}"
+    );
+    let message = failure(&engine, "RETURN NO_SUCH_FUNCTION(1)");
+    assert!(message.contains("Unknown function"), "{message}");
+}

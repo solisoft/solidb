@@ -237,7 +237,10 @@ FOR i IN 1..n
           </div>
           <div class="p-5 space-y-4">
             <p class="text-sm text-gray-400">
-              <code class="text-lime-300">arr[*].path</code> reads an attribute from every element. Inside the brackets, after the asterisk, up to three operations may follow, in this order: <code class="text-lime-300">FILTER cond</code>, <code class="text-lime-300">LIMIT [offset,] count</code>, <code class="text-lime-300">RETURN expr</code>. <code class="text-lime-300">CURRENT</code> (upper case) is the element being looked at. A path written after the closing bracket is read from every result. A value that is not an array expands to <code>[]</code>.
+              <code class="text-lime-300">arr[*].path</code> reads an attribute from every element. Inside the brackets, after the asterisk, up to three operations may follow, in this order: <code class="text-lime-300">FILTER cond</code>, <code class="text-lime-300">LIMIT [offset,] count</code>, <code class="text-lime-300">RETURN expr</code>. <code class="text-lime-300">CURRENT</code> (upper case) is the element being looked at. A path written after the closing bracket is read from every result; a key that is not an identifier is written quoted in brackets, <code class="text-lime-300">ds[*].v['1']</code>. An index that is not a quoted key (<code>[0]</code>, <code>[@k]</code>) applies to the array of results. A value that is not an array expands to <code>[]</code>.
+            </p>
+            <p class="text-sm text-gray-400">
+              An object may compute a key: <code class="text-lime-300">{[expr]: value}</code>, beside keys written as they are (<code class="text-lime-300">{id: 1, [u._key]: u.age}</code>). A key that is not a string is made one as <code>TO_STRING</code> makes it; a key written twice keeps its last value.
             </p>
             <p class="text-sm text-gray-400">
               <code class="text-lime-300">[**]</code> flattens the array one level before expanding it (each additional <code>*</code> flattens one more level).

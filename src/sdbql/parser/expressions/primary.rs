@@ -156,29 +156,46 @@ impl Parser {
         }
         self.advance(); // consume ']'
 
-        // Collect subsequent dot-separated field path
-        let field_path = if matches!(self.current_token(), Token::Dot) {
-            let mut path = String::new();
-            while matches!(self.current_token(), Token::Dot) {
-                self.advance();
-                if let Some(name) = Self::token_to_field_name(self.current_token()) {
-                    if !path.is_empty() {
-                        path.push('.');
+        // The path read in each element: `.name` steps, and `['name']`
+        // steps for a key that is not an identifier (`ds[*].v['1']`). A
+        // quoted key on the array of results meant nothing (an array has no
+        // such member), so it is the element's. `[0]`, `[@key]` and any
+        // other index still apply to the array of results, as before. A key
+        // that holds a dot cannot be a step of the dotted path and is left
+        // to that reading too.
+        let mut path = String::new();
+        loop {
+            let name = match self.current_token() {
+                Token::Dot => match Self::token_to_field_name(self.peek_token(1)) {
+                    Some(name) => {
+                        self.advance();
+                        name
                     }
-                    path.push_str(&name);
-                    self.advance();
-                } else {
-                    break;
-                }
+                    None => {
+                        self.advance();
+                        break;
+                    }
+                },
+                Token::LeftBracket => match (self.peek_token(1), self.peek_token(2)) {
+                    (Token::String(key), Token::RightBracket)
+                        if !key.is_empty() && !key.contains('.') =>
+                    {
+                        let key = key.clone();
+                        self.advance();
+                        self.advance();
+                        key
+                    }
+                    _ => break,
+                },
+                _ => break,
+            };
+            self.advance();
+            if !path.is_empty() {
+                path.push('.');
             }
-            if path.is_empty() {
-                None
-            } else {
-                Some(path)
-            }
-        } else {
-            None
-        };
+            path.push_str(&name);
+        }
+        let field_path = if path.is_empty() { None } else { Some(path) };
 
         if depth == 1 && filter.is_none() && limit.is_none() && projection.is_none() {
             return Ok(Expression::ArraySpreadAccess(Box::new(base), field_path));

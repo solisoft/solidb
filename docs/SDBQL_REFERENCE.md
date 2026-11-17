@@ -466,6 +466,12 @@ Special operators for checking conditions across array elements. Desugars to `AN
 **Spread Operator `[*]`**: Projects a field from an array of objects.
 ```sql
 RETURN users[*].name -- Returns array of names
+RETURN ds[*].v['1']  -- a key that is not an identifier, read in each element
+```
+
+**Computed keys**: `{[expr]: value}` builds a key when the object is built.
+```sql
+FOR u IN users RETURN {id: 1, [u._key]: u.age}
 ```
 
 ### Object Functions
@@ -478,7 +484,7 @@ RETURN users[*].name -- Returns array of names
 | `FILTER_KEYS(obj, (k, v) -> cond)` | Keep the entries where the lambda is true | `FILTER_KEYS(doc, k -> !STARTS_WITH(k, "_"))` |
 | `PARSE_URL(url)` | `{scheme, username, password, host, port, path, query, params, fragment}`, or null | `PARSE_URL(u).params.id` |
 | `QUERY_STRING(obj \| text)` | Encode an object as a query string, or parse one | `QUERY_STRING({q: "a b"})` → `"q=a+b"` |
-| `MERGE(o1, o2)` | Shallow merge | `MERGE({a:1}, {b:2})` |
+| `MERGE(o1, o2, …)` | Shallow merge; one array argument is the list of objects | `MERGE({a:1}, {b:2})`, `MERGE([{a:1}, {b:2}])` |
 | `DEEP_MERGE(o1, o2)` | Recursive merge | |
 | `GET(obj, path, default)` | Get by path | `GET(doc, "a.b", 0)` |
 | `SET_PATH(obj, path, value)` | Copy with a nested value set, creating levels | `SET_PATH(doc, "a.b.c", 1)` |

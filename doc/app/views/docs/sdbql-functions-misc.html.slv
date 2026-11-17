@@ -280,9 +280,11 @@ RETURN NULLIF(10, 5) --10</code></pre>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div id="fn-MERGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-MERGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>
-                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MERGE(obj1, obj2)</code>
-                <p class="text-sm text-gray-400 mb-3">Shallow merge of objects.</p>
-                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MERGE({a:1}, {b:2})</code></pre>
+                <code class="block text-sm font-bold text-white bg-gray-700 px-2 py-1 rounded border border-gray-600 w-fit mb-3">MERGE(obj1, obj2, ...)</code>
+                <p class="text-sm text-gray-400 mb-3">Shallow merge of objects; a later one wins. One array argument is the list of objects to merge.</p>
+                <pre><code class="language-sql text-xs bg-gray-950/50 p-2 rounded border border-white/5">RETURN MERGE({a:1}, {b:2})
+RETURN MERGE([{a:1}, {b:2}])
+RETURN MERGE(FOR u IN users RETURN {[u._key]: u.age})</code></pre>
               </div>
               <div id="fn-DEEP_MERGE" class="group relative bg-gray-800/40 border border-white/5 rounded-xl p-5 hover:bg-gray-800/60 transition-colors">
                 <a href="#fn-DEEP_MERGE" class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-gray-400 transition-opacity"><i class="fas fa-link text-xs"></i></a>

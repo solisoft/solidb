@@ -944,6 +944,14 @@ impl<'a> QueryExecutor<'a> {
                     ));
                 }
 
+                // AQL: one array argument is the list of objects to merge,
+                // as MERGE_RECURSIVE already took it.
+                let evaluated_args = match <[Value; 1]>::try_from(evaluated_args) {
+                    Ok([Value::Array(items)]) => items,
+                    Ok([one]) => vec![one],
+                    Err(args) => args,
+                };
+
                 // Audit P7: take the first object by value and extend it,
                 // instead of deep-copying every argument into a fresh map.
                 let mut result: Option<serde_json::Map<String, Value>> = None;
@@ -956,7 +964,7 @@ impl<'a> QueryExecutor<'a> {
                         Value::Null => continue,
                         other => {
                             return Err(DbError::ExecutionError(format!(
-                                "MERGE: all arguments must be objects, got: {:?}",
+                                "MERGE: all arguments must be objects, got: {}",
                                 other
                             )));
                         }
@@ -1434,6 +1442,17 @@ impl<'a> QueryExecutor<'a> {
                 self.apply_dynamic(fname, &evaluated_args[1..], ctx)
             }
 
+            // A function that exists and has no form for these arguments
+            // (`AVG(3)`: it takes an array) is not an unknown one.
+            _ if super::builtins::route(name).is_some() => {
+                let kinds: Vec<&str> = evaluated_args.iter().map(kind_of).collect();
+                Err(DbError::ExecutionError(format!(
+                    "{}: not applicable to ({})",
+                    name,
+                    kinds.join(", ")
+                )))
+            }
+
             // Unknown function
             _ => Err(DbError::ExecutionError(format!(
                 "Unknown function: {}",
@@ -1804,4 +1823,16 @@ fn reservoir_sample(items: Vec<Value>, k: usize) -> Vec<Value> {
     use rand::seq::SliceRandom;
     reservoir.shuffle(&mut rng);
     reservoir
+}
+
+/// The kind of a value, as an error message names it.
+fn kind_of(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
