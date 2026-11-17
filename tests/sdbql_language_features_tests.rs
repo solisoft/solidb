@@ -1206,7 +1206,7 @@ fn a_document_that_is_not_an_object_is_refused() {
 
 fn bare_fixture(engine: &StorageEngine) {
     use solidb::storage::IndexType;
-    for name in ["bare", "indexed"] {
+    for name in ["bare", "indexed", "whole"] {
         engine.create_collection(name.to_string(), None).unwrap();
         let c = engine.get_collection(name).unwrap();
         c.insert_batch(
@@ -1226,6 +1226,20 @@ fn bare_fixture(engine: &StorageEngine) {
             false,
         )
         .unwrap();
+    // `whole` has an index on an attribute the server keeps as well, so its
+    // batches build each document's whole value (card #944); `indexed` reads
+    // the stored attributes.
+    let whole = engine.get_collection("whole").unwrap();
+    for (name, field) in [("by_n", "n"), ("by_created", "_created_at")] {
+        whole
+            .create_index(
+                name.to_string(),
+                vec![field.to_string()],
+                IndexType::Persistent,
+                false,
+            )
+            .unwrap();
+    }
 }
 
 #[test]
@@ -1262,6 +1276,41 @@ fn a_batch_on_a_collection_of_documents_alone_writes_what_the_full_path_writes()
         assert_eq!(
             stored(&engine, "bare"),
             stored(&engine, "indexed"),
+            "{statement}"
+        );
+        let on_whole = mutations(&engine, &statement.replace("NAME", "whole"));
+        assert_eq!(on_whole, on_indexed, "{statement}");
+        assert_eq!(
+            stored(&engine, "whole"),
+            stored(&engine, "indexed"),
+            "{statement}"
+        );
+        // What the index on `n` holds, read through it, on both paths, and
+        // what a scan of the collection without one finds.
+        let through_index = |name: &str| {
+            (
+                run(
+                    &engine,
+                    &format!("FOR d IN {name} FILTER d.n >= 100 SORT d.n RETURN d._key"),
+                ),
+                one(
+                    &engine,
+                    &format!("RETURN LENGTH(FOR d IN {name} FILTER d.n == 1260 RETURN 1)"),
+                ),
+                one(
+                    &engine,
+                    &format!("RETURN LENGTH(FOR d IN {name} FILTER d.n == 260 RETURN 1)"),
+                ),
+            )
+        };
+        assert_eq!(
+            through_index("indexed"),
+            through_index("whole"),
+            "{statement}"
+        );
+        assert_eq!(
+            through_index("indexed"),
+            through_index("bare"),
             "{statement}"
         );
     }

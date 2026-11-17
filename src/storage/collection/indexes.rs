@@ -2884,6 +2884,13 @@ impl Collection {
                 .map(|f| extract_field_value(new_value, f))
                 .collect();
 
+            // The same values name the same entries: nothing to take out
+            // and put back. Most updates touch no indexed attribute, and
+            // each index then cost the batch two operations per document.
+            if old_values == new_values {
+                continue;
+            }
+
             // Remove old entry
             if index.holds(&old_values) {
                 keys_to_remove.extend(Self::index_entry_keys(index, &old_values, doc_key));

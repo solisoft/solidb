@@ -592,6 +592,19 @@ must be added to `holds_documents_only`, or a batch of two documents or
 more will not maintain it. `sdbql_language_features_tests` runs the same
 statements on such a collection and on one with an index.
 
+With something to maintain, the batch's checks and index entries read each
+document's stored attributes (`Document::data`, through
+`PendingUpdate::old_view` / `new_view`) and not its whole value, unless
+the collection has a schema, keeps versions, or has an index of any kind on
+an attribute the server keeps (`indexes_read_system_fields`: `_key`, `_id`,
+`_rev`, `_created_at`, `_updated_at`, which are not among the stored
+attributes). Something new that reads one of those five from the value it
+is handed at an update has to be added to that condition; the same test
+runs its statements on a third collection, `whole`, that takes the other
+way. `compute_index_entries_for_update` writes nothing for an index whose
+values did not change: a repair that counts on an update rewriting an
+entry has to call for it.
+
 ### Foreign keys
 
 A child collection declares that a top-level field holds the `_key` of a

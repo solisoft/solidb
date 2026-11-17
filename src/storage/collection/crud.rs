@@ -57,6 +57,27 @@ fn take_key(data: &mut Value) -> DbResult<String> {
     Ok(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string())
 }
 
+/// A document a batch update is about to write: as it is stored, as it
+/// will be, and both as whole values when something reads more of a
+/// document than its attributes.
+struct PendingUpdate {
+    key: String,
+    old: Document,
+    new: Document,
+    old_full: Option<Value>,
+    new_full: Option<Value>,
+}
+
+impl PendingUpdate {
+    fn old_view(&self) -> &Value {
+        self.old_full.as_ref().unwrap_or(&self.old.data)
+    }
+
+    fn new_view(&self) -> &Value {
+        self.new_full.as_ref().unwrap_or(&self.new.data)
+    }
+}
+
 /// What a single-document write hands back to its caller.
 #[derive(Clone, Copy)]
 enum Returning {
@@ -1459,6 +1480,36 @@ impl Collection {
             .map(|(docs, _)| docs)
     }
 
+    /// Whether an index of any kind is on an attribute the server keeps
+    /// (`_key`, `_id`, `_rev`, `_created_at`, `_updated_at`): those are not
+    /// among a document's stored attributes, so its entries are computed
+    /// from the whole value.
+    fn indexes_read_system_fields(&self) -> bool {
+        let kept = |field: &str| {
+            let top = field.split('.').next().unwrap_or(field);
+            crate::storage::document::SYSTEM_FIELDS.contains(&top)
+        };
+        self.get_all_indexes()
+            .iter()
+            .any(|index| index.fields.iter().any(|f| kept(f)))
+            || self
+                .get_all_geo_indexes()
+                .iter()
+                .any(|index| kept(&index.field))
+            || self
+                .get_all_fulltext_indexes()
+                .iter()
+                .any(|index| index.fields.iter().any(|f| kept(f)))
+            || self
+                .get_all_ttl_indexes()
+                .iter()
+                .any(|index| kept(&index.field))
+            || self
+                .get_all_vector_index_configs()
+                .iter()
+                .any(|index| kept(&index.field))
+    }
+
     /// Whether a write to a stored document has nothing to maintain beside
     /// the document: no index of any kind, no counter, no foreign key, no
     /// history, and nobody subscribed to the collection's changes. A batch
@@ -1483,15 +1534,15 @@ impl Collection {
     fn write_documents_only(
         &self,
         cf: &KsCf,
-        pending: Vec<(String, Value, Document)>,
+        pending: Vec<PendingUpdate>,
         moved: Vec<usize>,
     ) -> DbResult<(Vec<Document>, Vec<usize>)> {
         let mut batch = KvBatch::default();
         let mut written = Vec::with_capacity(pending.len());
-        for (key, _, doc) in pending {
-            let bytes = serialize_doc(&doc)?;
-            batch.put_ks(cf, Self::doc_key(&key), &bytes);
-            written.push(doc);
+        for update in pending {
+            let bytes = serialize_doc(&update.new)?;
+            batch.put_ks(cf, Self::doc_key(&update.key), &bytes);
+            written.push(update.new);
         }
         self.db
             .write(batch)
@@ -1537,13 +1588,19 @@ impl Collection {
             && schema_validator.is_none()
             && self.holds_documents_only();
 
+        // What the checks and the index entries read of a document: its
+        // attributes as they are stored, when nothing asks for more. The
+        // whole value (with `_key`, `_rev` and the two dates, formatted) is
+        // built only for a schema, for the history, or when an index is on
+        // one of those attributes (card #944).
+        let lean = !bare
+            && schema_validator.is_none()
+            && !self.is_versioned()
+            && !self.indexes_read_system_fields();
+
         // Pass 1: merge every update. A key updated twice in the batch builds
         // on its pending version; its index diff is still against the disk.
-        // (key, value on disk, updated document)
-        let mut pending: Vec<(String, Value, Document)> = Vec::new();
-        // What each pending document reads as, kept from this pass: building
-        // it again for the next one was a fifth of the batch.
-        let mut new_values: Vec<Value> = Vec::new();
+        let mut pending: Vec<PendingUpdate> = Vec::new();
         let mut positions: HashMap<String, usize> = HashMap::new();
         let mut moved: Vec<usize> = Vec::new();
 
@@ -1557,36 +1614,30 @@ impl Collection {
                 moved.push(position);
                 continue;
             }
-            // A guard compares with the revision on disk, before this batch.
-            if let Some(rev) = expected_rev {
-                let on_disk = match existing {
-                    Some(i) => pending[i]
-                        .1
-                        .get("_rev")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                    None => self.get(key).ok().map(|d| d.revision().to_string()),
-                };
-                // Changed, or gone, since the caller read it: for the caller
-                // to look at again.
-                if on_disk.as_deref() != Some(rev) {
-                    moved.push(position);
-                    continue;
-                }
-            }
             // The batch is one write: a row that cannot be written fails it
             // whole. Such rows used to be skipped with a line in the log,
             // which is not what the same statement did with fewer rows.
-            let mut doc = match existing {
-                Some(i) => pending[i].2.clone(),
-                None => self.get(key)?,
+            let stored = match existing {
+                Some(_) => None,
+                // A guard compares with the revision on disk, before this
+                // batch. Changed, or gone, since the caller read it: for
+                // the caller to look at again.
+                None => match (self.get(key), expected_rev) {
+                    (Ok(doc), Some(rev)) if doc.revision() != rev => {
+                        moved.push(position);
+                        continue;
+                    }
+                    (Err(_), Some(_)) => {
+                        moved.push(position);
+                        continue;
+                    }
+                    (found, _) => Some(found?),
+                },
             };
-            let old_value = if existing.is_some() {
-                None
-            } else if bare {
-                Some(Value::Null)
-            } else {
-                Some(doc.to_value())
+            let mut doc = match (&stored, existing) {
+                (Some(stored), _) => stored.clone(),
+                (None, Some(i)) => pending[i].new.clone(),
+                (None, None) => unreachable!("a document is read or pending"),
             };
 
             if replace {
@@ -1604,31 +1655,37 @@ impl Collection {
             } else {
                 doc.update(changes.clone());
             }
-            let new_value = if bare { Value::Null } else { doc.to_value() };
-
-            // Validate edge documents after update
-            if is_edge {
-                self.validate_edge_document(&new_value)?;
+            let new_full = (!bare && !lean).then(|| doc.to_value());
+            {
+                let new_view = new_full.as_ref().unwrap_or(&doc.data);
+                // Validate edge documents after update
+                if is_edge {
+                    self.validate_edge_document(new_view)?;
+                }
+                // Validate against JSON schema if defined
+                if let Some(ref validator) = schema_validator {
+                    validator.validate(new_view).map_err(|e| {
+                        DbError::InvalidDocument(format!("Schema validation failed: {}", e))
+                    })?;
+                }
             }
 
-            // Validate against JSON schema if defined
-            if let Some(ref validator) = schema_validator {
-                validator.validate(&new_value).map_err(|e| {
-                    DbError::InvalidDocument(format!("Schema validation failed: {}", e))
-                })?;
-            }
-
-            match (existing, old_value) {
+            match (existing, stored) {
                 (Some(i), _) => {
-                    pending[i].2 = doc;
-                    new_values[i] = new_value;
+                    pending[i].new = doc;
+                    pending[i].new_full = new_full;
                 }
-                (None, Some(old_value)) => {
+                (None, Some(stored)) => {
                     positions.insert(key.to_string(), pending.len());
-                    pending.push((key.to_string(), old_value, doc));
-                    new_values.push(new_value);
+                    pending.push(PendingUpdate {
+                        key: key.to_string(),
+                        old_full: (!bare && !lean).then(|| stored.to_value()),
+                        old: stored,
+                        new: doc,
+                        new_full,
+                    });
                 }
-                (None, None) => unreachable!("old_value is set whenever existing is None"),
+                (None, None) => unreachable!("a document is read or pending"),
             }
         }
 
@@ -1641,24 +1698,29 @@ impl Collection {
         }
 
         // Pass 2: claim unique values under their stripes (audit D4).
-        for ((key, old_value, _), new_value) in pending.iter().zip(&new_values) {
-            self.numbers_unchanged(old_value, new_value)?;
-            self.check_references(key, new_value, Some(old_value), |_| false)?;
+        for update in &pending {
+            self.numbers_unchanged(update.old_view(), update.new_view())?;
+            self.check_references(
+                &update.key,
+                update.new_view(),
+                Some(update.old_view()),
+                |_| false,
+            )?;
         }
-        let tokens: Vec<String> = new_values
+        let tokens: Vec<String> = pending
             .iter()
-            .flat_map(|v| self.unique_tokens(v))
+            .flat_map(|update| self.unique_tokens(update.new_view()))
             .collect();
         let _unique_guard = self.lock_unique_tokens(&tokens);
         if !tokens.is_empty() {
             let mut claimed: HashMap<String, &str> = HashMap::new();
-            for ((key, _, _), new_value) in pending.iter().zip(&new_values) {
-                self.check_unique_constraints(key, new_value)?;
-                for token in self.unique_tokens(new_value) {
-                    if let Some(other) = claimed.insert(token, key.as_str()) {
+            for update in &pending {
+                self.check_unique_constraints(&update.key, update.new_view())?;
+                for token in self.unique_tokens(update.new_view()) {
+                    if let Some(other) = claimed.insert(token, update.key.as_str()) {
                         return Err(DbError::InvalidDocument(format!(
                             "Unique constraint violated: documents '{}' and '{}' in the same batch share a unique value",
-                            other, key
+                            other, update.key
                         )));
                     }
                 }
@@ -1667,28 +1729,31 @@ impl Collection {
 
         let versioned = self.is_versioned();
         let mut batch = KvBatch::default();
-        let mut updated_docs = Vec::with_capacity(pending.len());
-        let mut change_events = Vec::with_capacity(pending.len());
+        let mut written: Vec<PendingUpdate> = Vec::with_capacity(pending.len());
 
-        for ((key, old_value, doc), new_value) in pending.into_iter().zip(new_values) {
-            let doc_bytes = match serialize_doc(&doc) {
+        for update in pending {
+            let doc_bytes = match serialize_doc(&update.new) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    tracing::warn!("Failed to serialize {}: {}", key, e);
+                    tracing::warn!("Failed to serialize {}: {}", update.key, e);
                     continue;
                 }
             };
-            batch.put_ks(&cf, Self::doc_key(&key), &doc_bytes);
+            batch.put_ks(&cf, Self::doc_key(&update.key), &doc_bytes);
             if versioned {
-                self.append_version_to_batch(&mut batch, &cf, &key, Some(&new_value));
+                self.append_version_to_batch(&mut batch, &cf, &update.key, Some(update.new_view()));
             }
-            self.add_update_entries(&mut batch, &cf, &key, &old_value, &new_value)?;
-
-            change_events.push((key, old_value, new_value));
-            updated_docs.push(doc);
+            self.add_update_entries(
+                &mut batch,
+                &cf,
+                &update.key,
+                update.old_view(),
+                update.new_view(),
+            )?;
+            written.push(update);
         }
 
-        if updated_docs.is_empty() {
+        if written.is_empty() {
             return Ok((Vec::new(), moved));
         }
 
@@ -1701,13 +1766,13 @@ impl Collection {
         // unchanged so a bulk update that only rewrites metadata (e.g. an
         // incremental graph sync) pays no HNSW churn and doesn't dirty the
         // index into a full re-serialize.
-        for (key, old_value, new_value) in &change_events {
-            if !self.vector_index_unchanged(old_value, new_value) {
-                self.update_vector_indexes_on_delete(key);
-                self.update_vector_indexes_on_upsert(key, new_value);
+        for update in &written {
+            if !self.vector_index_unchanged(update.old_view(), update.new_view()) {
+                self.update_vector_indexes_on_delete(&update.key);
+                self.update_vector_indexes_on_upsert(&update.key, update.new_view());
             }
             if versioned {
-                self.prune_versions(key);
+                self.prune_versions(&update.key);
             }
         }
         // Persist vector indexes after batch update, outside the stripes.
@@ -1715,31 +1780,39 @@ impl Collection {
         drop(_key_guard);
         self.persist_vector_indexes_throttled();
 
-        // Send Change Events
-        let event = |(key, old_data, new_data): (String, Value, Value)| ChangeEvent {
+        // Send Change Events: with the whole documents, built here when the
+        // batch did without them.
+        let event = |update: &PendingUpdate| ChangeEvent {
             type_: ChangeType::Update,
-            key,
-            data: Some(new_data),
-            old_data: Some(old_data),
+            key: update.key.clone(),
+            data: Some(
+                update
+                    .new_full
+                    .clone()
+                    .unwrap_or_else(|| update.new.to_value()),
+            ),
+            old_data: Some(
+                update
+                    .old_full
+                    .clone()
+                    .unwrap_or_else(|| update.old.to_value()),
+            ),
         };
-        if change_events.len() == 1 {
+        if let [update] = written.as_slice() {
             // One document: what traversals keep is forgotten for it alone.
-            for change in change_events {
-                let _ = self.emit_change(event(change));
-            }
+            let _ = self.emit_change(event(update));
         } else {
             // A batch: caches are dropped once for them all, as a batch of
             // deletes does, and the events are built only for a subscriber.
             // One announcement per document was a seventh of the batch.
-            let keys: Vec<String> = change_events
-                .iter()
-                .map(|(key, _, _)| key.clone())
-                .collect();
-            let span = key_span(keys.iter().map(String::as_str));
-            self.publish_changes(span, false, || change_events.into_iter().map(event));
+            let span = key_span(written.iter().map(|update| update.key.as_str()));
+            self.publish_changes(span, false, || written.iter().map(event));
         }
 
-        Ok((updated_docs, moved))
+        Ok((
+            written.into_iter().map(|update| update.new).collect(),
+            moved,
+        ))
     }
 
     /// Insert multiple documents with atomic batched write
