@@ -18,9 +18,18 @@ class CollectionsController < Controller
     this._ctx()
     name = (params["name"] ?? "").trim()
     if name.blank?
-      return this._respond({ "ok": false, "status": 422, "error": "collection name is required" }, "")
+      return this._respond(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "collection name is required"
+        },
+        ""
+      )
     end
+
     return this._create_columnar(name) if params["type"] == "columnar"
+
     result = SolidbClient.post_api(SolidbEndpoints.collections(@db), this._build_create_payload(name))
     return this._respond(result, "collection " + name + " created")
   end
@@ -31,17 +40,27 @@ class CollectionsController < Controller
     columns_text = (params["columns"] ?? "").trim()
     columns = JSON.parse(columns_text) rescue nil
     if columns.nil? || columns.length() == 0
-      return this._respond({ "ok": false, "status": 422,
-                             "error": "columnar collections need a JSON array of column definitions" }, "")
+      return this._respond(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "columnar collections need a JSON array of column definitions"
+        },
+        ""
+      )
     end
-    result = SolidbClient.post_api(SolidbEndpoints.columnar(@db), { "name": name, "columns": columns })
+
+    result = SolidbClient.post_api(
+      SolidbEndpoints.columnar(@db),
+      {"name": name, "columns": columns}
+    )
     return this._respond(result, "columnar collection " + name + " created")
   end
 
   # Optional creation settings from the modal. JSON schema / validation are
   # managed from the collection's documents page, not at creation time.
   def _build_create_payload(name)
-    payload = { "name": name }
+    payload = {"name": name}
     coll_type = (params["type"] ?? "").trim()
     payload["type"] = coll_type unless coll_type.blank?
     num_shards = (params["num_shards"] ?? "").trim()
@@ -62,7 +81,7 @@ class CollectionsController < Controller
     result = SolidbClient.get_api(SolidbEndpoints.collection_stats(@db, @collection_name))
     @stats = result["data"] ?? {}
     @stats_error = result["ok"] ? "" : (result["error"] ?? "request failed")
-    return render("collections/_stats", { "layout": false })
+    return render("collections/_stats", {"layout": false})
   end
 
   # DELETE /databases/:db/collections/:name (?ctype=columnar for columnar)
@@ -80,7 +99,7 @@ class CollectionsController < Controller
   # GET /databases/:db/collections/:name/indexes - HTMX-loaded panel
   def indexes
     this._ctx_indexes()
-    return this._render_indexes({ "ok": true }, "")
+    return this._render_indexes({"ok": true}, "")
   end
 
   # POST /databases/:db/collections/:name/indexes
@@ -89,9 +108,16 @@ class CollectionsController < Controller
     index_name = (params["index_name"] ?? "").trim()
     fields_text = (params["fields"] ?? "").trim()
     if index_name.blank? || fields_text.blank?
-      return this._render_indexes({ "ok": false, "status": 422,
-                                    "error": "index name and fields are required" }, "")
+      return this._render_indexes(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "index name and fields are required"
+        },
+        ""
+      )
     end
+
     index_type = (params["index_type"] ?? "persistent").trim()
     result = this._create_index_request(index_name, fields_text, index_type)
     return this._render_indexes(result, "index " + index_name + " created")
@@ -110,8 +136,10 @@ class CollectionsController < Controller
   def set_versioning
     this._ctx_indexes()
     enabled = params["versioning"] == "true"
-    result = SolidbClient.put_api(SolidbEndpoints.collection_properties(@db, @collection_name),
-                                  { "versioning": enabled })
+    result = SolidbClient.put_api(
+      SolidbEndpoints.collection_properties(@db, @collection_name),
+      {"versioning": enabled}
+    )
     notice = enabled ? "versioning enabled" : "versioning disabled"
     return this._render_indexes(result, notice)
   end
@@ -120,8 +148,10 @@ class CollectionsController < Controller
   def set_auto_index
     this._ctx_indexes()
     enabled = params["auto_index"] == "true"
-    result = SolidbClient.put_api(SolidbEndpoints.collection_properties(@db, @collection_name),
-                                  { "autoIndex": enabled })
+    result = SolidbClient.put_api(
+      SolidbEndpoints.collection_properties(@db, @collection_name),
+      {"autoIndex": enabled}
+    )
     notice = enabled ? "auto-index enabled" : "auto-index disabled"
     return this._render_indexes(result, notice)
   end
@@ -144,13 +174,26 @@ class CollectionsController < Controller
     field = params["field"].to_s.trim()
     references = params["references"].to_s.trim()
     if field.blank? || references.blank?
-      return this._render_indexes({ "ok": false, "status": 422,
-                                    "error": "a foreign key needs a field and a referenced collection" }, "")
+      return this._render_indexes(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "a foreign key needs a field and a referenced collection"
+        },
+        ""
+      )
     end
+
     on_delete = params["on_delete"].to_s.trim()
     on_delete = "restrict" if on_delete.blank?
-    result = SolidbClient.post_api(SolidbEndpoints.collection_foreign_keys(@db, @collection_name),
-                                   { "field": field, "references": references, "on_delete": on_delete })
+    result = SolidbClient.post_api(
+      SolidbEndpoints.collection_foreign_keys(@db, @collection_name),
+      {
+        "field": field,
+        "references": references,
+        "on_delete": on_delete
+      }
+    )
     return this._render_indexes(result, "foreign key on " + field + " declared")
   end
 
@@ -170,9 +213,17 @@ class CollectionsController < Controller
     this._ctx_indexes()
     field = params["field"].to_s.trim()
     if field.blank?
-      return this._render_indexes({ "ok": false, "status": 422, "error": "a counter needs a field" }, "")
+      return this._render_indexes(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "a counter needs a field"
+        },
+        ""
+      )
     end
-    body = { "field": field }
+
+    body = {"field": field}
     for option in ["prefix", "suffix", "reset", "timezone"]
       value = params[option].to_s.trim()
       body[option] = value unless value.blank?
@@ -191,11 +242,20 @@ class CollectionsController < Controller
     field = params["field"].to_s
     next_text = params["next"].to_s.trim()
     if next_text.blank? || next_text.to_i < 1
-      return this._render_indexes({ "ok": false, "status": 422,
-                                    "error": "the next number is 1 or more" }, "")
+      return this._render_indexes(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "the next number is 1 or more"
+        },
+        ""
+      )
     end
-    result = SolidbClient.put_api(SolidbEndpoints.collection_counter_next(@db, @collection_name, field),
-                                  { "next": next_text.to_i })
+
+    result = SolidbClient.put_api(
+      SolidbEndpoints.collection_counter_next(@db, @collection_name, field),
+      {"next": next_text.to_i}
+    )
     return this._render_indexes(result, "counter on " + field + " goes on at " + next_text)
   end
 
@@ -207,6 +267,60 @@ class CollectionsController < Controller
     return this._render_indexes(result, "counter on " + field + " dropped")
   end
 
+  # POST /databases/:db/collections/:name/rules
+  # Declares what the collection asks of a field: that it is there, its
+  # type, its bounds, the values it may take. The server keeps the rules as
+  # one list, so the rule joins those the collection has, in place of the
+  # one on the same field.
+  def create_rule
+    this._ctx_indexes()
+    field = params["field"].to_s.trim()
+    if field.blank?
+      return this._render_indexes(
+        {
+          "ok": false,
+          "status": 422,
+          "error": "a rule needs a field"
+        },
+        ""
+      )
+    end
+
+    rule = {"field": field}
+    rule["required"] = true if params["required"].to_s == "1"
+    kind = params["type"].to_s.trim()
+    rule["type"] = kind unless kind.blank?
+    for bound in ["min", "max"]
+      value = params[bound].to_s.trim()
+      rule[bound] = value.to_f unless value.blank?
+    end
+    allowed = params["in"].to_s.split(",").map do |value|
+      value.trim()
+    end.filter do |value|
+      !value.blank?
+    end
+    rule["in"] = allowed if allowed.length() > 0
+    this._load_rules()
+    rules = @rules.filter do |existing|
+      existing["field"] != field
+    end
+    rules.push(rule)
+    result = SolidbClient.put_api(SolidbEndpoints.collection_rules(@db, @collection_name), {"rules": rules})
+    return this._render_indexes(result, "rule on " + field + " declared")
+  end
+
+  # DELETE /databases/:db/collections/:name/rules/:field
+  def delete_rule
+    this._ctx_indexes()
+    field = params["field"].to_s
+    this._load_rules()
+    rules = @rules.filter do |existing|
+      existing["field"] != field
+    end
+    result = SolidbClient.put_api(SolidbEndpoints.collection_rules(@db, @collection_name), {"rules": rules})
+    return this._render_indexes(result, "rule on " + field + " removed")
+  end
+
   # Geo and TTL indexes are created through their own API families; everything
   # else (persistent / hash / fulltext / bloom / cuckoo) goes to /index.
   def _create_index_request(index_name, fields_text, index_type)
@@ -216,21 +330,40 @@ class CollectionsController < Controller
       fields.push(cleaned) unless cleaned.blank?
     end
     if index_type == "geo"
-      return SolidbClient.post_api(SolidbEndpoints.geo_indexes(@db, @collection_name),
-                                   { "name": index_name, "field": fields[0] })
+      return SolidbClient.post_api(
+        SolidbEndpoints.geo_indexes(@db, @collection_name),
+        {"name": index_name, "field": fields[0]}
+      )
     end
+
     if index_type == "ttl"
       expire_text = (params["expire_after_seconds"] ?? "").trim()
       if expire_text.blank?
-        return { "ok": false, "status": 422, "error": "ttl indexes need expire_after_seconds" }
+        return {
+          "ok": false,
+          "status": 422,
+          "error": "ttl indexes need expire_after_seconds"
+        }
       end
-      return SolidbClient.post_api(SolidbEndpoints.ttl_indexes(@db, @collection_name),
-                                   { "name": index_name, "field": fields[0],
-                                     "expire_after_seconds": expire_text.to_int() })
+
+      return SolidbClient.post_api(
+        SolidbEndpoints.ttl_indexes(@db, @collection_name),
+        {
+          "name": index_name,
+          "field": fields[0],
+          "expire_after_seconds": expire_text.to_int()
+        }
+      )
     end
-    return SolidbClient.post_api(SolidbEndpoints.collection_indexes(@db, @collection_name),
-                                 { "name": index_name, "fields": fields,
-                                   "type": index_type, "unique": params["unique"] == "true" })
+    return SolidbClient.post_api(
+      SolidbEndpoints.collection_indexes(@db, @collection_name),
+      {
+        "name": index_name,
+        "fields": fields,
+        "type": index_type,
+        "unique": params["unique"] == "true"
+      }
+    )
   end
 
   def _ctx_indexes
@@ -242,7 +375,7 @@ class CollectionsController < Controller
     @indexes_error = result["ok"] ? "" : (result["error"] ?? "request failed")
     @indexes_notice = result["ok"] ? notice : ""
     this._load_indexes()
-    return render("collections/_indexes", { "layout": false })
+    return render("collections/_indexes", {"layout": false})
   end
 
   # The keys declared on the collection, and those of other collections that
@@ -268,12 +401,23 @@ class CollectionsController < Controller
     @counters = (result["data"] ?? {})["counters"] ?? []
   end
 
+  # What the collection asks of its documents' fields. A server from before
+  # field rules answers 404: none.
+  def _load_rules
+    @rules = []
+    result = SolidbClient.get_api(SolidbEndpoints.collection_rules(@db, @collection_name))
+    return unless result["ok"]
+
+    @rules = (result["data"] ?? {})["rules"] ?? []
+  end
+
   # Merge the three index families (standard+fulltext, geo, ttl) into one
   # display list of { name, fields, type, unique, detail } rows.
   def _load_indexes
     @indexes = []
     this._load_foreign_keys()
     this._load_counters()
+    this._load_rules()
     # Current versioning (time-travel) state comes from the collection summary.
     @versioning = false
     @auto_index = false
@@ -292,21 +436,33 @@ class CollectionsController < Controller
     end
     for entry in ((result["data"] ?? {})["indexes"] ?? [])
       type_name = str(entry["index_type"] ?? "persistent").downcase()
-      @indexes.push({ "name": entry["name"] ?? "", "fields": entry["fields"] ?? [],
-                      "type": type_name, "unique": entry["unique"] ?? false,
-                      "detail": str(entry["indexed_documents"] ?? 0) + " docs" })
+      @indexes.push({
+        "name": entry["name"] ?? "",
+        "fields": entry["fields"] ?? [],
+        "type": type_name,
+        "unique": entry["unique"] ?? false,
+        "detail": str(entry["indexed_documents"] ?? 0) + " docs"
+      })
     end
     geo_result = SolidbClient.get_api(SolidbEndpoints.geo_indexes(@db, @collection_name))
     for entry in ((geo_result["data"] ?? {})["indexes"] ?? [])
-      @indexes.push({ "name": entry["name"] ?? "", "fields": [entry["field"] ?? ""],
-                      "type": "geo", "unique": false,
-                      "detail": str(entry["indexed_documents"] ?? 0) + " docs" })
+      @indexes.push({
+        "name": entry["name"] ?? "",
+        "fields": [entry["field"] ?? ""],
+        "type": "geo",
+        "unique": false,
+        "detail": str(entry["indexed_documents"] ?? 0) + " docs"
+      })
     end
     ttl_result = SolidbClient.get_api(SolidbEndpoints.ttl_indexes(@db, @collection_name))
     for entry in ((ttl_result["data"] ?? {})["indexes"] ?? [])
-      @indexes.push({ "name": entry["name"] ?? "", "fields": [entry["field"] ?? ""],
-                      "type": "ttl", "unique": false,
-                      "detail": "expires after " + str(entry["expire_after_seconds"] ?? 0) + "s" })
+      @indexes.push({
+        "name": entry["name"] ?? "",
+        "fields": [entry["field"] ?? ""],
+        "type": "ttl",
+        "unique": false,
+        "detail": "expires after " + str(entry["expire_after_seconds"] ?? 0) + "s"
+      })
     end
   end
 
@@ -323,12 +479,18 @@ class CollectionsController < Controller
     # Columnar collections appear in the regular list as internal
     # `_columnar_<name>` document collections -- hide those and merge the
     # real entries from the columnar API instead.
-    @collections = regular.filter do |coll| !(coll["name"] ?? "").starts_with("_columnar_") end
+    @collections = regular.filter do |coll|
+      !(coll["name"] ?? "").starts_with("_columnar_")
+    end
     columnar_result = SolidbClient.get_api(SolidbEndpoints.columnar(@db))
     columnar_entries = (columnar_result["data"] ?? {})["collections"] ?? []
     for entry in columnar_entries
-      @collections.push({ "name": entry["name"] ?? "", "type": "columnar",
-                          "count": entry["row_count"] ?? 0, "stats": {} })
+      @collections.push({
+        "name": entry["name"] ?? "",
+        "type": "columnar",
+        "count": entry["row_count"] ?? 0,
+        "stats": {}
+      })
     end
     if !result["ok"]
       @flash_error = result["error"] ?? "request failed"
@@ -352,7 +514,7 @@ class CollectionsController < Controller
       @solidb_down = (result["status"] ?? -1) == 0
     end
     this._load()
-    return render("collections/index", { "layout": false }) if req["headers"]["hx-request"] == "true"
+    return render("collections/index", {"layout": false}) if req["headers"]["hx-request"] == "true"
     return render("collections/index")
   end
 end

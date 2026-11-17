@@ -48,6 +48,8 @@ describe("SolidbEndpoints") do
               "/_api/database/app/collection/invoices/counters")
     assert_eq(SolidbEndpoints.collection_counter_next("app", "invoices", "number"),
               "/_api/database/app/collection/invoices/counters/number/next")
+    assert_eq(SolidbEndpoints.collection_rules("app", "goods"),
+              "/_api/database/app/collection/goods/rules")
     assert_eq(SolidbEndpoints.geo_indexes("app", "places"), "/_api/database/app/geo/places")
     assert_eq(SolidbEndpoints.ttl_indexes("app", "sessions"), "/_api/database/app/ttl/sessions")
   end

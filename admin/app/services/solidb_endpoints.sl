@@ -6,36 +6,36 @@
 
 class SolidbEndpoints
   # --- server / cluster ---
-  static def health()
+  static def health
     return "/_api/health"
   end
 
-  static def cluster_info()
+  static def cluster_info
     return "/_api/cluster/info"
   end
 
-  static def cluster_status()
+  static def cluster_status
     return "/_api/cluster/status"
   end
 
-  static def sync_log_stats()
+  static def sync_log_stats
     return "/_api/cluster/sync-log/stats"
   end
 
-  static def sync_log_prune()
+  static def sync_log_prune
     return "/_api/cluster/sync-log/prune"
   end
 
-  static def livequery_token()
+  static def livequery_token
     return "/_api/livequery/token"
   end
 
   # --- databases ---
-  static def databases()
+  static def databases
     return "/_api/databases"
   end
 
-  static def database_create()
+  static def database_create
     return "/_api/database"
   end
 
@@ -44,7 +44,7 @@ class SolidbEndpoints
   end
 
   # --- users / roles / api keys ---
-  static def users()
+  static def users
     return "/_api/auth/users"
   end
 
@@ -60,7 +60,7 @@ class SolidbEndpoints
     return "/_api/auth/users/" + username + "/roles/" + role
   end
 
-  static def roles()
+  static def roles
     return "/_api/auth/roles"
   end
 
@@ -68,7 +68,7 @@ class SolidbEndpoints
     return "/_api/auth/roles/" + name
   end
 
-  static def api_keys()
+  static def api_keys
     return "/_api/auth/api-keys"
   end
 
@@ -141,6 +141,10 @@ class SolidbEndpoints
 
   static def collection_counter_next(db, name, field)
     return SolidbEndpoints.collection_counter(db, name, field) + "/next"
+  end
+
+  static def collection_rules(db, name)
+    return "/_api/database/" + db + "/collection/" + name + "/rules"
   end
 
   static def collection_indexes_rebuild(db, name)

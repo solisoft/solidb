@@ -73,6 +73,8 @@ delete("/databases/:db/collections/:name/foreign_keys/:key_name", "collections#d
 post("/databases/:db/collections/:name/counters", "collections#create_counter")
 put("/databases/:db/collections/:name/counters/:field/next", "collections#set_counter_next")
 delete("/databases/:db/collections/:name/counters/:field", "collections#delete_counter")
+post("/databases/:db/collections/:name/rules", "collections#create_rule")
+delete("/databases/:db/collections/:name/rules/:field", "collections#delete_rule")
 put("/databases/:db/collections/:name/versioning", "collections#set_versioning")
 put("/databases/:db/collections/:name/auto_index", "collections#set_auto_index")
 

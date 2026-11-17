@@ -1,7 +1,7 @@
 # Exercises collections CRUD against a scratch database created per suite.
 describe("CollectionsController") do
   before_all() do
-    SolidbClient.post_api(SolidbEndpoints.database_create(), { "name": "admin_spec_colls" })
+    SolidbClient.post_api(SolidbEndpoints.database_create(), {"name": "admin_spec_colls"})
   end
 
   after_all() do
@@ -22,7 +22,10 @@ describe("CollectionsController") do
 
   describe("collection lifecycle") do
     test("create, stats, drop") do
-      response = post("/databases/admin_spec_colls/collections", { "name": "specs", "type": "document" })
+      response = post(
+        "/databases/admin_spec_colls/collections",
+        {"name": "specs", "type": "document"}
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection specs created")
 
@@ -50,13 +53,16 @@ describe("CollectionsController") do
     end
 
     test("rejects a blank collection name") do
-      response = post("/databases/admin_spec_colls/collections", { "name": "" })
+      response = post("/databases/admin_spec_colls/collections", {"name": ""})
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection name is required")
     end
 
     test("creates a timeseries collection") do
-      response = post("/databases/admin_spec_colls/collections", { "name": "ts_specs", "type": "timeseries" })
+      response = post(
+        "/databases/admin_spec_colls/collections",
+        {"name": "ts_specs", "type": "timeseries"}
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection ts_specs created")
       assert_contains(res_body(response), "timeseries")
@@ -67,8 +73,14 @@ describe("CollectionsController") do
 
     test("creates and drops a columnar collection") do
       columns_json = "[{\"name\": \"host\", \"type\": \"string\"}, {\"name\": \"value\", \"type\": \"float\"}]"
-      response = post("/databases/admin_spec_colls/collections",
-                      { "name": "col_specs", "type": "columnar", "columns": columns_json })
+      response = post(
+        "/databases/admin_spec_colls/collections",
+        {
+          "name": "col_specs",
+          "type": "columnar",
+          "columns": columns_json
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "columnar collection col_specs created")
@@ -80,16 +92,29 @@ describe("CollectionsController") do
     end
 
     test("rejects columnar without column definitions") do
-      response = post("/databases/admin_spec_colls/collections",
-                      { "name": "col_bad", "type": "columnar", "columns": "" })
+      response = post(
+        "/databases/admin_spec_colls/collections",
+        {
+          "name": "col_bad",
+          "type": "columnar",
+          "columns": ""
+        }
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "columnar collections need a JSON array")
     end
 
     test("creates with sharding options") do
-      response = post("/databases/admin_spec_colls/collections",
-                      { "name": "sharded_specs", "type": "document",
-                        "num_shards": "2", "shard_key": "_key", "replication_factor": "1" })
+      response = post(
+        "/databases/admin_spec_colls/collections",
+        {
+          "name": "sharded_specs",
+          "type": "document",
+          "num_shards": "2",
+          "shard_key": "_key",
+          "replication_factor": "1"
+        }
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "collection sharded_specs created")
 
@@ -100,7 +125,7 @@ describe("CollectionsController") do
 
   describe("index management") do
     before_all() do
-      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_colls"), { "name": "idx_specs" })
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_colls"), {"name": "idx_specs"})
     end
 
     after_all() do
@@ -115,9 +140,15 @@ describe("CollectionsController") do
     end
 
     test("create, rebuild, drop a persistent index") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "by_email", "fields": "email", "index_type": "persistent",
-                        "unique": "true" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {
+          "index_name": "by_email",
+          "fields": "email",
+          "index_type": "persistent",
+          "unique": "true"
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "index by_email created")
@@ -134,15 +165,13 @@ describe("CollectionsController") do
     end
 
     test("enable then disable document versioning") do
-      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning",
-                     { "versioning": "true" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning", {"versioning": "true"})
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "versioning enabled")
       assert_contains(body, "Versioning: on")
 
-      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning",
-                     { "versioning": "false" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/versioning", {"versioning": "false"})
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "versioning disabled")
@@ -150,15 +179,13 @@ describe("CollectionsController") do
     end
 
     test("enable then disable query-driven auto-index") do
-      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index",
-                     { "auto_index": "true" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index", {"auto_index": "true"})
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "auto-index enabled")
       assert_contains(body, "Auto-index: on")
 
-      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index",
-                     { "auto_index": "false" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/auto_index", {"auto_index": "false"})
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "auto-index disabled")
@@ -166,11 +193,17 @@ describe("CollectionsController") do
     end
 
     test("declares, lists and drops a foreign key") do
-      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_colls"), { "name": "fk_parents" })
-      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "fk_parents"), { "_key": "p1" })
+      SolidbClient.post_api(SolidbEndpoints.collections("admin_spec_colls"), {"name": "fk_parents"})
+      SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "fk_parents"), {"_key": "p1"})
 
-      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
-                      { "field": "parent", "references": "fk_parents", "on_delete": "cascade" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+        {
+          "field": "parent",
+          "references": "fk_parents",
+          "on_delete": "cascade"
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "foreign key on parent declared")
@@ -194,8 +227,15 @@ describe("CollectionsController") do
     end
 
     test("declares a counter, sets its next number and drops it") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/counters",
-                      { "field": "number", "prefix": "N-", "padding": "3", "start": "7" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/counters",
+        {
+          "field": "number",
+          "prefix": "N-",
+          "padding": "3",
+          "start": "7"
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "counter on number declared")
@@ -204,16 +244,16 @@ describe("CollectionsController") do
       assert_contains(body, "value=\"7\"")
 
       # The database numbers what is inserted from then on.
-      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), { "label": "a" })
+      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), {"label": "a"})
       assert_eq((inserted["data"] ?? {})["number"], "N-007")
 
-      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", { "next": "40" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", {"next": "40"})
       assert_contains(res_body(response), "counter on number goes on at 40")
-      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), { "label": "b" })
+      inserted = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), {"label": "b"})
       assert_eq((inserted["data"] ?? {})["number"], "N-040")
 
       # A number a document holds is refused, with the server's reason.
-      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", { "next": "7" })
+      response = put("/databases/admin_spec_colls/collections/idx_specs/counters/number/next", {"next": "7"})
       assert_contains(res_body(response), "already holds")
 
       response = delete("/databases/admin_spec_colls/collections/idx_specs/counters/number")
@@ -225,30 +265,101 @@ describe("CollectionsController") do
     end
 
     test("rejects a counter without a field, and shows why one was refused") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/counters", { "field": "" })
+      response = post("/databases/admin_spec_colls/collections/idx_specs/counters", {"field": ""})
       assert_contains(res_body(response), "a counter needs a field")
-      response = post("/databases/admin_spec_colls/collections/idx_specs/counters",
-                      { "field": "ref", "reset": "month", "prefix": "R-" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/counters",
+        {
+          "field": "ref",
+          "reset": "month",
+          "prefix": "R-"
+        }
+      )
       assert_contains(res_body(response), "needs its period")
     end
 
+    test("declares a field rule, a second one, and removes the first") do
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/rules",
+        {
+          "field": "price",
+          "type": "number",
+          "min": "0",
+          "max": "1000"
+        }
+      )
+      assert_eq(res_status(response), 200)
+      body = res_body(response)
+      assert_contains(body, "rule on price declared")
+      assert_contains(body, "field rules / ")
+      assert_contains(body, "min 0")
+
+      # The database holds what is written from then on to it.
+      refused = SolidbClient.post_api(SolidbEndpoints.documents("admin_spec_colls", "idx_specs"), {"price": -1})
+      assert_eq(refused["ok"], false)
+      assert_contains(refused["error"].to_s, "must be at least 0")
+
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/rules",
+        {
+          "field": "status",
+          "required": "1",
+          "in": "open, paid"
+        }
+      )
+      body = res_body(response)
+      assert_contains(body, "rule on status declared")
+      assert_contains(body, "open, paid")
+      assert_contains(body, "(2)")
+
+      response = delete("/databases/admin_spec_colls/collections/idx_specs/rules/price")
+      body = res_body(response)
+      assert_contains(body, "rule on price removed")
+      assert_contains(body, "(1)")
+      accepted = SolidbClient.post_api(
+        SolidbEndpoints.documents("admin_spec_colls", "idx_specs"),
+        {"price": -1, "status": "paid"}
+      )
+      assert_eq(accepted["ok"], true)
+
+      response = delete("/databases/admin_spec_colls/collections/idx_specs/rules/status")
+      assert_contains(res_body(response), "no field rules on idx_specs")
+    end
+
+    test("rejects a rule without a field, and shows why one was refused") do
+      response = post("/databases/admin_spec_colls/collections/idx_specs/rules", {"field": ""})
+      assert_contains(res_body(response), "a rule needs a field")
+      response = post("/databases/admin_spec_colls/collections/idx_specs/rules", {"field": "label"})
+      assert_contains(res_body(response), "asks for nothing")
+    end
+
     test("rejects a foreign key without a field or a target") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
-                      { "field": "", "references": "" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+        {"field": "", "references": ""}
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "a foreign key needs a field and a referenced collection")
     end
 
     test("shows why a foreign key was refused") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
-                      { "field": "parent", "references": "no_such_collection" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/foreign_keys",
+        {"field": "parent", "references": "no_such_collection"}
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "no_such_collection")
     end
 
     test("creates a multi-field hash index") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "by_pair", "fields": "first, last", "index_type": "hash" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {
+          "index_name": "by_pair",
+          "fields": "first, last",
+          "index_type": "hash"
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "index by_pair created")
@@ -258,9 +369,15 @@ describe("CollectionsController") do
     end
 
     test("creates and drops a ttl index") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "expiry", "fields": "created_at", "index_type": "ttl",
-                        "expire_after_seconds": "3600" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {
+          "index_name": "expiry",
+          "fields": "created_at",
+          "index_type": "ttl",
+          "expire_after_seconds": "3600"
+        }
+      )
       assert_eq(res_status(response), 200)
       body = res_body(response)
       assert_contains(body, "index expiry created")
@@ -272,8 +389,14 @@ describe("CollectionsController") do
     end
 
     test("creates and drops a geo index") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "by_location", "fields": "location", "index_type": "geo" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {
+          "index_name": "by_location",
+          "fields": "location",
+          "index_type": "geo"
+        }
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "index by_location created")
 
@@ -283,16 +406,24 @@ describe("CollectionsController") do
     end
 
     test("rejects an index without name or fields") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "", "fields": "" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {"index_name": "", "fields": ""}
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "index name and fields are required")
     end
 
     test("rejects a ttl index without expiry") do
-      response = post("/databases/admin_spec_colls/collections/idx_specs/indexes",
-                      { "index_name": "expiry", "fields": "created_at", "index_type": "ttl",
-                        "expire_after_seconds": "" })
+      response = post(
+        "/databases/admin_spec_colls/collections/idx_specs/indexes",
+        {
+          "index_name": "expiry",
+          "fields": "created_at",
+          "index_type": "ttl",
+          "expire_after_seconds": ""
+        }
+      )
       assert_eq(res_status(response), 200)
       assert_contains(res_body(response), "ttl indexes need expire_after_seconds")
     end
@@ -303,5 +434,4 @@ describe("CollectionsController") do
       assert_contains(res_body(response), "HTTP 4")
     end
   end
-
 end
