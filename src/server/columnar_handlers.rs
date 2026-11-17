@@ -986,6 +986,10 @@ fn index_json(
         "created_at": index.created_at,
         // The rows it answers for; those after them are read in their blocks.
         "rows": col.index_coverage(&index.column),
+        // Of how many: an index holds the rows present when it was built,
+        // and nothing rebuilds it. `missing` says how far behind it is.
+        "collection_rows": col.count(),
+        "missing": (col.count() as u64).saturating_sub(col.index_coverage(&index.column)),
         "size_bytes": index.size_bytes,
     })
 }

@@ -574,6 +574,9 @@ async fn the_endpoints_build_in_the_background_and_aggregate_with_a_filter() {
     assert_eq!(body["builds"], json!([]), "{body}");
     for index in body["indexes"].as_array().unwrap() {
         assert_eq!(index["rows"], 70_000, "{body}");
+        // And the listing says how far behind the index is.
+        assert_eq!(index["collection_rows"], 75_000, "{body}");
+        assert_eq!(index["missing"], 5_000, "{body}");
     }
     let (status, body) = call(
         &app,
@@ -587,6 +590,7 @@ async fn the_endpoints_build_in_the_background_and_aggregate_with_a_filter() {
     let (_, body) = call(&app, &token, "GET", &format!("{base}/index/host"), None).await;
     assert_eq!(body["status"], "created", "{body}");
     assert_eq!(body["rows"], 75_000, "{body}");
+    assert_eq!(body["missing"], 0, "{body}");
 
     // An aggregate over the rows a filter keeps.
     let all = load(&engine).read_columns(&COLUMNS, None).unwrap();

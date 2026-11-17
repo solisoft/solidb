@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Columnar indexes: the listing says how far behind an index is.** An index holds the rows present when it was built and nothing rebuilds it, so its share of the collection shrinks with every insert, and only `rows` hinted at it. `GET …/columnar/{c}/indexes` and `GET …/index/{column}` now also give `collection_rows` and `missing`, the rows the index does not hold (which are still found, compared in their blocks).
+
 - **Foreign keys: both ends of an edge collection in one call.** `POST /_api/database/{db}/collection/{name}/foreign-keys/ends` with `{"from": "people", "to": "firms", "on_delete": "cascade"}` declares the key of `_from` and the key of `_to`, which took two calls. Both are declared or neither: when the second is refused, the first is taken back. The answer holds both keys (`{"from": {…}, "to": {…}}`).
 
 - **A columnar collection can be read in a transaction at `repeatable_read` and `serializable`.** The read was refused (`reading a columnar collection is not supported in a transaction at repeatable_read or serializable`), which kept a roll-up or a check against analytical data out of such a transaction. It is now tracked as a read of the whole collection: the commit is refused with a conflict when any row of it was inserted or deleted since, as for a document collection read by range, and goes through otherwise. Rows, aggregates folded from the arrays and counts are all covered. A columnar insert is still not part of a transaction.

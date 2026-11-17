@@ -707,8 +707,10 @@ curl "$URL/_api/database/app/columnar/metrics/index/metric_id"
 # {"status": "building", "job": "0193a1…", "rows_done": 1310720, "rows_total": 3650000, …}
 # then
 # {"status": "created", "job": "0193a1…", "column": "metric_id", "index_type": "sorted",
-#  "created_at": 1794300001, "rows": 3650000, "size_bytes": 3912345}</code></pre>
+#  "created_at": 1794300001, "rows": 3650000, "collection_rows": 3650000, "missing": 0,
+#  "size_bytes": 3912345}</code></pre>
             <ul class="list-disc pl-6 mt-4 space-y-2 text-gray-400 text-sm">
+              <li>An index holds the rows that were there when it was built, and nothing rebuilds it: <code>rows</code> is how many it answers for, <code>collection_rows</code> how many the collection holds, <code>missing</code> the difference. The rows it lacks are still found, compared in their blocks; rebuild (<code>?rebuild=true</code>) when <code>missing</code> has grown.</li>
               <li><code>status</code> is <code>building</code>, <code>created</code>, or <code>failed</code> with an <code>error</code>. A column with neither an index nor a build answers <code>404</code>.</li>
               <li>A build is written down before it starts: if the server stops before it ends, it is started again when the server next reads the collection, under the same <code>job</code>.</li>
               <li><code>DELETE &hellip;/index/:column</code> calls off a build that is still running.</li>
