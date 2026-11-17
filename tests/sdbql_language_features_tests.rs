@@ -1198,3 +1198,105 @@ fn a_document_that_is_not_an_object_is_refused() {
     run(&engine, "INSERT {} INTO things");
     assert_eq!(one(&engine, "RETURN COLLECTION_COUNT('things')"), json!(3));
 }
+
+// ---- Card #940: a batch that updates or replaces the documents of a
+// ---- collection with nothing but documents to maintain does not build
+// ---- their values. `bare` is such a collection; `indexed` holds the same
+// ---- documents and an index, which keeps it on the full path.
+
+fn bare_fixture(engine: &StorageEngine) {
+    use solidb::storage::IndexType;
+    for name in ["bare", "indexed"] {
+        engine.create_collection(name.to_string(), None).unwrap();
+        let c = engine.get_collection(name).unwrap();
+        c.insert_batch(
+            (1..=300)
+                .map(|i| json!({"_key": format!("k{i:03}"), "n": i, "tag": "old", "nested": {"a": [i, "x"]}}))
+                .collect(),
+        )
+        .unwrap();
+    }
+    engine
+        .get_collection("indexed")
+        .unwrap()
+        .create_index(
+            "by_n".to_string(),
+            vec!["n".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_batch_on_a_collection_of_documents_alone_writes_what_the_full_path_writes() {
+    let (engine, _tmp) = engine();
+    bare_fixture(&engine);
+    let system = |name: &str| {
+        run(
+            &engine,
+            &format!("FOR d IN {name} SORT d._key RETURN [d._key, d._id, d._rev, d._created_at, d._updated_at]"),
+        )
+    };
+    let before = system("bare");
+    // Read first: a result kept from before the writes would show below.
+    assert_eq!(
+        one(&engine, "RETURN SUM(FOR d IN bare RETURN d.n)"),
+        json!(45150)
+    );
+
+    let statements = [
+        // A batch of merges, of guarded merges computed from the documents,
+        // of replacements, and an overwriting insert that replaces and adds.
+        "FOR i IN 1..150 UPDATE CONCAT('k', i < 10 ? '00' : (i < 100 ? '0' : ''), i) WITH {tag: 'merged', extra: i * 2} IN NAME",
+        "FOR d IN NAME FILTER d.n > 250 UPDATE d WITH {n: d.n + 1000} IN NAME",
+        "FOR i IN 151..200 REPLACE CONCAT('k', i) WITH {n: i, replaced: true} IN NAME",
+        "FOR i IN 290..320 INSERT {_key: CONCAT('k', i), n: i, fresh: true} INTO NAME OPTIONS {overwrite: true}",
+        // The same key several times in one statement.
+        "FOR i IN 1..6 UPDATE 'k001' WITH {hits: i} IN NAME",
+    ];
+    for statement in statements {
+        let on_bare = mutations(&engine, &statement.replace("NAME", "bare"));
+        let on_indexed = mutations(&engine, &statement.replace("NAME", "indexed"));
+        assert_eq!(on_bare, on_indexed, "{statement}");
+        assert_eq!(
+            stored(&engine, "bare"),
+            stored(&engine, "indexed"),
+            "{statement}"
+        );
+    }
+    assert_eq!(stored(&engine, "bare").len(), 320);
+    assert_eq!(one(&engine, "RETURN DOCUMENT('bare/k001').hits"), json!(6));
+    assert_eq!(
+        one(&engine, "RETURN DOCUMENT('bare/k160').tag"),
+        Value::Null
+    );
+    // Not the sum read before the writes.
+    assert_ne!(
+        one(&engine, "RETURN SUM(FOR d IN bare RETURN d.n)"),
+        json!(45150)
+    );
+
+    // A written document keeps its key, id and creation date, and takes a
+    // new revision and update date; one that was not written keeps all five.
+    let after = system("bare");
+    for (old, new) in before.iter().zip(&after) {
+        let key = old[0].as_str().unwrap();
+        assert_eq!((&old[0], &old[1]), (&new[0], &new[1]), "{key}");
+        assert_eq!(old[3], new[3], "{key} kept its creation date");
+        let untouched = ("k201".."k251").contains(&key);
+        assert_eq!(old[2] == new[2], untouched, "{key} revision");
+        assert_eq!(old[4] == new[4], untouched, "{key} update date");
+    }
+
+    // A batch that names a missing document writes nothing, on either.
+    for name in ["bare", "indexed"] {
+        let kept = stored(&engine, name);
+        let failed = run_err(
+            &engine,
+            &format!("FOR k IN ['k002', 'k003', 'nope'] UPDATE k WITH {{tag: 'x'}} IN {name}"),
+        );
+        assert!(failed.contains("nope"), "{failed}");
+        assert_eq!(stored(&engine, name), kept, "{name}");
+    }
+}

@@ -1459,6 +1459,48 @@ impl Collection {
             .map(|(docs, _)| docs)
     }
 
+    /// Whether a write to a stored document has nothing to maintain beside
+    /// the document: no index of any kind, no counter, no foreign key, no
+    /// history, and nobody subscribed to the collection's changes. A batch
+    /// of updates then writes the documents and nothing else.
+    fn holds_documents_only(&self) -> bool {
+        self.collection_type.read().as_str() != "blob"
+            && self.counters().is_none()
+            && self.fk().is_none()
+            && !self.is_versioned()
+            && !self.has_vector_indexes()
+            && self.change_sender.receiver_count() == 0
+            && self.get_all_indexes().is_empty()
+            && self.get_all_geo_indexes().is_empty()
+            && self.get_all_fulltext_indexes().is_empty()
+            && self.get_all_ttl_indexes().is_empty()
+    }
+
+    /// The end of [`Self::write_existing_batch`] for a collection that
+    /// [`Self::holds_documents_only`]: the documents are serialized and
+    /// written as one batch, and the collection's caches dropped once. The
+    /// caller holds the gate and the keys' locks.
+    fn write_documents_only(
+        &self,
+        cf: &KsCf,
+        pending: Vec<(String, Value, Document)>,
+        moved: Vec<usize>,
+    ) -> DbResult<(Vec<Document>, Vec<usize>)> {
+        let mut batch = KvBatch::default();
+        let mut written = Vec::with_capacity(pending.len());
+        for (key, _, doc) in pending {
+            let bytes = serialize_doc(&doc)?;
+            batch.put_ks(cf, Self::doc_key(&key), &bytes);
+            written.push(doc);
+        }
+        self.db
+            .write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to batch update: {}", e)))?;
+        let span = key_span(written.iter().map(|doc| doc.key.as_str()));
+        self.publish_changes(span, false, std::iter::empty::<ChangeEvent>);
+        Ok((written, moved))
+    }
+
     /// The batch behind [`Self::update_batch_guarded`] (`replace` false:
     /// each value is merged into its document) and [`Self::replace_batch`]
     /// (`replace` true: each value is the document's new body).
@@ -1485,6 +1527,15 @@ impl Collection {
         let cf = self.live_cf()?;
         let is_edge = self.collection_type.read().as_str() == "edge";
         let schema_validator = self.get_cached_schema_validator()?;
+        // Nothing reads the documents' values but the write itself: they
+        // are not built (card #940). A replacement cost 4 µs a document
+        // against 1.7 for an insert, most of it spent building the stored
+        // and the new document as JSON values for checks that had nothing
+        // to check.
+        let bare = updates.len() > 1
+            && !is_edge
+            && schema_validator.is_none()
+            && self.holds_documents_only();
 
         // Pass 1: merge every update. A key updated twice in the batch builds
         // on its pending version; its index diff is still against the disk.
@@ -1530,10 +1581,12 @@ impl Collection {
                 Some(i) => pending[i].2.clone(),
                 None => self.get(key)?,
             };
-            let old_value = if existing.is_none() {
-                Some(doc.to_value())
-            } else {
+            let old_value = if existing.is_some() {
                 None
+            } else if bare {
+                Some(Value::Null)
+            } else {
+                Some(doc.to_value())
             };
 
             if replace {
@@ -1551,7 +1604,7 @@ impl Collection {
             } else {
                 doc.update(changes.clone());
             }
-            let new_value = doc.to_value();
+            let new_value = if bare { Value::Null } else { doc.to_value() };
 
             // Validate edge documents after update
             if is_edge {
@@ -1581,6 +1634,10 @@ impl Collection {
 
         if pending.is_empty() {
             return Ok((Vec::new(), moved));
+        }
+
+        if bare {
+            return self.write_documents_only(&cf, pending, moved);
         }
 
         // Pass 2: claim unique values under their stripes (audit D4).

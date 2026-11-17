@@ -578,6 +578,20 @@ Rules that keep it sound:
   threads to sleep, workers stay busy and, at tokio's default, read arriving
   requests only every 61 tasks.
 
+### Batch updates of a collection that holds documents alone
+
+`Collection::write_existing_batch` (behind `update_batch`,
+`update_batch_guarded` and `replace_batch`) does not build the documents'
+values, runs no check and writes no entry beside the documents when
+`holds_documents_only` says there is nothing to maintain: no index of any
+kind, no counter, no foreign key on either side, no history, no vector
+index, no subscriber, no schema, not an edge or blob collection
+(`write_documents_only`). Anything new that has to read a document when it
+is updated — a kind of index, a constraint, something kept per document —
+must be added to `holds_documents_only`, or a batch of two documents or
+more will not maintain it. `sdbql_language_features_tests` runs the same
+statements on such a collection and on one with an index.
+
 ### Foreign keys
 
 A child collection declares that a top-level field holds the `_key` of a
