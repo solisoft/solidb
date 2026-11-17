@@ -21,3 +21,4 @@ node_modules
 
 # Liste de travail du nettoyage des bases jetables
 /drop-throwaway-dbs.txt
+/tray/target

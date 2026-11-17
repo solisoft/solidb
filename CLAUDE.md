@@ -185,6 +185,14 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 - `src/bin/solidb-restore.rs` - Database restore utility
 - `src/bin/solidb-fuse.rs` - FUSE filesystem mount (optional feature)
 - `src/bin/solidb-repl.rs` - Interactive SDBQL shell
+- `tray/` - `solidb-tray.exe`, the Windows notification-area icon: a crate
+  of its own, outside the workspace, that depends on `windows-sys` alone and
+  never links the server. `config.rs`, `state.rs` and `probe.rs` are tested
+  on any system (`cargo test --manifest-path tray/Cargo.toml`); `win.rs` is
+  only compiled for Windows (`--target x86_64-pc-windows-gnu` from Linux,
+  with mingw-w64). It stops the server by sending Ctrl-C to its console
+  (`App::stop`), which is what `shutdown_signal` in `main.rs` waits for on
+  Windows: a change to how the server takes a shutdown has to keep that.
 
 ### Backups
 

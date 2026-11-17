@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Windows: an icon in the notification area</strong> &mdash; <code>solidb-tray.exe</code>, in the Windows archive beside <code>solidb.exe</code>, starts the server without a console window, sends its output to a log file, and shows by its colour whether the server answers: grey stopped, amber starting or stopping, green when <code>/_api/health</code> answers, red when the server ended on its own, with a notification that says why. <em>Stop</em> and <em>Restart</em> ask the server to stop as Ctrl-C does, so it closes its database. <em>Quit</em> leaves the server running and the icon takes it back at its next start. The menu also opens the data folder, the log and the settings (<code>%LOCALAPPDATA%\SoliDB\tray.conf</code>: port, data directory, arguments), and <em>Start with Windows</em> starts it when you sign in. The server runs in the user&rsquo;s session; this is not a Windows service. See <a href="/docs/tooling#solidb-tray" class="text-cyan-400 hover:underline">Tooling &rsaquo; solidb-tray</a>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.13.0 -->
   <section id="v2-13-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

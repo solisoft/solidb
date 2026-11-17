@@ -161,6 +161,12 @@ jobs:
       - name: Check
         run: cargo check --all-targets
 
+      # The notification-area icon is Windows code that no other job compiles.
+      - name: Tray icon
+        run: |
+          cargo clippy --manifest-path tray/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path tray/Cargo.toml
+
   clippy:
     runs-on: ubuntu-latest
     steps:
@@ -387,12 +393,22 @@ jobs:
         run: |
           tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore solidb-migrate-engine
 
+      # The notification-area icon (tray/, outside the workspace). Its C
+      # runtime is linked in: a Windows that has no Visual C++ runtime must
+      # still be able to start it.
+      - name: Build the tray icon (Windows)
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --manifest-path tray/Cargo.toml --target ${{ matrix.target }}
+
       - name: Package binaries (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $rel = "target/${{ matrix.target }}/release"
-          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe" `
+          $tray = "tray/target/${{ matrix.target }}/release"
+          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe" `
             -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload to release

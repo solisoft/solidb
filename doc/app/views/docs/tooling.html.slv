@@ -79,6 +79,13 @@
                 </div>
                 <p class="text-sm text-gray-400">Mount blob collections as a filesystem.</p>
               </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-circle text-xl text-green-400 mr-3"></i>
+                  <h3 class="text-white font-bold"><a href="#solidb-tray" class="hover:underline">solidb-tray</a></h3>
+                </div>
+                <p class="text-sm text-gray-400">Windows: an icon in the notification area that starts, stops and watches the server.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -917,6 +924,84 @@ end
                  </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- solidb-tray -->
+      <section id="solidb-tray" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-green-400" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg>
+              solidb-tray
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-400 mb-6">On Windows, <code>solidb-tray.exe</code> puts an icon in the notification area that starts, stops and watches a SoliDB server on the machine, without a console window. It is in the Windows archive of a release, beside <code>solidb.exe</code>: start it by a double click. It is a separate program; the server stays the one described above.</p>
+
+            <h3 class="text-lg font-bold text-white mb-4">What the icon shows</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Colour</th>
+                    <th class="px-4 py-3">Meaning</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="px-4 py-3 text-gray-300">Grey</td><td class="px-4 py-3">The server is stopped.</td></tr>
+                  <tr><td class="px-4 py-3 text-yellow-400">Amber</td><td class="px-4 py-3">It is starting or stopping, or its process is there and does not answer.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-400">Green</td><td class="px-4 py-3"><code>GET /_api/health</code> answers on the port.</td></tr>
+                  <tr><td class="px-4 py-3 text-red-400">Red</td><td class="px-4 py-3">The server ended without having been asked to. A notification and the first line of the menu say why.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Menu</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Entry</th>
+                    <th class="px-4 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="px-4 py-3 text-green-300">Start</td><td class="px-4 py-3">Starts <code>solidb.exe</code> without a window, its output appended to the log.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-300">Stop, Restart</td><td class="px-4 py-3">Asks the server to stop as Ctrl-C does, so that it closes its database. It is ended only if it has not gone after 60 seconds.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-300">Open data folder, Open log, Settings</td><td class="px-4 py-3">Open them with Explorer and the text editor. A new instance prints its admin password in the log.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-300">Start with Windows</td><td class="px-4 py-3">Starts the icon, and with it the server, when you sign in.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-300">Quit</td><td class="px-4 py-3">Removes the icon and leaves the server running. The icon takes the server back when it is started again.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Settings</h3>
+            <p class="text-sm text-gray-400 mb-4"><code>%LOCALAPPDATA%\SoliDB\tray.conf</code>, written with the defaults the first time. Quit the icon and start it again to apply a change. A path may name an environment variable.</p>
+            <div class="overflow-x-auto mb-6 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Key</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="px-4 py-3 font-mono text-green-300">exe</td><td class="px-4 py-3">The server to start</td><td class="px-4 py-3"><code>solidb.exe</code> beside the icon</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">data_dir</td><td class="px-4 py-3">Data directory</td><td class="px-4 py-3"><code>%LOCALAPPDATA%\SoliDB\data</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">port</td><td class="px-4 py-3">Port of the server</td><td class="px-4 py-3">6745</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">log</td><td class="px-4 py-3">Where the server's output goes</td><td class="px-4 py-3"><code>%LOCALAPPDATA%\SoliDB\solidb.log</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">args</td><td class="px-4 py-3">Arguments added to the server's command line, e.g. <code>--host 0.0.0.0</code></td><td class="px-4 py-3">-</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">console_url</td><td class="px-4 py-3">Adds <em>Open admin console</em> to the menu, opening this address</td><td class="px-4 py-3">-</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">start_server</td><td class="px-4 py-3">Start the server when the icon starts</td><td class="px-4 py-3">true</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-sm text-gray-400 mb-4">A <code>tray.conf</code> beside <code>solidb-tray.exe</code> makes that folder the icon's own: settings, log and pid file live there.</p>
+            <p class="text-sm text-gray-400">The server runs in your session and ends when you sign out; the icon does not install a Windows service. Through 2.13.0, <code>solidb.exe</code> needs the Microsoft Visual C++ Redistributable, which a new Windows does not have: without it the icon turns red and says that a DLL is missing.</p>
           </div>
         </div>
       </section>
