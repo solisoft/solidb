@@ -160,29 +160,27 @@ fn compare_numbers(a: &Value, b: &Value) -> i32 {
     }
 }
 
-/// Convert a LogEntry from the replication log to a SyncChange for the client
-fn log_entry_to_sync_change(entry: &LogEntry) -> SyncChange {
-    SyncChange {
+/// A replication-log entry as the change an offline client applies, or
+/// `None` for an entry that is not the write of a document.
+///
+/// A client knows three things: a document inserted, updated, deleted.
+/// Everything else in the log is the servers' business (a collection or a
+/// database created or dropped, an index, a foreign key, a counter, a blob
+/// chunk, a columnar collection's rows and columns) and used to be handed
+/// out as a document all the same: an index definition as an update of a
+/// document named after the index, a collection's creation as an insert.
+fn log_entry_to_sync_change(entry: &LogEntry) -> Option<SyncChange> {
+    let operation = match entry.operation {
+        Operation::Insert => ChangeOperation::Insert,
+        Operation::Update => ChangeOperation::Update,
+        Operation::Delete => ChangeOperation::Delete,
+        _ => return None,
+    };
+    Some(SyncChange {
         database: entry.database.clone(),
         collection: entry.collection.clone(),
         document_key: entry.key.clone(),
-        operation: match entry.operation {
-            Operation::Insert => ChangeOperation::Insert,
-            Operation::Update => ChangeOperation::Update,
-            Operation::Delete => ChangeOperation::Delete,
-            // Map other operations to appropriate types
-            Operation::CreateCollection
-            | Operation::DeleteCollection
-            | Operation::TruncateCollection
-            | Operation::CreateDatabase
-            | Operation::DeleteDatabase
-            | Operation::ColumnarInsert
-            | Operation::ColumnarCreateCollection => ChangeOperation::Insert,
-            Operation::ColumnarDelete
-            | Operation::ColumnarDropCollection
-            | Operation::ColumnarTruncate => ChangeOperation::Delete,
-            _ => ChangeOperation::Update,
-        },
+        operation,
         document_data: entry
             .data
             .as_ref()
@@ -192,7 +190,7 @@ fn log_entry_to_sync_change(entry: &LogEntry) -> SyncChange {
         is_delta: false,
         delta_patch: None,
         parent_vectors: vec![],
-    }
+    })
 }
 
 /// Maximum number of log entries one pull may return (audit H3).
@@ -510,21 +508,11 @@ pub async fn pull_changes(
         })
         .collect();
 
-    // Convert LogEntry -> SyncChange
-    // A foreign key's definition is the server's business: an offline
-    // client would store it as a document of the collection.
+    // Convert LogEntry -> SyncChange: the writes of documents, and nothing
+    // else of what the log carries.
     let changes: Vec<SyncChange> = filtered
         .iter()
-        .filter(|entry| {
-            !matches!(
-                entry.operation,
-                Operation::CreateForeignKey
-                    | Operation::DropForeignKey
-                    | Operation::PutCounter
-                    | Operation::DropCounter
-            )
-        })
-        .map(log_entry_to_sync_change)
+        .filter_map(log_entry_to_sync_change)
         .collect();
 
     // Build server vector from the latest entries
@@ -1120,5 +1108,53 @@ mod tests {
             assert!(!servable_to_sync_client(&entry(coll)), "{}", coll);
         }
         assert!(servable_to_sync_client(&entry("orders")));
+    }
+
+    /// An offline client is sent the writes of documents; what the log
+    /// carries for the servers (definitions, collections, blobs, columnar
+    /// rows) is not a document of the collection.
+    #[test]
+    fn only_document_writes_become_changes() {
+        let entry = |op: Operation| {
+            LogEntry::new_op("app", "orders", op, "k", Some(br#"{"n":1}"#.to_vec()))
+        };
+        for (op, expected) in [
+            (Operation::Insert, ChangeOperation::Insert),
+            (Operation::Update, ChangeOperation::Update),
+            (Operation::Delete, ChangeOperation::Delete),
+        ] {
+            let change = log_entry_to_sync_change(&entry(op)).unwrap();
+            assert_eq!(change.operation, expected);
+            assert_eq!(change.document_key, "k");
+            assert_eq!(change.document_data, Some(serde_json::json!({"n": 1})));
+        }
+        for op in [
+            Operation::CreateCollection,
+            Operation::DeleteCollection,
+            Operation::TruncateCollection,
+            Operation::CreateDatabase,
+            Operation::DeleteDatabase,
+            Operation::PutBlobChunk,
+            Operation::DeleteBlob,
+            Operation::ColumnarInsert,
+            Operation::ColumnarDelete,
+            Operation::ColumnarCreateCollection,
+            Operation::ColumnarDropCollection,
+            Operation::ColumnarTruncate,
+            Operation::CreateIndex,
+            Operation::DropIndex,
+            Operation::CreateForeignKey,
+            Operation::DropForeignKey,
+            Operation::ColumnarCreateIndex,
+            Operation::ColumnarDropIndex,
+            Operation::PutCounter,
+            Operation::DropCounter,
+            Operation::ColumnarSetRetention,
+            Operation::ColumnarAddColumn,
+            Operation::ColumnarDropColumn,
+            Operation::ColumnarRenameColumn,
+        ] {
+            assert!(log_entry_to_sync_change(&entry(op)).is_none(), "{op:?}");
+        }
     }
 }
