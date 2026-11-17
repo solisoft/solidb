@@ -645,8 +645,15 @@ Rules that keep it sound:
   refused. A new write path validates one way or the other.
 - A replicated write is not checked (`active_field_rules` returns nothing
   inside `foreign_keys::unchecked`): the origin accepted it.
-- Rules are local to a node, as a JSON schema is: not replicated, not in a
-  full sync. `solidb-dump` writes a `field_rules` and a `schema` record per
+- **Rules and the JSON schema travel whole** (`Operation::SetFieldRules`,
+  `SetSchema`: the payload replaces what the peer holds, an empty list or
+  no payload removes it; `SyncMessage::FullSyncValidation` in a full sync,
+  before the documents; both operations are in `in_full_sync`). The
+  handlers in `server/handlers/schema.rs` log them: a new way to set
+  either has to. A replicated write is checked against neither
+  (`get_cached_schema_validator` answers nothing inside
+  `foreign_keys::unchecked`): it may be older than the schema.
+  `solidb-dump` writes a `field_rules` and a `schema` record per
   collection and `solidb-restore` declares them after the data
   (`declare_validations`): a document stored before a rule existed would
   be refused on its way back in.

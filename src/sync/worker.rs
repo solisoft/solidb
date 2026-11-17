@@ -1083,6 +1083,23 @@ impl SyncWorker {
                     }
                 }
             }
+            Operation::SetFieldRules | Operation::SetSchema => {
+                if let Ok(db) = self.storage.get_database(&entry.database) {
+                    if let Ok(coll) = db.system_collection(&entry.collection) {
+                        let applied = if entry.operation == Operation::SetFieldRules {
+                            coll.apply_field_rules(entry.document_data.as_deref().unwrap_or(b"[]"))
+                        } else {
+                            coll.apply_schema(entry.document_data.as_deref())
+                        };
+                        if let Err(e) = applied {
+                            warn!(
+                                "apply_entry: {:?} on {}.{} not applied: {}",
+                                entry.operation, entry.database, entry.collection, e
+                            );
+                        }
+                    }
+                }
+            }
             Operation::DropForeignKey => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
@@ -1371,6 +1388,34 @@ impl SyncWorker {
                         .and_then(|db| db.system_collection(&collection))
                     {
                         super::counters::apply_full_sync(&coll, &counters);
+                    }
+                }
+                SyncMessage::FullSyncValidation {
+                    database,
+                    collection,
+                    rules,
+                    schema,
+                } => {
+                    let Ok(coll) = self
+                        .storage
+                        .get_database(&database)
+                        .and_then(|db| db.system_collection(&collection))
+                    else {
+                        continue;
+                    };
+                    if let Err(e) = coll.apply_field_rules(&rules) {
+                        warn!(
+                            "Full sync: field rules of {}.{} not declared: {}",
+                            database, collection, e
+                        );
+                    }
+                    if let Some(schema) = schema {
+                        if let Err(e) = coll.apply_schema(Some(&schema)) {
+                            warn!(
+                                "Full sync: schema of {}.{} not set: {}",
+                                database, collection, e
+                            );
+                        }
                     }
                 }
                 SyncMessage::FullSyncDefinitions {
@@ -1729,6 +1774,20 @@ impl SyncWorker {
                             foreign_keys,
                         };
                         ConnectionPool::write_message(stream, &definitions).await?;
+                    }
+                    let rules = coll.field_rules();
+                    let schema = coll
+                        .get_json_schema()
+                        .and_then(|schema| serde_json::to_vec(&schema).ok());
+                    if !rules.is_empty() || schema.is_some() {
+                        let message = SyncMessage::FullSyncValidation {
+                            database: db_name.clone(),
+                            collection: coll_name.clone(),
+                            rules: serde_json::to_vec(rules.as_ref())
+                                .unwrap_or_else(|_| b"[]".to_vec()),
+                            schema,
+                        };
+                        ConnectionPool::write_message(stream, &message).await?;
                     }
                     let counters = super::counters::full_sync_records(&coll);
                     if !counters.is_empty() {
@@ -2238,6 +2297,8 @@ fn in_full_sync(operation: Operation) -> bool {
             | Operation::DropIndex
             | Operation::CreateForeignKey
             | Operation::DropForeignKey
+            | Operation::SetFieldRules
+            | Operation::SetSchema
     )
 }
 
@@ -2287,6 +2348,8 @@ mod tests {
             Operation::CreateCollection,
             Operation::DropIndex,
             Operation::DropForeignKey,
+            Operation::SetFieldRules,
+            Operation::SetSchema,
         ] {
             assert!(in_full_sync(skipped), "{skipped:?}");
         }
@@ -2523,6 +2586,18 @@ mod tests {
         orders
             .insert(json!({"_key": "o1", "customer": "ann"}))
             .unwrap();
+        orders
+            .set_field_rules(
+                serde_json::from_value(json!([{"field": "status", "type": "string"}])).unwrap(),
+            )
+            .unwrap();
+        orders
+            .set_json_schema(crate::storage::schema::CollectionSchema::new(
+                "default".to_string(),
+                json!({"type": "object"}),
+                crate::storage::schema::SchemaValidationMode::Strict,
+            ))
+            .unwrap();
 
         let log = SyncLog::new(
             "n1".to_string(),
@@ -2554,6 +2629,7 @@ mod tests {
         drop(tx);
 
         let mut definitions = Vec::new();
+        let mut validations = Vec::new();
         let mut origins = None;
         let mut order = Vec::new();
         while let Ok(message) = ConnectionPool::read_message(&mut rx).await {
@@ -2566,6 +2642,15 @@ mod tests {
                 } => {
                     order.push(format!("definitions of {collection}"));
                     definitions.push((collection, indexes, foreign_keys));
+                }
+                SyncMessage::FullSyncValidation {
+                    collection,
+                    rules,
+                    schema,
+                    ..
+                } => {
+                    order.push(format!("validation of {collection}"));
+                    validations.push((collection, rules, schema));
                 }
                 SyncMessage::FullSyncDocuments { collection, .. } => {
                     order.push(format!("documents of {collection}"))
@@ -2600,12 +2685,24 @@ mod tests {
         // A collection with nothing declared sends none.
         assert!(!definitions.iter().any(|(c, ..)| c == "customers"));
 
+        // What orders asks of its documents, and nothing for customers.
+        assert_eq!(validations.len(), 1);
+        let (collection, rules, schema) = &validations[0];
+        assert_eq!(collection, "orders");
+        let rules: Vec<crate::storage::field_rules::FieldRule> =
+            serde_json::from_slice(rules).unwrap();
+        assert_eq!(rules[0].field, "status");
+        let schema: crate::storage::schema::CollectionSchema =
+            serde_json::from_slice(schema.as_ref().unwrap()).unwrap();
+        assert!(schema.is_enabled());
+
         let mut origins = origins.expect("the origins");
         origins.sort();
         assert_eq!(origins, [("n1".to_string(), 2), ("n2".to_string(), 7)]);
         // A collection's definitions before its documents; the origins last.
         let at = |what: &str| order.iter().position(|o| o == what).unwrap();
         assert!(at("definitions of orders") < at("documents of orders"));
+        assert!(at("validation of orders") < at("documents of orders"));
         assert_eq!(&order[order.len() - 2..], ["origins", "complete"]);
     }
 }

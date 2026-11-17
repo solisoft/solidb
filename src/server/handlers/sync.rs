@@ -1153,6 +1153,8 @@ mod tests {
             Operation::ColumnarAddColumn,
             Operation::ColumnarDropColumn,
             Operation::ColumnarRenameColumn,
+            Operation::SetFieldRules,
+            Operation::SetSchema,
         ] {
             assert!(log_entry_to_sync_change(&entry(op)).is_none(), "{op:?}");
         }

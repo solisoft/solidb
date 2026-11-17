@@ -30,6 +30,22 @@ pub struct SchemaResponse {
     pub collection: String,
 }
 
+/// Tell the peers what the collection now asks of its documents: its field
+/// rules or its schema, whole, in place of what they hold.
+fn log_validation(
+    state: &AppState,
+    database: &str,
+    collection: &str,
+    operation: crate::sync::protocol::Operation,
+    data: Option<Vec<u8>>,
+) {
+    if let Some(ref log) = state.replication_log {
+        let _ = log.append(crate::sync::log::LogEntry::new_op(
+            database, collection, operation, "", data,
+        ));
+    }
+}
+
 // ==================== Schema Handlers ====================
 
 /// Set or update JSON schema for a collection
@@ -50,11 +66,20 @@ pub async fn set_collection_schema(
 
     // Set schema
     let schema_clone = req.schema.clone();
-    collection.set_json_schema(crate::storage::schema::CollectionSchema::new(
+    let schema = crate::storage::schema::CollectionSchema::new(
         "default".to_string(),
         req.schema,
         validation_mode,
-    ))?;
+    );
+    let logged = serde_json::to_vec(&schema).ok();
+    collection.set_json_schema(schema)?;
+    log_validation(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::sync::protocol::Operation::SetSchema,
+        logged,
+    );
 
     Ok(Json(SchemaResponse {
         schema: Some(schema_clone),
@@ -123,6 +148,13 @@ pub async fn set_field_rules(
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
     collection.set_field_rules(body.rules)?;
+    log_validation(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::sync::protocol::Operation::SetFieldRules,
+        serde_json::to_vec(collection.field_rules().as_ref()).ok(),
+    );
     Ok(Json(FieldRulesBody {
         rules: collection.field_rules().as_ref().clone(),
     }))
@@ -138,6 +170,13 @@ pub async fn delete_field_rules(
         .get_database(&db_name)?
         .get_collection(&coll_name)?;
     collection.set_field_rules(Vec::new())?;
+    log_validation(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::sync::protocol::Operation::SetFieldRules,
+        Some(b"[]".to_vec()),
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -150,6 +189,13 @@ pub async fn delete_collection_schema(
     let collection = database.get_collection(&coll_name)?;
 
     collection.remove_json_schema()?;
+    log_validation(
+        &state,
+        &db_name,
+        &coll_name,
+        crate::sync::protocol::Operation::SetSchema,
+        None,
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }

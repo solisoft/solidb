@@ -574,7 +574,7 @@
 }</div>
                <p class="text-sm text-gray-400 mt-4">A write that breaks a rule, whatever the transport:</p>
                <div class="bg-gray-950/50 p-3 rounded border border-white/5 font-mono text-xs text-gray-300 whitespace-pre mt-2">400 {"code": 400, "error": "Schema validation failed: 'price' must be at least 0", "type": "InvalidDocument"}</div>
-               <p class="text-sm text-gray-400 mt-4">At most 64 rules, one per field. A rule that asks for nothing, or names a key that is not listed above, is refused. Rules are stored on the node that takes the request: like a JSON schema they are not replicated, so declare them on each node. <code class="text-indigo-300">solidb-dump</code> writes both and <code class="text-indigo-300">solidb-restore</code> declares them once the documents are in.</p>
+               <p class="text-sm text-gray-400 mt-4">At most 64 rules, one per field. A rule that asks for nothing, or names a key that is not listed above, is refused. Rules, like a JSON schema, are replicated to the other nodes and sent to a node that joins; a write that arrives by replication is not checked against them. <code class="text-indigo-300">solidb-dump</code> writes both and <code class="text-indigo-300">solidb-restore</code> declares them once the documents are in.</p>
              </div>
              <div class="p-6 hover:bg-white/5 transition-colors">
                <div class="flex items-center gap-3 mb-2">

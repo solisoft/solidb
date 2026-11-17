@@ -73,6 +73,12 @@ impl Collection {
 
     /// Get or create cached schema validator
     pub fn get_cached_schema_validator(&self) -> Result<Option<SchemaValidator>, DbError> {
+        // A write another node accepted (`foreign_keys::unchecked`) is held
+        // to nothing here: the schema and the rules now travel, and a
+        // replica that refused a document older than them would diverge.
+        if crate::storage::foreign_keys::is_unchecked() {
+            return Ok(None);
+        }
         let rules = self.active_field_rules();
         let Some(rules) = rules else {
             return self.schema_validator_alone();
@@ -199,6 +205,21 @@ impl Collection {
         match crate::storage::field_rules::broken(&rules, view) {
             Some(what) => Err(crate::storage::field_rules::refused(&what)),
             None => Ok(()),
+        }
+    }
+
+    /// The field rules another node declared (`Operation::SetFieldRules`,
+    /// or a full sync): a JSON list, empty to remove them.
+    pub fn apply_field_rules(&self, payload: &[u8]) -> DbResult<()> {
+        self.set_field_rules(serde_json::from_slice(payload)?)
+    }
+
+    /// The JSON schema another node set (`Operation::SetSchema`, or a full
+    /// sync), or its removal.
+    pub fn apply_schema(&self, payload: Option<&[u8]>) -> DbResult<()> {
+        match payload {
+            Some(bytes) => self.set_json_schema(serde_json::from_slice(bytes)?),
+            None => self.remove_json_schema(),
         }
     }
 

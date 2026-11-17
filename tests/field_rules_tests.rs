@@ -466,3 +466,109 @@ async fn rules_are_declared_read_and_removed_over_http() {
     let (status, body) = call(&app, &token, "POST", &doc_url, Some(json!({"price": -3}))).await;
     assert!(status.is_success(), "{status} {body}");
 }
+
+/// Card #948: what a collection asks of its documents is logged for the
+/// peers, whole, and a peer that applies it refuses what the origin
+/// refuses.
+#[tokio::test]
+async fn rules_and_schema_are_logged_and_applied_by_a_peer() {
+    use solidb::sync::log::SyncLog;
+    use solidb::sync::protocol::Operation;
+    let tmp = TempDir::new().unwrap();
+    let origin = StorageEngine::new(tmp.path().join("a").to_str().unwrap()).unwrap();
+    origin.initialize().unwrap();
+    let log = Arc::new(
+        SyncLog::new(
+            "n1".to_string(),
+            tmp.path().join("log").to_str().unwrap(),
+            64,
+        )
+        .unwrap(),
+    );
+    let app = create_router(
+        origin.clone(),
+        None,
+        Some(log.clone()),
+        None,
+        None,
+        Arc::new(ScriptStats::default()),
+        None,
+        None,
+        0,
+    );
+    let token = common::seed_user_token(&origin, "rules_admin", &["admin"]);
+    let base = "/_api/database/_system";
+    call(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/collection"),
+        Some(json!({"name": "goods"})),
+    )
+    .await;
+    let rules_url = format!("{base}/collection/goods/rules");
+    let schema_url = format!("{base}/collection/goods/schema");
+    let declared = json!({"rules": [{"field": "name", "required": true}]});
+    let (status, _) = call(&app, &token, "PUT", &rules_url, Some(declared)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &schema_url,
+        Some(json!({"schema": {"type": "object", "properties": {"n": {"type": "integer"}}}, "validationMode": "strict"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A peer with the collection, and nothing declared on it.
+    let peer = StorageEngine::new(tmp.path().join("b").to_str().unwrap()).unwrap();
+    peer.initialize().unwrap();
+    peer.get_database("_system")
+        .unwrap()
+        .create_collection("goods".to_string(), None)
+        .unwrap();
+    let goods = peer
+        .get_database("_system")
+        .unwrap()
+        .get_collection("goods")
+        .unwrap();
+    goods.insert(json!({"n": "not a number"})).unwrap();
+
+    let apply = |from: u64| {
+        let entries = log.get_entries_after(from, 100);
+        for entry in entries.iter().filter(|e| e.collection == "goods") {
+            match entry.operation {
+                Operation::SetFieldRules => goods
+                    .apply_field_rules(entry.data.as_deref().unwrap_or(b"[]"))
+                    .unwrap(),
+                Operation::SetSchema => goods.apply_schema(entry.data.as_deref()).unwrap(),
+                _ => {}
+            }
+        }
+        entries.last().map_or(from, |e| e.sequence)
+    };
+    let at = apply(0);
+    assert_eq!(goods.field_rules().len(), 1);
+    refused(goods.insert(json!({"n": 1})), "'name' is required");
+    refused(goods.insert(json!({"name": "x", "n": "no"})), "");
+    goods.insert(json!({"name": "x", "n": 1})).unwrap();
+
+    // A write the origin accepted is stored as it is, whatever the peer
+    // now asks: replication applies it unchecked.
+    solidb::storage::foreign_keys::unchecked(|| {
+        goods.insert(json!({"_key": "replicated", "n": "older than the schema"}))
+    })
+    .unwrap();
+    assert!(goods.get("replicated").is_ok());
+
+    // Removed on the origin: removed on the peer.
+    let (status, _) = call(&app, &token, "DELETE", &rules_url, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&app, &token, "DELETE", &schema_url, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    apply(at);
+    assert!(goods.field_rules().is_empty());
+    assert!(goods.get_json_schema().is_none());
+    goods.insert(json!({"n": "anything"})).unwrap();
+}

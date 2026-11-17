@@ -73,6 +73,13 @@ pub enum Operation {
     ColumnarAddColumn,
     ColumnarDropColumn,
     ColumnarRenameColumn,
+    /// What a collection asks of its documents, declared in place of what
+    /// it had: its field rules (`storage::field_rules`; the payload is the
+    /// JSON list, empty to remove them) and its JSON schema (the payload is
+    /// the JSON `CollectionSchema`, absent to remove it). The last one
+    /// applied stands.
+    SetFieldRules,
+    SetSchema,
 }
 
 /// A single entry in the sync log
@@ -417,6 +424,16 @@ pub enum SyncMessage {
         database: String,
         collection: String,
         counters: Vec<Vec<u8>>,
+    },
+    /// Full sync: what a collection asks of its documents, sent before
+    /// them: its field rules (a JSON list, empty when it has none) and its
+    /// JSON schema (a JSON `CollectionSchema`). Declared while the log was
+    /// deferred, they are in no log.
+    FullSyncValidation {
+        database: String,
+        collection: String,
+        rules: Vec<u8>,
+        schema: Option<Vec<u8>>,
     },
 }
 

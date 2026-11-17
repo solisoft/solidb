@@ -701,6 +701,28 @@ impl ClusterManager {
                         }
                     }
                 }
+                Operation::SetFieldRules | Operation::SetSchema => {
+                    if let Ok(db) = storage.get_database(&entry.database) {
+                        if let Ok(coll) = db.get_collection(&entry.collection) {
+                            let applied = if entry.operation == Operation::SetFieldRules {
+                                coll.apply_field_rules(
+                                    entry.document_data.as_deref().unwrap_or(b"[]"),
+                                )
+                            } else {
+                                coll.apply_schema(entry.document_data.as_deref())
+                            };
+                            if let Err(e) = applied {
+                                tracing::warn!(
+                                    "Failed to apply replicated {:?} on {}.{}: {}",
+                                    entry.operation,
+                                    entry.database,
+                                    entry.collection,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
                 Operation::DropForeignKey => {
                     if let Ok(db) = storage.get_database(&entry.database) {
                         if let Ok(coll) = db.get_collection(&entry.collection) {
