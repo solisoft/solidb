@@ -88,7 +88,243 @@ fn bound(value: &Value, up: bool) -> Option<i64> {
     Some(if up { f.ceil() } else { f.floor() } as i64)
 }
 
+/// What the FILTERs of a row query say of the rows a block can hold: the
+/// conjuncts that compare the time with a number or a declared field with a
+/// string. The others are not read: the FILTER clauses still run on every
+/// document that is read, so this may keep too much and never too little.
+struct RowBounds {
+    /// Times in `[from, to)`.
+    from: i64,
+    to: i64,
+    timed: bool,
+    /// For each field of the definition, the string it must equal.
+    equals: Vec<Option<String>>,
+}
+
+impl RowBounds {
+    /// Whether a row of `columns` can pass: the series is in the block's
+    /// dictionary and, where the strings fixed so far make the rows a run,
+    /// that run holds a time of the span.
+    fn may_hold(&self, columns: &Columns) -> bool {
+        let total = columns.time.len();
+        if total == 0
+            || (self.timed && (self.to <= columns.min_time || self.from > columns.max_time))
+        {
+            return false;
+        }
+        let (mut start, mut end) = (0usize, total);
+        let mut run = true;
+        for (at, column) in columns.cols.iter().enumerate() {
+            let wanted = self.equals[at].as_deref();
+            let Column::Str { dict, codes } = column else {
+                // A string never equals a number.
+                if wanted.is_some() {
+                    return false;
+                }
+                continue;
+            };
+            let Some(wanted) = wanted else {
+                run = false;
+                continue;
+            };
+            let Ok(code) = dict.binary_search_by(|d| d.as_str().cmp(wanted)) else {
+                return false;
+            };
+            if run {
+                let code = code as u32;
+                let held = &codes[start..end];
+                let first = held.partition_point(|c| *c < code);
+                let past = held.partition_point(|c| *c <= code);
+                (start, end) = (start + first, start + past);
+            }
+        }
+        if run && self.timed {
+            let held = &columns.time[start..end];
+            let first = held.partition_point(|t| *t < self.from);
+            let past = held.partition_point(|t| *t < self.to);
+            (start, end) = (start + first, start + past);
+        }
+        end > start
+    }
+}
+
 impl QueryExecutor<'_> {
+    /// The documents a `FOR var IN c FILTER …` can keep, read only from the
+    /// key ranges that may hold one (card #934). A time series with column
+    /// blocks and no index for the FILTER was read whole: 2.7 s for 3.65
+    /// million points to return the rows of one instant.
+    ///
+    /// A block covers a range of keys and knows the times and the series of
+    /// its rows, not their keys: a block none of whose rows can pass is
+    /// passed over, and the documents of every other range are read as the
+    /// ordinary scan reads them, in the same order, for the FILTER clauses
+    /// to run on. `None` when this does not apply, and the ordinary scan
+    /// reads the collection.
+    pub(in crate::sdbql::executor) fn block_pruned_docs(
+        &self,
+        for_clause: &crate::sdbql::ast::ForClause,
+        filters: &[&Expression],
+        ctx: &Context,
+        scan_limit: Option<usize>,
+    ) -> DbResult<Option<Vec<Value>>> {
+        // The guards of the ordinary scan: anything it filters or overlays
+        // itself stays with it.
+        if !self.stream_collect
+            || filters.is_empty()
+            || scan_limit.is_some()
+            || for_clause.system_time.is_some()
+            || for_clause.valid_time.is_some()
+            || for_clause
+                .source_variable
+                .as_ref()
+                .is_some_and(|src| src != &for_clause.collection)
+            || IndexHint::of(for_clause).is_some()
+            || self.row_policy_applies(&for_clause.collection)
+        {
+            return Ok(None);
+        }
+        let Some(collection) = self.scan_collect_source(for_clause, std::slice::from_ref(ctx))
+        else {
+            return Ok(None);
+        };
+        let Some(set) = collection.column_blocks() else {
+            return Ok(None);
+        };
+        let Some(bounds) = self.row_bounds(for_clause.variable.as_str(), filters, &set, ctx) else {
+            return Ok(None);
+        };
+
+        self.caches.count_collection_scan();
+        // Ranges are passed over on what the blocks say, not on the stored
+        // documents: a transaction that checks its reads holds this one to
+        // the range rule.
+        collection.note_range_read();
+        let fields = self.scan_projection_for(for_clause);
+        let cap = self.max_intermediate_rows.saturating_add(1);
+        let mut docs: Vec<Value> = Vec::new();
+        let read = |lo: &str, hi: Option<&str>, docs: &mut Vec<Value>| {
+            blocks::for_each_doc(&collection, lo, hi, None, |_, bytes| {
+                let decoded = match fields.as_deref() {
+                    Some(fields) => deserialize_doc_projected(bytes, fields),
+                    None => deserialize_doc_as_value(bytes),
+                };
+                if let Ok(doc) = decoded {
+                    docs.push(doc);
+                }
+                docs.len() < cap
+            })
+        };
+        // Asked before the blocks are listed: a write after it is one the
+        // query may or may not see, as with any read.
+        let tail_empty = set.tail_is_empty();
+        for segment in set.segments(&collection).iter() {
+            if docs.len() >= cap {
+                break;
+            }
+            match segment {
+                Segment::Documents(_, None) if tail_empty => {}
+                Segment::Documents(lo, hi) => read(lo, hi.as_deref(), &mut docs)?,
+                Segment::Block(entry) => {
+                    let usable = !entry.opaque && set.verified(&collection, entry);
+                    let held = if !usable {
+                        true
+                    } else if bounds.timed
+                        && (bounds.to <= entry.min_time || bounds.from > entry.max_time)
+                    {
+                        false
+                    } else if bounds.equals.iter().all(Option::is_none) {
+                        true
+                    } else {
+                        // Without its columns nothing says what it holds.
+                        set.columns(&collection, entry)
+                            .is_none_or(|columns| bounds.may_hold(&columns))
+                    };
+                    if held {
+                        read(&entry.lo, Some(&entry.hi), &mut docs)?;
+                    } else {
+                        blocks::BLOCKS_PASSED_OVER
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        Ok(Some(docs))
+    }
+
+    /// What `filters` say of the rows `set` holds, or `None` when none of
+    /// their conjuncts is one a block can answer.
+    fn row_bounds(
+        &self,
+        var: &str,
+        filters: &[&Expression],
+        set: &BlockSet,
+        outer: &Context,
+    ) -> Option<RowBounds> {
+        let mut bounds = RowBounds {
+            from: i64::MIN,
+            to: i64::MAX,
+            timed: false,
+            equals: vec![None; set.def.fields.len()],
+        };
+        let mut conjuncts = Vec::new();
+        for filter in filters {
+            push_conjuncts(filter, &mut conjuncts);
+        }
+        let mut read = false;
+        for conjunct in conjuncts {
+            let Expression::BinaryOp { left, op, right } = conjunct else {
+                continue;
+            };
+            let Some(source) = Self::block_source(left, var, set) else {
+                continue;
+            };
+            if expression_references_var(right, var) {
+                continue;
+            }
+            let Ok(value) = self.evaluate_expr_with_context(right, outer) else {
+                continue;
+            };
+            // A bound that cannot be read as one is left to the FILTER.
+            let (from, to) = (bounds.from, bounds.to);
+            let taken = match (source, op) {
+                (Source::Time, BinaryOperator::GreaterThanOrEqual) => {
+                    bound(&value, true).map(|b| bounds.from = from.max(b))
+                }
+                (Source::Time, BinaryOperator::GreaterThan) => bound(&value, false)
+                    .and_then(|b| b.checked_add(1))
+                    .map(|b| bounds.from = from.max(b)),
+                (Source::Time, BinaryOperator::LessThan) => {
+                    bound(&value, true).map(|b| bounds.to = to.min(b))
+                }
+                (Source::Time, BinaryOperator::LessThanOrEqual) => bound(&value, false)
+                    .and_then(|b| b.checked_add(1))
+                    .map(|b| bounds.to = to.min(b)),
+                // An instant: a time that is not a whole number equals none.
+                (Source::Time, BinaryOperator::Equal) => {
+                    value.as_i64().and_then(|t| t.checked_add(1)).map(|past| {
+                        bounds.from = from.max(past - 1);
+                        bounds.to = to.min(past);
+                    })
+                }
+                (Source::Field(at), BinaryOperator::Equal) => match value.as_str() {
+                    // Two different strings for one field keep no row; the
+                    // FILTER says so itself, on what little is read.
+                    Some(wanted) if bounds.equals[at].is_none() => {
+                        bounds.equals[at] = Some(wanted.to_string());
+                        Some(())
+                    }
+                    _ => None,
+                },
+                _ => None,
+            };
+            if taken.is_some() {
+                read = true;
+                bounds.timed |= source == Source::Time;
+            }
+        }
+        read.then_some(bounds)
+    }
+
     /// The field of the loop variable `expr` reads, as a column.
     fn block_source(expr: &Expression, var: &str, set: &BlockSet) -> Option<Source> {
         let Expression::FieldAccess(base, field) = expr else {

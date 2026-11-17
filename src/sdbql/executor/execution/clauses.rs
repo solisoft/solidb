@@ -510,7 +510,13 @@ impl<'a> QueryExecutor<'a> {
                     // Normal FOR processing (no index)
                     let mut new_rows = Vec::new();
                     for ctx in &rows {
-                        let docs = self.get_for_source_docs(for_clause, ctx, scan_limit)?;
+                        // A time series with column blocks: only the key
+                        // ranges whose block may hold a row the FILTERs keep.
+                        let docs =
+                            match self.block_pruned_docs(for_clause, &filters, ctx, scan_limit)? {
+                                Some(docs) => docs,
+                                None => self.get_for_source_docs(for_clause, ctx, scan_limit)?,
+                            };
                         for doc in docs {
                             let mut new_ctx = ctx.clone();
                             new_ctx.insert(for_clause.variable.clone(), doc);

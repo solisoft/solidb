@@ -547,3 +547,124 @@ fn a_restart_without_an_explicit_seal() {
     sealed_behind(&coll);
     same(&engine, true, "after the restart");
 }
+
+// ---- Card #934: a row query reads only the key ranges whose block may
+// ---- hold a row its FILTERs keep.
+
+fn row_queries() -> Vec<String> {
+    let (lo, hi) = (T0 + 600_000, T0 + 660_000);
+    vec![
+        // An instant, a span, a span of one series.
+        format!("FOR p IN points FILTER p.ts == {lo} RETURN p"),
+        format!("FOR p IN points FILTER p.ts == {lo} RETURN [p.series, p.v]"),
+        format!("FOR p IN points FILTER p.ts >= {lo} AND p.ts < {hi} RETURN p.n"),
+        format!("FOR p IN points FILTER p.ts > {lo} FILTER p.ts <= {hi} RETURN p._key"),
+        format!(
+            "FOR p IN points FILTER p.series == 's007' AND p.ts >= {lo} AND p.ts < {hi} RETURN p"
+        ),
+        // A series alone: every block holds it, and nothing is passed over.
+        "FOR p IN points FILTER p.series == 's007' RETURN p.ts".to_string(),
+        // A series no block holds, with and without a time.
+        "FOR p IN points FILTER p.series == 'nope' RETURN p".to_string(),
+        format!("FOR p IN points FILTER p.series == 'nope' AND p.ts >= {lo} RETURN p"),
+        // Conjuncts the blocks do not read, beside ones they do.
+        format!("FOR p IN points FILTER p.ts >= {lo} AND p.ts < {hi} AND p.n > 8 RETURN p.v"),
+        format!("FOR p IN points FILTER p.ts < {hi} AND p.v > 300 AND p.host == 'b' RETURN p.m"),
+        format!("FOR p IN points FILTER p.ts == {lo} OR p.n == 3 RETURN p.ts"),
+        // Bounds that are not whole numbers, that hold nothing, a string.
+        format!("FOR p IN points FILTER p.ts >= {lo}.5 AND p.ts < {hi}.5 RETURN p.ts"),
+        format!("FOR p IN points FILTER p.ts == {lo}.5 RETURN p"),
+        format!("FOR p IN points FILTER p.ts > {hi} AND p.ts < {lo} RETURN p"),
+        "FOR p IN points FILTER p.ts == '2025-10-09T08:00:00Z' RETURN p.v".to_string(),
+        "FOR p IN points FILTER p.ts < 0 RETURN p".to_string(),
+        // Two strings for one field, a number for a string field.
+        "FOR p IN points FILTER p.series == 's007' AND p.series == 's008' RETURN p".to_string(),
+        "FOR p IN points FILTER p.series == 7 RETURN p".to_string(),
+        // Clauses after the FILTER.
+        format!("FOR p IN points FILTER p.ts >= {lo} AND p.ts < {hi} SORT p.v DESC LIMIT 5 RETURN p.v"),
+        format!("FOR p IN points FILTER p.ts >= {lo} AND p.ts < {hi} LIMIT 7 RETURN p._key"),
+        format!(
+            "FOR p IN points FILTER p.ts >= {lo} AND p.ts < {hi} LET d = p.v * 2 FILTER d > 100 RETURN d"
+        ),
+        // The collection inside another loop, its bound from the outer row.
+        format!(
+            "FOR t IN [{lo}, {hi}] FOR p IN points FILTER p.ts == t AND p.series == 's003' RETURN [t, p.v]"
+        ),
+    ]
+}
+
+/// Each row query both ways: the same rows, in the same order.
+fn same_rows(engine: &StorageEngine, when: &str) {
+    for q in row_queries() {
+        let with = run(engine, &q, true);
+        assert!(with.is_ok(), "{when}: {q}: {with:?}");
+        assert_eq!(with, run(engine, &q, false), "{when}: {q}");
+    }
+}
+
+fn passed_over() -> u64 {
+    solidb::storage::blocks::BLOCKS_PASSED_OVER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[test]
+fn a_row_query_reads_only_the_blocks_that_may_hold_its_rows() {
+    let points = 6 * BLOCK_ROWS as i64;
+    let (engine, _tmp) = engine_with(points);
+    let coll = points_of(&engine);
+    same_rows(&engine, "before any block");
+    coll.seal_column_blocks().unwrap();
+    let blocks = coll.column_blocks_status().unwrap().blocks as u64;
+    assert!(blocks >= 3, "{blocks} blocks");
+    same_rows(&engine, "sealed");
+
+    // An instant lies in one block: the others are passed over, and the
+    // rows are the ones the whole collection gives.
+    let instant = format!(
+        "FOR p IN points FILTER p.ts == {} RETURN p.series",
+        T0 + 600_000
+    );
+    let before = passed_over();
+    let rows = run(&engine, &instant, true).unwrap();
+    assert_eq!(rows.len(), SERIES as usize);
+    assert!(
+        passed_over() - before >= blocks - 2,
+        "{} of {blocks}",
+        passed_over() - before
+    );
+    // A series no block holds: nothing is read at all.
+    let before = passed_over();
+    assert!(run(
+        &engine,
+        "FOR p IN points FILTER p.series == 'nope' RETURN p",
+        true
+    )
+    .unwrap()
+    .is_empty());
+    assert_eq!(passed_over() - before, blocks);
+    // Without the switch, the ordinary scan: no block is consulted.
+    let before = passed_over();
+    run(&engine, &instant, false).unwrap();
+    assert_eq!(passed_over(), before);
+
+    // Writes: a point in the middle of a sealed range, points past the
+    // last block, a point that fits no column.
+    coll.insert(
+        json!({"series": "s007", "ts": T0 + 600_000, "v": 1.25, "n": 2, "host": "b", "m": 1}),
+    )
+    .unwrap();
+    coll.insert(json!({"_key": "0", "series": "s003", "ts": T0 + 660_000, "v": 2.5, "n": 1, "host": "b", "m": 2}))
+        .unwrap();
+    coll.insert(
+        json!({"series": "s001", "ts": "2025-10-09T08:00:00Z", "v": 1.5, "n": 1, "host": "b"}),
+    )
+    .unwrap();
+    same_rows(&engine, "after writes");
+    coll.seal_column_blocks().unwrap();
+    same_rows(&engine, "sealed again");
+
+    // After a restart the blocks are read from disk and checked again.
+    drop(coll);
+    drop(engine);
+    let engine = open(&_tmp);
+    same_rows(&engine, "after a restart");
+}

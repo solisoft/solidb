@@ -880,6 +880,20 @@ Rules that keep it sound:
   must return what the index walk returns
   (`the_newest_point_of_a_series_comes_from_the_blocks`), calls
   `note_range_read`, and sits behind the guards of `sorted_read_target`.
+- **A row query reads only the ranges that may hold its rows**
+  (`block_scan::block_pruned_docs`, from the FOR scan in `clauses.rs`):
+  a block whose times or series say that none of its rows can pass the
+  leading FILTERs is passed over, and the documents of every other range
+  are read as the ordinary scan reads them, for the FILTER clauses to run
+  on. A block does not hold its rows' keys, so it can spare a read and
+  never answer for a row: the bounds read from the FILTERs
+  (`row_bounds`) may keep too much and must never keep too little. A
+  conjunct it does not read is simply left to the FILTER; a new one it
+  reads has to be exact for every document a block with columns can hold
+  (a time that is not an integer makes its block opaque, which is read).
+  It steps aside at the guards of the ordinary scan and calls
+  `note_range_read`; `column_blocks_tests` runs each query both ways and
+  checks with `BLOCKS_PASSED_OVER` that blocks were spared.
 - Blocks are local to a node: not replicated, not in a full sync, not
   dumped. The definition is not replicated either; declare it on each node.
 

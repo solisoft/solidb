@@ -350,6 +350,11 @@ pub(crate) enum Segment {
 /// the blocks answered and not the index beside them.
 pub static NEWEST_FROM_BLOCKS: AtomicU64 = AtomicU64::new(0);
 
+/// Blocks a row query passed over because none of their rows could pass
+/// its FILTER (`block_scan::block_pruned_docs`), since the process started:
+/// for tests, which must know the blocks spared the read.
+pub static BLOCKS_PASSED_OVER: AtomicU64 = AtomicU64::new(0);
+
 /// The keys a write touched.
 pub(crate) enum Wrote<'a> {
     Key(&'a str),

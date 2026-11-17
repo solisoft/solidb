@@ -191,6 +191,9 @@ RETURN RESAMPLE(points, "5m")   -- last value + avg per bucket</code></pre>
             <p class="text-gray-300">
               A query is answered from the blocks when it stays within them: <code>FOR p IN c</code>, FILTERs that compare the time field with numbers (<code>&gt;=</code>, <code>&gt;</code>, <code>&lt;</code>, <code>&lt;=</code>) and other declared fields with strings (<code>==</code>), joined by <code>AND</code>, then a <code>COLLECT</code> whose keys are declared fields or <code>TIME_BUCKET(time, "5m")</code> (a fixed interval, no options) and whose aggregates take a declared field or nothing. The answers are those of the documents, to the last digit: an integer sum stays an integer, a float sum is exact. Anything else runs as before, and EXPLAIN says which: <code>COLLECT folded from the column blocks</code>.
             </p>
+            <p class="text-sm text-gray-400 mb-4">
+              A query that returns rows uses the blocks to read less: <code>FOR p IN c FILTER p.ts &gt;= @from AND p.ts &lt; @to RETURN p</code>, or the same with <code>p.series == @s</code>, reads only the documents of the blocks that can hold such a point, where it used to read the collection. A block knows the times and the series of its points, not their keys, so the documents of a block that may hold a row are all read, and the FILTERs run on them as before: same rows, same order. A span of time narrows the read to a few blocks. A series alone does not, when every block holds points of it: for that question keep an index on the series field.
+            </p>
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-4">
               <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Example: answered from the blocks</h4>
