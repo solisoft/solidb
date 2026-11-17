@@ -1265,7 +1265,17 @@ Rules that keep it sound:
   the rows', and mergeable. A running formula (Welford) would bring the
   order back. `APPROX_COUNT_DISTINCT` hashes a column's value as
   `hash_value` hashes the JSON value (`hash_f64`, `hash_str`): a change
-  to one is a change to both. What follows an aggregate's argument
+  to one is a change to both. A distinct count of a column of integers
+  or of floats keeps the values in a vector sorted now and then
+  (`Uniques`) and hands the fold their count (`Slice::Counted`) only
+  when no row is folded beside the groups (`alone`: no tail, no block
+  left to the rows) and the values cannot be equal across kinds (not
+  integers in one block and floats in another, no `Mixed` column);
+  otherwise the values, which the fold tells apart with `values_equal`.
+  Medians and percentiles of one argument keep its numbers once
+  (`CollectFold::shared_numbers`, which the columnar plan reads too):
+  the others are given nothing and read the first's in `finish`. What
+  follows an aggregate's argument
   (`PERCENTILE(x, 95)`, `AggregateExpr::options`) is a literal or a bind
   variable, read once by `CollectFold::finish`.
 - **Nulls in the fold follow SDBQL** (`columnar_scan.rs`): to a

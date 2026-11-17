@@ -257,6 +257,9 @@ impl AggKind {
 pub(super) struct DistinctValues {
     index: HashMap<u64, Vec<usize>>,
     items: Vec<Value>,
+    /// Distinct values counted and not held ([`Slice::Counted`]): none of
+    /// them is among `items`, or will be.
+    counted: usize,
 }
 
 impl DistinctValues {
@@ -299,6 +302,10 @@ pub(super) enum Slice<'a> {
     /// The distinct values of the rows pushed, null among them if a row
     /// holds it: what `COUNT_DISTINCT` keeps.
     Each(&'a [Value]),
+    /// How many distinct values the rows pushed hold, null among them if
+    /// a row holds it, for a group that is pushed whole and once: nothing
+    /// else of it is folded, before or after.
+    Counted(usize),
     /// The estimate of the distinct values of the rows pushed, null among
     /// them if a row holds it: what `APPROX_COUNT_DISTINCT` keeps.
     Sketch(&'a Hll),
@@ -545,6 +552,44 @@ impl AggregateAccumulator {
         matches!(self, Self::Median(_) | Self::Percentile(_))
     }
 
+    /// The numbers a median or a percentile holds.
+    pub(super) fn numbers_mut(&mut self) -> Option<&mut Vec<f64>> {
+        match self {
+            Self::Median(nums) | Self::Percentile(nums) => Some(nums),
+            _ => None,
+        }
+    }
+
+    /// What this median or percentile is over `nums`, the numbers another
+    /// aggregate of the same argument holds (reordered): what
+    /// [`Self::finish`] answers when it holds them itself.
+    pub(super) fn finish_over(&self, nums: &mut [f64], options: &[Value]) -> Value {
+        match self {
+            Self::Median(_) => Self::median(nums),
+            Self::Percentile(_) => Self::percentile(nums, options),
+            _ => Value::Null,
+        }
+    }
+
+    fn median(nums: &mut [f64]) -> Value {
+        median_of(nums).map(float_value).unwrap_or(Value::Null)
+    }
+
+    /// As the function: a rank that is not a number from 0 to 100 is null.
+    fn percentile(nums: &mut [f64], options: &[Value]) -> Value {
+        let interpolate = options
+            .get(1)
+            .and_then(Value::as_str)
+            .is_some_and(|method| method.eq_ignore_ascii_case("interpolation"));
+        options
+            .first()
+            .and_then(Value::as_f64)
+            .filter(|p| (0.0..=100.0).contains(p))
+            .and_then(|p| percentile_of(nums, p, interpolate))
+            .map(float_value)
+            .unwrap_or(Value::Null)
+    }
+
     /// Whether [`Self::push_slice`] folds this kind from a
     /// [`Slice::Moments`], and from nothing else.
     pub(super) fn takes_moments(kind: AggKind) -> bool {
@@ -609,6 +654,7 @@ impl AggregateAccumulator {
                 | Some(Slice::Each(_))
                 | Some(Slice::Moments { .. })
                 | Some(Slice::Sketch(_))
+                | Some(Slice::Counted(_))
                 | None => {}
             },
             Self::Avg { sum, count } => match values {
@@ -641,6 +687,7 @@ impl AggregateAccumulator {
                 | Some(Slice::Each(_))
                 | Some(Slice::Moments { .. })
                 | Some(Slice::Sketch(_))
+                | Some(Slice::Counted(_))
                 | None => {}
             },
             Self::Min(_) | Self::Max(_) => {
@@ -678,10 +725,16 @@ impl AggregateAccumulator {
                     | Some(Slice::Each(_))
                     | Some(Slice::Moments { .. })
                     | Some(Slice::Sketch(_))
+                    | Some(Slice::Counted(_))
                     | None => None,
                 };
                 if let Some(extreme) = extreme {
                     self.push(Some(Datum::Num(extreme)), ordinal);
+                }
+            }
+            Self::CountDistinct(distinct) if matches!(values, Some(Slice::Counted(_))) => {
+                if let Some(Slice::Counted(more)) = values {
+                    distinct.counted += more;
                 }
             }
             Self::CountDistinct(_) => {
@@ -793,6 +846,7 @@ impl AggregateAccumulator {
             }
             (Self::Min(_), Self::Min(None)) | (Self::Max(_), Self::Max(None)) => 0,
             (Self::CountDistinct(a), Self::CountDistinct(b)) => {
+                a.counted += b.counted;
                 let held = b.items.len();
                 let kept = b
                     .items
@@ -840,7 +894,9 @@ impl AggregateAccumulator {
             Self::Avg { count: 0, .. } => Value::Null,
             Self::Avg { sum, count } => float_value(sum.value() / count as f64),
             Self::Min(v) | Self::Max(v) => v.map_or(Value::Null, |(v, _)| v),
-            Self::CountDistinct(values) => Value::Number((values.items.len() as i64).into()),
+            Self::CountDistinct(values) => {
+                Value::Number(((values.items.len() + values.counted) as i64).into())
+            }
             Self::Unique { values, sorted } => {
                 let mut items = values.items;
                 if sorted {
@@ -853,22 +909,8 @@ impl AggregateAccumulator {
                 Some(v) => float_value(if sqrt { v.sqrt() } else { v }),
                 None => Value::Null,
             },
-            Self::Median(mut nums) => median_of(&mut nums).map(float_value).unwrap_or(Value::Null),
-            // As the function: a rank that is not a number from 0 to 100
-            // is null.
-            Self::Percentile(mut nums) => {
-                let interpolate = options
-                    .get(1)
-                    .and_then(Value::as_str)
-                    .is_some_and(|method| method.eq_ignore_ascii_case("interpolation"));
-                options
-                    .first()
-                    .and_then(Value::as_f64)
-                    .filter(|p| (0.0..=100.0).contains(p))
-                    .and_then(|p| percentile_of(&mut nums, p, interpolate))
-                    .map(float_value)
-                    .unwrap_or(Value::Null)
-            }
+            Self::Median(mut nums) => Self::median(&mut nums),
+            Self::Percentile(mut nums) => Self::percentile(&mut nums, options),
             Self::ApproxDistinct(sketch) => float_value(sketch.estimate()),
             Self::Bits { acc, invalid, .. } => match (acc, invalid) {
                 (Some(n), false) => Value::Number(n.into()),

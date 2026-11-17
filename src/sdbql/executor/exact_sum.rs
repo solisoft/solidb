@@ -304,26 +304,29 @@ impl ExactSum {
         if self.non_finite {
             return f64::NAN;
         }
-        // The whole range, the window in place.
+        // The window in place, and two chunks above it for what its top
+        // chunk carries (it holds up to 2^63) and for the sign: the chunks
+        // below and above are zero and stay so.
         let mut chunks = [0i64; CHUNKS];
         chunks[self.lo..self.lo + self.chunks.len()].copy_from_slice(&self.chunks);
+        let (lo, hi) = (self.lo, (self.lo + self.chunks.len() + 2).min(CHUNKS));
         let carry = |chunks: &mut [i64; CHUNKS]| {
-            for i in 0..CHUNKS - 1 {
+            for i in lo..hi - 1 {
                 let c = chunks[i] >> CHUNK_BITS;
                 chunks[i] &= LOW_MASK;
                 chunks[i + 1] += c;
             }
         };
         carry(&mut chunks);
-        let negative = chunks[CHUNKS - 1] < 0;
+        let negative = chunks[hi - 1] < 0;
         if negative {
-            for c in chunks.iter_mut() {
+            for c in chunks[lo..hi].iter_mut() {
                 *c = -*c;
             }
             carry(&mut chunks);
         }
         // Now a non-negative integer, every chunk in [0, 2^32).
-        let Some(top) = chunks.iter().rposition(|&c| c != 0) else {
+        let Some(top) = chunks[..hi].iter().rposition(|&c| c != 0) else {
             return 0.0;
         };
         let top_bit = top as u32 * CHUNK_BITS + (63 - (chunks[top] as u64).leading_zeros());
@@ -345,7 +348,7 @@ impl ExactSum {
             let sticky = {
                 let below = low_bit - 1;
                 let whole = (below / CHUNK_BITS) as usize;
-                chunks[..whole].iter().any(|&c| c != 0)
+                chunks[lo.min(whole)..whole].iter().any(|&c| c != 0)
                     || (chunks[whole] as u64) & ((1u64 << (below % CHUNK_BITS)) - 1) != 0
             };
             let mut exponent = top_bit - 51;

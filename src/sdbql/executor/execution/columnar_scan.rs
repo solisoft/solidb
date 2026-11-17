@@ -48,6 +48,7 @@ use serde_json::Value;
 
 use super::super::aggregation::{AggKind, AggregateAccumulator, Slice};
 use super::super::builtins::approx::Hll;
+use super::super::builtins::math::Moments;
 use super::super::datum::Datum;
 use super::super::exact_sum::ExactSum;
 use super::super::index_opt::{expression_references_var, push_conjuncts, IndexHint};
@@ -148,6 +149,9 @@ struct ColPlan<'q> {
     /// For each aggregate, its argument and what it computes.
     args: Vec<Option<Source>>,
     kinds: Vec<AggKind>,
+    /// For each aggregate, the one that keeps the numbers it reads
+    /// (`CollectFold::shared_numbers`).
+    shared: Vec<usize>,
 }
 
 /// A value of a key column.
@@ -161,14 +165,56 @@ enum Atom {
     Null,
 }
 
+/// Distinct values kept as they come, then sorted and each kept once
+/// when there are twice as many as the last time: no hashing per row, and
+/// never more than about twice the distinct values held.
+#[derive(Default)]
+struct Uniques<T> {
+    values: Vec<T>,
+    /// The length at which to sort again.
+    next: usize,
+}
+
+impl<T: Ord + Copy> Uniques<T> {
+    #[inline]
+    fn push(&mut self, value: T) {
+        self.values.push(value);
+        if self.values.len() >= self.next.max(1024) {
+            self.settle();
+        }
+    }
+
+    /// Sorted, each value once.
+    fn settle(&mut self) {
+        self.values.sort_unstable();
+        self.values.dedup();
+        self.next = self.values.len() * 2;
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.values.extend_from_slice(&other.values);
+        if self.values.len() >= self.next.max(1024) {
+            self.settle();
+        }
+    }
+}
+
 /// What one aggregate holds of one group's numbers.
 #[derive(Default)]
 struct Acc {
     /// The rows of the group whose argument is null: what the aggregate
     /// passes over.
     missing: u64,
-    /// The distinct values of the argument, for `COUNT_DISTINCT`.
+    /// The distinct values of the argument, for `COUNT_DISTINCT`: those of
+    /// a column of integers, those of a column of floats (their bits),
+    /// and any other.
+    ints: Uniques<i64>,
+    floats: Uniques<u64>,
     distinct: std::collections::HashSet<Atom, foldhash::fast::RandomState>,
+    /// Whether `distinct` holds numbers (a column of integers and floats
+    /// together): `1` and `1.0` are then two of its values, and one to
+    /// the query.
+    mixed: bool,
     sum: ExactSum,
     /// The sum of the squares, for the variance family.
     squares: ExactSum,
@@ -220,6 +266,9 @@ impl Acc {
 
     fn merge(&mut self, other: &Acc) {
         self.missing += other.missing;
+        self.ints.merge(&other.ints);
+        self.floats.merge(&other.floats);
+        self.mixed |= other.mixed;
         self.distinct.extend(other.distinct.iter().cloned());
         self.sum.merge(&other.sum);
         self.squares.merge(&other.squares);
@@ -1293,10 +1342,11 @@ fn fold_by_row(
     share: Share,
     keys: &[&Column],
     args: &[Option<&Column>],
-    kinds: &[AggKind],
+    plan: &ColPlan<'_>,
     rows: Option<&[u32]>,
     len: usize,
 ) -> Option<()> {
+    let (kinds, shared) = (plan.kinds.as_slice(), plan.shared.as_slice());
     let (mine, of) = match share {
         Share::All => (0, 1),
         Share::Hashed { mine, of } => (mine, of),
@@ -1398,8 +1448,13 @@ fn fold_by_row(
         };
         let group = &mut table.groups[group as usize];
         group.count += 1;
-        for (((acc, column), kind), hashes) in
-            group.accs.iter_mut().zip(args).zip(kinds).zip(&hashes)
+        for (at, (((acc, column), kind), hashes)) in group
+            .accs
+            .iter_mut()
+            .zip(args)
+            .zip(kinds)
+            .zip(&hashes)
+            .enumerate()
         {
             match column {
                 // Null is one of the values a sketch holds too: each value
@@ -1417,12 +1472,20 @@ fn fold_by_row(
                     });
                 }
                 // Null is one of the values a distinct count holds.
-                Some(column) if *kind == AggKind::CountDistinct => {
-                    let value = atom(column, row);
-                    if !acc.distinct.contains(&value) {
-                        acc.distinct.insert(value);
+                Some(column) if *kind == AggKind::CountDistinct => match &column.data {
+                    ColData::Int(values) if !is_null(column, row) => acc.ints.push(values[row]),
+                    // (`-0.0` is `0.0` to the query.)
+                    ColData::Float(values) if !is_null(column, row) => {
+                        acc.floats.push((values[row] + 0.0).to_bits())
                     }
-                }
+                    data => {
+                        acc.mixed |= matches!(data, ColData::Mixed { .. });
+                        let value = atom(column, row);
+                        if !acc.distinct.contains(&value) {
+                            acc.distinct.insert(value);
+                        }
+                    }
+                },
                 Some(column) if is_null(column, row) => acc.missing += 1,
                 // The variance family: the number as a float, and its
                 // square.
@@ -1435,7 +1498,9 @@ fn fold_by_row(
                     acc.sum.add(x);
                     acc.squares.add_square(x);
                 }
-                // A median, a percentile: the numbers.
+                // A median, a percentile: the numbers, unless another of
+                // the same argument keeps them.
+                Some(_) if shared[at] != at => {}
                 Some(column) if AggregateAccumulator::takes_numbers(*kind) => {
                     acc.values.push(match &column.data {
                         ColData::Int(values) => values[row] as f64,
@@ -1581,15 +1646,7 @@ fn fold_block(read: &Read<'_, '_, '_>, table: &mut Table, share: Share) -> Optio
                 column.nulls.is_some() || matches!(column.data, ColData::Mixed { .. })
             });
     if by_row {
-        return fold_by_row(
-            table,
-            share,
-            &keys,
-            &args,
-            &plan.kinds,
-            rows.as_deref(),
-            len,
-        );
+        return fold_by_row(table, share, &keys, &args, plan, rows.as_deref(), len);
     }
 
     // The group of each combination of key values met in this block.
@@ -1802,6 +1859,7 @@ impl QueryExecutor<'_> {
             keys: Vec::new(),
             args: Vec::new(),
             kinds: Vec::new(),
+            shared: CollectFold::shared_numbers(found.collect),
         };
         let mut conjuncts = Vec::new();
         for stage in found.stages {
@@ -1968,14 +2026,23 @@ impl QueryExecutor<'_> {
     }
 
     /// Each group into the fold the ordinary path fills, with the state of
-    /// its sums; `kept`, when given, says which groups go.
+    /// its sums; `kept`, when given, says which groups go. `alone`: no row
+    /// is folded beside the groups (no block left to the rows, no tail),
+    /// so a group is whole.
     fn push_groups(
         &self,
         fold: &mut CollectFold<'_>,
         col_plan: &ColPlan,
-        groups: &[Group],
+        groups: &mut [Group],
         kept: Option<&[bool]>,
+        alone: bool,
     ) -> DbResult<()> {
+        if col_plan.kinds.contains(&AggKind::CountDistinct) {
+            for acc in groups.iter_mut().flat_map(|group| &mut group.accs) {
+                acc.ints.settle();
+                acc.floats.settle();
+            }
+        }
         for (n, group) in groups.iter().enumerate() {
             if kept.is_some_and(|kept| !kept[n]) {
                 continue;
@@ -1992,26 +2059,35 @@ impl QueryExecutor<'_> {
                     Atom::Null => Datum::Null,
                 })
                 .collect();
-            // The distinct values a `COUNT_DISTINCT` kept.
-            let distinct: Vec<Option<Vec<Value>>> = col_plan
+            // What a `COUNT_DISTINCT` kept: how many values, when the group
+            // is whole and they are of kinds that cannot be equal to one
+            // another; else the values, for the fold to tell apart.
+            let distinct: Vec<Option<Result<usize, Vec<Value>>>> = col_plan
                 .kinds
                 .iter()
                 .zip(&group.accs)
                 .map(|(kind, acc)| {
                     (*kind == AggKind::CountDistinct).then(|| {
-                        acc.distinct
+                        let (ints, floats) = (&acc.ints.values, &acc.floats.values);
+                        if alone && !acc.mixed && (ints.is_empty() || floats.is_empty()) {
+                            return Ok(ints.len() + floats.len() + acc.distinct.len());
+                        }
+                        let float = |bits: u64| {
+                            serde_json::Number::from_f64(f64::from_bits(bits))
+                                .map_or(Value::Null, Value::Number)
+                        };
+                        Err(ints
                             .iter()
-                            .map(|atom| match atom {
+                            .map(|v| Value::from(*v))
+                            .chain(floats.iter().map(|bits| float(*bits)))
+                            .chain(acc.distinct.iter().map(|atom| match atom {
                                 Atom::Int(v) => Value::from(*v),
-                                Atom::Float(bits) => {
-                                    serde_json::Number::from_f64(f64::from_bits(*bits))
-                                        .map_or(Value::Null, Value::Number)
-                                }
+                                Atom::Float(bits) => float(*bits),
                                 Atom::Str(s) => Value::String(s.to_string()),
                                 Atom::Bool(b) => Value::Bool(*b),
                                 Atom::Null => Value::Null,
-                            })
-                            .collect()
+                            }))
+                            .collect())
                     })
                 })
                 .collect();
@@ -2022,8 +2098,10 @@ impl QueryExecutor<'_> {
                 .zip(&distinct)
                 .zip(&col_plan.kinds)
                 .map(|(((arg, acc), distinct), kind)| {
-                    if let Some(values) = distinct {
-                        return Some(Slice::Each(values));
+                    match distinct {
+                        Some(Ok(count)) => return Some(Slice::Counted(*count)),
+                        Some(Err(values)) => return Some(Slice::Each(values)),
+                        None => {}
                     }
                     // The rows of the group whose argument is not null.
                     let rows = group.count.saturating_sub(acc.missing) as usize;
@@ -2128,8 +2206,10 @@ impl QueryExecutor<'_> {
         })?;
         drop(helpers);
 
+        let tail = columnar.tail_rows()?;
         let mut fold = CollectFold::new(found.collect);
-        self.push_groups(&mut fold, col_plan, &table.groups, None)?;
+        let alone = left.is_empty() && tail.is_empty();
+        self.push_groups(&mut fold, col_plan, &mut table.groups, None, alone)?;
         let var = found.for_clause.variable.as_str();
         let fields: &[String] = found.fields.as_deref().unwrap_or(known);
         let mut passes = vec![(0usize, 0usize); found.stages.len()];
@@ -2160,7 +2240,6 @@ impl QueryExecutor<'_> {
                 Ok(())
             })?;
         }
-        let tail = columnar.tail_rows()?;
         scanned += tail.len();
         for (_, row) in &tail {
             let object = fields
@@ -2560,6 +2639,18 @@ impl QueryExecutor<'_> {
                         AggKind::Min => acc.min.map_or(f64::NAN, |m| m.0),
                         AggKind::Max => acc.max.map_or(f64::NAN, |m| m.0),
                         // Not a number the groups can be cut by.
+                        // The number the fold will compute, from the same
+                        // sums; a group without enough values is null,
+                        // which no number stands for.
+                        AggKind::Variance { sample } | AggKind::Stddev { sample } => {
+                            let n = group.count.saturating_sub(acc.missing);
+                            let variance = Moments::variance_of(n, &acc.sum, &acc.squares, sample)
+                                .unwrap_or(f64::NAN);
+                            match col_plan.kinds[at] {
+                                AggKind::Stddev { .. } => variance.sqrt(),
+                                _ => variance,
+                            }
+                        }
                         kind if AggregateAccumulator::takes_its_own(kind) => f64::NAN,
                         _ => group.count as f64,
                     }
@@ -2596,7 +2687,14 @@ impl QueryExecutor<'_> {
         // Each group goes into the fold the ordinary path fills, with the
         // state of its sums.
         let mut fold = CollectFold::new(found.collect);
-        self.push_groups(&mut fold, &col_plan, &table.groups, kept.as_deref())?;
+        let alone = left.is_empty() && set.tail.is_empty();
+        self.push_groups(
+            &mut fold,
+            &col_plan,
+            &mut table.groups,
+            kept.as_deref(),
+            alone,
+        )?;
 
         // What the arrays did not answer, as objects: the blocks left, and
         // the tail.

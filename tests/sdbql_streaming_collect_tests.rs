@@ -787,6 +787,11 @@ fn streaming_collect_holds_groups_not_documents() {
     assert_eq!(run(q, true).unwrap(), vec![json!(50.0)]);
     let q = "FOR o IN orders COLLECT AGGREGATE m = MEDIAN(o.amount) RETURN m";
     over_ceiling(run(q, true), q);
+    // Several of one argument keep its numbers once.
+    let q = "FOR o IN orders FILTER o.n < 60000 COLLECT AGGREGATE a = PERCENTILE(o.amount, 50), \
+             b = PERCENTILE(o.amount, 95), c = PERCENTILE(o.amount, 99), m = MEDIAN(o.amount) \
+             RETURN [a, b, c, m]";
+    assert_eq!(run(q, true).unwrap(), vec![json!([49.5, 94.5, 98.5, 50.0])]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,6 +1115,34 @@ fn aggregates_that_are_also_array_functions() {
         .unwrap(),
         vec![json!([3.0, 4.0])]
     );
+    // Several of one argument, which keep its numbers once, answer what
+    // each answers alone.
+    let together = same(
+        &engine,
+        "FOR d IN c COLLECT s = d.status AGGREGATE a = PERCENTILE(d.amount, 50), \
+         b = PERCENTILE(d.amount, 95, 'interpolation'), m = MEDIAN(d.amount), x = PERCENTILE(d.x, 95), \
+         y = MEDIAN(d.x), z = PERCENTILE(d.amount, 150) RETURN [a, b, m, x, y, z]",
+    );
+    let alone: Vec<Vec<Value>> = [
+        "PERCENTILE(d.amount, 50)",
+        "PERCENTILE(d.amount, 95, 'interpolation')",
+        "MEDIAN(d.amount)",
+        "PERCENTILE(d.x, 95)",
+        "MEDIAN(d.x)",
+        "PERCENTILE(d.amount, 150)",
+    ]
+    .iter()
+    .map(|aggregate| {
+        same(
+            &engine,
+            &format!("FOR d IN c COLLECT s = d.status AGGREGATE r = {aggregate} RETURN r"),
+        )
+    })
+    .collect();
+    for (group, row) in together.iter().enumerate() {
+        let each: Vec<Value> = alone.iter().map(|column| column[group].clone()).collect();
+        assert_eq!(row, &Value::Array(each), "group {group}");
+    }
     // No row at all.
     assert_eq!(
         same(

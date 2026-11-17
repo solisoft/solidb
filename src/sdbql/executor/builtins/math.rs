@@ -494,6 +494,20 @@ impl Moments {
         self.squares.merge(squares);
     }
 
+    /// The variance of `n` numbers known by their exact sum and the exact
+    /// sum of their squares: what [`Self::variance`] answers once they are
+    /// [added](Self::add).
+    pub(crate) fn variance_of(
+        n: u64,
+        sum: &ExactSum,
+        squares: &ExactSum,
+        sample: bool,
+    ) -> Option<f64> {
+        let mut moments = Moments::default();
+        moments.add(n, sum, squares);
+        moments.variance(sample)
+    }
+
     /// The numbers of `other` too.
     pub(crate) fn merge(&mut self, other: &Moments) {
         self.add(other.n, &other.sum, &other.squares);
@@ -1010,6 +1024,24 @@ mod tests {
             w.push(x);
         }
         assert_eq!(w.variance(true), Some(65536.0));
+    }
+
+    /// `cargo test --profile ci --lib -- --ignored --nocapture timing_of_a_variance`
+    #[test]
+    #[ignore]
+    fn timing_of_a_variance() {
+        let groups: Vec<Moments> = (0..100_000)
+            .map(|g| {
+                let mut m = Moments::default();
+                for i in 0..20 {
+                    m.push(((g * 31 + i * 977) % 100_000) as f64 / 100.0);
+                }
+                m
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        let total: f64 = groups.iter().filter_map(|m| m.variance(false)).sum();
+        println!("100,000 variances: {:?} ({total})", start.elapsed());
     }
 
     #[test]

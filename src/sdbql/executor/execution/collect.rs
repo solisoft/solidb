@@ -30,7 +30,7 @@ use super::super::types::Context;
 use super::super::{compare_values, QueryExecutor};
 use super::clauses::BUDGET_CHECK_INTERVAL;
 use crate::error::{DbError, DbResult};
-use crate::sdbql::ast::{CollectClause, Expression};
+use crate::sdbql::ast::{AggregateExpr, CollectClause, Expression};
 
 /// One group under construction.
 struct Group {
@@ -68,6 +68,9 @@ pub(super) struct CollectFold<'c> {
     /// a retained value is a row's worth. Counted apart, and against the
     /// ceiling at [`NUMBERS_PER_ROW`] for one row.
     numbers: usize,
+    /// For each aggregate, the one whose numbers it reads
+    /// ([`Self::shared_numbers`]).
+    shared: Vec<usize>,
     seen: usize,
     /// Ordinal of this fold's first row: rows are numbered `base + seen`.
     /// A fold over one partition of a scan starts where no earlier
@@ -107,6 +110,7 @@ impl<'c> CollectFold<'c> {
             index: HashMap::default(),
             retained: 0,
             numbers: 0,
+            shared: Self::shared_numbers(collect),
             seen: 0,
             base: 0,
             check_held: true,
@@ -114,6 +118,32 @@ impl<'c> CollectFold<'c> {
             key_buf: Vec::new(),
             arg_buf: Vec::new(),
         }
+    }
+
+    /// For each aggregate, the aggregate that holds the numbers it is
+    /// computed from: itself, or the first median or percentile of the
+    /// same argument. `p50`, `p95` and `p99` of one expression keep its
+    /// numbers once: the others are given nothing and read the first's
+    /// when the fold ends.
+    pub(super) fn shared_numbers(collect: &CollectClause) -> Vec<usize> {
+        let numbers = |a: &AggregateExpr| {
+            AggKind::resolve(&a.function, a.argument.is_some())
+                .is_some_and(AggregateAccumulator::takes_numbers)
+        };
+        (0..collect.aggregates.len())
+            .map(|i| {
+                let this = &collect.aggregates[i];
+                if !numbers(this) {
+                    return i;
+                }
+                (0..i)
+                    .find(|j| {
+                        let other = &collect.aggregates[*j];
+                        numbers(other) && other.argument == this.argument
+                    })
+                    .unwrap_or(i)
+            })
+            .collect()
     }
 
     /// A fold over one partition of a scan, numbering its rows from `base`,
@@ -196,7 +226,10 @@ impl<'c> CollectFold<'c> {
         let gi = self.fold_datums(key, std::iter::empty(), ordinal)?;
         let group = &mut self.groups[gi];
         group.count += rows as i64 - 1;
-        for (acc, values) in group.aggregates.iter_mut().zip(args) {
+        for (i, (acc, values)) in group.aggregates.iter_mut().zip(args).enumerate() {
+            if self.shared[i] != i {
+                continue;
+            }
             let kept = acc.push_slice(rows, values.as_ref(), ordinal);
             if acc.holds_numbers() {
                 self.numbers += kept;
@@ -300,7 +333,10 @@ impl<'c> CollectFold<'c> {
         };
         let group = &mut groups[gi];
         group.count += 1;
-        for (acc, value) in group.aggregates.iter_mut().zip(args) {
+        for (i, (acc, value)) in group.aggregates.iter_mut().zip(args).enumerate() {
+            if self.shared[i] != i {
+                continue;
+            }
             if acc.push(value, ordinal) {
                 if acc.holds_numbers() {
                     self.numbers += 1;
@@ -395,6 +431,7 @@ impl<'c> CollectFold<'c> {
             })
             .collect::<DbResult<_>>()?;
 
+        let shared = std::mem::take(&mut self.shared);
         let mut out = Vec::with_capacity(self.groups.len());
         for group in self.groups {
             let Group {
@@ -420,8 +457,28 @@ impl<'c> CollectFold<'c> {
             if let Some(count_var) = &collect.count_var {
                 ctx.insert(count_var.clone(), Value::Number(count.into()));
             }
-            for ((agg, acc), options) in collect.aggregates.iter().zip(aggregates).zip(&options) {
-                ctx.insert(agg.variable.clone(), acc.finish(options));
+            // A median or a percentile that reads another's numbers, then
+            // every aggregate that holds its own.
+            let mut aggregates = aggregates;
+            let mut borrowed: Vec<Option<Value>> = vec![None; aggregates.len()];
+            for i in 0..aggregates.len() {
+                let owner = shared[i];
+                if owner != i {
+                    let (before, rest) = aggregates.split_at_mut(i);
+                    if let Some(nums) = before[owner].numbers_mut() {
+                        borrowed[i] = Some(rest[0].finish_over(nums, &options[i]));
+                    }
+                }
+            }
+            for (((agg, acc), options), borrowed) in collect
+                .aggregates
+                .iter()
+                .zip(aggregates)
+                .zip(&options)
+                .zip(borrowed)
+            {
+                let value = borrowed.unwrap_or_else(|| acc.finish(options));
+                ctx.insert(agg.variable.clone(), value);
             }
             out.push(ctx);
         }

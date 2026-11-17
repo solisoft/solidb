@@ -428,6 +428,12 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE s = STDDEV(r.amount), m = MAX(r.amount), a = AVG(r.amount), v = VAR_SAMP(r.bytes) RETURN [c, s, m, a, v]",
         "FOR r IN sales COLLECT u = r.user AGGREGATE s = VARIANCE(r.amount * r.bytes), t = SUM(r.amount) SORT s DESC, u LIMIT 6 RETURN [u, s, t]",
         "FOR r IN sales COLLECT b = TIME_BUCKET(r.ts, '2s') AGGREGATE s = STDDEV_SAMPLE(r.bytes), v = VARIANCE(r.amount) RETURN [b, s, v]",
+        // Sorted by one and cut to a few rows: the groups that cannot be
+        // among them are not handed over. Ties, and groups of one value
+        // (a sample variance of null).
+        "FOR r IN sales COLLECT u = r.user AGGREGATE s = STDDEV(r.bytes) SORT s DESC LIMIT 7 RETURN [u, s]",
+        "FOR r IN sales COLLECT u = r.user AGGREGATE v = VARIANCE(r.amount) SORT v LIMIT 4 RETURN [u, v]",
+        "FOR r IN sales COLLECT b = r.bytes AGGREGATE v = VARIANCE_SAMPLE(r.amount) SORT v DESC LIMIT 5 RETURN [b, v]",
         "FOR r IN sales FILTER r.amount == null COLLECT d = r.device AGGREGATE s = STDDEV(r.amount), v = VARIANCE_SAMPLE(r.amount) RETURN [d, s, v]",
         // Medians and percentiles: the numbers of each group. A sketch of
         // the distinct values, null among them.
@@ -437,6 +443,10 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         "FOR r IN sales COLLECT u = r.user % 20 AGGREGATE d = APPROX_COUNT_DISTINCT(r.bytes), m = MEDIAN(r.bytes * 2), k = APPROX_COUNT_DISTINCT(UPPER(r.device)) SORT d DESC, u LIMIT 5 RETURN [u, d, m, k]",
         "FOR r IN sales COLLECT d = r.device AGGREGATE p = PERCENTILE(r.amount, 150), z = PERCENTILE(r.amount, 0), h = PERCENTILE(r.amount, 100) RETURN [d, p, z, h]",
         "FOR r IN sales FILTER r.ts >= 11000 COLLECT u = r.user AGGREGATE a = APPROX_COUNT_DISTINCT(r.amount), m = MEDIAN(r.amount) SORT u LIMIT 12 RETURN [u, a, m]",
+        // Several medians and percentiles of one argument keep its numbers
+        // once.
+        "FOR r IN sales COLLECT d = r.device AGGREGATE a = PERCENTILE(r.amount, 50), b = PERCENTILE(r.amount, 95), m = MEDIAN(r.amount), c = PERCENTILE(r.bytes, 95), e = MEDIAN(r.bytes), f = PERCENTILE(r.amount, 99, 'interpolation') RETURN [d, a, b, m, c, e, f]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE m = MEDIAN(r.amount * 2), p = PERCENTILE(r.amount * 2, 90), q = PERCENTILE(r.amount, 90) RETURN [c, m, p, q]",
         // A column of values of several kinds, in a condition.
         "FOR r IN sales FILTER r.tag == 't1' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
         "FOR r IN sales FILTER r.tag > 5 AND r.tag != null COLLECT AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [n, s]",
@@ -509,6 +519,94 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         .map_err(|e| e.to_string());
         assert_eq!(threaded, folded, "three threads: {q}");
     }
+}
+
+/// A collection whose rows are all in blocks: a distinct count is then
+/// counted by the fold of the arrays, which hands the query a number and
+/// not the values. Integers, floats (`-0.0` beside `0.0`), strings, nulls,
+/// a column that is integers in one block and floats in the next.
+#[test]
+fn distinct_values_are_counted_in_the_arrays() {
+    use solidb::{parse, BindVars, QueryExecutor};
+    let tmp = TempDir::new().unwrap();
+    let engine = open(&tmp);
+    engine.create_database("_system".to_string()).unwrap();
+    let db = engine.get_database("_system").unwrap();
+    db.create_collection("_columnar_hits".to_string(), None)
+        .unwrap();
+    let columns = [
+        ("user", ColumnType::Int64),
+        ("score", ColumnType::Float64),
+        ("page", ColumnType::String),
+        ("ok", ColumnType::Bool),
+        ("any", ColumnType::Json),
+    ]
+    .iter()
+    .map(|(name, data_type)| ColumnDef {
+        name: name.to_string(),
+        data_type: data_type.clone(),
+        nullable: true,
+        indexed: false,
+        index_type: None,
+    })
+    .collect();
+    let col = ColumnarCollection::new(
+        "hits".to_string(),
+        "_system",
+        db.db_arc(),
+        columns,
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    let hit = |i: i64| {
+        json!({
+            "user": if i % 97 == 0 { Value::Null } else { json!((i * 31) % 3_000) },
+            "score": match i % 11 { 0 => json!(-0.0), 1 => json!(0.0), 2 => Value::Null, _ => json!(((i * 7) % 500) as f64 / 4.0) },
+            "page": format!("p{}", (i * 13) % 211),
+            "ok": i % 3 == 0,
+            // Integers in the first block, floats in the second.
+            "any": if i < 5_000 { json!(i % 50) } else { json!((i % 60) as f64) },
+        })
+    };
+    col.insert_rows((0..5_000).map(hit).collect()).unwrap();
+    col.insert_rows((5_000..10_000).map(hit).collect()).unwrap();
+    assert_eq!(col.metadata().unwrap().tail_rows, 0);
+
+    let queries = [
+        "FOR r IN hits COLLECT AGGREGATE u = COUNT_DISTINCT(r.user), s = COUNT_DISTINCT(r.score), p = COUNT_DISTINCT(r.page), o = COUNT_DISTINCT(r.ok), a = COUNT_DISTINCT(r.any) RETURN [u, s, p, o, a]",
+        "FOR r IN hits COLLECT p = r.page AGGREGATE u = COUNT_DISTINCT(r.user), s = COUNT_DISTINCT(r.score), n = COUNT() RETURN [p, u, s, n]",
+        "FOR r IN hits COLLECT o = r.ok AGGREGATE u = COUNT_DISTINCT(r.user % 7), s = COUNT_DISTINCT(r.score * 2), a = COUNT_DISTINCT(r.any), t = SUM(r.score) RETURN [o, u, s, a, t]",
+        "FOR r IN hits FILTER r.user < 40 COLLECT u = r.user AGGREGATE s = COUNT_DISTINCT(r.score), p = COUNT_DISTINCT(r.page) SORT s DESC, u LIMIT 6 RETURN [u, s, p]",
+        "FOR r IN hits FILTER r.score == null COLLECT AGGREGATE u = COUNT_DISTINCT(r.score), n = COUNT() RETURN [u, n]",
+        // Sorted by a variance and cut: only the groups that can be
+        // returned are handed over (no tail here, so the cut applies).
+        "FOR r IN hits COLLECT u = r.user AGGREGATE s = STDDEV(r.score) SORT s DESC, u LIMIT 5 RETURN [u, s]",
+        "FOR r IN hits COLLECT u = r.user AGGREGATE v = VARIANCE_SAMPLE(r.score), n = COUNT() SORT v, u LIMIT 6 RETURN [u, v, n]",
+        "FOR r IN hits COLLECT p = r.page AGGREGATE v = VARIANCE(r.user) SORT v DESC, p LIMIT 3 RETURN [p, v]",
+    ];
+    let run = |q: &str, fold: bool, threads: usize| {
+        QueryExecutor::with_database_and_bind_vars(&engine, "_system".to_string(), BindVars::new())
+            .with_streaming_collect(fold)
+            .with_scan_threads(threads, 1_000)
+            .execute(&parse(q).unwrap())
+            .map_err(|e| e.to_string())
+    };
+    let as_rows = || {
+        solidb::storage::columnar::BLOCKS_FOLDED_AS_ROWS.load(std::sync::atomic::Ordering::Relaxed)
+    };
+    for q in queries {
+        let before = as_rows();
+        let folded = run(q, true, 1);
+        assert!(folded.is_ok(), "{q}: {folded:?}");
+        assert_eq!(as_rows(), before, "{q}: a block was read as rows");
+        assert_eq!(folded, run(q, false, 1), "{q}");
+        assert_eq!(folded, run(q, true, 3), "three threads: {q}");
+    }
+    // `-0.0` and `0.0` are one value, null is one.
+    assert_eq!(
+        run("FOR r IN hits FILTER r.score <= 0 COLLECT AGGREGATE s = COUNT_DISTINCT(r.score) RETURN s", true, 1).unwrap(),
+        vec![json!(2)]
+    );
 }
 
 /// Timings of the fold alone, without a server: `cargo test … -- --ignored
