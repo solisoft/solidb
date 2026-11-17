@@ -651,6 +651,10 @@ pub fn create_router(
             post(super::handlers::check_foreign_key),
         )
         .route(
+            "/_api/database/{db}/collection/{name}/foreign-keys/ends",
+            post(super::handlers::create_edge_end_keys),
+        )
+        .route(
             "/_api/database/{db}/collection/{name}/foreign-keys/{key}",
             delete(super::handlers::delete_foreign_key),
         )

@@ -369,3 +369,137 @@ async fn a_cascade_is_in_the_replication_log() {
         .iter()
         .any(|e| e.operation == Operation::DropForeignKey && e.key == "fk_customer"));
 }
+
+/// Both ends of an edge collection declared in one call: both keys, or
+/// neither.
+#[tokio::test(flavor = "multi_thread")]
+async fn both_ends_of_an_edge_collection_in_one_call() {
+    let (app, _tmp, token, log) = create_app(true);
+    let log = log.unwrap();
+    let t = token.as_str();
+    call(
+        &app,
+        t,
+        "POST",
+        "/_api/database",
+        Some(json!({"name": "shop"})),
+    )
+    .await;
+    let base = "/_api/database/shop";
+    for (name, kind) in [
+        ("people", None),
+        ("firms", None),
+        ("works_at", Some("edge")),
+    ] {
+        let mut body = json!({ "name": name });
+        if let Some(kind) = kind {
+            body["type"] = json!(kind);
+        }
+        let (status, out) = call(&app, t, "POST", &format!("{base}/collection"), Some(body)).await;
+        assert!(status.is_success(), "{status} {out}");
+    }
+    let docs = format!("{base}/document");
+    call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/people"),
+        Some(json!({"_key": "ann"})),
+    )
+    .await;
+    call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/firms"),
+        Some(json!({"_key": "acme"})),
+    )
+    .await;
+    let ends = format!("{base}/collection/works_at/foreign-keys/ends");
+    let keys = format!("{base}/collection/works_at/foreign-keys");
+
+    // The second end names a collection that is not there: neither is kept.
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &ends,
+        Some(json!({"from": "people", "to": "nowhere"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{out}");
+    let (_, listed) = call(&app, t, "GET", &keys, None).await;
+    assert_eq!(listed["foreign_keys"], json!([]));
+
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &ends,
+        Some(json!({"from": "people", "to": "firms", "on_delete": "cascade"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{out}");
+    assert_eq!(out["from"]["field"], json!("_from"));
+    assert_eq!(out["from"]["references"], json!("people"));
+    assert_eq!(out["to"]["field"], json!("_to"));
+    assert_eq!(out["to"]["references"], json!("firms"));
+    assert_eq!(out["to"]["on_delete"], json!("cascade"));
+    let (_, listed) = call(&app, t, "GET", &keys, None).await;
+    assert_eq!(listed["foreign_keys"].as_array().unwrap().len(), 2);
+
+    // Both are logged for the peers.
+    let logged: Vec<_> = log
+        .get_entries_after(0, 1000)
+        .into_iter()
+        .filter(|e| e.operation == Operation::CreateForeignKey)
+        .map(|e| e.key)
+        .collect();
+    assert_eq!(logged, ["fk_from", "fk_to"]);
+
+    // An edge to a firm that is not there is refused; a good one is kept,
+    // and goes with its vertex.
+    let edge = |to: &str| json!({"_from": "people/ann", "_to": format!("firms/{to}")});
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/works_at"),
+        Some(edge("zed")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{out}");
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &format!("{docs}/works_at"),
+        Some(edge("acme")),
+    )
+    .await;
+    assert!(status.is_success(), "{out}");
+    let (status, _) = call(&app, t, "DELETE", &format!("{docs}/firms/acme"), None).await;
+    assert!(status.is_success());
+    let (_, out) = call(
+        &app,
+        t,
+        "POST",
+        &format!("{base}/cursor"),
+        Some(json!({"query": "RETURN LENGTH(FOR e IN works_at RETURN 1)"})),
+    )
+    .await;
+    assert_eq!(out["result"], json!([0]));
+
+    // Declared a second time: refused, and the two keys stay.
+    let (status, out) = call(
+        &app,
+        t,
+        "POST",
+        &ends,
+        Some(json!({"from": "people", "to": "firms"})),
+    )
+    .await;
+    assert!(status.is_client_error(), "{status} {out}");
+    let (_, listed) = call(&app, t, "GET", &keys, None).await;
+    assert_eq!(listed["foreign_keys"].as_array().unwrap().len(), 2);
+}

@@ -93,6 +93,45 @@ pub async fn create_foreign_key(
     Ok((StatusCode::CREATED, Json(key)))
 }
 
+/// Both ends of an edge collection: the collections its `_from` and its
+/// `_to` name a document of.
+#[derive(Debug, serde::Deserialize)]
+pub struct EdgeEndsRequest {
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub on_delete: crate::storage::foreign_keys::OnDelete,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EdgeEndsResponse {
+    pub from: ForeignKey,
+    pub to: ForeignKey,
+}
+
+/// Declare the keys of both ends of an edge collection in one call: both
+/// are declared, or neither.
+pub async fn create_edge_end_keys(
+    State(state): State<AppState>,
+    Path((db_name, coll_name)): Path<(String, String)>,
+    Json(req): Json<EdgeEndsRequest>,
+) -> Result<(StatusCode, Json<EdgeEndsResponse>), DbError> {
+    let collection = child(&state, &db_name, &coll_name)?;
+    let (from, to) =
+        blocking(move || collection.add_edge_end_keys(&req.from, &req.to, req.on_delete)).await?;
+    for key in [&from, &to] {
+        log_definition(
+            &state,
+            &db_name,
+            &coll_name,
+            Operation::CreateForeignKey,
+            &key.name,
+            serde_json::to_vec(key).ok(),
+        );
+    }
+    Ok((StatusCode::CREATED, Json(EdgeEndsResponse { from, to })))
+}
+
 /// Remove a constraint. Its index stays.
 pub async fn delete_foreign_key(
     State(state): State<AppState>,

@@ -455,6 +455,31 @@ impl Collection {
         self.store_foreign_keys(&keys)
     }
 
+    /// Declare the keys of both ends of an edge collection: `_from` holds
+    /// the `_id` of a document of `from`, `_to` of one of `to`. Both or
+    /// neither: when the second is refused, the first is taken back.
+    pub fn add_edge_end_keys(
+        &self,
+        from: &str,
+        to: &str,
+        on_delete: OnDelete,
+    ) -> DbResult<(ForeignKey, ForeignKey)> {
+        let from_key = self.add_foreign_key(ForeignKeySpec::new("_from", from, on_delete))?;
+        match self.add_foreign_key(ForeignKeySpec::new("_to", to, on_delete)) {
+            Ok(to_key) => Ok((from_key, to_key)),
+            Err(e) => {
+                if let Err(undo) = self.drop_foreign_key(&from_key.name) {
+                    tracing::warn!(
+                        "The key on '_from' of '{}' could not be taken back: {}",
+                        self.name,
+                        undo
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+
     /// Remove a constraint dropped on another node. Idempotent.
     pub fn apply_foreign_key_drop(&self, name: &str) -> DbResult<()> {
         match self.drop_foreign_key(name) {

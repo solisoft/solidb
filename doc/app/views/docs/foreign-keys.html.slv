@@ -113,6 +113,16 @@
  "on_delete": "cascade", "index": "_edge_from_idx"}</code></pre>
             </div>
             <p class="text-sm text-gray-400">
+              Both ends are declared in one call with <code class="text-indigo-300">POST &hellip;/foreign-keys/ends</code>: both keys are declared, or neither.
+            </p>
+            <div class="bg-gray-950/50 rounded-lg border border-white/5 p-4">
+              <pre><code class="language-bash text-sm">curl -X POST .../collection/works_at/foreign-keys/ends \
+  -d '{"from": "people", "to": "firms", "on_delete": "cascade"}'
+
+{"from": {"name": "fk_from", "field": "_from", "references": "people", ...},
+ "to":   {"name": "fk_to",   "field": "_to",   "references": "firms", ...}}</code></pre>
+            </div>
+            <p class="text-sm text-gray-400">
               An edge whose end names a vertex that is not there is then refused, and deleting a vertex deletes its edges (<code class="text-indigo-300">cascade</code>) or is refused while it has some (<code class="text-indigo-300">restrict</code>). <code class="text-indigo-300">set_null</code> is not offered for an edge's ends: an edge without one is not an edge. A key names one collection, so an edge collection that links vertices of several collections cannot declare one on that end.
             </p>
           </div>
