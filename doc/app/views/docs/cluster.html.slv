@@ -130,6 +130,30 @@
         </div>
       </section>
 
+      <!-- CONSTRAINTS -->
+      <section id="constraints" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white">Constraints across nodes</h2>
+          </div>
+          <div class="p-8 space-y-4">
+            <p class="text-gray-300 leading-relaxed">
+              Every node takes writes. A unique index and a foreign key are checked by the node that takes a write; the other nodes apply it as it was written, without checking it again, because entries can arrive out of order. On one node a constraint always holds. Across nodes it holds as long as two nodes do not accept conflicting writes at the same moment.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
+              When they do &mdash; two documents with the same unique value inserted on two nodes, or a child inserted on one node while its parent is deleted on another &mdash; both writes succeed, and every node ends with both documents, or with the orphan. Last-write-wins settles a document, not a constraint. Nothing repairs it, and two checks find it:
+            </p>
+            <ul class="list-disc list-inside text-gray-300 space-y-1">
+              <li><code class="text-indigo-300">POST /_api/database/{db}/index/{collection}/check</code> reports the unique values held by more than one document;</li>
+              <li><code class="text-indigo-300">POST /_api/database/{db}/collection/{name}/foreign-keys/check</code> reports the orphans of a <a href="/docs/foreign-keys" class="text-indigo-400 hover:text-indigo-300">foreign key</a>.</li>
+            </ul>
+            <p class="text-gray-300 leading-relaxed">
+              If an application cannot tolerate that window, send the writes of a collection that carries a unique index or a foreign key to one node. A <a href="/docs/counters" class="text-indigo-400 hover:text-indigo-300">counter field</a> already works that way: one node numbers, the others refuse the insert.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <!-- QUICK START -->
       <section id="quick-start" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
