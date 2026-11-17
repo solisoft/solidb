@@ -421,6 +421,54 @@ the count rely on an index holding exactly one entry per document under the
 value's `encode_key` form; anything that changes that (array expansion,
 sparse entries) must change them too.
 
+### Rows and subqueries that skip the pipeline, or leave the query's thread
+
+Four paths measured by `benchmarks/document_workload.py` and held to the
+paths they replace by `tests/document_workload_tests.rs`:
+
+- **A subquery over an array in memory** (`execution/array_subquery.rs`):
+  `(FOR x IN <variable | expression> [FILTER …]* RETURN …)` binds each
+  element in one copy of the parent's bindings. The elements of an array of
+  documents are put behind `Arc`s once per array and thread
+  (`ExecCaches::array_elements`). It must stay what the pipeline answers,
+  errors included: several FILTERs are run clause by clause (which FILTER
+  records a mistake of the query first depends on it), and a name that is
+  also a collection is left to the pipeline, whose index and columnar reads
+  look at the name before the row (`names_a_collection`). A clause added to
+  the shape (LET, SORT…) has to keep the pipeline's order of evaluation.
+- **A LET or a RETURN on the scan threads** (`execution/par_rows.rs`): for
+  256 rows or more, when the expression holds a subquery or `DOCUMENT()`,
+  writes nothing and calls only what a memoised subquery may call
+  (`subquery_memo::is_nondeterministic`), outside a transaction. Sound only
+  while everything the evaluator shares is behind a lock or atomic and keyed
+  by what it describes; a new `ExecCaches` field that keeps "the last one"
+  of something per query must hold under several threads. A FILTER mistake
+  recorded during such a run is forgotten and the clause run again on one
+  thread, which decides which mistake the query fails with.
+- **A COLLECT behind a range on a single-field index**
+  (`scan_collect.rs`, `try_range_collect`): `>` and `>=` only, folded from
+  the stored bytes in the index's order, the range cut into slices of key
+  space (`Collection::key_range_slices`) that threads take one by one, rows
+  numbered by slice (`CollectFold::number_from`). It is never handed to a
+  scan of the collection, however wide the range: a scan reads in key order
+  and the first row of a group shows (`UNIQUE`, a key that is `1` here and
+  `1.0` there). `<` / `<=` are read downwards by the ordinary path and are
+  left to it for the same reason.
+- **A filtered REMOVE** (`execution/scan_remove.rs`):
+  `FOR x IN c [FILTER …]* REMOVE x | x._key IN c` with nothing after it
+  checks the FILTERs on the stored bytes (`TypedFilters::compile_unsorted`)
+  and keeps keys only, then calls the same `delete_batch_strict`. It steps
+  aside at the guards of `scan_collect_source`, for a row policy, a
+  transaction, OPTIONS, `OLD`, and a sharded target.
+
+`Collection::delete_batch_checked` reads its documents with `multi_get`, and
+from 64 documents decodes only `IndexMetaSnapshot::read_fields` of each when
+the collection keeps no versions and has no change subscriber: a new thing
+a delete must read of a document (as blobs, vectors and versions are handled
+after the batch) has to be in that list or turn the slim read off. A delete
+of several documents announces them with `publish_changes` (one
+invalidation, the coarse generation), one document with `emit_change`.
+
 ### Raw writes: driver writes that never decode (2.9.0)
 
 The write-side twin. A driver `insert`, `bulk_insert` or `update` with
@@ -985,6 +1033,19 @@ Rules that keep it sound:
   a new kind with its own key prefix has to be added there, to truncate
   and to drop. Positions come back ascending from every branch: `in_both`
   relies on it.
+- **A `timestamp` column is compared by instant** (`columnar.rs`:
+  `Instants`, `scan_instants`, `instant`), not as the values written: the
+  column takes a string or an integer, so one instant has many writings.
+  A range used to keep no row (ranges compare numbers only) and an
+  equality only the writing inserted. `filter_positions` takes that way
+  for every leaf on such a column, before any index: `index_for` gives
+  none, since an index holds the values as written. A date is read as
+  the SDBQL date functions read one (`parse_date_str`,
+  `number_to_epoch_ms`: seconds below 10^10, else milliseconds), so a
+  block's integer bounds decide only when both are in the same unit
+  (`instant_ends`, which `by_block` uses in place of `block_rules_out`).
+  SDBQL pushes nothing down for a `timestamp` column
+  (`columnar_rows.rs`), and must not until its comparison is this one.
 - **Compacting merges runs of neighbouring blocks** that fit in one
   (`ColumnarCollection::compact`, `POST …/compact`): the rows of a run are
   sorted by id and sealed again as one block, each run under the write
@@ -1153,13 +1214,20 @@ macOS: Xcode Command Line Tools (macFUSE for FUSE support)
 
 ## Client SDKs
 
-`clients/` holds nine libraries and four example applications; the count of
+`clients/` holds ten libraries and four example applications; the count of
 "8 SDKs" that used to sit here counted `js-client` twice (as "NodeJS" and as
 "JavaScript") and missed two.
 
 - **Libraries**: `rust-client`, `go-client`, `PYTHON-client`, `js-client`
   (Node and browser both), `PHP-client`, `Ruby-client`, `elixir_client`,
-  `solidb-laravel-eloquent`, `mobile-sdk`.
+  `solidb-laravel-eloquent`, `mobile-sdk`, `iyi-client`.
+- **`iyi-client`** is only a pointer: the driver for [iyi](https://iyi.dev)
+  is its own repository, `github.com/solisoft/solidb_iyi` (a clone sits in
+  `Work/soli/solidb_iyi`), because `iyi get` wants `iyi.mod` at a
+  repository's root and its tags as versions. Written in iyi alone, with
+  its own MessagePack codec. `./run_tests.sh <solidb>` there starts a
+  throwaway server and runs `iyi test`; a driver protocol change that the
+  other clients follow has to be made there too, and released as a tag.
 - **Example apps, not SDKs**: `android-example`, `ios-example`,
   `flutter-example`, `react-native-example`. The docs site has a page for each,
   so they are shipped surfaces even though nothing depends on them.

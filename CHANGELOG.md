@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [2.13.0](https://github.com/solisoft/solidb/compare/v2.12.1...v2.13.0) (2026-11-17)
+
+Users and roles from a shell (`solidb user`), an admin reset of another
+user's password, and a document workload measured against PostgreSQL: a
+query made of nested subqueries, a `COLLECT` behind a range on an index and
+a `REMOVE` by range are 3 to 32 times faster. No change to SDBQL results or
+to the HTTP API.
 
 ### Added
 
@@ -8,9 +14,25 @@
 
 - **`PUT /_api/auth/users/:username/password`** (admin only) sets a user's password without the current one, for a user who has lost theirs; `PUT /_api/auth/password` only changes the caller's own and asks for the current one. 12 characters minimum, `404` for an unknown user, `204` when done. The old password stops working at once; tokens already issued stay valid until they expire. The change is replicated.
 
+- **`benchmarks/document_workload.py`**: the nightly job of an indicator engine in a document model (182,500 documents of 25 fields, one per metric and day, indexes on `d` and `[m, d]`; 1,000 indicators of 5 metrics). It starts a throwaway server, generates the data deterministically, times a worker query, a `COLLECT` over the year and over 30 days and a `REMOVE` by range, with a bind value that changes at every run and an answer refused when it comes from the query cache, and checks every result against a computation of its own.
+
+### Changed
+
+Measured with that benchmark on 8 cores / 16 threads (RocksDB), medians of 6 runs.
+
+- **A subquery over an array already in memory is walked where it is.** `(FOR x IN <variable | expression> [FILTER …]* RETURN …)` — a `LET` of the row, a bind variable, a range — went through the whole pipeline: the row's variables, the array and its documents were copied for every run. Each element is now bound in one copy of the variables. With the next entry: one query that makes 500 `DOCUMENT()` calls, runs 10,000 `AVG((FOR x IN ds FILTER … RETURN …))` subqueries and writes 1,000 documents takes 32 ms instead of 98 ms.
+
+- **A `LET` or a `RETURN` over many rows is evaluated on the scan threads.** For 256 rows or more, when the expression holds a subquery or a `DOCUMENT()` call, writes nothing and calls only pure functions and reads (no `RAND`, `NOW`, `UUID`, user function or window function); never in a transaction. Same rows, same order, the same first error. `SOLIDB_SCAN_THREADS` bounds the threads, `1` turns it off.
+
+- **A `COLLECT` behind a range on a single-field index no longer builds rows.** `FOR x IN c FILTER x.d >= @from COLLECT … AGGREGATE …` read every document the index named into a row, on one thread, before grouping: 1,066 ms for 182,500 documents, 69 ms for 15,000. The documents are grouped from their stored bytes as the index names them, on several threads, in the index's order: 34 ms and 5 ms. `>` and `>=` only; EXPLAIN says "COLLECT folded into the index read".
+
+- **`FOR x IN c FILTER … REMOVE x IN c` keeps keys, not rows.** The FILTER is checked on the stored bytes, on several threads, and only the keys of the documents it keeps are held; a batch delete reads its documents a batch at a time, decodes only the fields its indexes hold (when the collection keeps no versions and nobody subscribes to its changes) and drops cached results once: 90,500 documents with two indexes removed in 302 ms instead of 1,393 ms. Index entries, foreign keys, change events and the replication log are unchanged. A delete of several documents no longer forgets graph neighbourhoods document by document: what traversals keep of the collection goes as a whole.
+
 ### Fixed
 
 - **An admin of one database writes that database's `_jobs`** ([#12](https://github.com/solisoft/solidb/pull/12), by Arnauld Nyaku, and `64791a78`). `_jobs` is written by name with Admin only, and "admin" was read from the global `admin` role: an admin limited to one database was refused its own database's `_jobs` over HTTP (the driver already allowed it), so a Soli application had to run as a global admin just to enqueue its jobs. The document, transaction and import endpoints, and a query that writes on `/cursor`, `/sql` or the transactional query endpoint, now take an admin of the query's database. Nothing else opens: another database's `_jobs`, `_scripts`, `_env` and the other protected collections answer `403` as before, and row policies still look at the global role. Lua scripts are not covered yet.
+
+- **Columnar: a filter on a `timestamp` column compares instants.** On `/query`, `/aggregate`, a delete by filter and the driver, `GT`, `GTE`, `LT` and `LTE` on a `timestamp` column kept no row when the values were dates written as text, and `EQ` found only the exact writing that was inserted. The stored value and the filter's are both read as instants: ISO 8601 text with or without an offset, a date alone, or a number of seconds or milliseconds; `IN` and `NE` included. A range against something that is not a date answers `400`. Indexes no longer serve a `timestamp` column. SDBQL `FILTER` is unchanged.
 
 ## [2.12.1](https://github.com/solisoft/solidb/compare/v2.12.0...v2.12.1) (2026-11-16)
 
