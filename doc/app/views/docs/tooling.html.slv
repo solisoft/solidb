@@ -935,6 +935,44 @@ end
         </div>
       </section>
 
+      <!-- Windows installer -->
+      <section id="windows-installer" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Windows installer
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-400 mb-6">A release carries <code>solidb-windows-amd64-setup.exe</code> beside the <code>.zip</code>. It installs the server, its tools, the <a href="#solidb-tray" class="text-cyan-400 hover:underline">icon</a> and the <a href="#solidb-service" class="text-cyan-400 hover:underline">service</a> in <code>C:\Program Files\SoliDB</code>, in English or French, and offers three things, each of which can be left out:</p>
+            <ul class="text-sm text-gray-400 space-y-2 list-disc pl-5 mb-6">
+              <li>run SoliDB as a Windows service, started with the machine (it is registered and started);</li>
+              <li>show the icon in the notification area when you sign in;</li>
+              <li>add the folder to the <code>PATH</code>, for <code>solidb</code>, <code>solidb-dump</code> and <code>solidb-restore</code> in a prompt.</li>
+            </ul>
+            <ul class="text-sm text-gray-400 space-y-2 list-disc pl-5 mb-8">
+              <li><strong class="text-gray-200">Upgrade</strong>: run the installer of the new version. It stops the service, which closes the database, replaces the files and starts the service again.</li>
+              <li><strong class="text-gray-200">Uninstall</strong>, from Windows&rsquo; installed apps: the service, the files, the shortcuts and the <code>PATH</code> entry go. The data (<code>%ProgramData%\SoliDB</code>, <code>%LOCALAPPDATA%\SoliDB</code>) stays.</li>
+              <li>If the service does not start, the installer says so: the usual reason is a port another program uses. Change <code>port</code> in <code>%ProgramData%\SoliDB\service.conf</code>.</li>
+              <li>The installer is not signed: Windows SmartScreen asks before running it.</li>
+            </ul>
+
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+            <div class="space-y-4">
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Without the wizard (administrator prompt)</div>
+                <div class="p-4 font-mono text-sm text-gray-300">
+                  <span class="text-green-400">solidb-windows-amd64-setup.exe</span> /VERYSILENT /SUPPRESSMSGBOXES /TASKS="service,icon,path"<br>
+                  <span class="text-green-400">"C:\Program Files\SoliDB\unins000.exe"</span> /VERYSILENT <span class="text-gray-500"># uninstall</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- solidb-tray -->
       <section id="solidb-tray" class="scroll-mt-24">
         <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
@@ -946,7 +984,7 @@ end
           </div>
 
           <div class="p-8">
-            <p class="text-gray-400 mb-6">On Windows, <code>solidb-tray.exe</code> puts an icon in the notification area that starts, stops and watches a SoliDB server on the machine, without a console window. It is in the Windows archive of a release, beside <code>solidb.exe</code>: start it by a double click. It is a separate program; the server stays the one described above. When the <a href="#solidb-service" class="text-cyan-400 hover:underline">Windows service</a> is installed, the icon drives the service instead of starting a server of its own, and its menu says so.</p>
+            <p class="text-gray-400 mb-6">On Windows, <code>solidb-tray.exe</code> puts an icon in the notification area that starts, stops and watches a SoliDB server on the machine, without a console window. The <a href="#windows-installer" class="text-cyan-400 hover:underline">installer</a> sets it up; it is also in the Windows archive of a release, beside <code>solidb.exe</code>: start it by a double click. It is a separate program; the server stays the one described above. When the <a href="#solidb-service" class="text-cyan-400 hover:underline">Windows service</a> is installed, the icon drives the service instead of starting a server of its own, and its menu says so.</p>
 
             <h3 class="text-lg font-bold text-white mb-4">What the icon shows</h3>
             <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">

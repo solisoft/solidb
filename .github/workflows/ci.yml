@@ -410,6 +410,32 @@ jobs:
           Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" `
             -DestinationPath "${{ matrix.artifact }}.zip"
 
+      # The installer (tray/installer/solidb.iss, Inno Setup): the same
+      # executables as the zip, with the service, the icon and PATH offered
+      # by a wizard. Inno Setup is on the runner image; fetched if it is not.
+      - name: Build the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          function Find-Iscc {
+            Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+          }
+          $iscc = Find-Iscc
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = Find-Iscc
+          }
+          $rel = "target/${{ matrix.target }}/release"
+          $tray = "tray/target/${{ matrix.target }}/release"
+          $stage = Join-Path $PWD "installer-bin"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          & $iscc.FullName /Q "/DAppVersion=$version" "/DBin=$stage" "/DOutDir=$PWD" tray/installer/solidb.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "solidb-windows-amd64-setup.exe")) { exit 1 }
+
       - name: Upload to release
         if: runner.os != 'Windows'
         env:
@@ -421,7 +447,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload --clobber ${{ github.ref_name }} ${{ matrix.artifact }}.zip
+        run: gh release upload --clobber ${{ github.ref_name }} ${{ matrix.artifact }}.zip solidb-windows-amd64-setup.exe
 
   publish-release:
     needs: [build-binaries]

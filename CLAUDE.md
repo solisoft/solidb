@@ -196,7 +196,11 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
   `config.rs`, `state.rs` and `probe.rs` are tested on any system
   (`cargo test --manifest-path tray/Cargo.toml`); the rest is only
   compiled for Windows (`--target x86_64-pc-windows-gnu` from Linux, with
-  mingw-w64).
+  mingw-w64). `tray/installer/solidb.iss` is the Inno Setup script of the
+  Windows installer, built by the release job: it finds the icon by its
+  window class (`SoliDBTrayWindow`) and drives the service through
+  `solidb-service`, so a rename of either has to be made there too, and
+  its `AppId` must never change.
 
 ### Backups
 

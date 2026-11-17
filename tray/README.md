@@ -82,3 +82,18 @@ cargo build --release --manifest-path tray/Cargo.toml --target x86_64-pc-windows
 # Settings, command line, states and the health probe are tested anywhere
 cargo test --manifest-path tray/Cargo.toml
 ```
+
+## The installer
+
+`installer/solidb.iss` is an Inno Setup 6 script. The release job builds
+`solidb-windows-amd64-setup.exe` from it:
+
+```
+ISCC /DAppVersion=2.13.1 /DBin=<folder holding the six executables> /DOutDir=<where to write> installer\solidb.iss
+```
+
+It installs into Program Files and offers the service, the icon at sign-in
+and the `PATH`. An upgrade stops the service before replacing the files and
+starts it again; an uninstall removes the service and leaves the data. The
+script's `AppId` identifies SoliDB to Windows across versions and must not
+change.

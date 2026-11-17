@@ -98,16 +98,23 @@ Prebuilt binaries are published for each release:
 | Linux x86_64, static (musl) | `solidb-linux-amd64-musl.tar.gz` |
 | Linux arm64 | `solidb-linux-arm64.tar.gz` |
 | macOS arm64 | `solidb-darwin-arm64.tar.gz` |
-| Windows x86_64 | `solidb-windows-amd64.zip` |
+| Windows x86_64 | `solidb-windows-amd64-setup.exe` (installer), `solidb-windows-amd64.zip` |
 
-On Linux and macOS, `install.sh` fetches and installs the right one, and falls back to the static musl build when the system glibc is too old. On Windows, extract the
-`.zip` and add the folder to your `PATH`, then run `solidb.exe --port 6745 --data-dir .\data`.
+On Linux and macOS, `install.sh` fetches and installs the right one, and falls back to the static musl build when the system glibc is too old.
 
-Two Windows caveats: `--daemon` is Unix-only and exits with an error — run SoliDB in a
-console, or wrap it with a service manager such as [NSSM](https://nssm.cc) or `sc.exe`. And
-the generated `.admin_password` file under the data directory is written with default ACLs
-rather than the owner-only permissions used on Unix, so restrict the data directory yourself
-on a shared machine.
+On Windows, run `solidb-windows-amd64-setup.exe`: it installs SoliDB in Program Files and
+offers to run it as a Windows service started with the machine, to show an icon in the
+notification area that starts, stops and watches the server, and to add the tools to the
+`PATH`. It upgrades an installed version in place and leaves the data alone, as does
+uninstalling. The installer is not signed: Windows SmartScreen asks before running it.
+The `.zip` holds the same executables for a manual setup: `solidb-service install` registers
+the service, `solidb-tray.exe` is the icon, and `solidb.exe --port 6745 --data-dir .\data`
+runs the server in a console.
+
+Two Windows caveats: `--daemon` is Unix-only and exits with an error (the service and the
+icon are its Windows counterparts). And the generated `.admin_password` file under the data
+directory is written with default ACLs rather than the owner-only permissions used on Unix,
+so restrict the data directory yourself on a shared machine.
 
 ## 📋 Build Requirements
 
