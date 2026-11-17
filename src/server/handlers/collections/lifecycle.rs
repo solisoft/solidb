@@ -180,6 +180,8 @@ pub async fn create_collection(
             origin_sequence: None,
         };
         let _ = log.append(entry);
+        // After the creation: a peer applies it to a collection it has.
+        crate::sync::validation::log_schema(&collection, Some(log), &db_name, &req.name);
     }
 
     Ok(Json(CreateCollectionResponse {

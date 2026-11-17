@@ -46,6 +46,20 @@ pub fn set_field_rules(
     Ok(stored)
 }
 
+/// Log the schema `collection` holds, for one set where nothing logged it:
+/// a collection created with a schema, after its creation is logged.
+pub fn log_schema(collection: &Collection, log: Option<&SyncLog>, database: &str, name: &str) {
+    if let Some(schema) = collection.get_json_schema() {
+        append(
+            log,
+            database,
+            name,
+            Operation::SetSchema,
+            serde_json::to_vec(&schema).ok(),
+        );
+    }
+}
+
 /// Set `collection`'s JSON schema, or remove it.
 pub fn set_schema(
     collection: &Collection,

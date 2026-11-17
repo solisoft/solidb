@@ -521,6 +521,26 @@ async fn rules_and_schema_are_logged_and_applied_by_a_peer() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
+    // A collection created with a schema logs it after its creation.
+    let (status, _) = call(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/collection"),
+        Some(
+            json!({"name": "born_with", "schema": {"type": "object"}, "validationMode": "strict"}),
+        ),
+    )
+    .await;
+    assert!(status.is_success());
+    let born: Vec<Operation> = log
+        .get_entries_after(0, 100)
+        .into_iter()
+        .filter(|e| e.collection == "born_with")
+        .map(|e| e.operation)
+        .collect();
+    assert_eq!(born, [Operation::CreateCollection, Operation::SetSchema]);
+
     // A peer with the collection, and nothing declared on it.
     let peer = StorageEngine::new(tmp.path().join("b").to_str().unwrap()).unwrap();
     peer.initialize().unwrap();

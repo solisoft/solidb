@@ -660,7 +660,8 @@ Rules that keep it sound:
   transport sets them through `sync::validation` (`set_field_rules`,
   `set_schema`), which writes the log: the HTTP handlers and the driver's
   `set_field_rules` / `set_collection_schema` do. A schema given when a
-  collection is created (`collections/lifecycle.rs`) is still not logged. A replicated write is checked against neither
+  collection is created (`collections/lifecycle.rs`) is logged after the
+  creation (`sync::validation::log_schema`). A replicated write is checked against neither
   (`get_cached_schema_validator` answers nothing inside
   `foreign_keys::unchecked`): it may be older than the schema.
   `solidb-dump` writes a `field_rules` and a `schema` record per
