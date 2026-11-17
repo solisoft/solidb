@@ -1244,6 +1244,13 @@ Rules that keep it sound:
   cannot apply one and refuse a caller it binds
   (`Database::columnar_policy_lets`). A new read of a columnar
   collection has to do one or the other.
+- **A columnar write announces itself once** (`sync::columnar::announce`):
+  one change event per insert, delete, prune or truncate, with the count
+  and the range of ids, on the change channel of the collection that
+  backs it, which is where a changefeed or a live query on the columnar
+  name subscribes (`websocket.rs`, `changes_of`). Not per row, not with
+  the rows, and not for rows a peer applies. A new columnar write that
+  goes through `sync::columnar` has to announce itself.
 - **A columnar write is never part of a transaction**: SDBQL refuses an
   `INSERT INTO` inside one, and the HTTP insert, deletes and truncate
   refuse the `X-Transaction-ID` header (`outside_a_transaction`). A new

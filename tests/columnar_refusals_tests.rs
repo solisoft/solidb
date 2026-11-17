@@ -433,3 +433,59 @@ async fn a_row_policy_closes_the_columnar_reads_that_cannot_apply_it() {
         json!([[8.0, 3]])
     );
 }
+
+/// A columnar write tells its subscribers: one event per insert, delete
+/// or truncate, with the number of rows and the range of their ids, on
+/// the collection that backs it (card #956).
+#[test]
+fn a_columnar_write_sends_one_change_event() {
+    use solidb::storage::collection::ChangeType;
+    use solidb::sync::columnar;
+    use solidb::{ColumnDef, ColumnType, CompressionType};
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.initialize().unwrap();
+    let db = engine.get_database("_system").unwrap();
+    let columns = vec![ColumnDef {
+        name: "v".to_string(),
+        data_type: ColumnType::Int64,
+        nullable: false,
+        indexed: false,
+        index_type: None,
+    }];
+    columnar::create(&db, None, "m", columns, CompressionType::Lz4).unwrap();
+    // With no subscriber nothing is sent, and nothing fails.
+    columnar::insert(&db, None, "m", vec![json!({"v": 0})]).unwrap();
+
+    let mut events = db
+        .get_collection("_columnar_m")
+        .unwrap()
+        .change_sender
+        .subscribe();
+    let ids = columnar::insert(
+        &db,
+        None,
+        "m",
+        (1..=5_000).map(|v| json!({"v": v})).collect(),
+    )
+    .unwrap();
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.type_, ChangeType::Insert);
+    assert_eq!(event.key, ids[0]);
+    assert_eq!(
+        event.data,
+        Some(json!({"rows": 5_000, "first": ids[0], "last": ids[4_999]}))
+    );
+    assert!(events.try_recv().is_err(), "one event for the insert");
+
+    let gone = columnar::delete_rows(&db, None, "m", &ids[..3]).unwrap();
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.type_, ChangeType::Delete);
+    assert_eq!(event.data.unwrap()["rows"], json!(gone.len()));
+    // Rows that are not there: nothing happened, nothing is said.
+    columnar::delete_rows(&db, None, "m", &ids[..3]).unwrap();
+    assert!(events.try_recv().is_err());
+
+    columnar::truncate(&db, None, "m").unwrap();
+    assert_eq!(events.try_recv().unwrap().type_, ChangeType::Truncate);
+}

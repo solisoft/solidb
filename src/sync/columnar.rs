@@ -17,6 +17,7 @@ use serde_json::Value;
 use super::log::{LogEntry, SyncLog};
 use super::protocol::Operation;
 use crate::error::{DbError, DbResult};
+use crate::storage::collection::{ChangeEvent, ChangeType};
 use crate::storage::columnar::{ColumnDef, ColumnarCollection, ColumnarIndexType, CompressionType};
 use crate::storage::Database;
 
@@ -116,6 +117,7 @@ pub fn insert(
     let Some(log) = writing(log) else {
         let ids = col.insert_rows(rows)?;
         col.refresh_stale_indexes();
+        announce(db, name, ChangeType::Insert, ids.len(), &ids);
         return Ok(ids);
     };
     // Encoded before the insert, which takes the rows.
@@ -138,7 +140,37 @@ pub fn insert(
         }
     }
     log.append_batch(entries);
+    announce(db, name, ChangeType::Insert, ids.len(), &ids);
     Ok(ids)
+}
+
+/// Tell the subscribers of a columnar collection (a changefeed, a live
+/// query) that it changed: one event per call, never one per row, since
+/// an insert is often thousands of rows. It says how many rows and, when
+/// they are known, the first and last of their ids, which are in insert
+/// order; a subscriber that wants the rows reads that range. Sent on the
+/// collection that backs it, on the node that took the write: rows a peer
+/// applies are not announced there.
+fn announce(db: &Database, name: &str, kind: ChangeType, rows: usize, ids: &[String]) {
+    if rows == 0 && kind != ChangeType::Truncate {
+        return;
+    }
+    let Ok(backing) = db.get_collection(&backing(name)) else {
+        return;
+    };
+    if backing.change_sender.receiver_count() == 0 {
+        return;
+    }
+    let _ = backing.change_sender.send(ChangeEvent {
+        type_: kind,
+        key: ids.first().cloned().unwrap_or_default(),
+        data: Some(serde_json::json!({
+            "rows": rows,
+            "first": ids.first(),
+            "last": ids.last(),
+        })),
+        old_data: None,
+    });
 }
 
 /// Log the deletion of these rows, each under its id.
@@ -175,6 +207,7 @@ pub fn delete_rows(
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let deleted = col.delete_rows(ids)?;
     log_deleted(log, db, name, &deleted);
+    announce(db, name, ChangeType::Delete, deleted.len(), &deleted);
     Ok(deleted)
 }
 
@@ -190,6 +223,7 @@ pub fn delete_where(
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let deleted = col.delete_where(filter)?;
     log_deleted(log, db, name, &deleted);
+    announce(db, name, ChangeType::Delete, deleted.len(), &deleted);
     Ok(deleted.len())
 }
 
@@ -207,6 +241,7 @@ pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()
             None,
         ));
     }
+    announce(db, name, ChangeType::Truncate, 0, &[]);
     Ok(())
 }
 
@@ -365,7 +400,10 @@ pub fn apply_set_retention(db: &Database, name: &str, data: &[u8]) -> DbResult<(
 /// Remove the rows a collection's retention no longer keeps, on this node.
 /// Returns how many went.
 pub fn prune(db: &Database, name: &str) -> DbResult<u64> {
-    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.prune_expired()
+    let pruned =
+        ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.prune_expired()?;
+    announce(db, name, ChangeType::Delete, pruned as usize, &[]);
+    Ok(pruned)
 }
 
 /// Merge the small blocks of a collection, on this node: how many blocks

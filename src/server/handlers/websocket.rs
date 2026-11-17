@@ -692,6 +692,22 @@ fn subscription_limit_message() -> Message {
     )
 }
 
+/// The collection whose change events tell of `name`: itself, or, for a
+/// columnar collection, the one that backs it, which carries one event per
+/// insert, delete or truncate (`sync::columnar`, card #956).
+fn changes_of(
+    db: &crate::storage::Database,
+    name: &str,
+) -> crate::error::DbResult<crate::storage::Collection> {
+    db.get_collection(name).or_else(|missing| {
+        if db.is_columnar_collection(name) {
+            db.get_collection(&format!("_columnar_{}", name))
+        } else {
+            Err(missing)
+        }
+    })
+}
+
 /// Forward one collection's broadcast change events into a subscription's
 /// aggregate channel until the subscription goes away.
 ///
@@ -928,7 +944,7 @@ async fn handle_subscribe_request(
     let collection_result = state
         .storage
         .get_database(&db_name)
-        .and_then(|db| db.get_collection(&coll_name));
+        .and_then(|db| changes_of(&db, &coll_name));
 
     match collection_result {
         Ok(collection) => {
@@ -1212,7 +1228,7 @@ async fn handle_live_query_request(
                     if let Ok(collection) = state
                         .storage
                         .get_database(&db_name)
-                        .and_then(|db| db.get_collection(&coll_name))
+                        .and_then(|db| changes_of(&db, &coll_name))
                     {
                         // A. Subscribe to local logical. Events only trigger a
                         // re-run, so a lag needs no client notice: the events
