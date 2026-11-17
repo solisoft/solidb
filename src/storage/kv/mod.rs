@@ -705,26 +705,41 @@ impl Kv {
         }
     }
 
-    /// Make every write that has returned durable, where a write leaves
-    /// that to do: `None` where it does not (solistore fsyncing every
-    /// write, `SOLIDB_DURABILITY=full`), and the caller syncs its own write
-    /// instead.
-    pub fn sync_wal(&self) -> Option<Result<(), KvError>> {
-        match &self.engine {
-            Engine::Rocks(db) => Some(db.flush_wal(true).map_err(Into::into)),
-            #[cfg(feature = "engine-solistore")]
-            Engine::Solistore(db) => {
-                (!solistore::syncs_every_write()).then(|| db.sync_wal().map_err(Into::into))
+    /// Write a batch and return once it is visible, without waiting for
+    /// an fsync, whatever the engine's durability: solistore with
+    /// `SOLIDB_DURABILITY=full` fsyncs every other write before it returns.
+    /// The write is durable once a later [`Self::sync_wal`] has returned.
+    /// For a write made under a lock that must not be held across an fsync
+    /// (a counter's): nothing may acknowledge it before that sync.
+    pub fn write_unsynced(&self, batch: KvBatch) -> Result<(), KvError> {
+        match (&self.engine, batch) {
+            (_, KvBatch::Empty) => Ok(()),
+            (Engine::Rocks(db), KvBatch::Rocks(b)) => {
+                Ok(db.write_opt(&b, &KvWriteOptions::default().to_rocks())?)
             }
+            #[cfg(feature = "engine-solistore")]
+            (Engine::Solistore(db), KvBatch::Solistore(b)) => Ok(db.write_unsynced(b)?),
+            #[cfg(feature = "engine-solistore")]
+            _ => mixed_engines(),
         }
     }
 
-    /// Whether [`Self::sync_wal`] does anything here.
-    pub fn syncs_wal_apart(&self) -> bool {
+    /// Make every write that has returned durable.
+    pub fn sync_wal(&self) -> Result<(), KvError> {
         match &self.engine {
-            Engine::Rocks(_) => true,
+            Engine::Rocks(db) => db.flush_wal(true).map_err(Into::into),
             #[cfg(feature = "engine-solistore")]
-            Engine::Solistore(_) => !solistore::syncs_every_write(),
+            Engine::Solistore(db) => db.sync_wal().map_err(Into::into),
+        }
+    }
+
+    /// Whether every ordinary write is fsynced before it returns
+    /// (solistore with `SOLIDB_DURABILITY=full`).
+    pub fn syncs_every_write(&self) -> bool {
+        match &self.engine {
+            Engine::Rocks(_) => false,
+            #[cfg(feature = "engine-solistore")]
+            Engine::Solistore(_) => solistore::syncs_every_write(),
         }
     }
 

@@ -339,17 +339,19 @@ impl Collection {
             None => self.db.write(batch),
             Some(numbering) => {
                 numbering.stage(&mut batch, cf);
-                if !numbering.durable() {
-                    self.db.write(batch)
-                } else if self.db.syncs_wal_apart() {
-                    self.db.write(batch)?;
+                // An instance that fsyncs every write owes this one an
+                // fsync whatever the counter asks: written as any other,
+                // it would be fsynced under the lock, and the inserts
+                // waiting for the lock would share nothing (card #943).
+                if numbering.durable() || self.db.syncs_every_write() {
+                    self.db.write_unsynced(batch)?;
                     numbering.unsynced.store(
                         counters::wal_sync(&self.db).wrote(),
                         std::sync::atomic::Ordering::Release,
                     );
                     Ok(())
                 } else {
-                    self.db.write_opt(batch, &KvWriteOptions::synced())
+                    self.db.write(batch)
                 }
             }
         }

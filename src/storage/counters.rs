@@ -475,17 +475,14 @@ impl WalSync {
         // this sync covers.
         let covered = self.written.load(std::sync::atomic::Ordering::SeqCst);
         match db.sync_wal() {
-            Some(Ok(())) => {
+            Ok(()) => {
                 *synced = covered;
                 Ok(())
             }
-            Some(Err(e)) => Err(DbError::InternalError(format!(
+            Err(e) => Err(DbError::InternalError(format!(
                 "Failed to sync a numbered write: {}",
                 e
             ))),
-            None => Err(DbError::InternalError(
-                "This engine does not sync its log apart from a write".to_string(),
-            )),
         }
     }
 }
