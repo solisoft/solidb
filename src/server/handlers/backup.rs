@@ -73,6 +73,93 @@ fn resolve_backup_path(data_dir: &str, requested: &str) -> Result<std::path::Pat
     Ok(candidate)
 }
 
+/// The file a checkpoint holds that says where the replication log stood
+/// when it was taken.
+pub const LOG_POSITION_FILE: &str = "SYNC_LOG_POSITION";
+
+#[derive(Debug, Deserialize)]
+pub struct ArchiveLogRequest {
+    /// Destination file, under the backup root as a checkpoint's path is.
+    pub path: String,
+    /// Entries after this sequence are written (a checkpoint's
+    /// `log_position.sequence`); 0, or absent: every entry the log holds.
+    #[serde(default)]
+    pub after: u64,
+}
+
+/// POST /_api/backup/log
+///
+/// Writes the entries of the replication log after a sequence to a file:
+/// the history a point-in-time restore replays over a checkpoint. The log
+/// keeps that history only when `SOLIDB_SYNC_LOG_KEEP_SECS` says so (or
+/// while a peer has not received it): the answer names the oldest entry
+/// written, for the caller to see a gap.
+///
+/// Requires Admin, as a checkpoint does.
+pub async fn archive_log(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::server::auth::Claims>,
+    Json(req): Json<ArchiveLogRequest>,
+) -> Result<Json<Value>, DbError> {
+    crate::server::authz_middleware::enforce(
+        &claims,
+        &state,
+        crate::server::authorization::PermissionAction::Admin,
+        None,
+    )
+    .await?;
+    if req.path.trim().is_empty() {
+        return Err(DbError::BadRequest("path is required".to_string()));
+    }
+    let Some(log) = state.replication_log.clone() else {
+        return Err(DbError::BadRequest(
+            "this server has no replication log".to_string(),
+        ));
+    };
+    if !log.is_active() {
+        return Err(DbError::BadRequest(
+            "the replication log is not being written: start the server with \
+             SOLIDB_SYNC_LOG_KEEP_SECS to keep the history a restore replays"
+                .to_string(),
+        ));
+    }
+    let target = resolve_backup_path(state.storage.data_dir(), &req.path)?;
+    if target.exists() {
+        return Err(DbError::BadRequest(format!(
+            "log archive target '{}' already exists",
+            target.display()
+        )));
+    }
+    let after = req.after;
+    let oldest = log.oldest_sequence();
+    let file = target.clone();
+    let summary = tokio::task::spawn_blocking(move || log.archive_after(after, &file))
+        .await
+        .map_err(|e| DbError::InternalError(format!("Log archive task failed: {}", e)))?
+        .map_err(|e| DbError::InternalError(format!("Failed to write the log archive: {}", e)))?;
+    tracing::info!(
+        target: "audit",
+        "backup: user '{}' archived {} log entries at '{}'",
+        claims.sub,
+        summary.entries,
+        target.display()
+    );
+    // An entry between `after` and the oldest one kept was pruned: the
+    // archive does not follow the checkpoint it was asked for.
+    let complete = oldest.is_none_or(|oldest| oldest <= after + 1);
+    Ok(Json(serde_json::json!({
+        "status": "created",
+        "path": target.to_string_lossy(),
+        "after": after,
+        "entries": summary.entries,
+        "first_sequence": summary.first_sequence,
+        "last_sequence": summary.last_sequence,
+        "first_timestamp": summary.first_timestamp,
+        "last_timestamp": summary.last_timestamp,
+        "complete": complete,
+    })))
+}
+
 /// POST /_api/backup
 ///
 /// Creates a physical checkpoint of the entire instance — every database and
@@ -100,6 +187,18 @@ pub async fn create_backup(
 
     let target = resolve_backup_path(state.storage.data_dir(), &req.path)?;
 
+    // Where the replication log stands, read before the checkpoint: every
+    // entry up to there is in the checkpoint, and replaying from there
+    // applies again, at worst, a few writes it already holds.
+    let position = state.replication_log.as_ref().map(|log| {
+        serde_json::json!({
+            "sequence": log.current_sequence(),
+            "node_id": log.node_id(),
+            "log_active": log.is_active(),
+            "taken_at_ms": chrono::Utc::now().timestamp_millis(),
+        })
+    });
+
     // Checkpointing blocks on a flush and then on hard-linking every SST file,
     // which scales with the column-family count — keep it off the async
     // runtime's worker threads.
@@ -108,6 +207,15 @@ pub async fn create_backup(
     tokio::task::spawn_blocking(move || storage.create_checkpoint(&target_for_task))
         .await
         .map_err(|e| DbError::InternalError(format!("Backup task failed: {}", e)))??;
+
+    // Written in the checkpoint, beside its files: what a point-in-time
+    // restore starts the replay from.
+    if let Some(position) = &position {
+        let file = target.join(LOG_POSITION_FILE);
+        std::fs::write(&file, position.to_string()).map_err(|e| {
+            DbError::InternalError(format!("Failed to write '{}': {}", file.display(), e))
+        })?;
+    }
 
     tracing::info!(
         target: "audit",
@@ -119,6 +227,7 @@ pub async fn create_backup(
     Ok(Json(serde_json::json!({
         "status": "created",
         "path": target.to_string_lossy(),
+        "log_position": position,
         // Scope is not obvious from the request, so state it in the response.
         "scope": "instance",
         "note": "Whole-instance checkpoint. RocksDB hard-links SST files, so a \

@@ -107,6 +107,19 @@ pub enum SyncCommand {
 }
 
 /// Sync worker running in background
+/// What [`SyncWorker::replay`] did with the entries of an archive.
+#[derive(Debug, Default, Clone)]
+pub struct Replayed {
+    /// Entries replayed.
+    pub applied: usize,
+    /// Entries at or before the checkpoint's place in the log.
+    pub in_checkpoint: usize,
+    /// Entries stamped after the instant asked for.
+    pub after_instant: usize,
+    pub last_sequence: Option<u64>,
+    pub last_timestamp: Option<u64>,
+}
+
 pub struct SyncWorker {
     storage: Arc<StorageEngine>,
     state: Arc<SyncState>,
@@ -599,22 +612,9 @@ impl SyncWorker {
         }
     }
 
-    /// Apply entries pulled from `peer_addr` and advance its pull cursor.
-    /// Returns whether the peer has more.
-    async fn apply_pulled_entries(
-        &self,
-        peer_addr: &str,
-        after_seq: u64,
-        entries: Vec<SyncEntry>,
-        current_sequence: u64,
-    ) -> Result<bool, TransportError> {
-        debug!(
-            "incremental_sync: {} entries from {} (seq={})",
-            entries.len(),
-            peer_addr,
-            current_sequence
-        );
-
+    /// Apply `entries` in the order given, consecutive document writes of
+    /// one collection as a batch.
+    async fn apply_in_batches(&self, entries: &[SyncEntry]) -> Result<(), TransportError> {
         // Group consecutive entries by (database, collection, operation) for batching
         let mut batch_start = 0;
         while batch_start < entries.len() {
@@ -648,6 +648,62 @@ impl SyncWorker {
                 batch_start += 1;
             }
         }
+        Ok(())
+    }
+
+    /// Replay the entries of a log archive over the data this node was
+    /// started on, a checkpoint: those after `after_sequence` (where the
+    /// log stood when the checkpoint was taken) and stamped at or before
+    /// `until_ms`, in order, through the path that applies a peer's
+    /// entries. What the checkpoint already holds is applied again at
+    /// worst, with the same result; an entry of an origin this node had
+    /// applied further than is skipped, as a peer's would be.
+    pub async fn replay(
+        &self,
+        entries: Vec<super::log::LogEntry>,
+        after_sequence: u64,
+        until_ms: Option<u64>,
+    ) -> Result<Replayed, TransportError> {
+        let mut replayed = Replayed::default();
+        let hlc = crate::cluster::HybridLogicalClock::now(&self.local_node_id);
+        let mut wanted: Vec<SyncEntry> = Vec::new();
+        for entry in &entries {
+            if entry.sequence <= after_sequence {
+                replayed.in_checkpoint += 1;
+            } else if until_ms.is_some_and(|until| entry.timestamp > until) {
+                replayed.after_instant += 1;
+            } else {
+                replayed.last_timestamp = Some(entry.timestamp);
+                replayed.last_sequence = Some(entry.sequence);
+                wanted.push(entry.to_sync_entry(&hlc));
+            }
+        }
+        replayed.applied = wanted.len();
+        // In stretches, so that a long history does not hold the runtime.
+        for stretch in wanted.chunks(1000) {
+            self.apply_in_batches(stretch).await?;
+        }
+        self.state.persist();
+        Ok(replayed)
+    }
+
+    /// Apply entries pulled from `peer_addr` and advance its pull cursor.
+    /// Returns whether the peer has more.
+    async fn apply_pulled_entries(
+        &self,
+        peer_addr: &str,
+        after_seq: u64,
+        entries: Vec<SyncEntry>,
+        current_sequence: u64,
+    ) -> Result<bool, TransportError> {
+        debug!(
+            "incremental_sync: {} entries from {} (seq={})",
+            entries.len(),
+            peer_addr,
+            current_sequence
+        );
+
+        self.apply_in_batches(&entries).await?;
 
         // Only update the cursor if we ACTUALLY received entries.
         // We must NOT update to current_sequence if entries are empty, because that implies
@@ -1549,7 +1605,15 @@ impl SyncWorker {
 
         // prune_before(N) deletes entries with sequence < N. We want to KEEP
         // up to and including safe_seq, so we pass safe_seq + 1.
-        let before = safe_seq.saturating_add(1);
+        let mut before = safe_seq.saturating_add(1);
+        // Entries kept by age, for a point-in-time restore: nothing younger
+        // than that is pruned, whatever the peers have received.
+        let keep = super::log::keep_secs();
+        if keep > 0 {
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let oldest_kept = now.saturating_sub(keep.saturating_mul(1000));
+            before = before.min(self.sync_log.first_sequence_since(oldest_kept));
+        }
         match self.sync_log.prune_before(before) {
             Ok(0) => {}
             Ok(n) => {

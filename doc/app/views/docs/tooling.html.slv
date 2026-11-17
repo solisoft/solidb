@@ -723,6 +723,22 @@ end
                </div>
             </div>
 
+            <h3 class="text-lg font-bold text-white mb-4">Restoring to a point in time</h3>
+            <p class="text-sm text-gray-300 mb-4">A checkpoint goes back to the instant it was taken. To go back to any instant after it, keep the replication log and replay it over the checkpoint:</p>
+            <ol class="list-decimal list-inside text-sm text-gray-300 space-y-2 mb-4">
+              <li>Run the server with <code class="text-green-400">SOLIDB_SYNC_LOG_KEEP_SECS</code> set (for example <code>604800</code>, a week). The log is then written from the start, even with no peer, and its entries are kept that long. It costs a second log write per document write.</li>
+              <li>Take checkpoints as usual. Each one records where the log stood (<code>log_position</code> in the answer, and a <code>SYNC_LOG_POSITION</code> file in the checkpoint).</li>
+              <li>Archive the log written since a checkpoint, as often as you want to be able to go back to: <code class="text-green-400">POST /_api/backup/log</code> with <code>{"path": "cp1.log", "after": &lt;log_position.sequence&gt;}</code>. The answer says how many entries it wrote, the instants of the first and the last, and <code>"complete": false</code> when entries between the checkpoint and the archive were already gone.</li>
+              <li>To restore: copy the checkpoint to a new data directory and start a server on it with the archive and the instant.</li>
+            </ol>
+            <div class="bg-black/40 border border-white/10 rounded-xl overflow-hidden mb-4">
+               <div class="p-4 font-mono text-sm text-gray-300">
+                 <span class="text-green-400">solidb</span> --data-dir /restore/solidb --replay-log /var/backups/cp1.log \<br>
+                 &nbsp;&nbsp;--replay-until 2026-11-17T14:02:00Z --replay-only
+               </div>
+            </div>
+            <p class="text-sm text-gray-300 mb-6">Without <code>--replay-until</code> the whole archive is replayed; without <code>--replay-only</code> the server goes on to serve. The replay refuses an archive that does not follow the checkpoint. Not restored this way: sharded collections (their writes are not in the log), anything written while the log was not kept, and column blocks and columnar indexes, which each node rebuilds.</p>
+
             <h3 class="text-lg font-bold text-white mb-4">Which one should I use?</h3>
             <div class="overflow-x-auto mb-6">
               <table class="w-full text-sm text-left text-gray-300">

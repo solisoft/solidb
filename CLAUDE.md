@@ -237,6 +237,20 @@ Two mechanisms, and they are not interchangeable:
 Because a checkpoint hard-links SSTs on the same filesystem, it is not
 protection against losing that filesystem — copy it elsewhere.
 
+**To an instant after a checkpoint** (card #852): the replication log is the
+history. `SOLIDB_SYNC_LOG_KEEP_SECS` keeps it (written from the start, and
+not pruned younger than that: `log::keep_secs`, `worker::prune_sync_log`);
+a checkpoint records where the log stood (`SYNC_LOG_POSITION`, written by
+the handler, read *before* the checkpoint is taken); `POST /_api/backup/log`
+writes the entries after a sequence to an archive (`SyncLog::archive_after`);
+and `solidb --replay-log <archive> [--replay-until <instant>] [--replay-only]`
+on a copy of the checkpoint replays them (`replay_archive` in `main.rs`,
+`SyncWorker::replay`) through the path that applies a peer's entries, then
+renames the position file. So: whatever the replication log does not carry
+is not restored (sharded collections, writes made while the log was
+deferred), and a write path that does not log is a hole in a restore as it
+is in a cluster.
+
 ### Key Patterns
 
 - **Error Handling**: Unified `DbError` enum with `DbResult<T>` type alias throughout

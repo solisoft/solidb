@@ -394,6 +394,7 @@ pub fn create_router(
         // this route has no {db} segment, so the path-based authz middleware
         // cannot scope it to a database.
         .route("/_api/backup", post(create_backup))
+        .route("/_api/backup/log", post(archive_log))
         // Collection routes
         .route("/_api/database/{db}/collection", post(create_collection))
         .route("/_api/database/{db}/collection", get(list_collections))

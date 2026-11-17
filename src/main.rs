@@ -276,6 +276,23 @@ struct Args {
     #[arg(long)]
     otlp_endpoint: Option<String>,
 
+    /// Point-in-time restore: replay this log archive (written by
+    /// `POST /_api/backup/log`) over the data directory, which must be a
+    /// checkpoint (it holds `SYNC_LOG_POSITION`), before serving. With
+    /// `--replay-until`, stops at that instant.
+    #[arg(long)]
+    replay_log: Option<String>,
+
+    /// With `--replay-log`: the last instant to replay, as RFC 3339
+    /// (`2026-11-17T14:02:00Z`) or milliseconds since the epoch. Without
+    /// it the whole archive is replayed.
+    #[arg(long)]
+    replay_until: Option<String>,
+
+    /// With `--replay-log`: exit once the replay is done.
+    #[arg(long)]
+    replay_only: bool,
+
     /// Disable the sync log entirely. Useful for single-node dev setups
     /// where there are no peers — avoids doubling write storage.
     /// WARNING: never set this on a node that participates in replication.
@@ -660,6 +677,59 @@ fn bind_host(args: &Args) -> String {
         .unwrap_or_else(|| "127.0.0.1".to_string())
 }
 
+/// Replay a log archive over the checkpoint the server was started on
+/// (`--replay-log`). The checkpoint says where the log stood when it was
+/// taken (`SYNC_LOG_POSITION`); that file is renamed once the replay is
+/// done, so that a second start does not replay again.
+async fn replay_archive(
+    worker: &solidb::sync::worker::SyncWorker,
+    data_dir: &str,
+    archive: &str,
+    until: Option<&str>,
+) -> anyhow::Result<solidb::sync::worker::Replayed> {
+    let position_file = std::path::Path::new(data_dir).join("SYNC_LOG_POSITION");
+    let position = std::fs::read_to_string(&position_file).map_err(|e| {
+        anyhow::anyhow!(
+            "--replay-log: '{}' is not a checkpoint taken with a replication log ({}): \
+             nothing says where to replay from",
+            position_file.display(),
+            e
+        )
+    })?;
+    let position: serde_json::Value = serde_json::from_str(&position)?;
+    let after = position["sequence"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("--replay-log: SYNC_LOG_POSITION holds no sequence"))?;
+    let until_ms = match until {
+        None => None,
+        Some(text) => Some(match text.trim().parse::<u64>() {
+            Ok(ms) => ms,
+            Err(_) => chrono::DateTime::parse_from_rfc3339(text.trim())
+                .map_err(|e| anyhow::anyhow!("--replay-until '{}': {}", text, e))?
+                .timestamp_millis() as u64,
+        }),
+    };
+    let entries = solidb::sync::log::SyncLog::read_archive(std::path::Path::new(archive))
+        .map_err(|e| anyhow::anyhow!("--replay-log '{}': {}", archive, e))?;
+    // The archive has to follow the checkpoint: a gap is history lost.
+    if let Some(first) = entries.iter().map(|e| e.sequence).min() {
+        if first > after + 1 {
+            anyhow::bail!(
+                "--replay-log: the archive starts at sequence {} and the checkpoint stands at \
+                 {}: the entries between them are missing",
+                first,
+                after
+            );
+        }
+    }
+    let replayed = worker
+        .replay(entries, after, until_ms)
+        .await
+        .map_err(|e| anyhow::anyhow!("--replay-log: {}", e))?;
+    std::fs::rename(&position_file, position_file.with_extension("replayed"))?;
+    Ok(replayed)
+}
+
 async fn async_main(args: Args) -> anyhow::Result<()> {
     let host = bind_host(&args);
     // Initialize logging
@@ -988,7 +1058,12 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     // A node with no peer, and no history of replicating with one, defers
     // its sync log until a peer or an offline-sync device connects: nothing
     // reads it before then, and it is ~40% of a document write's cost.
-    if args.peers.is_empty() && !sync_state.has_replicated_with_peers() {
+    // Unless it is kept for a point-in-time restore
+    // (`SOLIDB_SYNC_LOG_KEEP_SECS`): its history then has to hold every
+    // write from the start.
+    if solidb::sync::log::keep_secs() > 0 {
+        replication_log.activate("kept for point-in-time restore");
+    } else if args.peers.is_empty() && !sync_state.has_replicated_with_peers() {
         replication_log.defer_until_needed();
     } else {
         replication_log.activate("peers configured or known");
@@ -1025,6 +1100,37 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     )
     .with_cluster_manager(cluster_manager.clone())
     .with_shard_coordinator(shared_coordinator.clone());
+
+    // Point-in-time restore: the data directory is a checkpoint, and the
+    // log written after it is replayed up to an instant, before anything
+    // is served.
+    if let Some(archive) = &args.replay_log {
+        let replayed = replay_archive(
+            &sync_worker,
+            &args.data_dir,
+            archive,
+            args.replay_until.as_deref(),
+        )
+        .await?;
+        tracing::info!(
+            "Point-in-time restore: {} entries replayed from '{}' ({} already in the \
+             checkpoint, {} after the instant asked for); last entry replayed: sequence {:?}, \
+             stamped {:?} ms",
+            replayed.applied,
+            archive,
+            replayed.in_checkpoint,
+            replayed.after_instant,
+            replayed.last_sequence,
+            replayed.last_timestamp
+        );
+        if args.replay_only {
+            storage.flush()?;
+            tracing::info!("--replay-only: the restore is done; exiting");
+            return Ok(());
+        }
+    } else if args.replay_until.is_some() || args.replay_only {
+        anyhow::bail!("--replay-until and --replay-only go with --replay-log");
+    }
 
     // Join Cluster if peers provided (as background task)
     if !args.peers.is_empty() {

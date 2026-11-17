@@ -44,6 +44,27 @@ const SEQ_KEY: &[u8] = b"sync_log:_sequence";
 /// Outside `LOG_PREFIX`, so no entry scan or prune ever sees it.
 const ACTIVE_KEY: &[u8] = b"_meta:active";
 
+/// How long the log keeps its entries whatever its peers have received,
+/// in seconds (`SOLIDB_SYNC_LOG_KEEP_SECS`; 0 or unset: not kept). With
+/// it the log is written from the start, even on a node with no peer:
+/// it is the history a point-in-time restore replays.
+pub fn keep_secs() -> u64 {
+    std::env::var("SOLIDB_SYNC_LOG_KEEP_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// What [`SyncLog::archive_after`] wrote.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct ArchiveSummary {
+    pub entries: u64,
+    pub first_sequence: u64,
+    pub last_sequence: u64,
+    pub first_timestamp: u64,
+    pub last_timestamp: u64,
+}
+
 /// Entry for the sync log (similar to old LogEntry for compatibility)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -504,6 +525,90 @@ impl SyncLog {
         entries
     }
 
+    /// The first sequence whose entry is stamped at or after `at_ms`
+    /// (milliseconds since the epoch): every entry below it is older.
+    /// `current_sequence() + 1` when no entry is that recent. Entries are
+    /// stamped in the order they are appended, so this is a bisection; a
+    /// clock that stepped back can only make it keep more.
+    pub fn first_sequence_since(&self, at_ms: u64) -> u64 {
+        let end = self.current_sequence() + 1;
+        let (mut lo, mut hi) = (self.oldest_sequence().unwrap_or(end).min(end), end);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            match self.get_entries_after(mid - 1, 1).into_iter().next() {
+                Some(entry) if entry.timestamp < at_ms => lo = entry.sequence + 1,
+                _ => hi = mid,
+            }
+        }
+        lo
+    }
+
+    /// Write every entry after `after_sequence` to a new file at `path`,
+    /// oldest first: what a point-in-time restore replays over a
+    /// checkpoint. Each record is its length (four bytes, little endian)
+    /// then the entry as the log stores it. Returns how many entries, and
+    /// the first and last of them.
+    pub fn archive_after(
+        &self,
+        after_sequence: u64,
+        path: &std::path::Path,
+    ) -> std::io::Result<ArchiveSummary> {
+        use std::io::Write;
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        let mut out = std::io::BufWriter::new(file);
+        let mut summary = ArchiveSummary::default();
+        let mut after = after_sequence;
+        loop {
+            let entries = self.get_entries_after(after, 1024);
+            let Some(last) = entries.last() else {
+                break;
+            };
+            after = last.sequence;
+            for entry in &entries {
+                let bytes = encode_entry(entry);
+                out.write_all(&(bytes.len() as u32).to_le_bytes())?;
+                out.write_all(&bytes)?;
+                if summary.entries == 0 {
+                    summary.first_sequence = entry.sequence;
+                    summary.first_timestamp = entry.timestamp;
+                }
+                summary.entries += 1;
+                summary.last_sequence = entry.sequence;
+                summary.last_timestamp = entry.timestamp;
+            }
+        }
+        out.flush()?;
+        out.get_ref().sync_all()?;
+        Ok(summary)
+    }
+
+    /// The entries of an archive written by [`Self::archive_after`], in
+    /// order. A file cut short (a copy interrupted) is an error, not a
+    /// shorter history.
+    pub fn read_archive(path: &std::path::Path) -> std::io::Result<Vec<LogEntry>> {
+        let bytes = std::fs::read(path)?;
+        let cut =
+            || std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "log archive cut short");
+        let mut entries = Vec::new();
+        let mut at = 0;
+        while at < bytes.len() {
+            let length = bytes.get(at..at + 4).ok_or_else(cut)?;
+            let length = u32::from_le_bytes([length[0], length[1], length[2], length[3]]) as usize;
+            let record = bytes.get(at + 4..at + 4 + length).ok_or_else(cut)?;
+            entries.push(decode_entry(record).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "log archive: unreadable entry",
+                )
+            })?);
+            at += 4 + length;
+        }
+        Ok(entries)
+    }
+
     /// Get current sequence number
     pub fn current_sequence(&self) -> u64 {
         *self.sequence.read().unwrap()
@@ -863,5 +968,62 @@ mod tests {
         }
         log.prune_before(3).unwrap();
         assert_eq!(log.oldest_sequence(), Some(3));
+    }
+    #[test]
+    fn entries_are_found_by_their_age_and_archived() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = SyncLog::new("node1".to_string(), tmp.path().to_str().unwrap(), 0).unwrap();
+        // An empty log: nothing is recent, nothing to archive.
+        assert_eq!(log.first_sequence_since(0), 1);
+        for n in 0..50u64 {
+            let mut entry = LogEntry::new_op(
+                "db",
+                "c",
+                Operation::Insert,
+                format!("k{n}"),
+                Some(vec![n as u8; 3]),
+            );
+            entry.timestamp = 1_000 + n * 10;
+            log.append(entry);
+        }
+        // Stamps 1000, 1010 … 1490 under sequences 1 … 50.
+        assert_eq!(log.first_sequence_since(0), 1);
+        assert_eq!(log.first_sequence_since(1_000), 1);
+        assert_eq!(log.first_sequence_since(1_001), 2);
+        assert_eq!(log.first_sequence_since(1_250), 26);
+        assert_eq!(log.first_sequence_since(1_490), 50);
+        assert_eq!(log.first_sequence_since(1_491), 51);
+        // After a prune the oldest entry kept is where the search starts.
+        log.prune_before(20).unwrap();
+        assert_eq!(log.first_sequence_since(0), 20);
+        assert_eq!(log.first_sequence_since(1_250), 26);
+
+        let file = tmp.path().join("archive.log");
+        let summary = log.archive_after(30, &file).unwrap();
+        assert_eq!(
+            (
+                summary.entries,
+                summary.first_sequence,
+                summary.last_sequence
+            ),
+            (20, 31, 50)
+        );
+        assert_eq!(
+            (summary.first_timestamp, summary.last_timestamp),
+            (1_300, 1_490)
+        );
+        let entries = SyncLog::read_archive(&file).unwrap();
+        assert_eq!(entries.len(), 20);
+        assert_eq!(entries[0].key, "k30");
+        assert_eq!(entries[19].data, Some(vec![49u8; 3]));
+        assert!(entries
+            .windows(2)
+            .all(|pair| pair[0].sequence + 1 == pair[1].sequence));
+        // An existing file is not written over; a file cut short is an
+        // error, not a shorter history.
+        assert!(log.archive_after(30, &file).is_err());
+        let bytes = std::fs::read(&file).unwrap();
+        std::fs::write(&file, &bytes[..bytes.len() - 2]).unwrap();
+        assert!(SyncLog::read_archive(&file).is_err());
     }
 }
