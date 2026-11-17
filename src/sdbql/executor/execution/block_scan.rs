@@ -32,9 +32,11 @@ use super::super::datum::Datum;
 use super::super::index_opt::{expression_references_var, push_conjuncts, IndexHint};
 use super::super::types::Context;
 use super::super::QueryExecutor;
+use super::clauses::BUDGET_CHECK_INTERVAL;
 use super::collect::CollectFold;
 use super::scan_collect::{bind_in_place, plan, Plan, ScanCollectRun};
-use crate::error::DbResult;
+use super::typed_scan::{Check, TypedFilters};
+use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression};
 use crate::sdbql::executor::builtins::timeseries::{parse_interval, Interval};
 use crate::storage::blocks::{self, BlockSet, Column, Columns, Segment, Total, CHUNK_ROWS};
@@ -148,6 +150,18 @@ impl RowBounds {
     }
 }
 
+/// What [`QueryExecutor::block_pruned_docs`] read.
+pub(in crate::sdbql::executor) struct PrunedScan {
+    /// The documents the FILTER clauses are to run on, in key order.
+    pub(in crate::sdbql::executor) docs: Vec<Value>,
+    /// Documents read from storage.
+    pub(in crate::sdbql::executor) visited: usize,
+    /// Blocks said which key ranges to read.
+    pub(in crate::sdbql::executor) by_blocks: bool,
+    /// Leading FILTERs were checked on the stored bytes.
+    pub(in crate::sdbql::executor) on_bytes: bool,
+}
+
 impl QueryExecutor<'_> {
     /// The documents a `FOR var IN c FILTER …` can keep, read only from the
     /// key ranges that may hold one (card #934). A time series with column
@@ -160,13 +174,20 @@ impl QueryExecutor<'_> {
     /// ordinary scan reads them, in the same order, for the FILTER clauses
     /// to run on. `None` when this does not apply, and the ordinary scan
     /// reads the collection.
+    ///
+    /// Whatever the collection, the leading FILTERs that compare fields of
+    /// the loop variable with constants are checked on each document's
+    /// stored bytes, and only a document they keep is decoded (card #942):
+    /// a scan that kept 2,000 documents of a million decoded the million,
+    /// and bound each in a row for the FILTER to drop. The FILTER clauses
+    /// still run on the rows returned.
     pub(in crate::sdbql::executor) fn block_pruned_docs(
         &self,
         for_clause: &crate::sdbql::ast::ForClause,
         filters: &[&Expression],
         ctx: &Context,
         scan_limit: Option<usize>,
-    ) -> DbResult<Option<Vec<Value>>> {
+    ) -> DbResult<Option<PrunedScan>> {
         // The guards of the ordinary scan: anything it filters or overlays
         // itself stays with it.
         if !self.stream_collect
@@ -187,12 +208,21 @@ impl QueryExecutor<'_> {
         else {
             return Ok(None);
         };
-        let Some(set) = collection.column_blocks() else {
+        let var = for_clause.variable.as_str();
+        let blocks = collection.column_blocks().and_then(|set| {
+            self.row_bounds(var, filters, &set, ctx)
+                .map(|bounds| (set, bounds))
+        });
+        // The longest run of leading FILTERs that compiles: one behind a
+        // FILTER that does not is left alone, since that one may fail the
+        // query on a row this would have dropped.
+        let typed = (1..=filters.len())
+            .rev()
+            .filter(|_| self.scan.typed)
+            .find_map(|n| TypedFilters::compile_unsorted(self, var, &filters[..n]));
+        if blocks.is_none() && typed.is_none() {
             return Ok(None);
-        };
-        let Some(bounds) = self.row_bounds(for_clause.variable.as_str(), filters, &set, ctx) else {
-            return Ok(None);
-        };
+        }
 
         self.caches.count_collection_scan();
         // Ranges are passed over on what the blocks say, not on the stored
@@ -202,8 +232,26 @@ impl QueryExecutor<'_> {
         let fields = self.scan_projection_for(for_clause);
         let cap = self.max_intermediate_rows.saturating_add(1);
         let mut docs: Vec<Value> = Vec::new();
+        let visited = std::cell::Cell::new(0usize);
+        let stopped: std::cell::RefCell<Option<DbError>> = std::cell::RefCell::new(None);
         let read = |lo: &str, hi: Option<&str>, docs: &mut Vec<Value>| {
             blocks::for_each_doc(&collection, lo, hi, None, |_, bytes| {
+                visited.set(visited.get() + 1);
+                // The deadline: a scan that keeps nothing still ends.
+                if visited.get().is_multiple_of(BUDGET_CHECK_INTERVAL) {
+                    if let Err(e) = self.check_budget(docs.len()) {
+                        *stopped.borrow_mut() = Some(e);
+                        return false;
+                    }
+                }
+                // A document these cannot read is decoded, and the FILTER
+                // clauses decide.
+                if typed
+                    .as_ref()
+                    .is_some_and(|typed| typed.check(bytes) == Check::Fail)
+                {
+                    return true;
+                }
                 let decoded = match fields.as_deref() {
                     Some(fields) => deserialize_doc_projected(bytes, fields),
                     None => deserialize_doc_as_value(bytes),
@@ -214,11 +262,23 @@ impl QueryExecutor<'_> {
                 docs.len() < cap
             })
         };
+        let Some((set, bounds)) = blocks else {
+            read("", None, &mut docs)?;
+            if let Some(e) = stopped.into_inner() {
+                return Err(e);
+            }
+            return Ok(Some(PrunedScan {
+                docs,
+                visited: visited.get(),
+                by_blocks: false,
+                on_bytes: true,
+            }));
+        };
         // Asked before the blocks are listed: a write after it is one the
         // query may or may not see, as with any read.
         let tail_empty = set.tail_is_empty();
         for segment in set.segments(&collection).iter() {
-            if docs.len() >= cap {
+            if docs.len() >= cap || stopped.borrow().is_some() {
                 break;
             }
             match segment {
@@ -248,7 +308,15 @@ impl QueryExecutor<'_> {
                 }
             }
         }
-        Ok(Some(docs))
+        if let Some(e) = stopped.into_inner() {
+            return Err(e);
+        }
+        Ok(Some(PrunedScan {
+            docs,
+            visited: visited.get(),
+            by_blocks: true,
+            on_bytes: typed.is_some(),
+        }))
     }
 
     /// What `filters` say of the rows `set` holds, or `None` when none of

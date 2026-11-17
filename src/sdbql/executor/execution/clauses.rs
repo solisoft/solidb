@@ -514,7 +514,7 @@ impl<'a> QueryExecutor<'a> {
                         // ranges whose block may hold a row the FILTERs keep.
                         let docs =
                             match self.block_pruned_docs(for_clause, &filters, ctx, scan_limit)? {
-                                Some(docs) => docs,
+                                Some(scan) => scan.docs,
                                 None => self.get_for_source_docs(for_clause, ctx, scan_limit)?,
                             };
                         for doc in docs {

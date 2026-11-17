@@ -858,6 +858,7 @@ impl<'a> QueryExecutor<'a> {
                         let mut clause_docs_scanned = 0;
 
                         let mut by_blocks = false;
+                        let mut on_bytes = false;
                         for ctx in &rows {
                             // Measure iterator creation/fetching time as part of scan.
                             // A time series with column blocks is read as the
@@ -865,13 +866,19 @@ impl<'a> QueryExecutor<'a> {
                             let docs = match self
                                 .block_pruned_docs(for_clause, &filters, ctx, scan_limit)?
                             {
-                                Some(docs) => {
-                                    by_blocks = true;
+                                Some(scan) => {
+                                    by_blocks |= scan.by_blocks;
+                                    on_bytes |= scan.on_bytes;
+                                    clause_docs_scanned += scan.visited;
+                                    scan.docs
+                                }
+                                None => {
+                                    let docs =
+                                        self.get_for_source_docs(for_clause, ctx, scan_limit)?;
+                                    clause_docs_scanned += docs.len();
                                     docs
                                 }
-                                None => self.get_for_source_docs(for_clause, ctx, scan_limit)?,
                             };
-                            clause_docs_scanned += docs.len();
                             for doc in docs {
                                 let mut new_ctx = ctx.clone();
                                 new_ctx.insert(for_clause.variable.clone(), doc);
@@ -885,6 +892,13 @@ impl<'a> QueryExecutor<'a> {
                             warnings.push(format!(
                                 "optimizer: '{}' read by its column blocks: only the \
                                  documents of the blocks that may hold a row of the FILTER",
+                                for_clause.collection
+                            ));
+                        }
+                        if on_bytes {
+                            warnings.push(format!(
+                                "optimizer: FILTER on '{}' checked on the stored documents: \
+                                 only those it keeps are decoded",
                                 for_clause.collection
                             ));
                         }

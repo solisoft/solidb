@@ -921,6 +921,19 @@ Rules that keep it sound:
   It steps aside at the guards of the ordinary scan and calls
   `note_range_read`; `column_blocks_tests` runs each query both ways and
   checks with `BLOCKS_PASSED_OVER` that blocks were spared.
+- **An unindexed scan checks its leading FILTERs on the stored bytes**,
+  on any collection (the same `block_pruned_docs`, which returns a
+  `PrunedScan`): the longest run of leading FILTERs that compiles to
+  `TypedFilters` (`compile_unsorted`) is checked on each document, and one
+  it rejects is not decoded. The FILTER clauses still run on what is
+  returned, so the check may keep too much (a document it cannot read is
+  kept) and must never keep too little: `TypedFilters` has to stay what the
+  evaluator answers for the same expression. A FILTER behind one that does
+  not compile is never checked there: the one before it may fail the query
+  on a row this would have dropped. It does nothing under a scan limit
+  (which counts rows before the FILTERs), and steps aside at the same
+  guards. `tests/filter_on_bytes_tests.rs` runs each query with the typed
+  reads on and off (`with_typed_collect`).
 - Blocks are local to a node: not replicated, not in a full sync, not
   dumped. The definition is not replicated either; declare it on each node.
 
