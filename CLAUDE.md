@@ -761,6 +761,7 @@ Rules that keep it sound:
 | Variable | Default | Effect |
 |---|---|---|
 | `SOLIDB_FK_MAX_CASCADE` | 100000 | Documents one delete may cascade into (deleted or nulled) before it is refused. |
+| `SOLIDB_CONSTRAINT_CHECK_SECS` | unset (off) | Seconds between two passes of `storage/constraint_check.rs`: the orphan check of every foreign key and the duplicate check of every unique index, reported as a warning and as `solidb_fk_orphans` / `solidb_unique_duplicates` on `/metrics`. The decision of card #851: constraints hold per node, multi-master stays, what concurrent writes on two nodes leave is detected, not prevented. A pass reads the collections concerned whole. |
 
 ### Counter fields
 

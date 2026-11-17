@@ -9,6 +9,7 @@ pub mod collection;
 pub mod collection_registry;
 pub mod columnar;
 pub(crate) mod columnar_blocks;
+pub mod constraint_check;
 pub mod counters;
 pub mod database;
 pub mod document;

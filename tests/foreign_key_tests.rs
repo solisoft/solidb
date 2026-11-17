@@ -778,3 +778,71 @@ fn a_key_declared_elsewhere_is_stored_as_declared() {
     copies.apply_foreign_key_drop(&key.name).unwrap();
     assert!(copies.foreign_keys().is_empty());
 }
+
+/// Card #963: the periodic constraint check reports what concurrent
+/// writes on two nodes leave behind: an orphan and a unique value held
+/// twice, per collection, for the log and `/metrics`. It reports and
+/// repairs nothing.
+#[test]
+fn the_constraint_check_reports_orphans_and_duplicates() {
+    use solidb::storage::constraint_check;
+    use solidb::storage::foreign_keys::unchecked;
+    use solidb::storage::IndexType;
+    let s = shop(OnDelete::Restrict);
+    s.customers
+        .create_index(
+            "by_email".to_string(),
+            vec!["email".to_string()],
+            IndexType::Persistent,
+            true,
+        )
+        .unwrap();
+    s.orders
+        .insert(json!({"_key": "o1", "customer": "alice"}))
+        .unwrap();
+
+    // Nothing wrong yet.
+    let mine = |found: Vec<constraint_check::Found>| -> Vec<constraint_check::Found> {
+        found.into_iter().filter(|f| f.database == "app").collect()
+    };
+    assert_eq!(mine(constraint_check::sweep(&s.engine)), vec![]);
+
+    // As replication leaves them: a child whose parent was deleted on the
+    // other node, and a unique value both nodes accepted.
+    unchecked(|| {
+        s.orders
+            .upsert_batch(vec![("o2".to_string(), json!({"customer": "gone"}))])
+            .unwrap();
+    });
+    for key in ["twin1", "twin2"] {
+        s.customers
+            .insert_no_index(json!({"_key": key, "email": "same@example.com"}))
+            .unwrap();
+    }
+    let found = mine(constraint_check::sweep(&s.engine));
+    assert_eq!(
+        found,
+        vec![
+            constraint_check::Found {
+                database: "app".to_string(),
+                collection: "customers".to_string(),
+                orphans: 0,
+                duplicates: 1,
+            },
+            constraint_check::Found {
+                database: "app".to_string(),
+                collection: "orders".to_string(),
+                orphans: 1,
+                duplicates: 0,
+            },
+        ]
+    );
+    let metrics = constraint_check::metrics();
+    assert!(metrics.contains("solidb_fk_orphans{database=\"app\",collection=\"orders\"} 1"));
+    assert!(
+        metrics.contains("solidb_unique_duplicates{database=\"app\",collection=\"customers\"} 1")
+    );
+    // Nothing was repaired.
+    assert_eq!(s.orders.count(), 2);
+    assert_eq!(s.customers.count(), 4);
+}

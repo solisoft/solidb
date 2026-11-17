@@ -1264,6 +1264,24 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
         ttl_worker_start.start().await;
     });
 
+    // Foreign keys and unique indexes, looked at on a schedule when asked
+    // for: what concurrent writes on two nodes can leave behind.
+    let constraint_secs = solidb::storage::constraint_check::interval_secs();
+    if constraint_secs > 0 {
+        let checked = Arc::new(storage.clone());
+        tracing::info!("Constraint check every {}s", constraint_secs);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(constraint_secs)).await;
+                let storage = checked.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    solidb::storage::constraint_check::sweep(&storage)
+                })
+                .await;
+            }
+        });
+    }
+
     // Persist vector indexes changed by single-document writes, which only
     // persist on a throttle; this bounds what a crash can lose to ~10 s.
     tokio::spawn(async {

@@ -148,6 +148,9 @@
               <li><code class="text-indigo-300">POST /_api/database/{db}/collection/{name}/foreign-keys/check</code> reports the orphans of a <a href="/docs/foreign-keys" class="text-indigo-400 hover:text-indigo-300">foreign key</a>.</li>
             </ul>
             <p class="text-gray-300 leading-relaxed">
+              With <code class="text-indigo-300">SOLIDB_CONSTRAINT_CHECK_SECS</code> set (for example <code>3600</code>), a node runs both checks on that schedule over every collection that carries a foreign key or a unique index. What it finds is a warning in its log and two gauges on <code>/metrics</code>, <code>solidb_fk_orphans</code> and <code>solidb_unique_duplicates</code>, by database and collection. A pass reads those collections whole: choose an interval to match.
+            </p>
+            <p class="text-gray-300 leading-relaxed">
               If an application cannot tolerate that window, send the writes of a collection that carries a unique index or a foreign key to one node. A <a href="/docs/counters" class="text-indigo-400 hover:text-indigo-300">counter field</a> already works that way: one node numbers, the others refuse the insert.
             </p>
           </div>

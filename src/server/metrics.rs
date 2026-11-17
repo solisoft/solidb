@@ -326,6 +326,10 @@ pub async fn metrics_handler(
         output.push_str(&format!("{} {}\n\n", name, value));
     }
 
+    // What the periodic constraint check last found (nothing when it is
+    // off, or found nothing).
+    output.push_str(&crate::storage::constraint_check::metrics());
+
     output.push_str("# HELP solidb_cf_op_seconds_total Wall time spent inside column-family creates and drops\n");
     output.push_str("# TYPE solidb_cf_op_seconds_total counter\n");
     output.push_str(&format!(

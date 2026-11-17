@@ -1082,6 +1082,11 @@ kubectl -n solidb get pods -w</pre>
                       <td class="p-3">Directory that <code class="text-amber-400">POST /_api/backup</code> checkpoints are written under; a requested path must stay inside it. A checkpoint hard-links SST files, so it must be on the same filesystem as the data.</td>
                     </tr>
                     <tr>
+                      <td class="p-3 font-mono text-indigo-400">SOLIDB_CONSTRAINT_CHECK_SECS</td>
+                      <td class="p-3">unset (off)</td>
+                      <td class="p-3">Seconds between two passes of the <a href="/docs/cluster#constraints" class="text-indigo-400">constraint check</a>: orphans of foreign keys and unique values held twice, reported in the log and on <code>/metrics</code>. A pass reads every collection that carries a foreign key or a unique index.</td>
+                    </tr>
+                    <tr>
                       <td class="p-3 font-mono text-indigo-400">SOLIDB_SYNC_LOG_KEEP_SECS</td>
                       <td class="p-3">unset</td>
                       <td class="p-3">Keeps the replication log's entries that many seconds, whatever the peers have received, and writes the log from the start even with no peer: the history a <a href="/docs/tooling" class="text-indigo-400">point-in-time restore</a> replays over a checkpoint. A second log write per document write.</td>
