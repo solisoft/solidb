@@ -873,6 +873,17 @@ Rules that keep it sound:
   takes the same counter off the target, loads the documents with their
   numbers and declares it afterwards.
 
+### A replicated document is its origin's
+
+The replication worker and the cluster manager store a peer's document
+with `Collection::upsert_replicated`, which keeps the `_rev`, `_created_at`
+and `_updated_at` of the payload (`OriginStamp`, `collection/crud.rs`);
+`upsert_batch` gives new ones, which is right for a client's upsert and
+was wrong for a replica (the same document had a revision per node, card
+#853). A new path that applies a peer's document goes through
+`upsert_replicated`. Entries of two origins are still applied in arrival
+order: nothing compares these dates yet.
+
 ### What a joining node replays after its full sync
 
 A node that joins asks one peer for a full sync, then pulls every peer's

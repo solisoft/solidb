@@ -116,6 +116,42 @@ impl Written {
     }
 }
 
+/// The revision and timestamps a replicated document arrives with.
+struct OriginStamp {
+    rev: String,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl OriginStamp {
+    /// `None` when the payload carries no `_rev`: it is not a whole
+    /// document as its origin stored it.
+    fn of(data: &Value) -> Option<Self> {
+        let rev = data.get("_rev")?.as_str()?.to_string();
+        let parse = |field: &str| {
+            data.get(field)
+                .and_then(Value::as_str)
+                .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+                .map(|at| at.with_timezone(&chrono::Utc))
+        };
+        Some(Self {
+            rev,
+            created_at: parse("_created_at"),
+            updated_at: parse("_updated_at"),
+        })
+    }
+
+    fn stamp(self, doc: &mut Document) {
+        doc.rev = self.rev;
+        if let Some(at) = self.created_at {
+            doc.created_at = at;
+        }
+        if let Some(at) = self.updated_at {
+            doc.updated_at = at;
+        }
+    }
+}
+
 impl Collection {
     // ==================== Basic CRUD ====================
 
@@ -1209,6 +1245,24 @@ impl Collection {
     /// Existing documents are merged (`Document::update`), new ones created.
     /// Returns the number of documents written.
     pub fn upsert_batch(&self, documents: Vec<(String, Value)>) -> DbResult<usize> {
+        self.upsert_batch_as(documents, false)
+    }
+
+    /// [`Self::upsert_batch`] for documents another node wrote: each keeps
+    /// the `_rev`, `_created_at` and `_updated_at` it arrives with, where
+    /// `upsert_batch` gives new ones. A replica then holds the document its
+    /// origin holds, revision included, and what it stores says when the
+    /// document was written rather than when it was applied (card #853).
+    /// A payload without a `_rev` is stored as `upsert_batch` stores it.
+    pub fn upsert_replicated(&self, documents: Vec<(String, Value)>) -> DbResult<usize> {
+        self.upsert_batch_as(documents, true)
+    }
+
+    fn upsert_batch_as(
+        &self,
+        documents: Vec<(String, Value)>,
+        replicated: bool,
+    ) -> DbResult<usize> {
         if documents.is_empty() {
             return Ok(0);
         }
@@ -1238,10 +1292,21 @@ impl Collection {
                 obj.insert("_key".to_string(), Value::String(key.clone()));
             }
 
+            // What the origin stamped the document with, read before the
+            // merge below drops the system attributes.
+            let origin = if replicated {
+                OriginStamp::of(&data)
+            } else {
+                None
+            };
+
             // The same key twice in one batch builds on the pending version,
             // so the index diff below is still taken against what is on disk.
             if let Some(&i) = positions.get(&key) {
                 pending[i].2.update(data);
+                if let Some(origin) = origin {
+                    origin.stamp(&mut pending[i].2);
+                }
                 continue;
             }
 
@@ -1257,6 +1322,10 @@ impl Collection {
                 }
                 None => (None, Document::with_key(&self.name, key.clone(), data)),
             };
+            let mut doc = doc;
+            if let Some(origin) = origin {
+                origin.stamp(&mut doc);
+            }
             positions.insert(key.clone(), pending.len());
             pending.push((key, old_value, doc, existed));
         }

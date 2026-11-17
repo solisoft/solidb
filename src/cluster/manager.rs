@@ -489,7 +489,7 @@ impl ClusterManager {
                                 }
 
                                 let doc_count = docs_to_apply.len();
-                                let _ = crate::storage::foreign_keys::unchecked(|| collection.upsert_batch(docs_to_apply));
+                                let _ = crate::storage::foreign_keys::unchecked(|| collection.upsert_replicated(docs_to_apply));
                                 tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
                             }
                         }

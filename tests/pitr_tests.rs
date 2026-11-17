@@ -350,6 +350,26 @@ async fn a_checkpoint_and_its_log_restore_the_data_of_an_instant() {
     .map(|(key, v)| (key.to_string(), json!(v)))
     .collect();
     assert_eq!(things(&restored), wanted);
+    // Each document is the one its origin held: same revision, same
+    // dates (card #853). `k3` was updated after the instant.
+    let stamps = |engine: &StorageEngine, key: &str| {
+        let doc = engine
+            .get_database("_system")
+            .unwrap()
+            .get_collection("things")
+            .unwrap()
+            .get(key)
+            .unwrap()
+            .to_value();
+        (
+            doc["_rev"].clone(),
+            doc["_created_at"].clone(),
+            doc["_updated_at"].clone(),
+        )
+    };
+    for key in ["k1", "k4", "k6", "k8"] {
+        assert_eq!(stamps(&restored, key), stamps(&engine, key), "{key}");
+    }
     let later = restored
         .get_database("_system")
         .unwrap()

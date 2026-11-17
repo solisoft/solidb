@@ -811,7 +811,7 @@ impl SyncWorker {
                                 };
 
                             if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
-                                coll.upsert_batch(batch_data)
+                                coll.upsert_replicated(batch_data)
                             }) {
                                 warn!(
                                     "apply_batch: upsert failed for {}.{}: {}",
@@ -952,7 +952,7 @@ impl SyncWorker {
                                 };
 
                             if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
-                                coll.upsert_batch(vec![(entry.document_key.clone(), doc)])
+                                coll.upsert_replicated(vec![(entry.document_key.clone(), doc)])
                             }) {
                                 warn!(
                                     "apply_entry: upsert failed for {}: {}",
@@ -1418,7 +1418,7 @@ impl SyncWorker {
                         if let Ok(db) = self.storage.get_database(&database) {
                             if let Ok(coll) = db.system_collection(&collection) {
                                 if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
-                                    coll.upsert_batch(keyed)
+                                    coll.upsert_replicated(keyed)
                                 }) {
                                     warn!(
                                         "Full sync: upsert into {}.{} failed: {}",
