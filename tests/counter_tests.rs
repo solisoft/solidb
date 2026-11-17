@@ -628,3 +628,53 @@ fn transactions_and_plain_inserts_share_the_count() {
     assert_eq!(found, expected);
     assert_eq!(found.len(), s.invoices.count());
 }
+
+/// `Collection::replace_batch` (card #932): a replaced document keeps the
+/// number it has, whether or not the new body carries it, and a body that
+/// carries another number is refused with nothing written.
+#[test]
+fn a_batch_of_replacements_keeps_the_numbers() {
+    let s = shop(json!({"field": "number"}));
+    for key in ["a", "b", "c"] {
+        s.invoices.insert(json!({"_key": key, "total": 1})).unwrap();
+    }
+    assert_eq!(numbers(&s.invoices), vec![1, 2, 3]);
+
+    let replaced = s
+        .invoices
+        .replace_batch(&[
+            ("a".to_string(), json!({"total": 10})),
+            ("b".to_string(), json!({"total": 20, "number": 2})),
+        ])
+        .unwrap();
+    assert_eq!(replaced.len(), 2);
+    assert_eq!(numbers(&s.invoices), vec![1, 2, 3]);
+    let a = s.invoices.get("a").unwrap().to_value();
+    assert_eq!(
+        (a["number"].clone(), a["total"].clone()),
+        (json!(1), json!(10))
+    );
+
+    let refused = s.invoices.replace_batch(&[
+        ("a".to_string(), json!({"total": 11})),
+        ("c".to_string(), json!({"total": 30, "number": 9})),
+    ]);
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(s.invoices.get("a").unwrap().to_value()["total"], json!(10));
+    assert_eq!(numbers(&s.invoices), vec![1, 2, 3]);
+
+    // A key that is not stored fails the batch whole.
+    let missing = s.invoices.replace_batch(&[
+        ("a".to_string(), json!({"total": 12})),
+        ("nope".to_string(), json!({"total": 1})),
+    ]);
+    assert!(
+        matches!(missing, Err(DbError::DocumentNotFound(_))),
+        "{missing:?}"
+    );
+    assert_eq!(s.invoices.get("a").unwrap().to_value()["total"], json!(10));
+
+    // And a new document after them takes the next number.
+    let next = s.invoices.insert(json!({"total": 5})).unwrap();
+    assert_eq!(next.to_value()["number"], json!(4));
+}

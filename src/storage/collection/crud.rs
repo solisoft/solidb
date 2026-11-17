@@ -103,6 +103,15 @@ impl Collection {
         Ok(doc)
     }
 
+    /// Whether a document is stored under `key`, without decoding it.
+    pub fn holds(&self, key: &str) -> DbResult<bool> {
+        let cf = self.live_cf()?;
+        self.db
+            .get_pinned_ks(&cf, Self::doc_key(key))
+            .map(|bytes| bytes.is_some())
+            .map_err(|e| DbError::InternalError(format!("Failed to get document: {}", e)))
+    }
+
     /// [`Self::get`] as the API value (`Document::to_value`), decoded straight
     /// from the stored bytes: no `Document`, and no timestamp parse and
     /// re-format. For callers that only return the document.
@@ -1418,6 +1427,32 @@ impl Collection {
         &self,
         updates: &[(&str, &Value, Option<&str>)],
     ) -> DbResult<(Vec<Document>, Vec<usize>)> {
+        self.write_existing_batch(updates, false)
+    }
+
+    /// Replaces stored documents wholesale, as one write: all of them or
+    /// none. Each body takes the place of the document under its key, as
+    /// [`Self::insert_or_replace`] does for a key that exists: attributes
+    /// the body does not hold are removed, `_created_at` and the numbers of
+    /// counter fields are kept, `_rev` and `_updated_at` renewed. A key that
+    /// is not stored fails the batch with `DocumentNotFound`. The same
+    /// schema, unique, foreign-key and counter checks as a batch update, the
+    /// same index maintenance and change events.
+    pub fn replace_batch(&self, bodies: &[(String, Value)]) -> DbResult<Vec<Document>> {
+        let guarded: Vec<(&str, &Value, Option<&str>)> =
+            bodies.iter().map(|(k, v)| (k.as_str(), v, None)).collect();
+        self.write_existing_batch(&guarded, true)
+            .map(|(docs, _)| docs)
+    }
+
+    /// The batch behind [`Self::update_batch_guarded`] (`replace` false:
+    /// each value is merged into its document) and [`Self::replace_batch`]
+    /// (`replace` true: each value is the document's new body).
+    fn write_existing_batch(
+        &self,
+        updates: &[(&str, &Value, Option<&str>)],
+        replace: bool,
+    ) -> DbResult<(Vec<Document>, Vec<usize>)> {
         if updates.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
@@ -1441,6 +1476,9 @@ impl Collection {
         // on its pending version; its index diff is still against the disk.
         // (key, value on disk, updated document)
         let mut pending: Vec<(String, Value, Document)> = Vec::new();
+        // What each pending document reads as, kept from this pass: building
+        // it again for the next one was a fifth of the batch.
+        let mut new_values: Vec<Value> = Vec::new();
         let mut positions: HashMap<String, usize> = HashMap::new();
         let mut moved: Vec<usize> = Vec::new();
 
@@ -1484,7 +1522,21 @@ impl Collection {
                 None
             };
 
-            doc.update(changes.clone());
+            if replace {
+                // A new document under the same key, as `insert_or_replace`
+                // makes one: what the body does not hold is gone, the
+                // creation date and the counters' numbers stay.
+                let mut body = changes.clone();
+                if let Some(obj) = body.as_object_mut() {
+                    obj.remove("_key");
+                }
+                let mut replacement = Document::with_key(&self.name, key.to_string(), body);
+                replacement.created_at = doc.created_at;
+                self.keep_numbers(&doc.data, &mut replacement.data)?;
+                doc = replacement;
+            } else {
+                doc.update(changes.clone());
+            }
             let new_value = doc.to_value();
 
             // Validate edge documents after update
@@ -1500,10 +1552,14 @@ impl Collection {
             }
 
             match (existing, old_value) {
-                (Some(i), _) => pending[i].2 = doc,
+                (Some(i), _) => {
+                    pending[i].2 = doc;
+                    new_values[i] = new_value;
+                }
                 (None, Some(old_value)) => {
                     positions.insert(key.to_string(), pending.len());
                     pending.push((key.to_string(), old_value, doc));
+                    new_values.push(new_value);
                 }
                 (None, None) => unreachable!("old_value is set whenever existing is None"),
             }
@@ -1514,7 +1570,6 @@ impl Collection {
         }
 
         // Pass 2: claim unique values under their stripes (audit D4).
-        let new_values: Vec<Value> = pending.iter().map(|(_, _, doc)| doc.to_value()).collect();
         for ((key, old_value, _), new_value) in pending.iter().zip(&new_values) {
             self.numbers_unchanged(old_value, new_value)?;
             self.check_references(key, new_value, Some(old_value), |_| false)?;
@@ -1590,13 +1645,27 @@ impl Collection {
         self.persist_vector_indexes_throttled();
 
         // Send Change Events
-        for (key, old_data, new_data) in change_events {
-            let _ = self.emit_change(ChangeEvent {
-                type_: ChangeType::Update,
-                key,
-                data: Some(new_data),
-                old_data: Some(old_data),
-            });
+        let event = |(key, old_data, new_data): (String, Value, Value)| ChangeEvent {
+            type_: ChangeType::Update,
+            key,
+            data: Some(new_data),
+            old_data: Some(old_data),
+        };
+        if change_events.len() == 1 {
+            // One document: what traversals keep is forgotten for it alone.
+            for change in change_events {
+                let _ = self.emit_change(event(change));
+            }
+        } else {
+            // A batch: caches are dropped once for them all, as a batch of
+            // deletes does, and the events are built only for a subscriber.
+            // One announcement per document was a seventh of the batch.
+            let keys: Vec<String> = change_events
+                .iter()
+                .map(|(key, _, _)| key.clone())
+                .collect();
+            let span = key_span(keys.iter().map(String::as_str));
+            self.publish_changes(span, false, || change_events.into_iter().map(event));
         }
 
         Ok((updated_docs, moved))

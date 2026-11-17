@@ -743,6 +743,90 @@ impl<'a> QueryExecutor<'a> {
         )
     }
 
+    /// `INSERT … OPTIONS {overwrite: true}` over several rows, written as
+    /// batches instead of row by row (card #932): the documents whose key
+    /// is not stored as one insert, then those whose key is stored as one
+    /// replacement. Each row used to read the stored document whole, make
+    /// its own write and its own entry in the replication log.
+    ///
+    /// `None` when the statement is not one this takes, and for a race it
+    /// leaves to the row path, which the caller then runs: nothing has been
+    /// written. Otherwise the documents inserted and replaced.
+    pub(super) fn insert_replacing_in_batches(
+        &self,
+        collection: &Collection,
+        collection_name: &str,
+        document: &Expression,
+        options: &MutationOptions,
+        rows: &[super::super::Context],
+    ) -> DbResult<Option<(usize, usize)>> {
+        let replaces = MutationOptions {
+            overwrite_mode: Some(OverwriteMode::Replace),
+            ..MutationOptions::default()
+        };
+        // Rows that may read each other's writes go one at a time, as for a
+        // plain INSERT.
+        let batched = rows.len() > BATCH_ALWAYS || (rows.len() > 1 && !reads_stored_data(document));
+        if self.tx_writer.is_some() || *options != replaces || !batched {
+            return Ok(None);
+        }
+
+        let mut fresh: Vec<Value> = Vec::new();
+        let mut bodies: Vec<(String, Value)> = Vec::new();
+        let mut keys = std::collections::HashSet::new();
+        for ctx in rows {
+            let value = self.evaluate_expr_with_context(document, ctx)?;
+            let Some(key) = value
+                .get("_key")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            else {
+                fresh.push(value);
+                continue;
+            };
+            // The same key twice: the second replaces what the first wrote,
+            // which only one row after the other does.
+            if !keys.insert(key.clone()) {
+                return Ok(None);
+            }
+            if collection.holds(&key)? {
+                bodies.push((key.clone(), replacement_body(value, &key, "INSERT")?));
+            } else {
+                fresh.push(value);
+            }
+        }
+
+        // The inserts first: a key taken since it was looked up refuses the
+        // whole batch, and the statement goes row by row with nothing
+        // written.
+        let inserted = match collection.insert_batch(fresh) {
+            Ok(docs) => docs,
+            Err(e) if is_key_conflict(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        self.log_mutations_async(collection_name, Operation::Insert, &inserted);
+
+        let mut replaced = 0;
+        match collection.replace_batch(&bodies) {
+            Ok(docs) => {
+                replaced += docs.len();
+                self.log_mutations_async(collection_name, Operation::Update, &docs);
+            }
+            // One was removed since it was looked up, and the batch wrote
+            // nothing: each body goes the way a row does, which inserts it.
+            Err(DbError::DocumentNotFound(_)) => {
+                for (_, body) in bodies {
+                    let write =
+                        self.write_insert_row(collection, collection_name, body, options, false)?;
+                    replaced += usize::from(write.updated);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        let inserted = rows.len() - replaced;
+        Ok(Some((inserted, replaced)))
+    }
+
     fn plain_insert(
         &self,
         collection: &Collection,

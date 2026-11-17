@@ -703,6 +703,23 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // `overwrite: true` with nothing else to decide per row:
+                    // one insert and one replacement, not a write per row.
+                    if !insert_clause.binds_new && !insert_clause.binds_old {
+                        if let Some((inserted, replaced)) = self.insert_replacing_in_batches(
+                            &collection,
+                            &insert_clause.collection,
+                            &insert_clause.document,
+                            &insert_clause.options,
+                            &rows,
+                        )? {
+                            stats.documents_inserted += inserted;
+                            stats.documents_updated += replaced;
+                            i += 1;
+                            continue;
+                        }
+                    }
+
                     if per_row {
                         // OPTIONS (overwriteMode, ignoreErrors) decide per row.
                         let input = std::mem::take(&mut rows);

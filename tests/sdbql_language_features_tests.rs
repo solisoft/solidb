@@ -970,3 +970,185 @@ fn a_traversal_starts_from_an_id_or_a_document() {
         "{not_a_vertex}"
     );
 }
+
+// ---- Card #932: `INSERT … OPTIONS {overwrite: true}` over several rows is
+// ---- written as batches. `RETURN NEW` keeps a statement on the row path,
+// ---- which is what each result is compared with.
+
+/// Two collections with the same rows: twenty documents with an attribute
+/// the statements below do not write, a unique index and a plain one.
+fn overwrite_fixture(engine: &StorageEngine) {
+    use solidb::storage::IndexType;
+    for name in ["batched", "by_row"] {
+        engine.create_collection(name.to_string(), None).unwrap();
+        let c = engine.get_collection(name).unwrap();
+        for i in 1..=20 {
+            c.insert(json!({"_key": format!("k{i}"), "v": 0, "u": format!("u{i}"), "old": true}))
+                .unwrap();
+        }
+        c.create_index(
+            "by_u".to_string(),
+            vec!["u".to_string()],
+            IndexType::Persistent,
+            true,
+        )
+        .unwrap();
+        c.create_index(
+            "by_v".to_string(),
+            vec!["v".to_string()],
+            IndexType::Persistent,
+            false,
+        )
+        .unwrap();
+    }
+}
+
+/// What a collection holds, without what differs from one write to another.
+fn stored(engine: &StorageEngine, name: &str) -> Vec<Value> {
+    run(
+        engine,
+        &format!("FOR d IN {name} SORT d._key RETURN UNSET(d, '_id', '_rev', '_updated_at', '_created_at')"),
+    )
+}
+
+fn mutations(engine: &StorageEngine, q: &str) -> (usize, usize) {
+    let query = parse(q).unwrap_or_else(|e| panic!("parse failed for {q}: {e:?}"));
+    let result = QueryExecutor::new(engine)
+        .execute_with_stats(&query)
+        .unwrap_or_else(|e| panic!("query failed for {q}: {e:?}"));
+    (
+        result.mutations.documents_inserted,
+        result.mutations.documents_updated,
+    )
+}
+
+#[test]
+fn an_overwriting_insert_in_batches_writes_what_row_by_row_writes() {
+    let (engine, _tmp) = engine();
+    overwrite_fixture(&engine);
+    let created = |name: &str| {
+        run(
+            &engine,
+            &format!("FOR d IN {name} SORT d._key RETURN [d._key, d._created_at]"),
+        )
+    };
+    let before = created("batched");
+
+    // Keys k11..k150: ten stored, a hundred and thirty new, and thirty
+    // rows without a key.
+    let statement = |name: &str, tail: &str| {
+        format!(
+            "FOR i IN 11..180 \
+             LET doc = i <= 150 ? {{_key: CONCAT('k', i), v: i, u: CONCAT('n', i)}} : {{v: i, u: CONCAT('n', i)}} \
+             INSERT doc INTO {name} OPTIONS {{overwrite: true}} {tail}"
+        )
+    };
+    assert_eq!(mutations(&engine, &statement("batched", "")), (160, 10));
+    assert_eq!(
+        mutations(&engine, &statement("by_row", "RETURN NEW._key")),
+        (160, 10)
+    );
+
+    // The same documents but for the keys the server made up.
+    let keyed = |name: &str| -> Vec<Value> {
+        stored(&engine, name)
+            .into_iter()
+            .filter(|d| d["_key"].as_str().is_some_and(|k| k.starts_with('k')))
+            .collect()
+    };
+    assert_eq!(keyed("batched"), keyed("by_row"));
+    assert_eq!(keyed("batched").len(), 150);
+    assert_eq!(stored(&engine, "batched").len(), 180);
+    // A replaced document lost the attribute the statement did not write
+    // and kept its creation date; one that was not touched kept both.
+    assert_eq!(
+        one(&engine, "RETURN DOCUMENT('batched/k15')")["old"],
+        Value::Null
+    );
+    assert_eq!(
+        one(&engine, "RETURN DOCUMENT('batched/k5').old"),
+        json!(true)
+    );
+    let after = created("batched");
+    assert_eq!(&after[..20].len(), &20);
+    for row in &before {
+        assert!(after.contains(row), "{row} kept its creation date");
+    }
+    // The indexes follow: old values gone, new ones found, on both.
+    for name in ["batched", "by_row"] {
+        assert_eq!(
+            run(
+                &engine,
+                &format!("FOR d IN {name} FILTER d.u == 'u15' RETURN d._key")
+            ),
+            Vec::<Value>::new()
+        );
+        assert_eq!(
+            run(
+                &engine,
+                &format!("FOR d IN {name} FILTER d.u == 'n15' RETURN d._key")
+            ),
+            vec![json!("k15")]
+        );
+        assert_eq!(
+            one(
+                &engine,
+                &format!("RETURN LENGTH(FOR d IN {name} FILTER d.v == 0 RETURN 1)")
+            ),
+            json!(10)
+        );
+        assert_eq!(
+            run(
+                &engine,
+                &format!("FOR d IN {name} FILTER d.v == 170 RETURN d.u")
+            ),
+            vec![json!("n170")]
+        );
+    }
+}
+
+#[test]
+fn an_overwriting_insert_in_batches_refuses_what_row_by_row_refuses() {
+    let (engine, _tmp) = engine();
+    overwrite_fixture(&engine);
+    let before = stored(&engine, "batched");
+
+    // A unique value another stored document holds: nothing is replaced.
+    let taken = run_err(
+        &engine,
+        "FOR i IN 1..5 INSERT {_key: CONCAT('k', i), u: 'u9'} INTO batched OPTIONS {overwrite: true}",
+    );
+    assert!(taken.contains("Unique constraint"), "{taken}");
+    assert_eq!(stored(&engine, "batched"), before);
+
+    // Two rows of the statement sharing one.
+    let shared = run_err(
+        &engine,
+        "FOR i IN 1..5 INSERT {_key: CONCAT('k', i), u: 'same'} INTO batched OPTIONS {overwrite: true}",
+    );
+    assert!(shared.contains("Unique constraint"), "{shared}");
+    assert_eq!(stored(&engine, "batched"), before);
+}
+
+#[test]
+fn an_overwriting_insert_that_names_a_key_twice_keeps_the_last() {
+    let (engine, _tmp) = engine();
+    overwrite_fixture(&engine);
+    // Left to the row path: the second row replaces what the first wrote.
+    for name in ["batched", "by_row"] {
+        let tail = if name == "by_row" {
+            "RETURN NEW._key"
+        } else {
+            ""
+        };
+        run(
+            &engine,
+            &format!(
+                "FOR i IN 1..6 INSERT {{_key: CONCAT('k', i % 3), v: i, u: CONCAT('d', i)}} INTO {name} OPTIONS {{overwrite: true}} {tail}"
+            ),
+        );
+    }
+    assert_eq!(stored(&engine, "batched"), stored(&engine, "by_row"));
+    assert_eq!(one(&engine, "RETURN DOCUMENT('batched/k1').v"), json!(4));
+    assert_eq!(one(&engine, "RETURN DOCUMENT('batched/k0').v"), json!(6));
+}
