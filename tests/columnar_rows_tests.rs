@@ -274,3 +274,59 @@ fn explain_says_how_a_columnar_collection_is_read() {
         plan.warnings
     );
 }
+
+/// Card #896: no read of a columnar collection consults a row policy. One
+/// declared on its name used to answer "collection not found", and one
+/// declared on the collection that backs it was stored and never applied.
+/// Both are refused, and say why.
+#[test]
+fn a_row_policy_on_a_columnar_collection_is_refused() {
+    use solidb::sdbql::QueryPrincipal;
+    let (engine, _col, _dir) = fixture();
+    let admin = QueryPrincipal {
+        user: "root".into(),
+        roles: vec!["admin".into()],
+        can_read: true,
+        can_write: true,
+        can_admin: true,
+        admin_of_database: false,
+    };
+    let ask = |query: &str| {
+        QueryExecutor::with_database(&engine, "app".to_string())
+            .with_principal(admin.clone())
+            .execute(&parse(query).expect("query parses"))
+            .map_err(|e| e.to_string())
+    };
+    for name in ["m", "_columnar_m"] {
+        for query in [
+            format!("RETURN ROW_POLICY('{name}', 'doc.host == CURRENT_USER')"),
+            format!("RETURN ROW_POLICY('{name}', null)"),
+            format!("RETURN ROW_POLICY('{name}')"),
+        ] {
+            let refused = ask(&query).unwrap_err();
+            assert!(
+                refused.contains("'m' is a columnar collection"),
+                "{query}: {refused}"
+            );
+            assert!(refused.contains("row policies do not apply"), "{refused}");
+        }
+    }
+    // Nothing was stored on the backing collection.
+    let backing = engine
+        .get_database("app")
+        .unwrap()
+        .system_collection("_columnar_m")
+        .unwrap();
+    assert_eq!(backing.get_row_policy(), None);
+    // A document collection takes one as before.
+    assert_eq!(
+        ask("RETURN ROW_POLICY('d', 'doc.host == CURRENT_USER')")
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        ask("RETURN ROW_POLICY('d')").unwrap(),
+        vec![json!("doc.host == CURRENT_USER")]
+    );
+}

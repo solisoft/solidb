@@ -1366,6 +1366,18 @@ impl<'a> QueryExecutor<'a> {
                 let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
                     DbError::ExecutionError("ROW_POLICY: collection must be a string".to_string())
                 })?;
+                // A columnar collection's rows are not documents: no read
+                // of them consults a policy. Declared on its name the
+                // answer used to be "collection not found", and on the
+                // collection that backs it (`_columnar_<name>`) the policy
+                // was stored and never applied (card #896).
+                let columnar = coll_name.strip_prefix("_columnar_").unwrap_or(coll_name);
+                if self.columnar_database(columnar).is_some() {
+                    return Err(DbError::OperationNotSupported(format!(
+                        "'{columnar}' is a columnar collection: row policies do not apply to \
+                         it, and whoever may read the database reads all of its rows"
+                    )));
+                }
                 let collection = self.get_collection(coll_name)?;
                 if evaluated_args.len() == 1 {
                     return Ok(collection

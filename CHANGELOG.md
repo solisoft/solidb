@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- **A row policy on a columnar collection is refused.** No read of a columnar collection consults a row policy. `ROW_POLICY("metrics", …)` answered `404 CollectionNotFound`, which said nothing of why, and `ROW_POLICY("_columnar_metrics", …)`, on the collection that backs it, was stored and never applied: an administrator who declared it had no reason to think the rows were open. Both are now refused: `'metrics' is a columnar collection: row policies do not apply to it, and whoever may read the database reads all of its rows`. The columnar page says so, and that its writes send no change event.
+
 - **A JSON schema reaches the other nodes, and a dump.** A schema set on one node stayed on that node: a peer written to directly stored what the origin refused, a node that joined had none, and a dump did not hold it. A schema (and the field rules) set or removed over HTTP is now replicated, sent with the collection's indexes to a node that joins by full sync, written by `solidb-dump` and declared by `solidb-restore` once the documents are in. A replicated write is not checked against either: the origin accepted it, and it may be older than the schema.
 
 - **A JSON schema is checked in a transaction and in an import in upsert mode.** A collection's schema was checked by an insert, an update and SDBQL, and not by the writes of a transaction (`POST …/transaction/{id}/…`, the driver's transactions) nor by `Collection::upsert_batch` (an import with `mode=upsert`): both stored a document a plain insert refused. The statement that breaks the schema is now refused when it is staged, with the same `400 Schema validation failed`, and the transaction goes on.
