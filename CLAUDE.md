@@ -1233,6 +1233,17 @@ Rules that keep it sound:
   columnar collection under a shared name, and the other is out of
   reach. A replicated creation is not refused (`foreign_keys::unchecked`).
   A new way to create a collection has to make the same check.
+- **The first rows of each partition** (`columnar_top.rs`):
+  `FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY <columns> ORDER BY
+  <columns>) FILTER n <= k` keeps, per block and per partition, the `k`
+  rows that come first (compared in the arrays, ties by row), then
+  compares those across blocks as the evaluator does (`compare_values`,
+  `values_equal`) and returns them in the order of the rows with their
+  numbers. It must stay what `window.rs` answers over every row — a
+  stable sort, the earlier row first among equals, null below every
+  value — which `columnar_rows_tests` checks against the ordinary path.
+  It steps aside for a row policy, rows out of id order, a column of
+  several kinds and a collection larger than what is kept.
 - **A row policy on a columnar collection** is kept on the collection
   that backs it (`Database::columnar_row_policy`; `ROW_POLICY` takes
   either name) and `row_policy_gate` reads it there. Every SDBQL read

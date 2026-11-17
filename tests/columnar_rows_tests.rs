@@ -369,3 +369,75 @@ fn a_row_policy_on_a_columnar_collection_is_applied() {
         assert_eq!(both(&reader), open);
     }
 }
+
+/// Card #953: the first rows of each partition (`ROW_NUMBER() OVER …` then
+/// `FILTER n <= k`) are found in the column arrays, and are those a
+/// document collection holding the same rows returns: same rows, same
+/// numbers, same order, ties and nulls included.
+#[test]
+fn the_first_rows_of_each_partition_come_from_the_arrays() {
+    let (engine, _col, _dir) = fixture();
+    let found = || {
+        solidb::storage::columnar::FIRST_ROWS_FROM_ARRAYS.load(std::sync::atomic::Ordering::Relaxed)
+    };
+    let queries = [
+        // (query over `c`, whether the arrays answer it)
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.v DESC) FILTER n <= 3 RETURN [r.host, r.v, n]", true),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.ms) FILTER n < 4 RETURN [r.host, r.ms, r.v, n]", true),
+        // Ties (a boolean has two values): the earlier row first.
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.ok DESC) FILTER n <= 5 RETURN [r.host, r.v, n]", true),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.ok, r.host ORDER BY r.n DESC, r.v) FILTER n == 1 RETURN [r.ok, r.host, r.n, n]", true),
+        // No partition; a partition that holds nulls; a string order.
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (ORDER BY r.ms DESC, r.v) FILTER n <= 7 RETURN [r.v, n]", true),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.n ORDER BY r.host DESC, r.v DESC) FILTER n <= 2 SORT r.v LIMIT 30 RETURN [r.n, r.host, r.v, n]", true),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.v) FILTER n <= 2 RETURN r", true),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.v DESC) FILTER n <= 2 COLLECT h = r.host AGGREGATE s = SUM(r.v) RETURN [h, s]", true),
+        // Left to the rows: another function, an expression, a filter on
+        // something else.
+        ("FOR r IN c LET n = RANK() OVER (PARTITION BY r.host ORDER BY r.ok) FILTER n <= 1 COLLECT WITH COUNT INTO k RETURN k", false),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.v % 5 ORDER BY r.v) FILTER n <= 2 RETURN [r.v, n]", false),
+        ("FOR r IN c LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.v) FILTER n >= 2850 RETURN [r.v, n]", false),
+    ];
+    // The ordinary path over the same collection: every row built and
+    // numbered.
+    let ordinary = |query: &str| {
+        QueryExecutor::with_database(&engine, "app".to_string())
+            .with_streaming_collect(false)
+            .execute(&parse(query).expect("query parses"))
+            .expect("query runs")
+    };
+    let sorted = |mut rows: Vec<Value>| {
+        rows.sort_by_key(|row| row.to_string());
+        rows
+    };
+    for (query, from_arrays) in queries {
+        let over_m = query.replace(" IN c ", " IN m ");
+        let before = found();
+        let columnar = run(&engine, &over_m, &[]);
+        assert_eq!(found() > before, from_arrays, "{query}");
+        assert!(!columnar.is_empty(), "{query}");
+        // The same rows, numbers and order as the ordinary path.
+        let before = found();
+        assert_eq!(columnar, ordinary(&over_m), "{query}");
+        assert_eq!(
+            found(),
+            before,
+            "{query}: the ordinary path was not the one compared with"
+        );
+        // And, where no two rows of a partition are equal by the ORDER BY,
+        // the rows a document collection returns (it reads in the order
+        // of its keys, so ties fall otherwise and the rows come otherwise).
+        let unique = query.contains("r.v)") || query.contains("r.v DESC)");
+        if unique && !query.contains("RETURN r ") && !query.ends_with("RETURN r") {
+            let documents = run(&engine, &query.replace(" IN c ", " IN d "), &[]);
+            assert_eq!(sorted(columnar), sorted(documents), "{query}");
+        }
+    }
+    // The bound as a bind variable.
+    let bound = run(
+        &engine,
+        "FOR r IN m LET n = ROW_NUMBER() OVER (PARTITION BY r.host ORDER BY r.v DESC) FILTER n <= @k RETURN n",
+        &[("k", json!(2))],
+    );
+    assert_eq!(bound.len(), 14);
+}

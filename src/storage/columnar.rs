@@ -215,6 +215,12 @@ pub static WINDOWED_READS: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 pub static BLOCKS_FOLDED_AS_ROWS: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
+/// Queries whose first rows per partition (`ROW_NUMBER() OVER … FILTER n <=
+/// k`) were found in the column arrays: for tests that the arrays, and not
+/// the rows, answered.
+pub static FIRST_ROWS_FROM_ARRAYS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// Bytes of decoded blocks kept for every columnar collection of the
 /// process, as [`ColBlock::bytes`] counts them.
 pub fn decoded_blocks_kept() -> usize {

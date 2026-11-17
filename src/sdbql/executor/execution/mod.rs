@@ -23,6 +23,7 @@ mod clauses;
 mod collect;
 mod columnar_rows;
 mod columnar_scan;
+mod columnar_top;
 mod entry;
 mod graph;
 mod graph_rag;
