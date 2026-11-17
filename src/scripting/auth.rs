@@ -21,6 +21,13 @@ pub struct ScriptUser {
     pub scoped_databases: Option<Vec<String>>,
     /// Token expiration timestamp
     pub exp: Option<u64>,
+    /// Holds the Admin action on the database the script runs in without
+    /// being a global admin (a role limited to that database, `admin@db`).
+    /// Resolved by whoever builds the user, since a role name alone does not
+    /// say it. It opens that database's admin-write tier (`_jobs`) to the
+    /// script's writes and nothing else: `has_role` does not read it.
+    #[serde(default)]
+    pub admin_of_database: bool,
 }
 
 impl ScriptUser {
@@ -32,6 +39,7 @@ impl ScriptUser {
             authenticated: false,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         }
     }
 
@@ -196,6 +204,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         };
 
         assert!(user.has_role("editor"));
@@ -211,6 +220,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         };
 
         assert!(admin.has_role("admin"));
@@ -235,6 +245,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: Some(1735689600),
+            admin_of_database: false,
         };
 
         let auth_table = create_auth_table(&lua, &user).unwrap();
@@ -259,6 +270,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         };
 
         let auth_table = create_auth_table(&lua, &user).unwrap();
@@ -280,6 +292,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         };
 
         let auth_table = create_auth_table(&lua, &user).unwrap();
@@ -298,6 +311,7 @@ mod tests {
             authenticated: true,
             scoped_databases: None,
             exp: None,
+            admin_of_database: false,
         };
 
         let auth_table = create_auth_table(&lua, &user).unwrap();

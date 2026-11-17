@@ -541,13 +541,7 @@ pub async fn repl_eval_handler(
         .execute_repl(
             &req.code,
             &db_name,
-            ScriptUser {
-                username: claims.sub.clone(),
-                roles: claims.roles.clone().unwrap_or_default(),
-                authenticated: true,
-                scoped_databases: claims.scoped_databases.clone(),
-                exp: Some(claims.exp as u64),
-            },
+            script_user(&state, &claims, &db_name).await,
             &session.variables,
             &history,
             &mut output_capture,
@@ -1170,13 +1164,7 @@ pub async fn execute_service_script_handler(
 
     // Build ScriptUser from claims if authenticated
     let user = match claims {
-        Some(axum::Extension(c)) => ScriptUser {
-            username: c.sub.clone(),
-            roles: c.roles.clone().unwrap_or_default(),
-            authenticated: true,
-            scoped_databases: c.scoped_databases.clone(),
-            exp: Some(c.exp as u64),
-        },
+        Some(axum::Extension(c)) => script_user(&state, &c, db_name).await,
         None => ScriptUser::anonymous(),
     };
 
@@ -1315,6 +1303,39 @@ fn parse_lua_error(error: &str) -> (String, Option<u32>, Option<u32>) {
     }
 
     (error.to_string(), None, None)
+}
+
+/// The caller of a script that runs in `db_name`, as the script sees it.
+///
+/// A script writes as its caller. Role names alone do not say that a caller
+/// is the admin of this database through a role limited to it (`admin@db`),
+/// so that is resolved here, as `write_actor_for_collection` and
+/// `principal_for_writes` do for the document API and for `/cursor`: it is
+/// what lets the script write this database's `_jobs` (card #929). A global
+/// admin resolves nothing.
+async fn script_user(
+    state: &AppState,
+    claims: &crate::server::auth::Claims,
+    db_name: &str,
+) -> ScriptUser {
+    let roles = claims.roles.clone().unwrap_or_default();
+    let admin_of_database = !roles.iter().any(|r| r.eq_ignore_ascii_case("admin"))
+        && crate::server::authorization::AuthorizationService::check_permission(
+            claims,
+            state,
+            crate::server::authorization::PermissionAction::Admin,
+            Some(db_name),
+        )
+        .await
+        .is_ok();
+    ScriptUser {
+        username: claims.sub.clone(),
+        roles,
+        authenticated: true,
+        scoped_databases: claims.scoped_databases.clone(),
+        exp: Some(claims.exp as u64),
+        admin_of_database,
+    }
 }
 
 #[cfg(test)]

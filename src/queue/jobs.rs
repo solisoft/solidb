@@ -653,6 +653,7 @@ impl QueueWorker {
                 authenticated: true,
                 scoped_databases: None,
                 exp: None,
+                admin_of_database: false,
             },
         };
 

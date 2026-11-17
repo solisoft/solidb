@@ -25,6 +25,7 @@ mod common;
 
 struct Fixture {
     _tmp: TempDir,
+    engine: StorageEngine,
     router: axum::Router,
     /// Global admin.
     root: String,
@@ -56,6 +57,7 @@ fn fixture() -> Fixture {
     let app_editor = common::seed_user_token(&engine, "app_editor", &["editor@app"]);
     Fixture {
         _tmp: tmp,
+        engine,
         router,
         root,
         app_admin,
@@ -306,4 +308,99 @@ async fn a_scoped_admin_gains_only_jobs_through_sdbql() {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{}", query);
     }
+}
+
+/// The same rule from a Lua service script (card #929). A script writes as
+/// its caller: one called by the admin of its database may write that
+/// database's `_jobs`, by `db:collection(...)` and by `db:query(...)`, and
+/// nothing else of the protected tiers.
+#[tokio::test]
+async fn a_scoped_admin_writes_its_jobs_from_a_script() {
+    let f = fixture();
+    create_databases(&f.router, &f.root).await;
+    create_collections(
+        &f.router,
+        &f.root,
+        &["app/document/_jobs", "other/document/_jobs"],
+    )
+    .await;
+    for db in ["app", "other"] {
+        let uri = format!("/_api/database/{db}/services");
+        let status = send(
+            &f.router,
+            "POST",
+            &uri,
+            &f.root,
+            Some(json!({"key": "svc", "name": "svc", "require_auth": false})),
+        )
+        .await;
+        assert!(status.is_success(), "create service in {db}: {status}");
+        for (name, code) in [
+            (
+                "insert",
+                "return db:collection(request.body.collection):insert({ state = 'pending', marker = 'lua' })",
+            ),
+            (
+                "query",
+                "return db:query('INSERT { state: \"pending\", marker: \"luaq\" } INTO ' .. request.body.collection)",
+            ),
+        ] {
+            let uri = format!("/_api/database/{db}/scripts");
+            let status = send(
+                &f.router,
+                "POST",
+                &uri,
+                &f.root,
+                Some(json!({
+                    "name": name, "path": name, "methods": ["POST"], "service": "svc", "code": code
+                })),
+            )
+            .await;
+            assert!(status.is_success(), "create script {name} in {db}: {status}");
+        }
+    }
+
+    let call = |db: &str, script: &str, token: &str, collection: &str| {
+        let uri = format!("/api/{db}/svc/{script}");
+        let token = token.to_string();
+        let body = json!({ "collection": collection });
+        let router = f.router.clone();
+        async move { send(&router, "POST", &uri, &token, Some(body)).await }
+    };
+
+    for script in ["insert", "query"] {
+        assert_eq!(
+            call("app", script, &f.app_admin, "_jobs").await,
+            StatusCode::OK,
+            "the admin of app writes app/_jobs through `{script}`"
+        );
+        assert_eq!(
+            call("app", script, &f.root, "_jobs").await,
+            StatusCode::OK,
+            "a global admin still does, through `{script}`"
+        );
+        assert_ne!(
+            call("other", script, &f.app_admin, "_jobs").await,
+            StatusCode::OK,
+            "not another database's, through `{script}`"
+        );
+        assert_ne!(
+            call("app", script, &f.app_editor, "_jobs").await,
+            StatusCode::OK,
+            "an editor is refused through `{script}`"
+        );
+        for closed in ["_scripts", "_env"] {
+            assert_ne!(
+                call("app", script, &f.app_admin, closed).await,
+                StatusCode::OK,
+                "{closed} stays closed through `{script}`"
+            );
+        }
+    }
+
+    // What was written is exactly the allowed inserts: two callers, two scripts.
+    let db = f.engine.get_database("app").unwrap();
+    assert_eq!(db.get_collection("_jobs").unwrap().count(), 4 + 1);
+    let other = f.engine.get_database("other").unwrap();
+    assert_eq!(other.get_collection("_jobs").unwrap().count(), 1);
 }

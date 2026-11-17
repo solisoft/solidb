@@ -385,7 +385,7 @@ ignore = ["*.bak", ".git", "node_modules", "tests"]</pre>
           </p>
           <ul class="space-y-3 text-gray-300 text-sm">
             <li class="flex items-start"><span class="text-red-400 mr-3">&bull;</span><span><code>_scripts</code>, <code>_services</code>, <code>_triggers</code>, <code>_views</code>, <code>_graphs</code>, <code>_config</code> &mdash; <strong>never writable from a script</strong>, for any caller, even a global admin: <code>403</code>. A script cannot register another script, flip a service to public, or install a trigger. Those changes go through the admin-gated management endpoints, which validate their input.</span></li>
-            <li class="flex items-start"><span class="text-yellow-400 mr-3">&bull;</span><span><code>_jobs</code> &mdash; writable from a script only when the caller is an admin.</span></li>
+            <li class="flex items-start"><span class="text-yellow-400 mr-3">&bull;</span><span><code>_jobs</code> &mdash; writable from a script only when the caller is an admin: the global <code>admin</code>, or an admin of the script&rsquo;s database.</span></li>
             <li class="flex items-start"><span class="text-green-400 mr-3">&bull;</span><span>Ordinary collections &mdash; no extra restriction beyond the caller's own permissions.</span></li>
           </ul>
           <p class="text-gray-400 text-sm mt-4">

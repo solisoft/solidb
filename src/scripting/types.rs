@@ -69,17 +69,21 @@ impl ScriptContext {
     /// `_scripts`. The queue worker runs scripts as `_system` with the admin
     /// role, so trigger and job scripts keep their admin rights.
     pub fn write_actor(&self) -> crate::storage::WriteActor {
-        crate::storage::WriteActor::client(self.user.authenticated && self.user.has_role("admin"))
+        crate::storage::WriteActor::client(
+            self.user.authenticated && (self.user.has_role("admin") || self.user.admin_of_database),
+        )
     }
 
     /// The principal a `db:query(...)` runs under — the same one the caller
     /// would get on `/cursor`.
     pub fn query_principal(&self) -> crate::sdbql::QueryPrincipal {
         if self.user.authenticated {
-            crate::sdbql::QueryPrincipal::from_roles(
+            let mut principal = crate::sdbql::QueryPrincipal::from_roles(
                 self.user.username.clone(),
                 self.user.roles.clone(),
-            )
+            );
+            principal.admin_of_database = self.user.admin_of_database;
+            principal
         } else {
             crate::sdbql::QueryPrincipal::anonymous()
         }

@@ -1207,7 +1207,9 @@ forget to say who is writing. `WriteActor::Server` is for the server's own
 work, never for a name that came in over the wire. The check covers the
 document API, SDBQL, the driver, import, truncate, blob uploads, and the Lua
 bindings: a script writes as its **caller** (`ScriptContext::write_actor`,
-kept in mlua app data as `LuaCaller`), never as the server, so a public
+kept in mlua app data as `LuaCaller`; whoever builds the `ScriptUser` says
+whether the caller is the admin of the script's database,
+`script_handlers::script_user`), never as the server, so a public
 "insert into `request.body.collection`" script cannot be steered at
 `_scripts`. The queue worker runs job and trigger scripts as `_system` with
 the admin role, which is what lets them write `_jobs`.
