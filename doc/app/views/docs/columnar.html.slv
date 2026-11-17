@@ -222,7 +222,7 @@
           </div>
 
           <p class="text-gray-300 mb-6">
-            A row is deleted by the id its insert returned, several by their ids, or all those a filter keeps. Rows are not updated in place: delete and insert again. A block that loses rows is written again once per call, so delete many rows in one request, not one request per row. Row policies do not apply to a columnar collection: whoever may read the database reads all of its rows, and <code>ROW_POLICY</code> on one is refused. Its inserts and deletes send no change event either, so a changefeed or a live query does not see them.
+            A row is deleted by the id its insert returned, several by their ids, or all those a filter keeps. Rows are not updated in place: delete and insert again. A block that loses rows is written again once per call, so delete many rows in one request, not one request per row. Row policies do not apply to a columnar collection: whoever may read the database reads all of its rows, and <code>ROW_POLICY</code> on one is refused. Its inserts and deletes send no change event either, so a changefeed or a live query does not see them, and no trigger fires on them. A foreign key links documents: it cannot be declared on a columnar collection nor towards one. Declaring a trigger or a foreign key there is refused, with that reason.
           </p>
 
           <div class="space-y-6">

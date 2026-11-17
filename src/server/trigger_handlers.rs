@@ -15,6 +15,20 @@ pub struct ListTriggersResponse {
     pub total: usize,
 }
 
+/// Why a trigger cannot be put on `collection`: it does not exist, or it
+/// is columnar, whose inserts send no event for a trigger to fire on.
+fn no_trigger_on(db: &crate::storage::Database, collection: &str) -> DbError {
+    if db.is_columnar_collection(collection) {
+        DbError::BadRequest(format!(
+            "'{}' is a columnar collection: a trigger fires on the documents of a collection, \
+             and a columnar insert sends no event",
+            collection
+        ))
+    } else {
+        DbError::BadRequest(format!("Collection '{}' does not exist", collection))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateTriggerRequest {
     pub name: String,
@@ -148,10 +162,7 @@ pub async fn create_trigger_handler(
 
     // Validate that the target collection exists
     if db.get_collection(&req.collection).is_err() {
-        return Err(DbError::BadRequest(format!(
-            "Collection '{}' does not exist",
-            req.collection
-        )));
+        return Err(no_trigger_on(&db, &req.collection));
     }
 
     // Parse events
@@ -216,10 +227,7 @@ pub async fn update_trigger_handler(
     if let Some(collection) = req.collection {
         // Validate that the new collection exists
         if db.get_collection(&collection).is_err() {
-            return Err(DbError::BadRequest(format!(
-                "Collection '{}' does not exist",
-                collection
-            )));
+            return Err(no_trigger_on(&db, &collection));
         }
         trigger.collection = collection;
     }

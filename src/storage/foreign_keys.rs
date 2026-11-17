@@ -504,6 +504,15 @@ pub(crate) fn resolve(db: &Arc<DB>, full_name: &str) -> DbResult<Collection> {
 
 // ------------------------------------------------------------- the checks
 
+/// What a foreign key declared on, or towards, a columnar collection is
+/// refused with: its rows are not documents, and have no `_key` to name.
+pub fn columnar(name: &str) -> DbError {
+    DbError::BadRequest(format!(
+        "'{}' is a columnar collection: a foreign key links the documents of two collections",
+        name
+    ))
+}
+
 pub(crate) fn violation(message: String) -> DbError {
     DbError::ConflictError(format!("Foreign key violation: {}", message))
 }

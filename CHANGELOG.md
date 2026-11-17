@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- **A trigger or a foreign key on a columnar collection says why it is refused.** Both were refused as if the collection did not exist (`Collection 'metrics' does not exist`, `404 CollectionNotFound`). They now answer `400` with `'metrics' is a columnar collection: a trigger fires on the documents of a collection, and a columnar insert sends no event`, and `… a foreign key links the documents of two collections`, on the child side and on the referenced side alike.
+
 - **A row policy on a columnar collection is refused.** No read of a columnar collection consults a row policy. `ROW_POLICY("metrics", …)` answered `404 CollectionNotFound`, which said nothing of why, and `ROW_POLICY("_columnar_metrics", …)`, on the collection that backs it, was stored and never applied: an administrator who declared it had no reason to think the rows were open. Both are now refused: `'metrics' is a columnar collection: row policies do not apply to it, and whoever may read the database reads all of its rows`. The columnar page says so, and that its writes send no change event.
 
 - **A JSON schema reaches the other nodes, and a dump.** A schema set on one node stayed on that node: a peer written to directly stored what the origin refused, a node that joined had none, and a dump did not hold it. A schema (and the field rules) set or removed over HTTP is now replicated, sent with the collection's indexes to a node that joins by full sync, written by `solidb-dump` and declared by `solidb-restore` once the documents are in. A replicated write is not checked against either: the origin accepted it, and it may be older than the schema.

@@ -332,7 +332,22 @@ impl Collection {
         let parent = if parent_name == self.name {
             self.clone()
         } else {
-            foreign_keys::resolve(&self.db, &parent_name)?
+            match foreign_keys::resolve(&self.db, &parent_name) {
+                Ok(parent) => parent,
+                // Not "not found": it is there, and it holds rows, not
+                // documents a key could name.
+                Err(_)
+                    if crate::storage::collection_registry::keyspace_of(
+                        &self.db,
+                        &format!("{}:_columnar_{}", self.database_name(), references),
+                        |_| false,
+                    )
+                    .is_some() =>
+                {
+                    return Err(foreign_keys::columnar(references));
+                }
+                Err(e) => return Err(e),
+            }
         };
         Self::can_take_part(&parent, "referenced")?;
 

@@ -43,15 +43,28 @@ async fn blocking<T: Send + 'static>(
         .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))?
 }
 
+/// The collection a request names, or why it cannot hold a foreign key.
+fn child(
+    state: &AppState,
+    database: &str,
+    collection: &str,
+) -> Result<crate::storage::Collection, DbError> {
+    let db = state.storage.get_database(database)?;
+    db.get_collection(collection).map_err(|e| {
+        if db.is_columnar_collection(collection) {
+            crate::storage::foreign_keys::columnar(collection)
+        } else {
+            e
+        }
+    })
+}
+
 /// The constraints declared on a collection, and those that refer to it.
 pub async fn list_foreign_keys(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
 ) -> Result<Json<ForeignKeysResponse>, DbError> {
-    let collection = state
-        .storage
-        .get_database(&db_name)?
-        .get_collection(&coll_name)?;
+    let collection = child(&state, &db_name, &coll_name)?;
     Ok(Json(ForeignKeysResponse {
         foreign_keys: collection.foreign_keys(),
         referenced_by: collection.referenced_by(),
@@ -65,10 +78,7 @@ pub async fn create_foreign_key(
     Path((db_name, coll_name)): Path<(String, String)>,
     Json(req): Json<ForeignKeySpec>,
 ) -> Result<(StatusCode, Json<ForeignKey>), DbError> {
-    let collection = state
-        .storage
-        .get_database(&db_name)?
-        .get_collection(&coll_name)?;
+    let collection = child(&state, &db_name, &coll_name)?;
     let key = blocking(move || collection.add_foreign_key(req)).await?;
     // Peers store the definition as declared here; the writes its deletes
     // cascade into reach them as entries of their own (`observe_cascades`).
@@ -88,10 +98,7 @@ pub async fn delete_foreign_key(
     State(state): State<AppState>,
     Path((db_name, coll_name, name)): Path<(String, String, String)>,
 ) -> Result<StatusCode, DbError> {
-    let collection = state
-        .storage
-        .get_database(&db_name)?
-        .get_collection(&coll_name)?;
+    let collection = child(&state, &db_name, &coll_name)?;
     let dropped = name.clone();
     blocking(move || collection.drop_foreign_key(&dropped)).await?;
     log_definition(
@@ -111,10 +118,7 @@ pub async fn check_foreign_key(
     Path((db_name, coll_name)): Path<(String, String)>,
     Json(req): Json<ForeignKeySpec>,
 ) -> Result<Json<Orphans>, DbError> {
-    let collection = state
-        .storage
-        .get_database(&db_name)?
-        .get_collection(&coll_name)?;
+    let collection = child(&state, &db_name, &coll_name)?;
     let orphans = blocking(move || collection.foreign_key_orphans(&req)).await?;
     Ok(Json(orphans))
 }
