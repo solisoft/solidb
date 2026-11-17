@@ -30,15 +30,29 @@ fn is_canonical_uuid(key: &str) -> bool {
 
 /// Remove and return `_key` from `data`, or generate a UUIDv7 key.
 fn take_key(data: &mut Value) -> DbResult<String> {
-    if let Some(obj) = data.as_object_mut() {
-        if let Some(key_value) = obj.remove("_key") {
-            return match key_value.as_str() {
-                Some(key_str) => Ok(key_str.to_string()),
-                None => Err(DbError::InvalidDocument(
-                    "_key must be a string".to_string(),
-                )),
-            };
-        }
+    // A document is an object. A number, a string or an array used to be
+    // stored as a document with no attribute at all: the value was dropped
+    // and the write reported as done (card #941).
+    let Some(obj) = data.as_object_mut() else {
+        return Err(DbError::InvalidDocument(format!(
+            "the document must be an object, got {}",
+            match data {
+                Value::Null => "null",
+                Value::Bool(_) => "a boolean",
+                Value::Number(_) => "a number",
+                Value::String(_) => "a string",
+                Value::Array(_) => "an array",
+                Value::Object(_) => "an object",
+            }
+        )));
+    };
+    if let Some(key_value) = obj.remove("_key") {
+        return match key_value.as_str() {
+            Some(key_str) => Ok(key_str.to_string()),
+            None => Err(DbError::InvalidDocument(
+                "_key must be a string".to_string(),
+            )),
+        };
     }
     Ok(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string())
 }

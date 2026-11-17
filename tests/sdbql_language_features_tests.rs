@@ -1152,3 +1152,49 @@ fn an_overwriting_insert_that_names_a_key_twice_keeps_the_last() {
     assert_eq!(one(&engine, "RETURN DOCUMENT('batched/k1').v"), json!(4));
     assert_eq!(one(&engine, "RETURN DOCUMENT('batched/k0').v"), json!(6));
 }
+
+/// Card #941: a value that is not an object used to be stored as a
+/// document with no attribute, and the insert reported as done.
+#[test]
+fn a_document_that_is_not_an_object_is_refused() {
+    let (engine, _tmp) = engine();
+    engine
+        .create_collection("things".to_string(), None)
+        .unwrap();
+    for q in [
+        "INSERT 7 INTO things",
+        "INSERT 'text' INTO things",
+        "INSERT [1, 2] INTO things",
+        "INSERT null INTO things",
+        "FOR i IN 1..5 INSERT i INTO things",
+        "FOR i IN 1..200 INSERT i INTO things",
+        "FOR i IN 1..5 INSERT i INTO things OPTIONS {overwrite: true}",
+        "FOR i IN 1..5 INSERT i INTO things OPTIONS {overwrite: true} RETURN NEW",
+        "FOR i IN 1..3 INSERT (i == 2 ? 'no' : {v: i}) INTO things",
+    ] {
+        let refused = run_err(&engine, q);
+        assert!(refused.contains("must be an object"), "{q}: {refused}");
+    }
+    assert_eq!(one(&engine, "RETURN COLLECTION_COUNT('things')"), json!(0));
+
+    // The storage entry points say the same.
+    let things = engine.get_collection("things").unwrap();
+    assert!(things.insert(json!(7)).is_err());
+    assert!(things
+        .insert_batch(vec![json!({"v": 1}), json!("no")])
+        .is_err());
+    assert!(things.insert_or_replace(json!([1])).is_err());
+    assert_eq!(things.count(), 0);
+
+    // `ignoreErrors` skips such a row like any document it cannot write.
+    assert_eq!(
+        run(
+            &engine,
+            "FOR i IN 1..3 INSERT (i == 2 ? 'no' : {v: i}) INTO things OPTIONS {ignoreErrors: true} RETURN NEW.v"
+        ),
+        vec![json!(1), json!(3)]
+    );
+    // And an object, even an empty one, is still a document.
+    run(&engine, "INSERT {} INTO things");
+    assert_eq!(one(&engine, "RETURN COLLECTION_COUNT('things')"), json!(3));
+}

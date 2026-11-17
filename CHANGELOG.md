@@ -12,6 +12,8 @@
 
 - **Windows: the server starts on a machine without the Visual C++ runtime.** `solidb.exe` and the three tools beside it asked for `MSVCP140.dll` and `VCRUNTIME140.dll`, which only Microsoft's Visual C++ Redistributable brings: on a Windows where nothing had installed it, the server answered a double click with "MSVCP140.dll was not found" and did not start. The C runtime is now linked into the executables (`.cargo/config.toml`, `crt-static` for `x86_64-pc-windows-msvc`). Through 2.13.0, install the Visual C++ Redistributable first.
 
+- **A document that is not an object is refused.** `INSERT 7 INTO things`, `FOR i IN 1..5 INSERT i INTO things` and `POST …/document/things` with a number, a string or an array for a body all answered success and stored a document that held nothing but its system attributes: the value was dropped. They now answer `400`, `the document must be an object, got a number`, on every transport, and nothing is written. `OPTIONS {ignoreErrors: true}` skips such a row.
+
 - **An admin of one database writes its `_jobs` from a Lua script.** 2.13.0 let an admin limited to one database write that database's `_jobs` through the document API and SDBQL, and the documentation said the same of a script. A script writes as its caller, and its caller was taken for an admin from the global `admin` role alone: a service script called by `admin@shop` was refused `_jobs` in `shop` with `403`, by `db:collection("_jobs"):insert(…)` and by `db:query("INSERT … INTO _jobs")` alike. Both now write. Another database's `_jobs`, an editor, `_scripts` and `_env` are refused as before.
 
 ## [2.13.0](https://github.com/solisoft/solidb/compare/v2.12.1...v2.13.0) (2026-11-17)
