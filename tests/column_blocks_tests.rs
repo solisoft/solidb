@@ -641,6 +641,24 @@ fn a_row_query_reads_only_the_blocks_that_may_hold_its_rows() {
     .unwrap()
     .is_empty());
     assert_eq!(passed_over() - before, blocks);
+    // EXPLAIN reads the same way, and says so.
+    let explained =
+        QueryExecutor::with_database_and_bind_vars(&engine, DB.to_string(), BindVars::new())
+            .explain(&parse(&instant).unwrap())
+            .unwrap();
+    assert!(
+        explained
+            .warnings
+            .iter()
+            .any(|w| w.contains("read by its column blocks")),
+        "{:?}",
+        explained.warnings
+    );
+    assert!(
+        explained.documents_scanned < points as usize / 2,
+        "{} documents scanned",
+        explained.documents_scanned
+    );
     // Without the switch, the ordinary scan: no block is consulted.
     let before = passed_over();
     run(&engine, &instant, false).unwrap();

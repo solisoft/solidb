@@ -857,9 +857,20 @@ impl<'a> QueryExecutor<'a> {
                         let mut new_rows = Vec::new();
                         let mut clause_docs_scanned = 0;
 
+                        let mut by_blocks = false;
                         for ctx in &rows {
-                            // Measure iterator creation/fetching time as part of scan
-                            let docs = self.get_for_source_docs(for_clause, ctx, scan_limit)?;
+                            // Measure iterator creation/fetching time as part of scan.
+                            // A time series with column blocks is read as the
+                            // run reads it: only the blocks that may hold a row.
+                            let docs = match self
+                                .block_pruned_docs(for_clause, &filters, ctx, scan_limit)?
+                            {
+                                Some(docs) => {
+                                    by_blocks = true;
+                                    docs
+                                }
+                                None => self.get_for_source_docs(for_clause, ctx, scan_limit)?,
+                            };
                             clause_docs_scanned += docs.len();
                             for doc in docs {
                                 let mut new_ctx = ctx.clone();
@@ -870,6 +881,13 @@ impl<'a> QueryExecutor<'a> {
                         rows = new_rows;
                         total_docs_scanned += clause_docs_scanned;
                         i += 1;
+                        if by_blocks {
+                            warnings.push(format!(
+                                "optimizer: '{}' read by its column blocks: only the \
+                                 documents of the blocks that may hold a row of the FILTER",
+                                for_clause.collection
+                            ));
+                        }
                     }
 
                     collection_scan_us += scan_start.elapsed().as_micros() as u64;
