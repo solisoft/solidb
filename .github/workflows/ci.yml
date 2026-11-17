@@ -465,8 +465,15 @@ jobs:
         run: |
           $rel = "target/${{ matrix.target }}/release"
           $tray = "tray/target/${{ matrix.target }}/release"
-          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" `
-            -DestinationPath "${{ matrix.artifact }}.zip"
+          # The admin application goes beside the icon, which runs it for
+          # "Open admin console" (tray/src/console.rs names its parts).
+          $stage = Join-Path $PWD "zip-stage"
+          New-Item -ItemType Directory -Force "$stage/admin" | Out-Null
+          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
+          Copy-Item -Recurse "admin/app","admin/config","admin/public" "$stage/admin"
+          Copy-Item "admin/soli.toml" "$stage/admin"
+          Get-ChildItem "$stage/admin" -Recurse -File -Include "CLAUDE.md","AGENTS.md" | Remove-Item
+          Compress-Archive -Path "$stage/*" -DestinationPath "${{ matrix.artifact }}.zip"
 
       # The installer (tray/installer/solidb.iss, Inno Setup): the same
       # executables as the zip, with the service, the icon and PATH offered

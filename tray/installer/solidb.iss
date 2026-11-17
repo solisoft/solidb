@@ -2,8 +2,8 @@
 ;
 ;   ISCC /DAppVersion=2.13.0 /DBin=<folder holding the executables> solidb.iss
 ;
-; It copies the server, its tools, the notification-area icon and the
-; service host into Program Files, and offers to register the Windows
+; It copies the server, its tools, the notification-area icon, the service
+; host and the admin application into Program Files, and offers to register the Windows
 ; service, to start the icon at sign-in and to add the folder to PATH.
 ; The data (%ProgramData%\SoliDB, %LOCALAPPDATA%\SoliDB) is never touched,
 ; neither by an upgrade nor by an uninstall.
@@ -13,6 +13,10 @@
 #endif
 #ifndef Bin
   #define Bin "."
+#endif
+; The admin application, which the icon runs for "Open admin console".
+#ifndef Admin
+  #define Admin "..\..\admin"
 #endif
 #ifndef OutDir
   #define OutDir "."
@@ -81,6 +85,17 @@ Source: "{#Bin}\solidb-restore.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-migrate-engine.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-service.exe"; DestDir: "{app}"; Flags: ignoreversion
+; The parts of the admin application that are its code: the list is the
+; icon's (PARTS in tray/src/console.rs). The Soli runtime it runs on is not
+; here: the icon downloads it at the first "Open admin console".
+Source: "{#Admin}\app\*"; DestDir: "{app}\admin\app"; Excludes: "CLAUDE.md,AGENTS.md"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Admin}\config\*"; DestDir: "{app}\admin\config"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Admin}\public\*"; DestDir: "{app}\admin\public"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Admin}\soli.toml"; DestDir: "{app}\admin"; Flags: ignoreversion
+
+[InstallDelete]
+; An upgrade leaves no file of the admin application of the version before.
+Type: filesandordirs; Name: "{app}\admin"
 
 [Icons]
 Name: "{group}\SoliDB"; Filename: "{app}\solidb-tray.exe"

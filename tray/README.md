@@ -21,6 +21,20 @@ server stays the console program it is; neither links it.
   process is a `solidb.exe`).
 - **Start with Windows** adds the icon to the session's startup programs.
 
+- **Open admin console** runs the admin application of the installation
+  (`admin\` beside the executables) and opens it in the browser.
+  - It runs on the [Soli](https://github.com/solisoft/soli_lang) runtime,
+    which is not installed. The first time, the icon asks, then downloads
+    one release (28 MB) into `%LOCALAPPDATA%\SoliDB\soli`, and runs nothing
+    of it unless the archive has the SHA-256 the icon was built with
+    (`src/console.rs`). Without a connection, put a `soli.exe` there by hand.
+  - It listens on `127.0.0.1` only, on the port after the server's.
+  - It holds no credential: the browser signs in to the server, with the
+    admin password a new instance prints in its log.
+  - It is started on a copy of the application
+    (`%LOCALAPPDATA%\SoliDB\console`, output in `console.log`) and ends when
+    the icon is quit.
+
 When the Windows service is installed, the icon drives the service instead
 of starting a server of its own, and reads the service's settings. Without
 it, the server runs in the user's session and ends with it.
@@ -37,7 +51,10 @@ it, the server runs in the user's session and ends with it.
 | `port` | `6745` | |
 | `log` | `%LOCALAPPDATA%\SoliDB\solidb.log` | The server's output. A new instance prints its admin password there. |
 | `args` | | Added to the server's command line, e.g. `--host 127.0.0.1`. |
-| `console_url` | | Adds *Open admin console* to the menu. |
+| `console_port` | the server's + 1 | Port of the admin console, on the loopback. |
+| `soli` | `%LOCALAPPDATA%\SoliDB\soli\soli.exe` | The Soli runtime the console runs on. |
+| `console_app` | `admin` beside `solidb-tray.exe` | The admin application. |
+| `console_url` | | An address *Open admin console* opens instead, for an admin application that runs elsewhere. |
 | `start_server` | `true` | Start the server when the icon starts. |
 
 A path may name an environment variable (`%LOCALAPPDATA%\SoliDB\data`).
@@ -92,7 +109,8 @@ cargo test --manifest-path tray/Cargo.toml
 ISCC /DAppVersion=2.13.1 /DBin=<folder holding the six executables> /DOutDir=<where to write> installer\solidb.iss
 ```
 
-It installs into Program Files and offers the service, the icon at sign-in
+It installs into Program Files, the admin application included (`/DAdmin=`
+names its folder, `admin/` of the repository by default), and offers the service, the icon at sign-in
 and the `PATH`. An upgrade stops the service before replacing the files and
 starts it again; an uninstall removes the service and leaves the data. The
 script's `AppId` identifies SoliDB to Windows across versions and must not

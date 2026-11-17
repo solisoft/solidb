@@ -16,13 +16,28 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use solidb_tray::config::Config;
 use solidb_tray::server::{self, wide, Child, STOP_WITHIN};
 use solidb_tray::state::{Process, Service, State};
-use solidb_tray::{probe, scm, state};
+use solidb_tray::{console, probe, scm, state};
 
 /// The notification area tells the window about the mouse with this.
 const WM_TRAY: u32 = WM_APP + 1;
 /// The probing thread tells the window what it found: `wparam` is 1 when
 /// the server answered.
 const WM_PROBED: u32 = WM_APP + 2;
+
+/// A thread tells the window how the console's start went: `wparam` is one
+/// of the `CONSOLE_*` below.
+const WM_CONSOLE: u32 = WM_APP + 3;
+/// The runtime is there: the console can be started.
+const CONSOLE_FETCHED: usize = 0;
+/// The console answers: the browser can be sent to it.
+const CONSOLE_UP: usize = 1;
+const CONSOLE_NO_DOWNLOAD: usize = 2;
+const CONSOLE_WRONG_DIGEST: usize = 3;
+const CONSOLE_NO_UNPACK: usize = 4;
+const CONSOLE_SILENT: usize = 5;
+
+/// How long a console that was started is given to answer.
+const CONSOLE_WITHIN: Duration = Duration::from_secs(40);
 
 const CMD_START: usize = 1;
 const CMD_STOP: usize = 2;
@@ -52,6 +67,10 @@ struct App {
     stop_by: Option<Instant>,
     /// Start again once the server asked to stop is gone.
     restart: bool,
+    /// The admin console this icon started.
+    console: Option<Child>,
+    /// The console is being fetched or started: a second click waits.
+    console_busy: bool,
     icons: Icons,
     /// The message the shell sends when the taskbar is created again.
     taskbar_created: u32,
@@ -99,6 +118,9 @@ pub fn run() {
             let (theirs, more) = scm::settings(&beside);
             cfg = Config {
                 console_url: cfg.console_url,
+                console_port: cfg.console_port,
+                soli: cfg.soli,
+                console_app: cfg.console_app,
                 ..theirs
             };
             refused = more;
@@ -141,6 +163,8 @@ pub fn run() {
             state: State::Stopped,
             stop_by: None,
             restart: false,
+            console: None,
+            console_busy: false,
             icons: Icons {
                 stopped: disc(0x8A8F98),
                 busy: disc(0xE0A21B),
@@ -223,12 +247,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             app.look(wparam != 0);
             0
         }
+        WM_CONSOLE => {
+            app.console_went(wparam);
+            0
+        }
         WM_COMMAND => {
             app.command(wparam & 0xFFFF);
             0
         }
         // Windows is closing the session: leave the server to it.
         WM_ENDSESSION | WM_CLOSE => {
+            app.end_console();
             app.show(NIM_DELETE);
             DestroyWindow(hwnd);
             0
@@ -428,6 +457,147 @@ impl App {
         }
     }
 
+    fn console_log(&self) -> PathBuf {
+        self.home.join("console.log")
+    }
+
+    /// "Open admin console": the address the settings give, else the
+    /// console of this machine, started if it is not there, on a runtime
+    /// fetched if there is none, after asking.
+    unsafe fn open_console(&mut self) {
+        if !self.cfg.console_url.is_empty() {
+            return open(&self.cfg.console_url);
+        }
+        if self.console_busy {
+            return;
+        }
+        // Started before, by this icon or one before it: nothing to start.
+        if probe::answers_at(self.cfg.console_port(), "/health") {
+            return open(&console::url(&self.cfg));
+        }
+        if !console::is_app(&self.cfg.console_app) {
+            return self.balloon(
+                "SoliDB admin console",
+                &format!(
+                    "No admin application in {}. Set 'console_app' or 'console_url' in the settings.",
+                    self.cfg.console_app.display()
+                ),
+            );
+        }
+        if !console::needs_download(&self.cfg.soli) {
+            return self.start_console();
+        }
+        let question = format!(
+            "The admin console runs on the Soli runtime, which is not on this machine yet.\n\n\
+             Download Soli {} ({} MB) from github.com/solisoft/soli_lang?\n\n\
+             It is kept in {}.",
+            console::SOLI_VERSION,
+            console::SOLI_MEGABYTES,
+            self.cfg.soli.parent().unwrap_or(&self.home).display()
+        );
+        let answer = MessageBoxW(
+            self.hwnd,
+            wide(&question).as_ptr(),
+            wide("SoliDB admin console").as_ptr(),
+            MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND | MB_TOPMOST,
+        );
+        if answer != IDYES {
+            return;
+        }
+        self.console_busy = true;
+        let (soli, log, target) = (
+            self.cfg.soli.clone(),
+            self.console_log(),
+            self.hwnd as isize,
+        );
+        std::thread::spawn(move || {
+            let went = fetch(&soli, &log);
+            PostMessageW(target as HWND, WM_CONSOLE, went, 0);
+        });
+    }
+
+    /// Starts the console on a copy of the application in the icon's
+    /// folder, then waits for it to answer on another thread.
+    unsafe fn start_console(&mut self) {
+        self.console_busy = false;
+        if let Some(old) = self.console.take() {
+            // One that ended, or never answered: it must not hold the port.
+            TerminateProcess(old.handle, 1);
+            CloseHandle(old.handle);
+        }
+        let copy = self.home.join("console");
+        if let Err(error) = console::refresh(&self.cfg.console_app, &copy) {
+            return self.balloon(
+                "SoliDB admin console",
+                &format!(
+                    "Could not copy the application to {}: {error}.",
+                    copy.display()
+                ),
+            );
+        }
+        let environment = console::environment(std::env::vars_os(), &console::settings(&self.cfg));
+        let line = console::command_line(&self.cfg, &copy);
+        match server::start(&line, &copy, &self.console_log(), Some(&environment)) {
+            Ok(child) => self.console = Some(child),
+            Err(code) => {
+                return self.balloon(
+                    "SoliDB admin console",
+                    &format!(
+                        "{} could not be started: Windows error {code}.",
+                        self.cfg.soli.display()
+                    ),
+                );
+            }
+        }
+        self.console_busy = true;
+        let (port, target) = (self.cfg.console_port(), self.hwnd as isize);
+        std::thread::spawn(move || {
+            let until = Instant::now() + CONSOLE_WITHIN;
+            let mut went = CONSOLE_SILENT;
+            while Instant::now() < until {
+                if probe::answers_at(port, "/health") {
+                    went = CONSOLE_UP;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            PostMessageW(target as HWND, WM_CONSOLE, went, 0);
+        });
+    }
+
+    /// What a thread reported of the console's start.
+    unsafe fn console_went(&mut self, went: usize) {
+        self.console_busy = false;
+        let log = self.console_log();
+        let why = match went {
+            CONSOLE_FETCHED => return self.start_console(),
+            CONSOLE_UP => return open(&console::url(&self.cfg)),
+            CONSOLE_NO_DOWNLOAD => format!(
+                "Soli could not be downloaded (see {}). Without a connection, put soli.exe in {}.",
+                log.display(),
+                self.cfg.soli.parent().unwrap_or(&self.home).display()
+            ),
+            CONSOLE_WRONG_DIGEST => {
+                "The file downloaded is not the Soli release expected: it was deleted, and nothing of it was run."
+                    .to_string()
+            }
+            CONSOLE_NO_UNPACK => format!("Soli could not be unpacked (see {}).", log.display()),
+            _ => format!(
+                "The console did not answer on port {} (see {}).",
+                self.cfg.console_port(),
+                log.display()
+            ),
+        };
+        self.balloon("SoliDB admin console", &why);
+    }
+
+    unsafe fn end_console(&mut self) {
+        if let Some(child) = self.console.take() {
+            TerminateProcess(child.handle, 0);
+            CloseHandle(child.handle);
+        }
+    }
+
     unsafe fn command(&mut self, id: usize) {
         match id {
             CMD_START => self.start(),
@@ -439,7 +609,7 @@ impl App {
                 self.restart = true;
                 self.stop();
             }
-            CMD_CONSOLE => open(&self.cfg.console_url),
+            CMD_CONSOLE => self.open_console(),
             CMD_DATA => open(&self.cfg.data_dir.to_string_lossy()),
             CMD_LOG => open(&self.cfg.log.to_string_lossy()),
             CMD_SETTINGS if self.service => open(&scm::settings_file().to_string_lossy()),
@@ -447,7 +617,9 @@ impl App {
             CMD_AUTOSTART => set_autostart(!autostart()),
             CMD_QUIT => {
                 // The server is left running: the icon takes it back when
-                // it is started again.
+                // it is started again. The console is the icon's alone
+                // and keeps nothing: it ends with it.
+                self.end_console();
                 self.show(NIM_DELETE);
                 DestroyWindow(self.hwnd);
             }
@@ -471,7 +643,9 @@ impl App {
         add(CMD_STOP, "Stop", off(self.state.can_stop()));
         add(CMD_RESTART, "Restart", off(self.state.can_stop()));
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        if !self.cfg.console_url.is_empty() {
+        if self.console_busy {
+            add(0, "Admin console is starting...", MF_GRAYED);
+        } else {
             add(CMD_CONSOLE, "Open admin console", 0);
         }
         add(
@@ -546,6 +720,41 @@ impl App {
         fill(&mut data.szInfo, text);
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
+}
+
+/// Fetches the Soli runtime to `soli`: downloads the release's archive,
+/// holds it to its digest, and only then unpacks it. Gives a `CONSOLE_*`.
+unsafe fn fetch(soli: &Path, log: &Path) -> usize {
+    let Some(dir) = soli.parent() else {
+        return CONSOLE_NO_DOWNLOAD;
+    };
+    let _ = std::fs::create_dir_all(dir);
+    // The tools of Windows itself, by their full path: not whatever a
+    // folder of the PATH calls curl or tar.
+    let system = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("C:\\Windows"))
+        .join("System32");
+    let archive = dir.join("soli.tar.gz.part");
+    let _ = std::fs::remove_file(&archive);
+    if server::run(&console::download_line(&system, &archive), dir, log) != Ok(0) {
+        let _ = std::fs::remove_file(&archive);
+        return CONSOLE_NO_DOWNLOAD;
+    }
+    if !matches!(
+        console::has_digest(&archive, console::SOLI_SHA256),
+        Ok(true)
+    ) {
+        let _ = std::fs::remove_file(&archive);
+        return CONSOLE_WRONG_DIGEST;
+    }
+    let _ = std::fs::remove_file(soli);
+    let unpacked = server::run(&console::unpack_line(&system, &archive, dir), dir, log);
+    let _ = std::fs::remove_file(&archive);
+    if unpacked != Ok(0) || !soli.is_file() || console::mark_downloaded(soli).is_err() {
+        return CONSOLE_NO_UNPACK;
+    }
+    CONSOLE_FETCHED
 }
 
 /// Opens a folder, a file or an address with whatever Windows opens it with.

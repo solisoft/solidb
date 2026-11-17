@@ -12,8 +12,17 @@ pub struct Config {
     pub log: PathBuf,
     /// Arguments added after `--port` and `--data-dir`.
     pub args: Vec<String>,
-    /// Opened by "Open admin console"; the entry is absent when empty.
+    /// Opened by "Open admin console" in place of the console the icon
+    /// runs itself, when set: an admin application that runs elsewhere.
     pub console_url: String,
+    /// The port of the console the icon runs, on the loopback; 0 for the
+    /// one after the server's (see `console_port`).
+    pub console_port: u16,
+    /// The Soli runtime the console runs on, downloaded at its first use.
+    pub soli: PathBuf,
+    /// The admin application as installed. It is run from a copy in the
+    /// icon's folder: an application writes where it runs.
+    pub console_app: PathBuf,
     /// Start the server when the icon starts.
     pub start_server: bool,
 }
@@ -29,6 +38,9 @@ impl Config {
             log: home.join("solidb.log"),
             args: Vec::new(),
             console_url: String::new(),
+            console_port: 0,
+            soli: home.join("soli").join("soli.exe"),
+            console_app: beside.join("admin"),
             start_server: true,
         }
     }
@@ -52,6 +64,13 @@ impl Config {
                 "data_dir" => self.data_dir = PathBuf::from(value),
                 "log" => self.log = PathBuf::from(value),
                 "console_url" => self.console_url = value.to_string(),
+                "soli" => self.soli = PathBuf::from(value),
+                "console_app" => self.console_app = PathBuf::from(value),
+                "console_port" if value.is_empty() => self.console_port = 0,
+                "console_port" => match value.parse::<u16>() {
+                    Ok(port) if port != 0 => self.console_port = port,
+                    _ => refused.push(format!("line {}: console_port '{}'", at + 1, value)),
+                },
                 "args" => self.args = words(value),
                 "port" => match value.parse::<u16>() {
                     Ok(port) if port != 0 => self.port = port,
@@ -72,7 +91,13 @@ impl Config {
     /// Windows does in its own settings. A name that is not set is left as
     /// written, so that the error names it.
     pub fn expand(mut self, env: impl Fn(&str) -> Option<String>) -> Config {
-        for path in [&mut self.exe, &mut self.data_dir, &mut self.log] {
+        for path in [
+            &mut self.exe,
+            &mut self.data_dir,
+            &mut self.log,
+            &mut self.soli,
+            &mut self.console_app,
+        ] {
             *path = PathBuf::from(expanded(&path.to_string_lossy(), &env));
         }
         self
@@ -84,14 +109,32 @@ impl Config {
         let mut text = self.shared(
             "# Settings of the SoliDB icon. Quit the icon and start it again to apply a change.",
         );
-        text.push_str(
+        text.push_str(&format!(
             "\r\n\
-             # Address opened by \"Open admin console\", when an admin application runs.\r\n\
+             # \"Open admin console\" runs the admin application on this port, on this\r\n\
+             # machine only, and opens it in the browser. Empty: the port after the\r\n\
+             # server's.\r\n\
+             console_port ={}\r\n\
+             \r\n\
+             # The Soli runtime the console runs on. It is downloaded there the first\r\n\
+             # time, after asking; a soli.exe put there by hand is used as it is.\r\n\
+             soli = {}\r\n\
+             \r\n\
+             # The admin application.\r\n\
+             console_app = {}\r\n\
+             \r\n\
+             # An address to open instead, when an admin application runs elsewhere.\r\n\
              console_url =\r\n\
              \r\n\
              # Start the server when the icon starts.\r\n\
              start_server = true\r\n",
-        );
+            match self.console_port {
+                0 => String::new(),
+                port => format!(" {port}"),
+            },
+            self.soli.display(),
+            self.console_app.display(),
+        ));
         text
     }
 
@@ -122,6 +165,16 @@ impl Config {
             self.port,
             self.log.display(),
         )
+    }
+
+    /// The port the console listens on: the one the settings give, else
+    /// the one after the server's, so that moving the server never puts
+    /// the two on the same port.
+    pub fn console_port(&self) -> u16 {
+        match self.console_port {
+            0 => self.port.checked_add(1).unwrap_or(self.port - 1),
+            port => port,
+        }
     }
 
     /// The server's command line. Windows hands a process one string, which
@@ -212,7 +265,7 @@ fn words(text: &str) -> Vec<String> {
 
 /// Quotes an argument as the C runtime's parser reads it back: backslashes
 /// are literal except before a quote, where each is doubled.
-fn quoted(arg: &str) -> String {
+pub(crate) fn quoted(arg: &str) -> String {
     if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
         return arg.to_string();
     }
@@ -283,6 +336,21 @@ mod tests {
         let (cfg, refused) = defaults().read(&defaults().service_template());
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(cfg, defaults());
+    }
+
+    #[test]
+    fn the_console_takes_the_port_after_the_servers_unless_told() {
+        assert_eq!(defaults().console_port(), 6746);
+        let (cfg, refused) = defaults().read("port = 6746\n");
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(cfg.console_port(), 6747);
+        let (cfg, _) = defaults().read("port = 65535\n");
+        assert_eq!(cfg.console_port(), 65534);
+        let (cfg, _) = defaults().read("port = 6746\nconsole_port = 9000\n");
+        assert_eq!(cfg.console_port(), 9000);
+        let (cfg, refused) = defaults().read("console_port = 9000\nconsole_port =\n");
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(cfg.console_port(), 6746);
     }
 
     #[test]

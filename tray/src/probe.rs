@@ -1,4 +1,5 @@
 //! Asks the server whether it answers: `GET /_api/health` on the loopback.
+//! The admin console is asked the same way, at its own address.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -7,13 +8,18 @@ use std::time::Duration;
 const WAIT: Duration = Duration::from_millis(800);
 
 pub fn answers(port: u16) -> bool {
+    answers_at(port, "/_api/health")
+}
+
+/// Whether `GET path` on the loopback's `port` is answered with a 200.
+pub fn answers_at(port: u16, path: &str) -> bool {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, WAIT) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(WAIT));
     let _ = stream.set_write_timeout(Some(WAIT));
-    let request = format!("GET /_api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+    let request = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
     if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }

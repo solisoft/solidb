@@ -201,7 +201,18 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
   is what `shutdown_signal` in `main.rs` waits for on Windows: a change to
   how the server takes a shutdown has to keep that. The icon drives the
   service when one is installed (`scm.rs`), else a server of its own.
-  `config.rs`, `state.rs` and `probe.rs` are tested on any system
+  "Open admin console" runs `admin/` (shipped beside the executables by
+  the installer and the zip: `app`, `config`, `public`, `soli.toml`, the
+  list is `PARTS` in `console.rs`) on a `soli.exe` the icon downloads at
+  the first use: one Soli release, named in `console.rs` with the SHA-256
+  of its archive, to move when the admin needs a newer Soli. The console
+  is started with no `SOLIDB_USERNAME` (the browser signs in on
+  `/connection`) and `SOLI_HOST=127.0.0.1`; handing it a credential, or
+  another bind address, would open the database to whoever reaches the
+  port. Its environment is built apart (`console::environment`), never
+  set on the icon's own: `SOLIDB_HOST` means the bind host to
+  `solidb.exe`.
+  `config.rs`, `console.rs`, `state.rs` and `probe.rs` are tested on any system
   (`cargo test --manifest-path tray/Cargo.toml`); the rest is only
   compiled for Windows (`--target x86_64-pc-windows-gnu` from Linux, with
   mingw-w64). `tray/installer/solidb.iss` is the Inno Setup script of the

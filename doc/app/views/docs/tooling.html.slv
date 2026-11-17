@@ -1016,12 +1016,22 @@ end
                 <tbody class="divide-y divide-white/5">
                   <tr><td class="px-4 py-3 text-green-300">Start</td><td class="px-4 py-3">Starts <code>solidb.exe</code> without a window, its output appended to the log.</td></tr>
                   <tr><td class="px-4 py-3 text-green-300">Stop, Restart</td><td class="px-4 py-3">Asks the server to stop as Ctrl-C does, so that it closes its database. It is ended only if it has not gone after 60 seconds.</td></tr>
+                  <tr><td class="px-4 py-3 text-green-300">Open admin console</td><td class="px-4 py-3">Opens the <a href="#admin-console" class="text-cyan-400 hover:underline">admin console</a> in the browser, starting it if it is not running.</td></tr>
                   <tr><td class="px-4 py-3 text-green-300">Open data folder, Open log, Settings</td><td class="px-4 py-3">Open them with Explorer and the text editor. A new instance prints its admin password in the log.</td></tr>
                   <tr><td class="px-4 py-3 text-green-300">Start with Windows</td><td class="px-4 py-3">Starts the icon, and with it the server, when you sign in.</td></tr>
                   <tr><td class="px-4 py-3 text-green-300">Quit</td><td class="px-4 py-3">Removes the icon and leaves the server running. The icon takes the server back when it is started again.</td></tr>
                 </tbody>
               </table>
             </div>
+
+            <h3 id="admin-console" class="text-lg font-bold text-white mb-4 scroll-mt-24">Admin console</h3>
+            <p class="text-sm text-gray-400 mb-4">The installation holds the admin application (<code>admin\</code> beside the executables). <em>Open admin console</em> runs it on this machine and opens it in the browser:</p>
+            <ul class="list-disc list-inside text-sm text-gray-400 space-y-2 mb-8">
+              <li>It runs on the <a href="https://github.com/solisoft/soli_lang" class="text-cyan-400 hover:underline">Soli</a> runtime, which is not part of the installation. The first time, the icon asks, then downloads one release of it (28&nbsp;MB) into <code>%LOCALAPPDATA%\SoliDB\soli</code>. The archive must have the SHA-256 the icon was built with before anything of it is run. On a machine without a connection, put a <code>soli.exe</code> there by hand: it is used as it is.</li>
+              <li>The console listens on the loopback only (<code>127.0.0.1</code>), on the port after the server's, and is not reachable from another machine.</li>
+              <li>It holds no credential. The browser is asked for the server's address and an admin login the first time (a new instance prints its admin password in the log); that sign-in is what protects the database.</li>
+              <li>It is started on a copy of the application in <code>%LOCALAPPDATA%\SoliDB\console</code>, its output goes to <code>console.log</code> beside it, and it ends when the icon is quit.</li>
+            </ul>
 
             <h3 class="text-lg font-bold text-white mb-4">Settings</h3>
             <p class="text-sm text-gray-400 mb-4"><code>%LOCALAPPDATA%\SoliDB\tray.conf</code>, written with the defaults the first time. Quit the icon and start it again to apply a change. A path may name an environment variable.</p>
@@ -1040,7 +1050,10 @@ end
                   <tr><td class="px-4 py-3 font-mono text-green-300">port</td><td class="px-4 py-3">Port of the server</td><td class="px-4 py-3">6745</td></tr>
                   <tr><td class="px-4 py-3 font-mono text-green-300">log</td><td class="px-4 py-3">Where the server's output goes</td><td class="px-4 py-3"><code>%LOCALAPPDATA%\SoliDB\solidb.log</code></td></tr>
                   <tr><td class="px-4 py-3 font-mono text-green-300">args</td><td class="px-4 py-3">Arguments added to the server's command line, e.g. <code>--host 0.0.0.0</code></td><td class="px-4 py-3">-</td></tr>
-                  <tr><td class="px-4 py-3 font-mono text-green-300">console_url</td><td class="px-4 py-3">Adds <em>Open admin console</em> to the menu, opening this address</td><td class="px-4 py-3">-</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">console_port</td><td class="px-4 py-3">Port of the admin console, on the loopback</td><td class="px-4 py-3">the server's + 1</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">soli</td><td class="px-4 py-3">The Soli runtime the console runs on</td><td class="px-4 py-3"><code>%LOCALAPPDATA%\SoliDB\soli\soli.exe</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">console_app</td><td class="px-4 py-3">The admin application</td><td class="px-4 py-3"><code>admin</code> beside <code>solidb-tray.exe</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-green-300">console_url</td><td class="px-4 py-3">An address <em>Open admin console</em> opens instead, when an admin application runs elsewhere</td><td class="px-4 py-3">-</td></tr>
                   <tr><td class="px-4 py-3 font-mono text-green-300">start_server</td><td class="px-4 py-3">Start the server when the icon starts</td><td class="px-4 py-3">true</td></tr>
                 </tbody>
               </table>

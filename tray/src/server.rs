@@ -1,6 +1,7 @@
 //! Starting the server without a window and asking it to stop: what the
 //! icon and the service both do.
 
+use std::ffi::c_void;
 use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::time::Duration;
@@ -35,7 +36,22 @@ pub unsafe fn spawn(cfg: &Config, home: &Path) -> Result<Child, u32> {
     // The server colours its output for a terminal; it goes to a file here.
     std::env::set_var("NO_COLOR", "1");
     let _ = std::fs::create_dir_all(&cfg.data_dir);
-    if let Some(dir) = cfg.log.parent() {
+    start(&cfg.command_line(), home, &cfg.log, None)
+}
+
+/// Starts `line` without a window, in `cwd`, its output appended to `log`.
+/// `environment` is a block as `CreateProcessW` takes one; without it the
+/// process gets the caller's. The error is Windows' code.
+///
+/// # Safety
+/// Calls Win32; the returned handle is the caller's to close.
+pub unsafe fn start(
+    line: &str,
+    cwd: &Path,
+    log: &Path,
+    environment: Option<&[u16]>,
+) -> Result<Child, u32> {
+    if let Some(dir) = log.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
 
@@ -45,7 +61,7 @@ pub unsafe fn spawn(cfg: &Config, home: &Path) -> Result<Child, u32> {
         bInheritHandle: 1,
     };
     let log = CreateFileW(
-        wide(&cfg.log.to_string_lossy()).as_ptr(),
+        wide(&log.to_string_lossy()).as_ptr(),
         FILE_APPEND_DATA,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         &inherit,
@@ -71,8 +87,8 @@ pub unsafe fn spawn(cfg: &Config, home: &Path) -> Result<Child, u32> {
     si.hStdError = log;
     let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
     // CreateProcessW may write into the command line it is given.
-    let mut line = wide(&cfg.command_line());
-    let cwd = wide(&home.to_string_lossy());
+    let mut line = wide(line);
+    let cwd = wide(&cwd.to_string_lossy());
     // A console without a window: the server needs one to be sent Ctrl-C.
     let made = CreateProcessW(
         null(),
@@ -80,8 +96,8 @@ pub unsafe fn spawn(cfg: &Config, home: &Path) -> Result<Child, u32> {
         null(),
         null(),
         1,
-        CREATE_NO_WINDOW,
-        null(),
+        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+        environment.map_or(null(), |block| block.as_ptr() as *const c_void),
         cwd.as_ptr(),
         &si,
         &mut pi,
@@ -101,6 +117,19 @@ pub unsafe fn spawn(cfg: &Config, home: &Path) -> Result<Child, u32> {
         handle: pi.hProcess,
         pid: pi.dwProcessId,
     })
+}
+
+/// Runs `line` to its end, without a window, and gives its exit code.
+///
+/// # Safety
+/// Calls Win32.
+pub unsafe fn run(line: &str, cwd: &Path, log: &Path) -> Result<u32, u32> {
+    let child = start(line, cwd, log, None)?;
+    WaitForSingleObject(child.handle, INFINITE);
+    let mut code = 0u32;
+    GetExitCodeProcess(child.handle, &mut code);
+    CloseHandle(child.handle);
+    Ok(code)
 }
 
 /// Asks the server to stop as Ctrl-C does, so that it closes its database.
