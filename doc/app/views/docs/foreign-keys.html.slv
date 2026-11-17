@@ -183,7 +183,7 @@
               <strong class="text-white">Dump and restore.</strong> <code class="text-indigo-300">solidb-dump</code> writes each key with its collection. <code class="text-indigo-300">solidb-restore</code> declares the keys once every document is in, so the order of the collections in a dump does not matter; a key the restored data breaks is reported as a failed item and left out. With <code class="text-indigo-300">--drop</code>, the keys that refer to a dropped collection are set aside and declared again at the end.
             </p>
             <p class="text-gray-300 leading-relaxed">
-              <strong class="text-white">Imports.</strong> An import into a collection that has a key is checked document by document: load the parents first.
+              <strong class="text-white">Imports.</strong> An import into a collection that has a key is checked document by document: load the parents first. Or defer the check: <code class="text-indigo-300">POST &hellip;/collection/{name}/import?foreign_keys=defer</code> (an administrator of the database) stores the documents without looking their parents up, then checks the collection's keys and lists the orphans in its answer (<code>"orphans": [{"foreign_key", "field", "references", "count", "sample"}]</code>). Nothing is taken back: load the missing parents, or remove the orphans. Everything else an import checks (schema, field rules, unique values, counters) is checked as usual.
             </p>
           </div>
         </div>

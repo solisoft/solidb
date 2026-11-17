@@ -20,14 +20,26 @@ pub struct ImportQuery {
     /// Upsert updates existing `_key`s instead of failing the batch.
     #[serde(default)]
     pub mode: Option<String>,
+    /// `defer`: the references of the documents are not looked up as they
+    /// are written, so that children may come before their parents, in
+    /// this file or in a later import; once the file is in, the
+    /// collection's foreign keys are checked and the answer lists the
+    /// orphans (`orphans`). Nothing is taken back. Admin of the database.
+    #[serde(default)]
+    pub foreign_keys: Option<String>,
 }
 
 /// Apply a batch of documents using insert or upsert semantics.
 fn import_doc_batch(
     collection: &crate::storage::Collection,
     batch_docs: Vec<Value>,
-    upsert: bool,
+    (upsert, defer): (bool, bool),
 ) -> Result<usize, DbError> {
+    if defer {
+        return crate::storage::foreign_keys::deferring(|| {
+            import_doc_batch(collection, batch_docs, (upsert, false))
+        });
+    }
     let batch_len = batch_docs.len();
     if upsert {
         let mut pairs: Vec<(String, Value)> = Vec::with_capacity(batch_len);
@@ -287,6 +299,28 @@ pub async fn import_collection(
         .map(|m| m.eq_ignore_ascii_case("upsert"))
         .unwrap_or(false);
 
+    let defer = match query.foreign_keys.as_deref() {
+        None => false,
+        Some(mode) if mode.eq_ignore_ascii_case("defer") => true,
+        Some(other) => {
+            return Err(DbError::BadRequest(format!(
+                "foreign_keys: '{}' is not a mode; the one there is is 'defer'",
+                other
+            )))
+        }
+    };
+    // Leaving orphans behind is an administrator's choice.
+    if let (true, Some(claims)) = (defer, claims.as_deref()) {
+        crate::server::authz_middleware::enforce(
+            claims,
+            &state,
+            crate::server::authorization::PermissionAction::Admin,
+            Some(&db_name),
+        )
+        .await?;
+    }
+    let how = (upsert, defer);
+
     let database = state.storage.get_database(&db_name)?;
     // Import is a bulk write: the same tiers as the document API apply, or
     // `_scripts` could be installed by uploading a file.
@@ -464,7 +498,7 @@ pub async fn import_collection(
                                     if batch_docs.len() >= 1000 {
                                         let batch_len = batch_docs.len();
                                         let to_write = std::mem::take(&mut batch_docs);
-                                        match import_doc_batch(&collection, to_write, upsert) {
+                                        match import_doc_batch(&collection, to_write, how) {
                                             Ok(n) => imported_count += n,
                                             Err(e) => {
                                                 tracing::error!("Batch import error: {}", e);
@@ -517,7 +551,7 @@ pub async fn import_collection(
                 // Process remaining documents
                 if !batch_docs.is_empty() {
                     let batch_len = batch_docs.len();
-                    match import_doc_batch(&collection, batch_docs, upsert) {
+                    match import_doc_batch(&collection, batch_docs, how) {
                         Ok(n) => imported_count += n,
                         Err(e) => {
                             tracing::error!("Batch import error: {}", e);
@@ -543,17 +577,13 @@ pub async fn import_collection(
                 if let Value::Array(batch_docs) = json {
                     // Moved, not cloned: the parsed tree is already several
                     // times the size of the body it came from.
-                    match import_doc_batch(&collection, batch_docs, upsert) {
+                    match import_doc_batch(&collection, batch_docs, how) {
                         Ok(n) => imported_count += n,
                         Err(e) => return Err(e),
                     }
                 } else if json.is_object() {
                     // Single document import
-                    if upsert {
-                        import_doc_batch(&collection, vec![json], true)?;
-                    } else {
-                        collection.insert(json)?;
-                    }
+                    import_doc_batch(&collection, vec![json], how)?;
                     imported_count += 1;
                 }
             }
@@ -567,6 +597,38 @@ pub async fn import_collection(
     });
     if let Some(error) = first_error {
         answer["error"] = Value::String(error);
+    }
+    // The check a deferred load ends with: what each foreign key of the
+    // collection finds without its parent, now that the file is in.
+    if defer {
+        let checked = collection.clone();
+        let orphans = tokio::task::spawn_blocking(move || {
+            checked
+                .foreign_keys()
+                .into_iter()
+                .map(|key| {
+                    let spec = crate::storage::collection::references::ForeignKeySpec {
+                        field: key.field.clone(),
+                        references: key.references.clone(),
+                        on_delete: key.on_delete,
+                        by: Some(key.by),
+                        name: Some(key.name.clone()),
+                    };
+                    checked.foreign_key_orphans(&spec).map(|found| {
+                        serde_json::json!({
+                            "foreign_key": key.name,
+                            "field": key.field,
+                            "references": key.references,
+                            "count": found.count,
+                            "sample": found.sample,
+                        })
+                    })
+                })
+                .collect::<Result<Vec<Value>, DbError>>()
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task error: {}", e)))??;
+        answer["orphans"] = Value::Array(orphans);
     }
     Ok(Json(answer))
 }

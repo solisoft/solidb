@@ -121,6 +121,10 @@ impl Collection {
         let Some(links) = self.fk() else {
             return Ok(());
         };
+        // A load that checks its references once everything is in.
+        if foreign_keys::is_deferring() {
+            return Ok(());
+        }
         for link in &links.outgoing {
             let Some(parent_key) = foreign_keys::reference(&link.key, &self.name, new)? else {
                 continue;

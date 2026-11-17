@@ -752,6 +752,13 @@ Rules that keep it sound:
 - A full sync sends each collection's foreign keys and indexes
   (`SyncMessage::FullSyncDefinitions`, `Collection::index_specs`): a
   definition made while the replication log was deferred is in no log.
+- **A deferred load** (`foreign_keys::deferring`, the import's
+  `?foreign_keys=defer`): `check_references` looks no parent up on that
+  thread, and the caller checks afterwards (`foreign_key_orphans`).
+  Unlike `unchecked` it switches nothing else off: schema, field rules,
+  counters and unique values are checked, and a delete still restricts or
+  cascades. A new child-side check has to go through `check_references`
+  to be deferred with the others.
 - Sharded collections are refused (`num_shards > 0`; a stored configuration
   with no shard, which setting a collection's properties leaves behind, is
   not sharding).

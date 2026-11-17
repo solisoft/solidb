@@ -247,6 +247,34 @@ pub(crate) fn is_unchecked() -> bool {
     UNCHECKED.with(|n| n.get() > 0)
 }
 
+thread_local! {
+    /// How many [`deferring`] calls this thread is inside.
+    static DEFERRING: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Run `load` with the references of the documents it writes not looked
+/// up on this thread: for a load whose parents may come after their
+/// children, which checks once everything is in
+/// (`Collection::foreign_key_orphans`). Unlike [`unchecked`], everything
+/// else a write does is done: its schema, its field rules, its counters,
+/// its unique values, and a delete still restricts or cascades. `load`
+/// must not hand the work to another thread.
+pub fn deferring<T>(load: impl FnOnce() -> T) -> T {
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            DEFERRING.with(|n| n.set(n.get().saturating_sub(1)));
+        }
+    }
+    DEFERRING.with(|n| n.set(n.get() + 1));
+    let _leave = Leave;
+    load()
+}
+
+pub(crate) fn is_deferring() -> bool {
+    DEFERRING.with(|n| n.get() > 0)
+}
+
 /// A write a delete cascaded into: the child's document as it now is, or
 /// `None` when it was deleted.
 #[derive(Debug, Clone)]
