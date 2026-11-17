@@ -6,6 +6,10 @@
 
 - **Windows: an icon in the notification area.** `solidb-tray.exe`, in the Windows archive beside `solidb.exe`, starts the server without a console window, sends its output to a log file, and shows by its colour whether the server answers: grey stopped, amber starting or stopping, green when `/_api/health` answers, red when the server ended on its own, with a notification that says why. *Stop* and *Restart* ask the server to stop as Ctrl-C does, so it closes its database. *Quit* leaves the server running and the icon takes it back at its next start. The menu also opens the data folder, the log and the settings (`%LOCALAPPDATA%\SoliDB\tray.conf`: port, data directory, arguments), and *Start with Windows* starts it when you sign in. The server runs in the user's session; this is not a Windows service. The code is the `tray/` crate, outside the workspace. See Tooling › solidb-tray.
 
+### Fixed
+
+- **Windows: the server starts on a machine without the Visual C++ runtime.** `solidb.exe` and the three tools beside it asked for `MSVCP140.dll` and `VCRUNTIME140.dll`, which only Microsoft's Visual C++ Redistributable brings: on a Windows where nothing had installed it, the server answered a double click with "MSVCP140.dll was not found" and did not start. The C runtime is now linked into the executables (`.cargo/config.toml`, `crt-static` for `x86_64-pc-windows-msvc`). Through 2.13.0, install the Visual C++ Redistributable first.
+
 ## [2.13.0](https://github.com/solisoft/solidb/compare/v2.12.1...v2.13.0) (2026-11-17)
 
 Users and roles from a shell (`solidb user`), an admin reset of another

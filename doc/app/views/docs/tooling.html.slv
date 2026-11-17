@@ -1001,7 +1001,7 @@ end
               </table>
             </div>
             <p class="text-sm text-gray-400 mb-4">A <code>tray.conf</code> beside <code>solidb-tray.exe</code> makes that folder the icon's own: settings, log and pid file live there.</p>
-            <p class="text-sm text-gray-400">The server runs in your session and ends when you sign out; the icon does not install a Windows service. Through 2.13.0, <code>solidb.exe</code> needs the Microsoft Visual C++ Redistributable, which a new Windows does not have: without it the icon turns red and says that a DLL is missing.</p>
+            <p class="text-sm text-gray-400">The server runs in your session and ends when you sign out; the icon does not install a Windows service. The <code>solidb.exe</code> of 2.13.0 and earlier needs the Microsoft Visual C++ Redistributable, which a new Windows does not have: without it the icon turns red and says that a DLL is missing.</p>
           </div>
         </div>
       </section>

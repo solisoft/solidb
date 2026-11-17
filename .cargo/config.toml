@@ -4,5 +4,15 @@ rustflags = ["-C", "linker=clang", "-C", "force-unwind-tables=no"]
 [target.aarch64-unknown-linux-gnu]
 rustflags = ["-C", "linker=aarch64-linux-gnu-gcc"]
 
+# The C runtime is linked into the Windows executables. Linked as a DLL (the
+# default), solidb.exe asked for MSVCP140.dll and VCRUNTIME140.dll, which a
+# Windows that never had the Visual C++ Redistributable installed does not
+# have: the 2.13.0 binary did not start there. The C and C++ dependencies
+# (RocksDB, aws-lc, zstd, lz4, Lua) follow this flag in their build scripts.
+# An RUSTFLAGS environment variable replaces these flags: a Windows build
+# that sets one must repeat this.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
 [net]
 git-fetch-with-cli = true

@@ -393,13 +393,11 @@ jobs:
         run: |
           tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore solidb-migrate-engine
 
-      # The notification-area icon (tray/, outside the workspace). Its C
-      # runtime is linked in: a Windows that has no Visual C++ runtime must
-      # still be able to start it.
+      # The notification-area icon (tray/, outside the workspace). Built
+      # from the repository's root, so it takes the root .cargo/config.toml
+      # and links its C runtime in, like the server.
       - name: Build the tray icon (Windows)
         if: runner.os == 'Windows'
-        env:
-          RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --manifest-path tray/Cargo.toml --target ${{ matrix.target }}
 
       - name: Package binaries (Windows)
