@@ -802,3 +802,67 @@ async fn a_write_in_a_transaction_follows_its_earlier_writes() {
         .await;
     assert_eq!(out["result"], json!([["carl", 1], ["dora", 2], ["gus", 5]]));
 }
+
+/// Card #894: a transaction that tracks its reads may read a columnar
+/// collection, and its commit is refused when the collection was written
+/// meanwhile, as for a document collection read by range. The read used
+/// to be refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_columnar_collection_read_in_a_transaction_is_checked_at_commit() {
+    let app = App::new().await;
+    let (status, out) = app
+        .call(
+            "POST",
+            &format!("/_api/database/{DB}/columnar"),
+            json!({"name": "metrics", "columns": [
+                {"name": "host", "type": "string"}, {"name": "v", "type": "int64"}]}),
+        )
+        .await;
+    assert!(status.is_success(), "{out}");
+    let insert = |from: i64| {
+        let rows: Vec<Value> = (from..from + 10)
+            .map(|i| json!({"host": format!("h{}", i % 3), "v": i}))
+            .collect();
+        json!({ "rows": rows })
+    };
+    let insert_url = format!("/_api/database/{DB}/columnar/metrics/insert");
+    let (status, out) = app.call("POST", &insert_url, insert(0)).await;
+    assert!(status.is_success(), "{out}");
+
+    // The three ways SDBQL reads one: rows, an aggregate folded from the
+    // arrays, a count.
+    let reads = [
+        "FOR r IN metrics FILTER r.host == 'h1' RETURN r.v",
+        "FOR r IN metrics COLLECT h = r.host AGGREGATE s = SUM(r.v) RETURN [h, s]",
+        "FOR r IN metrics COLLECT AGGREGATE s = SUM(r.v) RETURN s",
+        "RETURN LENGTH(FOR r IN metrics FILTER r.v >= 0 RETURN 1)",
+    ];
+    for level in ["repeatable_read", "serializable"] {
+        for read in reads {
+            // Undisturbed: it reads, writes a document, and commits.
+            let tx = app.begin(level).await;
+            let rows = app.rows(&tx, read).await;
+            assert!(!rows.as_array().unwrap().is_empty(), "{read}");
+            app.rows(&tx, "INSERT {seen: true} INTO log RETURN 1").await;
+            assert_eq!(app.commit(&tx).await, StatusCode::OK, "{level}: {read}");
+
+            // Rows inserted after its read: the commit is refused.
+            let tx = app.begin(level).await;
+            app.rows(&tx, read).await;
+            app.rows(&tx, "INSERT {seen: true} INTO log RETURN 1").await;
+            let (status, out) = app.call("POST", &insert_url, insert(100)).await;
+            assert!(status.is_success(), "{out}");
+            assert_eq!(
+                app.commit(&tx).await,
+                StatusCode::CONFLICT,
+                "{level}: {read}"
+            );
+        }
+    }
+
+    // At read_committed nothing is tracked and nothing is refused.
+    let tx = app.begin("read_committed").await;
+    app.rows(&tx, reads[0]).await;
+    app.call("POST", &insert_url, insert(500)).await;
+    assert_eq!(app.commit(&tx).await, StatusCode::OK);
+}

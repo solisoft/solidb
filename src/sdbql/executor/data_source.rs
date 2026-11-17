@@ -48,6 +48,24 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// A transaction that tracks its reads is about to read the columnar
+    /// collection `name`: hold it to the range rule on the collection that
+    /// backs it, whose write generation every columnar write moves
+    /// (`ColumnarCollection::wrote_on_release`). Called before the read.
+    /// Such a read used to be refused (card #894).
+    pub(super) fn note_columnar_read(
+        &self,
+        database: &crate::storage::Database,
+        name: &str,
+    ) -> DbResult<()> {
+        let Some(reads) = self.tx_writer.as_ref().and_then(|tw| tw.reads.as_ref()) else {
+            return Ok(());
+        };
+        let backing = database.system_collection(&format!("_columnar_{name}"))?;
+        reads.track(&backing).note_range_read();
+        Ok(())
+    }
+
     fn get_collection_untracked(&self, name: &str) -> DbResult<crate::storage::Collection> {
         // Credential collections (`_env`, `_admins`, `_api_keys`) are ordinary
         // column families, so without this a `FOR d IN _env RETURN d` hands
@@ -254,7 +272,7 @@ impl<'a> QueryExecutor<'a> {
         if !self.is_columnar(&database, name) {
             return Ok(None);
         }
-        self.refuse_untracked_read("a columnar collection")?;
+        self.note_columnar_read(&database, name)?;
 
         Ok(Some(crate::storage::ColumnarCollection::load(
             name.to_string(),

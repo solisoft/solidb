@@ -108,7 +108,7 @@
               </ul>
             </li>
             <li><strong class="text-white">Checked with Elle:</strong> at Repeatable Read and Serializable, 30 s of concurrent read-and-append transactions through queries (184,666 and 215,631 committed) are serializable, with no anomaly; so is the document path. At Read Committed the same workload shows the expected ones (non-repeatable reads, write skew). About half the transactions are refused under that contention, on a lock or on a changed read.</li>
-            <li><strong class="text-white">Limits:</strong> the checks hold between transactions at these levels. A plain write outside any transaction takes part as a writer (it refuses a commit that read what it changed) but its own reads are not checked. Columnar and sharded collections cannot be read in a transaction at these levels; use Read Committed.</li>
+            <li><strong class="text-white">Limits:</strong> the checks hold between transactions at these levels. A plain write outside any transaction takes part as a writer (it refuses a commit that read what it changed) but its own reads are not checked. A columnar collection read at these levels is checked as a whole: the commit is refused when any row of it was inserted or deleted since the read. Its inserts are never part of a transaction. Sharded collections cannot be read in a transaction at these levels; use Read Committed.</li>
           </ul>
         </div>
       </section>

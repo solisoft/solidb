@@ -597,6 +597,15 @@ impl GroupByColumn {
     }
 }
 
+/// See [`ColumnarCollection::wrote_on_release`].
+struct WroteOnRelease(Arc<crate::storage::keyspace::KsState>);
+
+impl Drop for WroteOnRelease {
+    fn drop(&mut self) {
+        self.0.bump_write_generation();
+    }
+}
+
 /// Columnar collection handle
 pub struct ColumnarCollection {
     pub name: String,
@@ -735,6 +744,17 @@ impl ColumnarCollection {
         }
         loaded.resume_index_builds();
         Ok(loaded)
+    }
+
+    /// Held with the shared write lock by everything that takes it to
+    /// write: when it is released, before the lock is, the backing
+    /// collection's write generation moves. A transaction that read the
+    /// collection at `repeatable_read` or `serializable` compares it at
+    /// commit (`keyspace::ReadTracker`), as for a document collection read
+    /// by range. Moving it for a lock taken and nothing written only makes
+    /// such a transaction retry.
+    fn wrote_on_release(&self) -> WroteOnRelease {
+        WroteOnRelease(Arc::clone(self.ks.state()))
     }
 
     /// Lock shared by every handle of this columnar collection. The per-handle
@@ -1116,6 +1136,7 @@ impl ColumnarCollection {
     fn migrate(&self) -> DbResult<()> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1200,6 +1221,7 @@ impl ColumnarCollection {
 
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1261,6 +1283,7 @@ impl ColumnarCollection {
         }
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1301,6 +1324,7 @@ impl ColumnarCollection {
     pub fn insert_row_with_id(&self, row_uuid: &str, row: Value) -> DbResult<bool> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1390,6 +1414,7 @@ impl ColumnarCollection {
     ) -> DbResult<Vec<String>> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let db = &self.db;
         let cf = self.ks.handle(db).ok_or_else(|| self.not_found())?;
         {
@@ -1520,6 +1545,7 @@ impl ColumnarCollection {
     fn merge_one_run(&self) -> DbResult<bool> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let meta = self
             .meta
             .read()
@@ -1680,6 +1706,7 @@ impl ColumnarCollection {
     ) -> DbResult<()> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1755,6 +1782,7 @@ impl ColumnarCollection {
         }
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -1800,6 +1828,7 @@ impl ColumnarCollection {
         let cutoff = uuid::Uuid::from_u128((cutoff_ms as u128) << 80).to_string();
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -2263,6 +2292,7 @@ impl ColumnarCollection {
     pub fn truncate(&self) -> DbResult<()> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -2386,6 +2416,7 @@ impl ColumnarCollection {
     ) -> DbResult<Arc<IndexBuild>> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()
@@ -2578,6 +2609,7 @@ impl ColumnarCollection {
     fn forget_build(&self, column: &str, id: &str) {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let Ok(mut meta) = self.meta.write() else {
             return;
         };
@@ -2742,6 +2774,7 @@ impl ColumnarCollection {
 
             // Written under the lock, if the positions read still stand.
             let _guard = guard.unwrap_or_else(|| shared.lock());
+            let _wrote = self.wrote_on_release();
             let mut meta = self
                 .meta
                 .write()
@@ -2834,6 +2867,7 @@ impl ColumnarCollection {
     pub fn drop_index(&self, column: &str) -> DbResult<()> {
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
+        let _wrote = self.wrote_on_release();
         let mut meta = self
             .meta
             .write()

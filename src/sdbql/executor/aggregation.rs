@@ -86,6 +86,10 @@ impl<'a> QueryExecutor<'a> {
             return Ok(None);
         }
 
+        // A transaction that tracks its reads compares the collection's
+        // write generation at commit.
+        self.note_columnar_read(&database, collection_name)?;
+
         // Load columnar collection
         let columnar =
             match ColumnarCollection::load(collection_name.clone(), db_name, database.db_arc()) {

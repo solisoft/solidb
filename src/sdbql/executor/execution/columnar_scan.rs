@@ -2124,6 +2124,9 @@ impl QueryExecutor<'_> {
         if !self.is_columnar(&database, name) {
             return Ok(None);
         }
+        // Before anything is read of it: a transaction that tracks its
+        // reads compares the collection's write generation at commit.
+        self.note_columnar_read(&database, name)?;
         let columnar =
             crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
         let known: Vec<String> = columnar
@@ -2135,7 +2138,6 @@ impl QueryExecutor<'_> {
         let Some(col_plan) = self.columnar_plan(&found, &known, outer) else {
             return Ok(None);
         };
-        self.refuse_untracked_read("a columnar collection")?;
         // Too large to be kept decoded: a few blocks at a time.
         if columnar.larger_than_kept() {
             return self

@@ -540,7 +540,15 @@ Rules that keep it sound:
 - A read that answers from anywhere but the stored keys — a cached count, an
   in-memory index, another store — must call `Collection::note_range_read`
   (as `vector_search` and `COLLECTION_COUNT` do) or be refused with
-  `QueryExecutor::refuse_untracked_read` (columnar, sharded).
+  `QueryExecutor::refuse_untracked_read` (sharded).
+- A columnar collection is read through `QueryExecutor::note_columnar_read`,
+  called before the read: it marks the collection that backs it
+  (`_columnar_<name>`) as read by range. Every columnar write moves that
+  keyspace's write generation when it releases the shared write lock
+  (`ColumnarCollection::wrote_on_release`, taken at each
+  `shared_write_lock` site): a new write path that takes the lock must
+  take it too, and a new SDBQL read of a columnar collection must note
+  itself. Columnar inserts are still outside any transaction.
 - A new data key prefix is ranged by default; only add it to
   `METADATA_KEY_PREFIXES` if reading it says nothing about the documents.
 - `get_collection_for_write` hands out the untracked handle on purpose: what
