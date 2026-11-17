@@ -321,6 +321,45 @@ module SoliDB
         nil
     end
 
+    # --- Counter fields ---
+
+    # The counter fields of `collection`: {"counters" => [...]}, each with
+    # its "state" ("next" is the next number).
+    def list_counters(database, collection)
+        send_command("list_counters", database: database, collection: collection)
+    end
+
+    # Declare that the database numbers `field` on insert: each insert gets
+    # the next number, never twice the same, with no gap. Options: start,
+    # reset ("day", "week", "month", "year"), timezone, prefix, suffix,
+    # padding, durable, node. An insert then leaves the field out and reads
+    # it from the answer. Returns the counter as declared, with its state.
+    def create_counter(database, collection, field, **options)
+        counter = options.transform_keys(&:to_s).merge("field" => field)
+        send_command("create_counter", database: database, collection: collection, counter: counter)
+    end
+
+    def delete_counter(database, collection, field)
+        send_command("delete_counter", database: database, collection: collection, field: field)
+        nil
+    end
+
+    # Make `next_number` the number the next insert gets. Refused when a
+    # document already holds it.
+    def set_counter_next(database, collection, field, next_number)
+        send_command("set_counter_next", database: database, collection: collection, field: field, next: next_number)
+    end
+
+    # Hand the numbering of `field` to `node` (in a cluster, one node
+    # numbers), asked of the node that numbers now. With `force: true`, take
+    # it for the node this client is connected to, for when the node that
+    # numbers is lost.
+    def move_counter(database, collection, field, node: nil, force: false)
+        args = { database: database, collection: collection, field: field, force: force }
+        args[:node] = node unless node.nil?
+        send_command("move_counter", **args)
+    end
+
     # The documents of `collection` whose `field` names a document that is
     # not in `references`: {"count" => n, "sample" => [...]}.
     def check_foreign_key(database, collection, field, references, by: nil)

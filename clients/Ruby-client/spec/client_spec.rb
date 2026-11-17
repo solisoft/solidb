@@ -129,4 +129,27 @@ RSpec.describe SoliDB::Client do
       expect(client.list_foreign_keys(db, "orders")["foreign_keys"]).to eq([])
       client.delete_database(db)
   end
+
+  it "declares a counter field and reads the numbers back" do
+      db = "ruby_counter_db"
+      client.delete_database(db) rescue nil
+      client.create_database(db)
+      client.create_collection(db, "invoices")
+
+      counter = client.create_counter(db, "invoices", "number", start: 7, prefix: "INV-", padding: 4, durable: false)
+      expect(counter["state"]["next"]).to eq(7)
+      expect(client.insert(db, "invoices", {"total" => 10})["number"]).to eq("INV-0007")
+      expect(client.insert(db, "invoices", {"total" => 20})["number"]).to eq("INV-0008")
+      expect(client.list_counters(db, "invoices")["counters"][0]["state"]["next"]).to eq(9)
+
+      # The client neither chooses the number nor reuses one.
+      expect { client.insert(db, "invoices", {"total" => 1, "number" => "INV-0001"}) }.to raise_error(StandardError)
+      expect(client.set_counter_next(db, "invoices", "number", 100)["state"]["next"]).to eq(100)
+      expect(client.insert(db, "invoices", {"total" => 30})["number"]).to eq("INV-0100")
+      expect { client.set_counter_next(db, "invoices", "number", 100) }.to raise_error(StandardError)
+
+      client.delete_counter(db, "invoices", "number")
+      expect(client.list_counters(db, "invoices")["counters"]).to eq([])
+      client.delete_database(db)
+  end
 end

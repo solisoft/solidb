@@ -69,6 +69,53 @@ defmodule SoliDB.IndexesOps do
     Client.send_command(client, "check_foreign_key", args)
   end
 
+  # --- Counter fields ---
+
+  @doc """
+  The counter fields of `collection`, each with its state (`"next"` is the
+  next number).
+  """
+  def list_counters(client, collection) do
+    Client.send_command(client, "list_counters", %{database: Client.get_database(client), collection: collection})
+  end
+
+  @doc """
+  Declare that the database numbers `field` on insert: each insert gets the
+  next number, never twice the same, with no gap. `options` is a map that
+  may hold `start`, `reset` ("day", "week", "month", "year"), `timezone`,
+  `prefix`, `suffix`, `padding`, `durable` and `node`. An insert then
+  leaves the field out and reads it from the answer.
+  """
+  def create_counter(client, collection, field, options \\ %{}) do
+    counter = options |> Map.new() |> Map.put(:field, field)
+    Client.send_command(client, "create_counter", %{database: Client.get_database(client), collection: collection, counter: counter})
+  end
+
+  def delete_counter(client, collection, field) do
+    Client.send_command(client, "delete_counter", %{database: Client.get_database(client), collection: collection, field: field})
+  end
+
+  @doc """
+  Make `next` the number the next insert gets. Refused when a document
+  already holds it.
+  """
+  def set_counter_next(client, collection, field, next) do
+    Client.send_command(client, "set_counter_next", %{database: Client.get_database(client), collection: collection, field: field, next: next})
+  end
+
+  @doc """
+  Hand the numbering of `field` to `node` (in a cluster, one node numbers),
+  asked of the node that numbers now. With `force: true`, take it for the
+  node this client is connected to, for when the node that numbers is lost.
+  """
+  def move_counter(client, collection, field, opts \\ []) do
+    args =
+      %{database: Client.get_database(client), collection: collection, field: field, force: opts[:force] == true}
+      |> put_opt(:node, opts[:node])
+
+    Client.send_command(client, "move_counter", args)
+  end
+
   defp put_opt(args, _key, nil), do: args
   defp put_opt(args, key, value), do: Map.put(args, key, value)
 end

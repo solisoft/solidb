@@ -621,6 +621,89 @@ class Client
         ]);
     }
 
+    // --- Counter fields ---
+
+    /**
+     * The counter fields of $collection: ["counters" => [...]], each with
+     * its "state" ("next" is the next number).
+     */
+    public function listCounters(string $database, string $collection): array
+    {
+        $res = $this->sendCommand('list_counters', [
+            'database' => $database,
+            'collection' => $collection
+        ]);
+        return $res['data'] ?? [];
+    }
+
+    /**
+     * Declare that the database numbers $field on insert: each insert gets
+     * the next number, never twice the same, with no gap. $options: start,
+     * reset ("day", "week", "month", "year"), timezone, prefix, suffix,
+     * padding, durable, node. An insert then leaves the field out and reads
+     * it from the answer. Returns the counter as declared, with its state.
+     */
+    public function createCounter(string $database, string $collection, string $field, array $options = []): array
+    {
+        $options['field'] = $field;
+        $res = $this->sendCommand('create_counter', [
+            'database' => $database,
+            'collection' => $collection,
+            'counter' => $options
+        ]);
+        return $res['data'] ?? [];
+    }
+
+    public function deleteCounter(string $database, string $collection, string $field): void
+    {
+        $this->sendCommand('delete_counter', [
+            'database' => $database,
+            'collection' => $collection,
+            'field' => $field
+        ]);
+    }
+
+    /**
+     * Make $next the number the next insert gets. Refused when a document
+     * already holds it.
+     */
+    public function setCounterNext(string $database, string $collection, string $field, int $next): array
+    {
+        $res = $this->sendCommand('set_counter_next', [
+            'database' => $database,
+            'collection' => $collection,
+            'field' => $field,
+            'next' => $next
+        ]);
+        return $res['data'] ?? [];
+    }
+
+    /**
+     * Hand the numbering of $field to $node (in a cluster, one node
+     * numbers), asked of the node that numbers now. With $force, take it
+     * for the node this client is connected to, for when the node that
+     * numbers is lost.
+     */
+    public function moveCounter(
+        string $database,
+        string $collection,
+        string $field,
+        ?string $node = null,
+        bool $force = false
+    ): array {
+        $args = [
+            'database' => $database,
+            'collection' => $collection,
+            'field' => $field,
+            'force' => $force
+        ];
+        if ($node !== null) {
+            $args['node'] = $node;
+        }
+        $res = $this->sendCommand('move_counter', $args);
+        return $res['data'] ?? [];
+    }
+
     /**
      * The documents of $collection whose $field names a document that is
      * not in $references: ["count" => n, "sample" => [...]].

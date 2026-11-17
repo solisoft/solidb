@@ -107,4 +107,82 @@ export class IndexesClient {
         if (by !== undefined) args.by = by;
         return this.client.sendCommand('check_foreign_key', args);
     }
+
+    // --- Counter fields ---
+
+    /**
+     * The counter fields of `collection`: `{ counters: [...] }`, each with
+     * its `state` (`next` is the next number).
+     */
+    async listCounters(collection: string): Promise<any> {
+        return this.client.sendCommand('list_counters', {
+            database: this.client.database,
+            collection
+        });
+    }
+
+    /**
+     * Declare that the database numbers `field` on insert: each insert gets
+     * the next number, never twice the same, with no gap. An insert then
+     * leaves the field out and reads it from the answer. Returns the
+     * counter as declared, with its state.
+     */
+    async createCounter(
+        collection: string,
+        field: string,
+        options: {
+            start?: number;
+            reset?: 'day' | 'week' | 'month' | 'year';
+            timezone?: string;
+            prefix?: string;
+            suffix?: string;
+            padding?: number;
+            durable?: boolean;
+            node?: string;
+        } = {}
+    ): Promise<any> {
+        return this.client.sendCommand('create_counter', {
+            database: this.client.database,
+            collection,
+            counter: { ...options, field }
+        });
+    }
+
+    async deleteCounter(collection: string, field: string): Promise<void> {
+        await this.client.sendCommand('delete_counter', {
+            database: this.client.database,
+            collection,
+            field
+        });
+    }
+
+    /**
+     * Make `next` the number the next insert gets. Refused when a document
+     * already holds it.
+     */
+    async setCounterNext(collection: string, field: string, next: number): Promise<any> {
+        return this.client.sendCommand('set_counter_next', {
+            database: this.client.database,
+            collection,
+            field,
+            next
+        });
+    }
+
+    /**
+     * Hand the numbering of `field` to `node` (in a cluster, one node
+     * numbers), asked of the node that numbers now. With `force`, take it
+     * for the node this client is connected to, for when the node that
+     * numbers is lost.
+     */
+    async moveCounter(collection: string, field: string, node?: string, force: boolean = false): Promise<any> {
+        const args: Record<string, any> = {
+            database: this.client.database,
+            collection,
+            field,
+            force
+        };
+        if (node !== undefined) args.node = node;
+        return this.client.sendCommand('move_counter', args);
+    }
 }

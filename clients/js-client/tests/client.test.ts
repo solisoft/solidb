@@ -93,6 +93,26 @@ async function runTests() {
         assert.deepStrictEqual((await client.indexes.listForeignKeys('orders')).foreign_keys, []);
         console.log('Foreign keys OK');
 
+        // Counter fields
+        await client.createCollection(DB, 'invoices');
+        const counter = await client.indexes.createCounter('invoices', 'number', {
+            start: 7,
+            prefix: 'INV-',
+            padding: 4,
+            durable: false
+        });
+        assert.strictEqual(counter.state.next, 7);
+        assert.strictEqual((await client.insert(DB, 'invoices', { total: 10 })).number, 'INV-0007');
+        assert.strictEqual((await client.insert(DB, 'invoices', { total: 20 })).number, 'INV-0008');
+        assert.strictEqual((await client.indexes.listCounters('invoices')).counters[0].state.next, 9);
+        await assert.rejects(client.insert(DB, 'invoices', { total: 1, number: 'INV-0001' }));
+        assert.strictEqual((await client.indexes.setCounterNext('invoices', 'number', 100)).state.next, 100);
+        assert.strictEqual((await client.insert(DB, 'invoices', { total: 30 })).number, 'INV-0100');
+        await assert.rejects(client.indexes.setCounterNext('invoices', 'number', 100));
+        await client.indexes.deleteCounter('invoices', 'number');
+        assert.deepStrictEqual((await client.indexes.listCounters('invoices')).counters, []);
+        console.log('Counters OK');
+
     } catch (e: any) {
         console.error('TEST FAILED:', e);
         process.exit(1);

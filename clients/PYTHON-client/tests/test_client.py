@@ -136,3 +136,32 @@ def test_foreign_keys(client):
     client.delete_foreign_key(db, "orders", "fk_customer")
     assert client.list_foreign_keys(db, "orders")["foreign_keys"] == []
     client.delete_database(db)
+
+
+def test_counters(client):
+    db = "python_counter_db"
+    try:
+        client.delete_database(db)
+    except ServerError:
+        pass
+    client.create_database(db)
+    client.create_collection(db, "invoices")
+
+    counter = client.create_counter(
+        db, "invoices", "number", start=7, prefix="INV-", padding=4, durable=False)
+    assert counter["state"]["next"] == 7
+    assert client.insert(db, "invoices", {"total": 10})["number"] == "INV-0007"
+    assert client.insert(db, "invoices", {"total": 20})["number"] == "INV-0008"
+    assert client.list_counters(db, "invoices")["counters"][0]["state"]["next"] == 9
+
+    # The client neither chooses the number nor reuses one.
+    with pytest.raises(ServerError):
+        client.insert(db, "invoices", {"total": 1, "number": "INV-0001"})
+    assert client.set_counter_next(db, "invoices", "number", 100)["state"]["next"] == 100
+    assert client.insert(db, "invoices", {"total": 30})["number"] == "INV-0100"
+    with pytest.raises(ServerError):
+        client.set_counter_next(db, "invoices", "number", 100)
+
+    client.delete_counter(db, "invoices", "number")
+    assert client.list_counters(db, "invoices")["counters"] == []
+    client.delete_database(db)

@@ -166,3 +166,97 @@ func (i *IndexesClient) CheckForeignKey(collection, field, references, by string
 	}
 	return nil, nil
 }
+
+// ListCounters returns the counter fields of a collection ("counters"),
+// each with its "state" ("next" is the next number).
+func (i *IndexesClient) ListCounters(collection string) (map[string]interface{}, error) {
+	res, err := i.client.SendCommand("list_counters", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}
+
+// CreateCounter declares that the database numbers field on insert: each
+// insert gets the next number, never twice the same, with no gap. options
+// may hold "start", "reset" ("day", "week", "month", "year"), "timezone",
+// "prefix", "suffix", "padding", "durable" and "node"; nil for a plain
+// count from 1. An insert then leaves the field out and reads it from the
+// answer. It returns the counter as declared, with its state.
+func (i *IndexesClient) CreateCounter(collection, field string, options map[string]interface{}) (map[string]interface{}, error) {
+	counter := map[string]interface{}{}
+	for k, v := range options {
+		counter[k] = v
+	}
+	counter["field"] = field
+	res, err := i.client.SendCommand("create_counter", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+		"counter":    counter,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}
+
+// DeleteCounter stops numbering a field. The numbers given stay.
+func (i *IndexesClient) DeleteCounter(collection, field string) error {
+	_, err := i.client.SendCommand("delete_counter", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+		"field":      field,
+	})
+	return err
+}
+
+// SetCounterNext makes next the number the next insert gets. It is refused
+// when a document already holds it.
+func (i *IndexesClient) SetCounterNext(collection, field string, next uint64) (map[string]interface{}, error) {
+	res, err := i.client.SendCommand("set_counter_next", map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+		"field":      field,
+		"next":       next,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}
+
+// MoveCounter hands the numbering of field to node (in a cluster, one node
+// numbers), asked of the node that numbers now. With force, it takes the
+// numbering for the node this client is connected to, for when the node
+// that numbers is lost; node may then be empty.
+func (i *IndexesClient) MoveCounter(collection, field, node string, force bool) (map[string]interface{}, error) {
+	args := map[string]interface{}{
+		"database":   i.client.database,
+		"collection": collection,
+		"field":      field,
+		"force":      force,
+	}
+	if node != "" {
+		args["node"] = node
+	}
+	res, err := i.client.SendCommand("move_counter", args)
+	if err != nil {
+		return nil, err
+	}
+	if m, ok := res.(map[string]interface{}); ok {
+		return m, nil
+	}
+	return nil, nil
+}

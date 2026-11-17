@@ -336,6 +336,41 @@ class Client:
     def delete_foreign_key(self, database, collection, name):
         self._send_command("delete_foreign_key", database=database, collection=collection, name=name)
 
+    # --- Counter fields ---
+
+    def list_counters(self, database, collection):
+        """The counter fields of `collection`: `{"counters": [...]}`, each
+        with its `state` (`next` is the next number)."""
+        return self._send_command("list_counters", database=database, collection=collection)
+
+    def create_counter(self, database, collection, field, **options):
+        """Declare that the database numbers `field` on insert: each insert
+        gets the next number, never twice the same, with no gap. Options:
+        `start`, `reset` ("day", "week", "month", "year"), `timezone`,
+        `prefix`, `suffix`, `padding`, `durable`, `node`. An insert then
+        leaves the field out and reads it from the answer. Returns the
+        counter as declared, with its state."""
+        counter = dict(options)
+        counter["field"] = field
+        return self._send_command("create_counter", database=database, collection=collection, counter=counter)
+
+    def delete_counter(self, database, collection, field):
+        self._send_command("delete_counter", database=database, collection=collection, field=field)
+
+    def set_counter_next(self, database, collection, field, next):
+        """Make `next` the number the next insert gets. Refused when a
+        document already holds it."""
+        return self._send_command("set_counter_next", database=database, collection=collection, field=field, next=next)
+
+    def move_counter(self, database, collection, field, node=None, force=False):
+        """Hand the numbering of `field` to `node` (in a cluster, one node
+        numbers), asked of the node that numbers now. With `force=True`,
+        take it for the node this client is connected to, for when the node
+        that numbers is lost."""
+        args = {"database": database, "collection": collection, "field": field, "force": force}
+        if node is not None: args["node"] = node
+        return self._send_command("move_counter", **args)
+
     def check_foreign_key(self, database, collection, field, references, by=None):
         """The documents of `collection` whose `field` names a document that
         is not in `references`: `{"count": n, "sample": [...]}`."""
