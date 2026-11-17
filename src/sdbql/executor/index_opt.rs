@@ -2601,6 +2601,52 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// The rows of `FOR v IN c FILTER v._key == x` (or `IN` a list), read
+    /// by key for each outer row: what the stored documents and
+    /// the executor's transaction say together. `None` when the FILTER is
+    /// anything else, which is left to the scan.
+    pub(super) fn rows_by_key(
+        &self,
+        for_clause: &crate::sdbql::ast::ForClause,
+        filter: &Expression,
+        rows: &[Context],
+        scan_limit: Option<usize>,
+    ) -> DbResult<Option<Vec<Context>>> {
+        let Ok(collection) = self.get_collection(&for_clause.collection) else {
+            return Ok(None);
+        };
+        // A sharded collection's documents are in its shards.
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return Ok(None);
+        }
+        let mut out = Vec::new();
+        for ctx in rows {
+            let Some(condition) = self
+                .extract_indexable_condition(filter, &for_clause.variable, ctx)
+                .filter(|c| {
+                    // `_id` is left to the scan: the id of a document the
+                    // transaction inserted is not matched by the read by id.
+                    c.field == "_key" && matches!(c.op, BinaryOperator::Equal | BinaryOperator::In)
+                })
+            else {
+                return Ok(None);
+            };
+            let Some(docs) = self.use_index_for_condition(&collection, &condition, None) else {
+                return Ok(None);
+            };
+            for doc in docs.into_iter().take(scan_limit.unwrap_or(usize::MAX)) {
+                let mut row = ctx.clone();
+                row.insert(for_clause.variable.clone(), doc.into_value());
+                out.push(row);
+            }
+            self.check_budget(out.len())?;
+        }
+        Ok(Some(out))
+    }
+
     /// What the executor's transaction has staged for `key` of `collection`:
     /// `Some(None)` when it deleted it, `None` when it did not write it (or
     /// there is no transaction).

@@ -350,6 +350,31 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
 
+                    // A transaction that wrote the collection reads it by
+                    // the scan below, which lays its staged documents over
+                    // the stored ones. A FILTER that names documents by key
+                    // is the exception: the read by key returns what the
+                    // transaction staged, and a scan of the collection for
+                    // one document is what a transfer's second UPDATE paid
+                    // (card #861).
+                    if is_collection
+                        && !self.row_policy_applies(&for_clause.collection)
+                        && self.tx_wrote(&for_clause.collection)
+                    {
+                        if let Some(index_filter) = index_filter.as_deref() {
+                            if let Some(mut new_rows) =
+                                self.rows_by_key(for_clause, index_filter, &rows, scan_limit)?
+                            {
+                                new_rows
+                                    .retain(|ctx| filters.iter().all(|f| self.filter_row(f, ctx)));
+                                rows = new_rows;
+                                self.check_budget(rows.len())?;
+                                i += 1 + filters.len();
+                                continue;
+                            }
+                        }
+                    }
+
                     // The index read returns unfiltered rows; a collection
                     // under a row policy takes the scan below (audit H2).
                     if is_collection
