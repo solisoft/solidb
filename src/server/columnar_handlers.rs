@@ -705,7 +705,9 @@ pub async fn aggregate_columnar_handler(
     db.columnar_policy_lets(&collection, admin(&claims))?;
     let op = AggregateOp::from_str(&req.operation).ok_or_else(|| {
         DbError::BadRequest(format!(
-            "Unknown aggregation operation: {}. Supported: SUM, AVG, COUNT, MIN, MAX, COUNT_DISTINCT",
+            "Unknown aggregation operation: {}. Supported: SUM, AVG, COUNT, MIN, MAX, \
+             COUNT_DISTINCT. STDDEV, VARIANCE, MEDIAN, PERCENTILE and APPROX_COUNT_DISTINCT \
+             are aggregates of a query: FOR r IN <collection> COLLECT ... AGGREGATE ...",
             req.operation
         ))
     })?;

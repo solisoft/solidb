@@ -497,6 +497,7 @@
              <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">MAX</span>
              <span class="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-mono">COUNT_DISTINCT</span>
             </div>
+            <p class="text-sm text-gray-400 mt-3">This endpoint (and the drivers' <code>aggregate</code>) takes these six, one per call. Standard deviation, variance, median, percentiles and an approximate distinct count are aggregates of a query, which also takes several at once and any filter: <code>FOR r IN metrics COLLECT h = r.host AGGREGATE p = PERCENTILE(r.ms, 95), s = STDDEV(r.ms) RETURN {h, p, s}</code>.</p>
           </div>
         </div>
       </section>

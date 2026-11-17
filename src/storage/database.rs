@@ -578,7 +578,12 @@ impl Database {
                 ));
             };
             let op = AggregateOp::from_str(op_str).ok_or_else(|| {
-                DbError::BadRequest(format!("unknown aggregate operation '{}'", op_str))
+                DbError::BadRequest(format!(
+                    "unknown aggregate operation '{}': SUM, AVG, COUNT, MIN, MAX and \
+                     COUNT_DISTINCT are taken here; STDDEV, VARIANCE, MEDIAN, PERCENTILE and \
+                     APPROX_COUNT_DISTINCT are aggregates of a query (COLLECT ... AGGREGATE)",
+                    op_str
+                ))
             })?;
             specs.push((col.to_string(), op_str.to_lowercase(), op));
         }
