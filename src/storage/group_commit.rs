@@ -60,11 +60,18 @@ pub(crate) struct PreparedCommit {
 /// commit does before its write. Nothing is written; dropping the result
 /// releases what it holds. `resolve` finds a collection by its `db:coll`
 /// name.
+///
+/// `whole`: every operation is reported to whoever replicates, not only
+/// those the deletes cascaded into. That is a transaction's commit, whose
+/// writes no handler logs: they were stored and never replicated. A write
+/// made outside a transaction is logged by the handler that asked for it,
+/// and reports its cascades alone.
 pub(crate) fn prepare(
     db: &Arc<DB>,
     operations: Vec<Operation>,
     reads: &[(String, Arc<ReadTracker>)],
     resolve: &dyn Fn(&str) -> DbResult<Collection>,
+    whole: bool,
 ) -> DbResult<PreparedCommit> {
     // Foreign keys first, and their gates before any other lock: the
     // operations a delete cascades into are staged with the others.
@@ -72,29 +79,21 @@ pub(crate) fn prepare(
     // The operations are moved, not copied: they hold the documents.
     let checked = super::foreign_keys::check_operations(db, operations, resolve)?;
     let operations = checked.operations;
+    // Asked once: a deferred replication log wants none of it.
+    let whole = whole && super::foreign_keys::wants_commits(db);
     // What the deletes cascaded into, for whoever replicates: told once the
     // batch is written.
-    let observer = (checked.cascaded_from < operations.len())
+    let observer = (whole || checked.cascaded_from < operations.len())
         .then(|| super::foreign_keys::cascade_observer(db))
         .flatten();
+    // A whole commit's operations are taken further down, once its inserts
+    // hold their counters' numbers.
     let cascaded = match &observer {
-        Some(_) => operations[checked.cascaded_from..]
+        Some(_) if !whole => operations[checked.cascaded_from..]
             .iter()
-            .filter_map(|op| {
-                let document = match op {
-                    Operation::Update { new_data, .. } => Some(new_data.clone()),
-                    Operation::Delete { .. } => None,
-                    _ => return None,
-                };
-                Some(super::foreign_keys::Cascaded {
-                    database: op.database().to_string(),
-                    collection: op.collection().to_string(),
-                    key: op.key().to_string(),
-                    document,
-                })
-            })
+            .filter_map(reported)
             .collect(),
-        None => Vec::new(),
+        _ => Vec::new(),
     };
     let mut order: Vec<String> = Vec::new();
     let mut ops_by_collection: HashMap<String, Vec<Operation>> = HashMap::new();
@@ -162,6 +161,9 @@ pub(crate) fn prepare(
             numbering.stage(&mut prepared.batch, &collection.live_cf()?);
             prepared.counters.push(numbering);
         }
+        if whole && prepared.observer.is_some() {
+            prepared.cascaded.extend(ops.iter().filter_map(reported));
+        }
         let tracker = read_by.get(coll_name.as_str());
         let read_keys: Vec<(String, Option<Box<str>>)> = tracker
             .map(|t| {
@@ -183,6 +185,23 @@ pub(crate) fn prepare(
         }
     }
     Ok(prepared)
+}
+
+/// An operation as whoever replicates is told of it: the document as it is
+/// stored, or `None` for one deleted.
+fn reported(op: &Operation) -> Option<super::foreign_keys::Cascaded> {
+    let document = match op {
+        Operation::Insert { data, .. } => Some(data.clone()),
+        Operation::Update { new_data, .. } => Some(new_data.clone()),
+        Operation::Delete { .. } => None,
+        _ => return None,
+    };
+    Some(super::foreign_keys::Cascaded {
+        database: op.database().to_string(),
+        collection: op.collection().to_string(),
+        key: op.key().to_string(),
+        document,
+    })
 }
 
 impl PreparedCommit {

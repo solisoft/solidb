@@ -709,7 +709,14 @@ Rules that keep it sound:
   which index values name a parent: a new form goes in both.
 - **Replication.** Storage reports what a delete cascaded into
   (`StorageEngine::observe_cascades`; `create_router` appends those writes
-  to the replication log, which is otherwise fed above storage). A key's
+  to the replication log, which is otherwise fed above storage). The same
+  observer is told of every write a transaction's commit stored
+  (`group_commit::prepare` with `whole`, from `StorageEngine::prepare_commit`),
+  taken after the commit's inserts were numbered: no handler logs those,
+  and until this they were never replicated. Only while the log is active
+  (`observe_commits_when`). A write made outside a transaction is logged by
+  its handler and calls `prepare` with `whole: false`: passing `true` there
+  would log it twice. A key's
   definition travels as `CreateForeignKey` / `DropForeignKey`
   (`Collection::apply_foreign_key`). Every write a replication path applies
   must run inside `foreign_keys::unchecked`, which makes the collection

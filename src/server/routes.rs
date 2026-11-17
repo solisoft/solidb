@@ -134,7 +134,12 @@ pub fn create_router(
     // What a delete cascades into through a foreign key is written by
     // storage, below the handlers that feed the replication log: have it
     // logged as the writes it is, after the delete that caused it.
+    // The same observer is told of every write a transaction's commit
+    // stored, which no handler logs: they were never replicated. Only
+    // while the log keeps entries: a node on its own copies nothing.
     if let Some(log) = replication_log.clone() {
+        let listening = log.clone();
+        storage.observe_commits_when(move || listening.is_active());
         storage.observe_cascades(move |writes| {
             use crate::sync::log::LogEntry;
             use crate::sync::protocol::Operation;

@@ -268,6 +268,25 @@ pub(crate) fn observe_cascades(db: &Arc<DB>, observer: CascadeObserver) {
     OBSERVERS.insert(Arc::as_ptr(db) as usize, observer);
 }
 
+/// Whether whoever replicates wants the writes of a whole commit now.
+type Listening = Arc<dyn Fn() -> bool + Send + Sync>;
+
+static LISTENING: Lazy<DashMap<usize, Listening>> = Lazy::new(DashMap::new);
+
+/// Say when the observer of `db` wants the writes of a transaction's
+/// commit: a node whose replication log is deferred keeps none, and its
+/// commits then copy no document for it.
+pub(crate) fn listen_when(db: &Arc<DB>, listening: Listening) {
+    LISTENING.insert(Arc::as_ptr(db) as usize, listening);
+}
+
+/// Whether a transaction's commit on `db` reports its writes: an observer
+/// is there and, when it said when it listens, it does now.
+pub(crate) fn wants_commits(db: &Arc<DB>) -> bool {
+    let id = Arc::as_ptr(db) as usize;
+    OBSERVERS.contains_key(&id) && LISTENING.get(&id).is_none_or(|listening| listening())
+}
+
 pub(crate) fn cascade_observer(db: &Arc<DB>) -> Option<CascadeObserver> {
     OBSERVERS
         .get(&(Arc::as_ptr(db) as usize))

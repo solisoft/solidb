@@ -210,14 +210,19 @@ impl Collection {
             return Ok(0);
         }
 
-        let mut prepared =
-            crate::storage::group_commit::prepare(&self.db, operations, &[], &|name| {
+        let mut prepared = crate::storage::group_commit::prepare(
+            &self.db,
+            operations,
+            &[],
+            &|name| {
                 if name == self.name {
                     Ok(self.clone())
                 } else {
                     foreign_keys::resolve(&self.db, name)
                 }
-            })?;
+            },
+            false,
+        )?;
         if !extra_deletes.is_empty() {
             let cf = self.live_cf()?;
             for extra in extra_deletes {

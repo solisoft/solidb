@@ -1189,9 +1189,14 @@ impl StorageEngine {
         operations: Vec<crate::transaction::Operation>,
         reads: &[(String, Arc<super::keyspace::ReadTracker>)],
     ) -> DbResult<super::group_commit::PreparedCommit> {
-        super::group_commit::prepare(&self.db, operations, reads, &|name| {
-            self.system_collection(name)
-        })
+        // Whole: a transaction's writes are logged by nobody else.
+        super::group_commit::prepare(
+            &self.db,
+            operations,
+            reads,
+            &|name| self.system_collection(name),
+            true,
+        )
     }
 
     /// Have `observer` told of every write a delete cascades into through a
@@ -1202,6 +1207,13 @@ impl StorageEngine {
         observer: impl Fn(Vec<super::foreign_keys::Cascaded>) + Send + Sync + 'static,
     ) {
         super::foreign_keys::observe_cascades(&self.db, Arc::new(observer));
+    }
+
+    /// Say when the observer of [`Self::observe_cascades`] wants the writes
+    /// of a transaction's commit, which it is told of whole: a commit
+    /// copies its documents for it only while `listening` answers yes.
+    pub fn observe_commits_when(&self, listening: impl Fn() -> bool + Send + Sync + 'static) {
+        super::foreign_keys::listen_when(&self.db, Arc::new(listening));
     }
 
     /// Say which node of a cluster this instance is: `node` is the id it
