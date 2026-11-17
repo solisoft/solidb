@@ -376,6 +376,7 @@ fn row_policy_drops_hidden_documents_and_keeps_distance_order() {
         can_read: true,
         can_write: true,
         can_admin: true,
+        admin_of_database: false,
     };
     let set = r#"RETURN ROW_POLICY("places", "doc.tenant == \"acme\"")"#;
     QueryExecutor::with_database(&engine, DB.to_string())
@@ -389,6 +390,7 @@ fn row_policy_drops_hidden_documents_and_keeps_distance_order() {
         can_read: true,
         can_write: false,
         can_admin: false,
+        admin_of_database: false,
     };
     let seen = QueryExecutor::with_database_and_bind_vars(&engine, DB.to_string(), binds(radius))
         .with_principal(viewer)

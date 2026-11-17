@@ -25,6 +25,7 @@ fn principal(user: &str, admin: bool, write: bool) -> QueryPrincipal {
         can_read: true,
         can_write: write || admin,
         can_admin: admin,
+        admin_of_database: false,
     }
 }
 

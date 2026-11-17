@@ -570,6 +570,7 @@ fn row_policy_is_applied_per_document() {
         can_read: true,
         can_write: false,
         can_admin: false,
+        admin_of_database: false,
     };
     QueryExecutor::new(&engine)
         .with_principal(admin)

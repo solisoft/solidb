@@ -104,6 +104,15 @@ async fn create_databases(router: &axum::Router, root: &str) {
     }
 }
 
+/// SDBQL does not create a collection it writes to; the document API does.
+async fn create_collections(router: &axum::Router, root: &str, paths: &[&str]) {
+    for path in paths {
+        let uri = format!("/_api/database/{}", path);
+        let status = send(router, "POST", &uri, root, Some(json!({ "seed": true }))).await;
+        assert_eq!(status, StatusCode::OK, "seed {}", path);
+    }
+}
+
 #[tokio::test]
 async fn database_scoped_admin_may_write_its_own_jobs() {
     let f = fixture();
@@ -204,4 +213,97 @@ async fn the_credential_tier_stays_closed_to_a_scoped_admin() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "_env stays closed");
+}
+
+/// The same rule through SDBQL (card #928): the document API let a
+/// database's admin write its `_jobs` while `INSERT … INTO _jobs` on
+/// `/cursor` was still refused.
+#[tokio::test]
+async fn a_scoped_admin_writes_its_jobs_through_sdbql() {
+    let f = fixture();
+    create_databases(&f.router, &f.root).await;
+    create_collections(
+        &f.router,
+        &f.root,
+        &["app/document/_jobs", "other/document/_jobs"],
+    )
+    .await;
+    let insert = json!({ "query": "INSERT { state: \"pending\", marker: \"q\" } INTO _jobs" });
+
+    let status = send(
+        &f.router,
+        "POST",
+        "/_api/database/app/cursor",
+        &f.app_admin,
+        Some(insert.clone()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "scoped admin inserts into app/_jobs"
+    );
+
+    // A query that reads then writes: the long-running branch of /cursor.
+    let status = send(
+        &f.router,
+        "POST",
+        "/_api/database/app/cursor",
+        &f.app_admin,
+        Some(json!({
+            "query": "FOR j IN _jobs FILTER j.marker == \"q\" UPDATE j WITH { state: \"done\" } IN _jobs"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "scoped admin updates app/_jobs");
+
+    // Not another database's, and not for a writer who is no admin.
+    let status = send(
+        &f.router,
+        "POST",
+        "/_api/database/other/cursor",
+        &f.app_admin,
+        Some(insert.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "other/_jobs stays closed");
+    let status = send(
+        &f.router,
+        "POST",
+        "/_api/database/app/cursor",
+        &f.app_editor,
+        Some(insert),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "an editor's query is refused"
+    );
+}
+
+/// What the per-database admin gains through SDBQL is `_jobs` and nothing
+/// else: the collections the server executes stay closed, and so does a
+/// collection's row policy, which only a global admin may change.
+#[tokio::test]
+async fn a_scoped_admin_gains_only_jobs_through_sdbql() {
+    let f = fixture();
+    create_databases(&f.router, &f.root).await;
+    create_collections(&f.router, &f.root, &["app/document/things"]).await;
+
+    for query in [
+        "INSERT { a: 1 } INTO _scripts",
+        "INSERT { a: 1 } INTO _env",
+        "INSERT { a: 1 } INTO things RETURN ROW_POLICY(\"things\", \"true\")",
+    ] {
+        let status = send(
+            &f.router,
+            "POST",
+            "/_api/database/app/cursor",
+            &f.app_admin,
+            Some(json!({ "query": query })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", query);
+    }
 }

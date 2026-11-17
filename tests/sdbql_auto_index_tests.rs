@@ -34,6 +34,7 @@ fn writer() -> QueryPrincipal {
         can_read: true,
         can_write: true,
         can_admin: false,
+        admin_of_database: false,
     }
 }
 
@@ -152,6 +153,7 @@ fn auto_index_read_principal_does_not_create() {
             can_read: true,
             can_write: false,
             can_admin: false,
+            admin_of_database: false,
         };
         let _ = QueryExecutor::new(&engine)
             .with_principal(principal)

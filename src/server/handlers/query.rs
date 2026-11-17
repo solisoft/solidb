@@ -468,6 +468,32 @@ pub fn principal_from_claims(claims: &crate::server::auth::Claims) -> crate::sdb
     )
 }
 
+/// [`principal_from_claims`] for a query that writes in `db_name`: it also
+/// says whether the caller holds Admin on that database through a role
+/// limited to it, which is what lets `INSERT … INTO _jobs` through, as
+/// [`write_actor_for_collection`] does for the document API (card #928).
+/// A query that writes nothing, and a global admin, resolve nothing.
+pub async fn principal_for_writes(
+    state: &AppState,
+    claims: &crate::server::auth::Claims,
+    db_name: &str,
+    mutates: bool,
+) -> crate::sdbql::QueryPrincipal {
+    let mut principal = principal_from_claims(claims);
+    if mutates && !principal.can_admin {
+        principal.admin_of_database =
+            crate::server::authorization::AuthorizationService::check_permission(
+                claims,
+                state,
+                crate::server::authorization::PermissionAction::Admin,
+                Some(db_name),
+            )
+            .await
+            .is_ok();
+    }
+    principal
+}
+
 // ==================== Handlers ====================
 
 pub async fn execute_query(
@@ -886,6 +912,7 @@ pub async fn execute_query(
     // Only use spawn_blocking for potentially long-running queries
     // (mutations or range iterations). Simple reads run directly.
     let mutates = query.has_mutations();
+    let principal = principal_for_writes(&state, &claims, &db_name, mutates).await;
     let (query_result, execution_time_ms) =
         if is_long_running_query(query) && !is_small_local_scan(query, &state.storage, &db_name) {
             let storage = state.storage.clone();
@@ -895,7 +922,6 @@ pub async fn execute_query(
             let is_scatter_gather = is_scatter_gather_subquery(&headers, &claims);
             // The cached tree, shared with the blocking task rather than copied.
             let query = prepared.query.clone();
-            let principal = principal_from_claims(&claims);
 
             // Collections this query invalidates, resolved before the executor
             // moves out of reach, so the timeout arm below can still drop them.
@@ -970,7 +996,7 @@ pub async fn execute_query(
             } else {
                 QueryExecutor::with_database_and_bind_vars(&state.storage, db_name, req.bind_vars)
             }
-            .with_principal(principal_from_claims(&claims))
+            .with_principal(principal)
             .with_timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS));
 
             // Add replication service for mutation logging

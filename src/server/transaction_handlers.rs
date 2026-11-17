@@ -360,16 +360,17 @@ pub async fn execute_transactional_sdbql(
     // and land at commit. Collections are resolved through the executor's
     // write getter under the caller's principal, so the database scoping
     // (SEC-179) and the three protection tiers (SEC-180) apply as for /cursor.
+    let mutates = query.has_mutations();
+    let principal =
+        crate::server::handlers::query::principal_for_writes(&state, &claims, &db_name, mutates)
+            .await;
     let mut executor = QueryExecutor::with_database_and_bind_vars(
         &state.storage,
         db_name.clone(),
         req.bind_vars.clone(),
     )
-    .with_principal(crate::server::handlers::query::principal_from_claims(
-        &claims,
-    ))
+    .with_principal(principal)
     .with_timeout(std::time::Duration::from_secs(30));
-    let mutates = query.has_mutations();
     // Only document writes can be staged; anything else would apply at once
     // and survive a rollback.
     if query.has_unstageable_writes() {

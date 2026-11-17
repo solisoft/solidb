@@ -145,7 +145,7 @@ impl<'a> QueryExecutor<'a> {
     /// or the server itself when none was (queue worker, triggers, tests).
     pub(super) fn write_actor(&self) -> crate::storage::WriteActor {
         match &self.principal {
-            Some(p) => crate::storage::WriteActor::client(p.can_admin),
+            Some(p) => crate::storage::WriteActor::client(p.can_admin || p.admin_of_database),
             None => crate::storage::WriteActor::Server,
         }
     }

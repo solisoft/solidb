@@ -141,6 +141,7 @@ impl DriverHandler {
             can_read: allows(crate::server::PermissionAction::Read),
             can_write: allows(crate::server::PermissionAction::Write),
             can_admin: allows(crate::server::PermissionAction::Admin),
+            admin_of_database: false,
         }
     }
 

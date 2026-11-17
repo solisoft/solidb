@@ -184,6 +184,7 @@ impl Trigger {
                 can_read: true,
                 can_write: false,
                 can_admin: false,
+                admin_of_database: false,
             })
             .with_timeout(Duration::from_secs(1));
             let mut ctx = crate::sdbql::executor::types::Context::default();

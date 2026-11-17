@@ -201,6 +201,12 @@ pub struct QueryPrincipal {
     pub can_read: bool,
     pub can_write: bool,
     pub can_admin: bool,
+    /// Holds the Admin action on the database the query runs in without
+    /// being a global admin (a role limited to that database). It opens the
+    /// admin-write tier of that database (`_jobs`, `storage::protected`) and
+    /// nothing else: row policies, `ROW_POLICY(…)` and the catalog go on
+    /// reading `can_admin`.
+    pub admin_of_database: bool,
 }
 
 impl QueryPrincipal {
@@ -218,6 +224,7 @@ impl QueryPrincipal {
             can_read,
             can_write,
             can_admin,
+            admin_of_database: false,
         }
     }
 

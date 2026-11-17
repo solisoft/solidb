@@ -122,7 +122,8 @@ pub async fn execute_sql_handler(
     let bind_vars = request.bind_vars;
     // `/sql` is a Read route: the principal is what stops a viewer from
     // reaching the write-side query paths (auto-index creation).
-    let principal = crate::server::handlers::query::principal_from_claims(&claims);
+    let principal =
+        crate::server::handlers::query::principal_for_writes(&state, &claims, &db, mutates).await;
     let db_name = db;
 
     let mut task = tokio::task::spawn_blocking(move || {
