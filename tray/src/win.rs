@@ -7,18 +7,16 @@ use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
-use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
-use windows_sys::Win32::Storage::FileSystem::*;
-use windows_sys::Win32::System::Console::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Registry::*;
 use windows_sys::Win32::System::Threading::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::config::Config;
-use crate::probe;
-use crate::state::{Process, State};
+use solidb_tray::config::Config;
+use solidb_tray::server::{self, wide, Child, STOP_WITHIN};
+use solidb_tray::state::{Process, Service, State};
+use solidb_tray::{probe, scm, state};
 
 /// The notification area tells the window about the mouse with this.
 const WM_TRAY: u32 = WM_APP + 1;
@@ -36,21 +34,17 @@ const CMD_SETTINGS: usize = 7;
 const CMD_AUTOSTART: usize = 8;
 const CMD_QUIT: usize = 9;
 
-/// How long a server asked to stop is given before it is ended.
-const STOP_WITHIN: Duration = Duration::from_secs(60);
 const PROBE_EVERY: Duration = Duration::from_millis(1500);
 
 const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const RUN_VALUE: &str = "SoliDB";
 
-struct Child {
-    handle: HANDLE,
-    pid: u32,
-}
-
 struct App {
     cfg: Config,
     home: PathBuf,
+    /// The Windows service is installed: the icon drives it, and starts no
+    /// server of its own.
+    service: bool,
     hwnd: HWND,
     child: Option<Child>,
     state: State,
@@ -97,10 +91,18 @@ pub fn run() {
                 .join("SoliDB")
         };
         let _ = std::fs::create_dir_all(&home);
-        // The server colours its output for a terminal; its output goes to
-        // a file here. Set before any thread exists, inherited by the server.
-        std::env::set_var("NO_COLOR", "1");
-        let (cfg, refused) = settings(&home, &beside);
+        let (mut cfg, mut refused) = settings(&home, &beside);
+        let service = scm::status().is_some();
+        if service {
+            // The server is the service's: where it runs is the service's
+            // to say. The icon keeps only what is its own (the console).
+            let (theirs, more) = scm::settings(&beside);
+            cfg = Config {
+                console_url: cfg.console_url,
+                ..theirs
+            };
+            refused = more;
+        }
 
         let instance = GetModuleHandleW(null());
         let class = wide(CLASS);
@@ -133,6 +135,7 @@ pub fn run() {
         let app = Box::into_raw(Box::new(App {
             cfg,
             home,
+            service,
             hwnd,
             child: None,
             state: State::Stopped,
@@ -161,7 +164,7 @@ pub fn run() {
         // One look before deciding to start: the port may already be served.
         let answering = probe::answers(app.cfg.port);
         app.look(answering);
-        if app.cfg.start_server && app.state.can_start() {
+        if !app.service && app.cfg.start_server && app.state.can_start() {
             app.start();
         }
 
@@ -252,6 +255,9 @@ impl App {
     /// was left in a file, and is only believed if that process is a
     /// `solidb.exe`.
     unsafe fn adopt(&mut self) {
+        if self.service {
+            return;
+        }
         let Some(pid) = std::fs::read_to_string(self.pid_file())
             .ok()
             .and_then(|text| text.trim().parse::<u32>().ok())
@@ -282,120 +288,63 @@ impl App {
         }
     }
 
-    /// Starts the server without a window, its output appended to the log.
+    /// Starts the server: the service when there is one, else a process of
+    /// the icon's own, without a window, its output appended to the log.
     unsafe fn start(&mut self) {
+        if self.service {
+            match scm::start() {
+                Ok(()) => self.state = State::Starting,
+                Err(code) => self.balloon("SoliDB cannot start", &scm::why(code)),
+            }
+            self.show(NIM_MODIFY);
+            return;
+        }
         if self.child.is_some() {
             return;
         }
-        if !self.cfg.exe.is_file() {
-            self.state = State::Failed(ERROR_FILE_NOT_FOUND);
-            self.show(NIM_MODIFY);
-            self.balloon(
-                "SoliDB cannot start",
-                &format!(
-                    "{} was not found. Set 'exe' in the settings.",
-                    self.cfg.exe.display()
-                ),
-            );
-            return;
+        match server::spawn(&self.cfg, &self.home) {
+            Ok(child) => {
+                let _ = std::fs::write(self.pid_file(), child.pid.to_string());
+                self.child = Some(child);
+                self.stop_by = None;
+                self.state = State::Starting;
+            }
+            Err(code) => {
+                self.state = State::Failed(code);
+                let why = if code == ERROR_FILE_NOT_FOUND {
+                    format!(
+                        "{} was not found. Set 'exe' in the settings.",
+                        self.cfg.exe.display()
+                    )
+                } else {
+                    format!("Windows error {code}.")
+                };
+                self.balloon("SoliDB cannot start", &why);
+            }
         }
-        let _ = std::fs::create_dir_all(&self.cfg.data_dir);
-        if let Some(dir) = self.cfg.log.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-
-        let inherit = SECURITY_ATTRIBUTES {
-            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: null_mut(),
-            bInheritHandle: 1,
-        };
-        let log = CreateFileW(
-            wide(&self.cfg.log.to_string_lossy()).as_ptr(),
-            FILE_APPEND_DATA,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            &inherit,
-            OPEN_ALWAYS,
-            FILE_ATTRIBUTE_NORMAL,
-            null_mut(),
-        );
-        let nul = CreateFileW(
-            wide("NUL").as_ptr(),
-            GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            &inherit,
-            OPEN_EXISTING,
-            0,
-            null_mut(),
-        );
-
-        let mut si: STARTUPINFOW = std::mem::zeroed();
-        si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdInput = nul;
-        si.hStdOutput = log;
-        si.hStdError = log;
-        let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
-        // CreateProcessW may write into the command line it is given.
-        let mut line = wide(&self.cfg.command_line());
-        // The server reads a `.env` where it is started: start it in the
-        // icon's own folder, not wherever the icon was launched from.
-        let cwd = wide(&self.home.to_string_lossy());
-        // A console without a window: the server needs one to be sent Ctrl-C.
-        let made = CreateProcessW(
-            null(),
-            line.as_mut_ptr(),
-            null(),
-            null(),
-            1,
-            CREATE_NO_WINDOW,
-            null(),
-            cwd.as_ptr(),
-            &si,
-            &mut pi,
-        );
-        let error = GetLastError();
-        if log != INVALID_HANDLE_VALUE {
-            CloseHandle(log);
-        }
-        if nul != INVALID_HANDLE_VALUE {
-            CloseHandle(nul);
-        }
-        if made == 0 {
-            self.state = State::Failed(error);
-            self.show(NIM_MODIFY);
-            self.balloon("SoliDB cannot start", &format!("Windows error {error}."));
-            return;
-        }
-        CloseHandle(pi.hThread);
-        let _ = std::fs::write(self.pid_file(), pi.dwProcessId.to_string());
-        self.child = Some(Child {
-            handle: pi.hProcess,
-            pid: pi.dwProcessId,
-        });
-        self.stop_by = None;
-        self.state = State::Starting;
         self.show(NIM_MODIFY);
     }
 
     /// Asks the server to stop as Ctrl-C does, so that it closes its
-    /// database. It is ended only if it has not gone by `STOP_WITHIN`.
+    /// database: through the service when there is one. A process of the
+    /// icon's own is ended only if it has not gone by `STOP_WITHIN`.
     unsafe fn stop(&mut self) {
+        if self.service {
+            match scm::stop() {
+                Ok(()) => self.state = State::Stopping,
+                Err(code) => {
+                    self.restart = false;
+                    self.balloon("SoliDB cannot stop", &scm::why(code));
+                }
+            }
+            self.show(NIM_MODIFY);
+            return;
+        }
         let Some(child) = &self.child else { return };
         if self.stop_by.is_some() {
             return;
         }
-        // Ctrl-C goes to every process of a console. This program has none;
-        // it joins the server's for the time of sending, with its own
-        // handling turned off so that it does not end itself.
-        FreeConsole();
-        if AttachConsole(child.pid) != 0 {
-            SetConsoleCtrlHandler(None, 1);
-            GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
-            // The event is delivered on another thread: leave the console
-            // only once it has had the time to be ignored here.
-            std::thread::sleep(Duration::from_millis(200));
-            FreeConsole();
-            SetConsoleCtrlHandler(None, 0);
+        if server::ask_to_stop(child) {
             self.stop_by = Some(Instant::now() + STOP_WITHIN);
         } else {
             // No console to reach it through: nothing gentler is left.
@@ -406,8 +355,33 @@ impl App {
         self.show(NIM_MODIFY);
     }
 
+    /// One look at the service: what the service manager says of it, and
+    /// whether the port answered.
+    unsafe fn look_at_service(&mut self, answering: bool) {
+        let before = self.state;
+        // A service removed while the icon runs reads as stopped.
+        let service = scm::status().unwrap_or(Service::Stopped(0));
+        self.state = before.of_service(service, answering);
+        if let (State::Failed(code), false) = (self.state, matches!(before, State::Failed(_))) {
+            self.restart = false;
+            self.balloon(
+                "SoliDB stopped",
+                &format!("The service ended: {}. See the log.", state::reason(code)),
+            );
+        }
+        if self.state == State::Stopped && std::mem::take(&mut self.restart) {
+            self.start();
+        }
+        if self.state != before {
+            self.show(NIM_MODIFY);
+        }
+    }
+
     /// One look at the server: its process, and whether the port answered.
     unsafe fn look(&mut self, answering: bool) {
+        if self.service {
+            return self.look_at_service(answering);
+        }
         let process = match &self.child {
             None => Process::None,
             Some(child) => {
@@ -433,10 +407,7 @@ impl App {
                 if let State::Failed(code) = self.state {
                     self.balloon(
                         "SoliDB stopped",
-                        &format!(
-                            "The server ended: {}. See the log.",
-                            crate::state::reason(code)
-                        ),
+                        &format!("The server ended: {}. See the log.", state::reason(code)),
                     );
                 }
                 if std::mem::take(&mut self.restart) && self.state == State::Stopped {
@@ -471,6 +442,7 @@ impl App {
             CMD_CONSOLE => open(&self.cfg.console_url),
             CMD_DATA => open(&self.cfg.data_dir.to_string_lossy()),
             CMD_LOG => open(&self.cfg.log.to_string_lossy()),
+            CMD_SETTINGS if self.service => open(&scm::settings_file().to_string_lossy()),
             CMD_SETTINGS => open(&self.home.join("tray.conf").to_string_lossy()),
             CMD_AUTOSTART => set_autostart(!autostart()),
             CMD_QUIT => {
@@ -491,6 +463,9 @@ impl App {
         let off = |on: bool| if on { 0 } else { MF_GRAYED };
 
         add(0, &self.state.label(self.cfg.port), MF_GRAYED);
+        if self.service {
+            add(0, "Runs as a Windows service", MF_GRAYED);
+        }
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
         add(CMD_START, "Start", off(self.state.can_start()));
         add(CMD_STOP, "Stop", off(self.state.can_stop()));
@@ -660,11 +635,6 @@ unsafe fn disc(rgb: u32) -> HICON {
     DeleteObject(colour);
     DeleteObject(mask);
     icon
-}
-
-/// A string as Windows takes it: UTF-16 with a closing zero.
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 /// Copies `text` into a fixed field, cut to fit, always zero-terminated.

@@ -161,8 +161,9 @@ jobs:
       - name: Check
         run: cargo check --all-targets
 
-      # The notification-area icon is Windows code that no other job compiles.
-      - name: Tray icon
+      # The notification-area icon and the service are Windows code that no
+      # other job compiles.
+      - name: Tray icon and service
         run: |
           cargo clippy --manifest-path tray/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path tray/Cargo.toml
@@ -393,10 +394,10 @@ jobs:
         run: |
           tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore solidb-migrate-engine
 
-      # The notification-area icon (tray/, outside the workspace). Built
-      # from the repository's root, so it takes the root .cargo/config.toml
-      # and links its C runtime in, like the server.
-      - name: Build the tray icon (Windows)
+      # The notification-area icon and the Windows service (tray/, outside
+      # the workspace). Built from the repository's root, so they take the
+      # root .cargo/config.toml and link their C runtime in, like the server.
+      - name: Build the tray icon and the service (Windows)
         if: runner.os == 'Windows'
         run: cargo build --release --manifest-path tray/Cargo.toml --target ${{ matrix.target }}
 
@@ -406,7 +407,7 @@ jobs:
         run: |
           $rel = "target/${{ matrix.target }}/release"
           $tray = "tray/target/${{ matrix.target }}/release"
-          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe" `
+          Compress-Archive -Path "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" `
             -DestinationPath "${{ matrix.artifact }}.zip"
 
       - name: Upload to release

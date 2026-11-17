@@ -86,6 +86,13 @@
                 </div>
                 <p class="text-sm text-gray-400">Windows: an icon in the notification area that starts, stops and watches the server.</p>
               </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <div class="flex items-center mb-3">
+                  <i class="fas fa-cogs text-xl text-sky-400 mr-3"></i>
+                  <h3 class="text-white font-bold"><a href="#solidb-service" class="hover:underline">solidb-service</a></h3>
+                </div>
+                <p class="text-sm text-gray-400">Windows: runs the server as a service that starts with the machine.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -939,7 +946,7 @@ end
           </div>
 
           <div class="p-8">
-            <p class="text-gray-400 mb-6">On Windows, <code>solidb-tray.exe</code> puts an icon in the notification area that starts, stops and watches a SoliDB server on the machine, without a console window. It is in the Windows archive of a release, beside <code>solidb.exe</code>: start it by a double click. It is a separate program; the server stays the one described above.</p>
+            <p class="text-gray-400 mb-6">On Windows, <code>solidb-tray.exe</code> puts an icon in the notification area that starts, stops and watches a SoliDB server on the machine, without a console window. It is in the Windows archive of a release, beside <code>solidb.exe</code>: start it by a double click. It is a separate program; the server stays the one described above. When the <a href="#solidb-service" class="text-cyan-400 hover:underline">Windows service</a> is installed, the icon drives the service instead of starting a server of its own, and its menu says so.</p>
 
             <h3 class="text-lg font-bold text-white mb-4">What the icon shows</h3>
             <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
@@ -1001,7 +1008,86 @@ end
               </table>
             </div>
             <p class="text-sm text-gray-400 mb-4">A <code>tray.conf</code> beside <code>solidb-tray.exe</code> makes that folder the icon's own: settings, log and pid file live there.</p>
-            <p class="text-sm text-gray-400">The server runs in your session and ends when you sign out; the icon does not install a Windows service. The <code>solidb.exe</code> of 2.13.0 and earlier needs the Microsoft Visual C++ Redistributable, which a new Windows does not have: without it the icon turns red and says that a DLL is missing.</p>
+            <p class="text-sm text-gray-400">Without the service, the server the icon starts runs in your session and ends when you sign out. The <code>solidb.exe</code> of 2.13.0 and earlier needs the Microsoft Visual C++ Redistributable, which a new Windows does not have: without it the icon turns red and says that a DLL is missing.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- solidb-service -->
+      <section id="solidb-service" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <svg class="w-6 h-6 mr-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"></path></svg>
+              solidb-service
+            </h2>
+          </div>
+
+          <div class="p-8">
+            <p class="text-gray-400 mb-6">On Windows, <code>solidb-service.exe</code> runs the server as a service: it starts with the machine, before anyone signs in, and is stopped by the service manager. It is in the Windows archive of a release, beside <code>solidb.exe</code>. The service starts <code>solidb.exe</code> without a window and, when it is asked to stop or the machine shuts down, asks the server to stop as Ctrl-C does, so that it closes its database.</p>
+
+            <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-sky-500/20 text-sky-300 text-xs px-2 py-1 rounded border border-sky-500/30 mr-2">USAGE</span></h3>
+            <div class="bg-gray-950 rounded-lg p-4 mb-8 font-mono text-sm overflow-x-auto border border-white/10">
+              <code class="text-green-400">solidb-service &lt;COMMAND&gt;</code>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Commands</h3>
+            <div class="overflow-x-auto mb-8 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Command</th>
+                    <th class="px-4 py-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">install</td><td class="px-4 py-3">Registers the service <code>SoliDB</code>, started with the machine, under the local system account. From a prompt opened as administrator. It writes the settings file the first time and does not start the service.</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">start</td><td class="px-4 py-3">Starts the service and waits for the server to answer.</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">stop</td><td class="px-4 py-3">Stops it. The server is given 60 seconds to close its database before it is ended.</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">status</td><td class="px-4 py-3">Says whether the service is installed, running, and whether the server answers on its port.</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">uninstall</td><td class="px-4 py-3">Stops and removes the service. Data and settings are kept. As administrator.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 class="text-lg font-bold text-white mb-4">Settings</h3>
+            <p class="text-sm text-gray-400 mb-4"><code>%ProgramData%\SoliDB\service.conf</code>, written by <code>install</code>. Restart the service to apply a change.</p>
+            <div class="overflow-x-auto mb-6 rounded-lg border border-white/5">
+              <table class="w-full text-left text-sm text-gray-400">
+                <thead class="bg-white/5 text-gray-200 font-medium">
+                  <tr>
+                    <th class="px-4 py-3">Key</th>
+                    <th class="px-4 py-3">Description</th>
+                    <th class="px-4 py-3">Default</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">exe</td><td class="px-4 py-3">The server to start</td><td class="px-4 py-3"><code>solidb.exe</code> beside <code>solidb-service.exe</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">data_dir</td><td class="px-4 py-3">Data directory</td><td class="px-4 py-3"><code>%ProgramData%\SoliDB\data</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">port</td><td class="px-4 py-3">Port of the server</td><td class="px-4 py-3">6745</td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">log</td><td class="px-4 py-3">Where the server's output goes. A new instance prints its admin password there.</td><td class="px-4 py-3"><code>%ProgramData%\SoliDB\solidb.log</code></td></tr>
+                  <tr><td class="px-4 py-3 font-mono text-sky-300">args</td><td class="px-4 py-3">Arguments added to the server's command line, e.g. <code>--host 0.0.0.0</code></td><td class="px-4 py-3">-</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <ul class="text-sm text-gray-400 space-y-2 list-disc pl-5 mb-8">
+              <li>The server is started in <code>%ProgramData%\SoliDB</code> and reads a <code>.env</code> there: that is where <code>SOLIDB_ADMIN_PASSWORD</code> or <code>JWT_SECRET</code> go, rather than on a command line.</li>
+              <li>A server that ends on its own is started again after 5 seconds, twice a day at most.</li>
+              <li>A user signed in on the machine may start, stop and query the service without elevation, which is what lets the <a href="#solidb-tray" class="text-cyan-400 hover:underline">icon</a> drive it. Installing and removing it stay the administrators'.</li>
+              <li>Keep <code>solidb-service.exe</code> and <code>solidb.exe</code> on a local disk: the system account does not reach a network share.</li>
+            </ul>
+
+            <h3 class="text-lg font-bold text-white mb-4">Examples</h3>
+            <div class="space-y-4">
+              <div class="bg-gray-950 rounded-xl border border-white/10 overflow-hidden shadow-xl">
+                <div class="p-3 bg-white/5 border-b border-white/5 text-xs text-gray-400 font-bold uppercase tracking-wider">Install and start (administrator prompt)</div>
+                <div class="p-4 font-mono text-sm text-gray-300">
+                  <span class="text-green-400">C:\SoliDB\solidb-service.exe</span> install<br>
+                  <span class="text-green-400">C:\SoliDB\solidb-service.exe</span> start
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

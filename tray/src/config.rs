@@ -78,12 +78,32 @@ impl Config {
         self
     }
 
-    /// The file written the first time, every key shown with its default.
+    /// The icon's file as written the first time, every key shown with its
+    /// default.
     pub fn template(&self) -> String {
-        format!(
-            "# Settings of the SoliDB icon. Quit the icon and start it again to apply a change.\r\n\
+        let mut text = self.shared(
+            "# Settings of the SoliDB icon. Quit the icon and start it again to apply a change.",
+        );
+        text.push_str(
+            "\r\n\
+             # Address opened by \"Open admin console\", when an admin application runs.\r\n\
+             console_url =\r\n\
              \r\n\
-             # A path may name a variable of the environment: %LOCALAPPDATA%\\SoliDB\\data\r\n\
+             # Start the server when the icon starts.\r\n\
+             start_server = true\r\n",
+        );
+        text
+    }
+
+    /// The service's file as written when it is installed.
+    pub fn service_template(&self) -> String {
+        self.shared("# Settings of the SoliDB service. Restart the service to apply a change.")
+    }
+
+    fn shared(&self, header: &str) -> String {
+        format!(
+            "{header}\r\n\
+             # A path may name a variable of the environment: %ProgramData%\\SoliDB\\data\r\n\
              \r\n\
              # The server to start.\r\n\
              exe = {}\r\n\
@@ -95,14 +115,8 @@ impl Config {
              log = {}\r\n\
              \r\n\
              # Arguments added to the server's command line, separated by spaces\r\n\
-             # (quote one that holds a space). Example: args = --host 127.0.0.1\r\n\
-             args =\r\n\
-             \r\n\
-             # Address opened by \"Open admin console\", when an admin application runs.\r\n\
-             console_url =\r\n\
-             \r\n\
-             # Start the server when the icon starts.\r\n\
-             start_server = true\r\n",
+             # (quote one that holds a space). Example: args = --host 0.0.0.0\r\n\
+             args =\r\n",
             self.exe.display(),
             self.data_dir.display(),
             self.port,
@@ -260,6 +274,13 @@ mod tests {
     #[test]
     fn the_template_reads_back_as_the_defaults() {
         let (cfg, refused) = defaults().read(&defaults().template());
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(cfg, defaults());
+    }
+
+    #[test]
+    fn the_service_template_reads_back_as_the_defaults() {
+        let (cfg, refused) = defaults().read(&defaults().service_template());
         assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(cfg, defaults());
     }

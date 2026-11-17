@@ -185,14 +185,18 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
 - `src/bin/solidb-restore.rs` - Database restore utility
 - `src/bin/solidb-fuse.rs` - FUSE filesystem mount (optional feature)
 - `src/bin/solidb-repl.rs` - Interactive SDBQL shell
-- `tray/` - `solidb-tray.exe`, the Windows notification-area icon: a crate
-  of its own, outside the workspace, that depends on `windows-sys` alone and
-  never links the server. `config.rs`, `state.rs` and `probe.rs` are tested
-  on any system (`cargo test --manifest-path tray/Cargo.toml`); `win.rs` is
-  only compiled for Windows (`--target x86_64-pc-windows-gnu` from Linux,
-  with mingw-w64). It stops the server by sending Ctrl-C to its console
-  (`App::stop`), which is what `shutdown_signal` in `main.rs` waits for on
-  Windows: a change to how the server takes a shutdown has to keep that.
+- `tray/` - `solidb-tray.exe` (the Windows notification-area icon) and
+  `solidb-service.exe` (the Windows service): a crate of its own, outside
+  the workspace, that depends on `windows-sys` alone and never links the
+  server. Both start `solidb.exe` without a window (`server::spawn`) and
+  stop it by sending Ctrl-C to its console (`server::ask_to_stop`), which
+  is what `shutdown_signal` in `main.rs` waits for on Windows: a change to
+  how the server takes a shutdown has to keep that. The icon drives the
+  service when one is installed (`scm.rs`), else a server of its own.
+  `config.rs`, `state.rs` and `probe.rs` are tested on any system
+  (`cargo test --manifest-path tray/Cargo.toml`); the rest is only
+  compiled for Windows (`--target x86_64-pc-windows-gnu` from Linux, with
+  mingw-w64).
 
 ### Backups
 

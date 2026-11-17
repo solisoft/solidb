@@ -24,7 +24,34 @@ pub enum Process {
     Exited(u32),
 }
 
+/// The Windows service, as the service manager reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Service {
+    /// With the code it ended with: 0 when it was asked to stop.
+    Stopped(u32),
+    Starting,
+    Running,
+    Stopping,
+}
+
 impl State {
+    /// The state after one look at the service: what the service manager
+    /// says, and whether the port answered. The service says it runs as
+    /// soon as the server's process exists; only the port says it is up.
+    pub fn of_service(self, service: Service, answering: bool) -> State {
+        match service {
+            Service::Stopped(0) => State::Stopped,
+            Service::Stopped(code) => State::Failed(code),
+            Service::Starting => State::Starting,
+            Service::Stopping => State::Stopping,
+            Service::Running if answering => State::Running,
+            Service::Running => match self {
+                State::Running | State::Silent => State::Silent,
+                _ => State::Starting,
+            },
+        }
+    }
+
     /// The state after one look: the process, whether the port answered,
     /// and whether the icon has asked the server to stop.
     pub fn after(self, process: Process, answering: bool, stopping: bool) -> State {
@@ -118,6 +145,18 @@ mod tests {
         assert_eq!(Running.after(Alive, true, true), Stopping);
         assert_eq!(Stopping.after(Exited(1), false, true), Stopped);
         assert_eq!(Running.after(Exited(0), false, false), Stopped);
+    }
+
+    #[test]
+    fn a_service_runs_only_once_its_port_answers() {
+        let s = Stopped.of_service(Service::Running, false);
+        assert_eq!(s, Starting);
+        let s = s.of_service(Service::Running, true);
+        assert_eq!(s, Running);
+        assert_eq!(s.of_service(Service::Running, false), Silent);
+        assert_eq!(s.of_service(Service::Stopping, true), Stopping);
+        assert_eq!(s.of_service(Service::Stopped(0), false), Stopped);
+        assert_eq!(s.of_service(Service::Stopped(101), false), Failed(101));
     }
 
     #[test]
