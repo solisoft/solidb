@@ -17,6 +17,7 @@
 //! - array_ops: array comparison operators and inline array expressions
 
 mod array_ops;
+mod array_subquery;
 mod block_scan;
 mod clauses;
 mod collect;
@@ -29,10 +30,12 @@ pub(super) mod hash_probe;
 mod index_count;
 mod index_sort;
 mod mutations;
+mod par_rows;
 mod paths;
 mod raw_scan;
 mod return_moves;
 mod scan_collect;
+mod scan_remove;
 mod scan_threads;
 mod streaming;
 mod subquery;
@@ -42,6 +45,7 @@ mod update_guard;
 // All functionality is provided via impl blocks on QueryExecutor
 // in the submodules; the one re-export is a constant the index planner's
 // row-building loop shares.
+pub(super) use array_subquery::SharedElements;
 pub(super) use clauses::BUDGET_CHECK_INTERVAL;
 pub(super) use entry::has_window_functions;
 pub use raw_scan::SmallRaw;

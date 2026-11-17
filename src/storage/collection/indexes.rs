@@ -2120,18 +2120,70 @@ impl Collection {
         mut f: impl FnMut(&[u8]) -> DbResult<()>,
     ) -> DbResult<usize> {
         const BATCH: usize = 1024;
-        if start >= end {
-            return Ok(0);
+        let mut seen = 0usize;
+        let mut from = start.to_vec();
+        loop {
+            let (doc_keys, resume) = self.index_entry_doc_keys(prefix, &from, end, BATCH);
+            seen += self.for_each_doc_bytes_of(&doc_keys, &mut f)?;
+            match resume {
+                Some(next) => from = next,
+                None => return Ok(seen),
+            }
         }
+    }
+
+    /// The keys (as stored, `doc:` included) of the documents the first
+    /// `limit` index entries of `[start, end)` under `prefix` name, in
+    /// index order, and the entry to go on from when there are more. The
+    /// entries are lent by the engine: only the document keys are copied.
+    pub(crate) fn index_entry_doc_keys(
+        &self,
+        prefix: &[u8],
+        start: &[u8],
+        end: &[u8],
+        limit: usize,
+    ) -> (Vec<Vec<u8>>, Option<Vec<u8>>) {
+        let mut doc_keys = Vec::new();
+        let mut resume = None;
+        if start >= end {
+            return (doc_keys, resume);
+        }
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return (doc_keys, resume);
+        };
+        let walked = self.db.for_each_ks(&cf, start, end, 0, None, |k, v| {
+            if !k.starts_with(prefix) {
+                return false;
+            }
+            if doc_keys.len() == limit {
+                resume = Some(k.to_vec());
+                return false;
+            }
+            doc_keys.push(Self::doc_key_of_entry(v));
+            true
+        });
+        if let Err(e) = walked {
+            tracing::warn!("index read of '{}' stopped early: {}", self.name, e);
+        }
+        (doc_keys, resume)
+    }
+
+    /// The stored bytes of the documents under `doc_keys` (as
+    /// [`Self::index_entry_doc_keys`] returns them), in that order; one
+    /// that is gone is passed over. Returns how many `f` saw.
+    pub(crate) fn for_each_doc_bytes_of(
+        &self,
+        doc_keys: &[Vec<u8>],
+        mut f: impl FnMut(&[u8]) -> DbResult<()>,
+    ) -> DbResult<usize> {
         let Some(cf) = self.ks.handle(&self.db) else {
             return Ok(0);
         };
         let mut seen = 0usize;
-        let mut doc_keys: Vec<Vec<u8>> = Vec::with_capacity(BATCH);
-        let mut flush = |doc_keys: &mut Vec<Vec<u8>>| -> DbResult<()> {
+        for batch in doc_keys.chunks(1024) {
             for bytes in self
                 .db
-                .multi_get_pinned_ks(&cf, doc_keys)
+                .multi_get_pinned_ks(&cf, batch)
                 .into_iter()
                 .filter_map(|r| r.ok())
                 .flatten()
@@ -2139,27 +2191,96 @@ impl Collection {
                 seen += 1;
                 f(&bytes)?;
             }
-            doc_keys.clear();
-            Ok(())
+        }
+        Ok(seen)
+    }
+
+    /// The key of the document an index entry's value names (`doc:<key>`),
+    /// as `doc_key` of its text gives it.
+    fn doc_key_of_entry(value: &[u8]) -> Vec<u8> {
+        let mut doc_key = Vec::with_capacity(DOC_PREFIX.len() + value.len());
+        doc_key.extend_from_slice(DOC_PREFIX.as_bytes());
+        match std::str::from_utf8(value) {
+            Ok(_) => doc_key.extend_from_slice(value),
+            Err(_) => doc_key.extend_from_slice(String::from_utf8_lossy(value).as_bytes()),
+        }
+        doc_key
+    }
+
+    /// The first and the last key of `[start, end)`.
+    fn ends_of_key_range(&self, start: &[u8], end: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
+        if start >= end {
+            return None;
+        }
+        let cf = self.ks.handle(&self.db)?;
+        let mut first = None;
+        let _ = self.db.for_each_ks(&cf, start, end, 0, None, |k, _| {
+            first = Some(k.to_vec());
+            false
+        });
+        let last = self
+            .db
+            .iterator_ks_bounded(&cf, IterMode::End, Some(start), Some(end))
+            .next()
+            .and_then(|r| r.ok())
+            .map(|(k, _)| k.to_vec());
+        Some((first?, last?))
+    }
+
+    /// `[start, end)` cut into at most `n` consecutive ranges of about the
+    /// same width in key space, between the first and the last key it
+    /// holds; the whole range when there is nothing to cut. How many keys
+    /// fall in each is not known: a caller hands them out one by one.
+    pub(crate) fn key_range_slices(
+        &self,
+        start: &[u8],
+        end: &[u8],
+        n: usize,
+    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let whole = vec![(start.to_vec(), end.to_vec())];
+        if n < 2 {
+            return whole;
+        }
+        let Some(space) = self
+            .ends_of_key_range(start, end)
+            .and_then(|(first, last)| KeySpace::between(&first, &last))
+        else {
+            return whole;
         };
-        let iter = self.db.iterator_ks_bounded(
-            &cf,
-            IterMode::From(start, Direction::Forward),
-            Some(start),
-            Some(end),
-        );
-        for item in iter {
-            let Ok((k, v)) = item else { continue };
-            if !k.starts_with(prefix) || k.as_ref() >= end {
-                break;
-            }
-            doc_keys.push(Self::doc_key(&String::from_utf8_lossy(&v)));
-            if doc_keys.len() == BATCH {
-                flush(&mut doc_keys)?;
+        let n = (n as u128).min(space.width);
+        let mut out = Vec::with_capacity(n as usize);
+        let mut lower = start.to_vec();
+        for i in 1..n {
+            let cut = space.key_at(space.width * i / n);
+            if cut.as_slice() > lower.as_slice() && cut.as_slice() < end {
+                out.push((std::mem::replace(&mut lower, cut.clone()), cut));
             }
         }
-        flush(&mut doc_keys)?;
-        Ok(seen)
+        out.push((lower, end.to_vec()));
+        out
+    }
+
+    /// The entries of the single-field index `index_name` a read of the
+    /// values above `value` walks (`>`, or `>=` when `inclusive`), as
+    /// `(prefix, start, end)`: what [`Self::index_range_scan`] iterates
+    /// forward. An encoded value is never the prefix of another, so
+    /// `<hex>:` up to `<hex>;` holds this value's entries only.
+    pub(crate) fn single_field_key_range(
+        index_name: &str,
+        value: &Value,
+        inclusive: bool,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let prefix = format!("{}{}:", IDX_PREFIX, index_name);
+        let hex = hex::encode(crate::storage::codec::encode_key(value));
+        // `;` is the byte after `:`: one past everything under one value,
+        // or under the prefix.
+        let start = if inclusive {
+            format!("{prefix}{hex}:")
+        } else {
+            format!("{prefix}{hex};")
+        };
+        let end = format!("{}{};", IDX_PREFIX, index_name);
+        (prefix.into_bytes(), start.into_bytes(), end.into_bytes())
     }
 
     /// The keys of `index_name` (an index on `n_fields` fields) whose leading
@@ -2850,4 +2971,133 @@ enum EqPrefix {
     Empty,
     /// The entries of the matching documents share this prefix.
     Prefix(Vec<u8>),
+}
+
+/// The keys between two keys, as numbers: what follows the bytes the two
+/// share, read as hex digits when both go on with some (an index key holds
+/// its values in hex, and positions between two digits' byte values name
+/// no key), else as bytes.
+struct KeySpace {
+    /// What the two keys share.
+    common: Vec<u8>,
+    /// Hex digits read after it; fewer than 2 reads eight bytes.
+    hex: usize,
+    /// The first key's number.
+    low: u128,
+    /// Numbers from the first key to the last, both included.
+    width: u128,
+}
+
+impl KeySpace {
+    fn nibble(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            _ => None,
+        }
+    }
+
+    /// `None` when `first` is not before `last`, or the two differ only
+    /// past what is read.
+    fn between(first: &[u8], last: &[u8]) -> Option<KeySpace> {
+        if first >= last {
+            return None;
+        }
+        let common = first.iter().zip(last).take_while(|(a, b)| a == b).count();
+        let digits = |k: &[u8]| {
+            k[common.min(k.len())..]
+                .iter()
+                .take(16)
+                .take_while(|b| Self::nibble(**b).is_some())
+                .count()
+        };
+        let mut space = KeySpace {
+            common: first[..common].to_vec(),
+            hex: digits(first).min(digits(last)),
+            low: 0,
+            width: 0,
+        };
+        let (low, high) = (space.number(first), space.number(last));
+        if high <= low {
+            return None;
+        }
+        space.low = low;
+        space.width = high - low + 1;
+        Some(space)
+    }
+
+    /// The number of the bytes of `key` after the shared ones.
+    fn number(&self, key: &[u8]) -> u128 {
+        let tail = &key[self.common.len().min(key.len())..];
+        if self.hex >= 2 {
+            (0..self.hex).fold(0u128, |n, i| {
+                n << 4 | tail.get(i).and_then(|b| Self::nibble(*b)).unwrap_or(0) as u128
+            })
+        } else {
+            let mut w = [0u8; 8];
+            let take = tail.len().min(8);
+            w[..take].copy_from_slice(&tail[..take]);
+            u64::from_be_bytes(w) as u128
+        }
+    }
+
+    /// A key at position `at`.
+    fn key_at(&self, at: u128) -> Vec<u8> {
+        let x = self.low + at;
+        let mut key = self.common.clone();
+        if self.hex >= 2 {
+            key.extend((0..self.hex).rev().map(|i| {
+                let n = (x >> (4 * i)) as u8 & 0xf;
+                if n < 10 {
+                    b'0' + n
+                } else {
+                    b'a' + n - 10
+                }
+            }));
+        } else {
+            key.extend_from_slice(&(x as u64).to_be_bytes());
+        }
+        key
+    }
+}
+
+#[cfg(test)]
+mod key_space_tests {
+    use super::KeySpace;
+
+    /// Between two index keys the positions are hex values: every cut is a
+    /// key an entry could have, in order, between the two.
+    #[test]
+    fn cuts_between_two_hex_values_are_hex_and_in_order() {
+        let first: &[u8] = b"idx:d:0340a4:m1_x";
+        let last: &[u8] = b"idx:d:0340c1:m9_y";
+        let space = KeySpace::between(first, last).unwrap();
+        assert_eq!(space.common, b"idx:d:0340".to_vec());
+        assert_eq!((space.hex, space.width), (2, 0xc1 - 0xa4 + 1));
+        let cuts: Vec<Vec<u8>> = (0..space.width).map(|at| space.key_at(at)).collect();
+        assert_eq!(cuts[0], b"idx:d:0340a4".to_vec());
+        assert_eq!(cuts[cuts.len() - 1], b"idx:d:0340c1".to_vec());
+        assert!(cuts.windows(2).all(|w| w[0] < w[1]));
+        assert!(cuts
+            .iter()
+            .all(|k| k.as_slice() <= last && k[10..].iter().all(|b| b.is_ascii_hexdigit())));
+    }
+
+    /// Keys that do not go on in hex are read as bytes.
+    #[test]
+    fn other_keys_are_cut_by_their_bytes() {
+        let first: &[u8] = b"doc:m1_2025";
+        let last: &[u8] = b"doc:m9_2026";
+        let space = KeySpace::between(first, last).unwrap();
+        assert_eq!(space.common, b"doc:m".to_vec());
+        assert_eq!(space.hex, 1);
+        let mid = space.key_at(space.width / 2);
+        assert!(mid.as_slice() > first && mid.as_slice() < last);
+    }
+
+    #[test]
+    fn nothing_to_cut_between_equal_or_reversed_keys() {
+        assert!(KeySpace::between(b"a", b"a").is_none());
+        assert!(KeySpace::between(b"b", b"a").is_none());
+    }
 }

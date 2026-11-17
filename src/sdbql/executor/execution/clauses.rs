@@ -356,6 +356,15 @@ impl<'a> QueryExecutor<'a> {
                                     i += run.consumed;
                                     continue;
                                 }
+                                // The same behind a range on a single-field
+                                // index, or the scan when the range is wide.
+                                if let Some(run) =
+                                    self.try_range_collect(clauses, i, &rows, index_filter)?
+                                {
+                                    rows = run.rows;
+                                    i += run.consumed;
+                                    continue;
+                                }
                             }
                             // Index path only if *every* row's filter is
                             // indexable — mixing index and scan per-row would
@@ -528,10 +537,10 @@ impl<'a> QueryExecutor<'a> {
                     if contains_window_functions(&let_clause.expression) {
                         rows = self.apply_window_functions(rows, &let_clause.expression)?;
                     }
-                    // Evaluate LET expression for EACH row (correlated subquery support)
-                    for ctx in &mut rows {
-                        self.bind_let(let_clause, ctx)?;
-                    }
+                    // Evaluate LET expression for EACH row (correlated subquery
+                    // support), on several threads when there are many rows
+                    // and each holds a subquery (`par_rows`).
+                    self.bind_let_rows(let_clause, &mut rows)?;
                 }
                 BodyClause::Filter(filter_clause) => {
                     // Filter out rows that don't match

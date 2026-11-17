@@ -365,7 +365,7 @@ pub(super) struct TypedFilters {
     /// The sort field's slot: a document whose sort value is an array or an
     /// object stops the read, as the ordinary walk stops on one (the index
     /// orders those as JSON text, not as SORT does).
-    sort_slot: usize,
+    sort_slot: Option<usize>,
     filters: Vec<Pred>,
 }
 
@@ -405,7 +405,7 @@ impl TypedFilters {
             Box::new(Expression::Variable(var.to_string())),
             sort_field.to_string(),
         );
-        let sort_slot = c.slot(&sort)?;
+        let sort_slot = Some(c.slot(&sort)?);
         let filters = filters
             .iter()
             .map(|f| c.pred(f))
@@ -414,6 +414,34 @@ impl TypedFilters {
             tops: c.tops,
             slots: c.slots,
             sort_slot,
+            filters,
+        })
+    }
+
+    /// `filters` alone, for a read with no order to keep: [`Self::check`]
+    /// never answers [`Check::Stop`].
+    pub(super) fn compile_unsorted(
+        ex: &QueryExecutor<'_>,
+        var: &str,
+        filters: &[&Expression],
+    ) -> Option<TypedFilters> {
+        if var.starts_with('@') {
+            return None;
+        }
+        let mut c = Compiler {
+            var,
+            ex,
+            tops: Vec::new(),
+            slots: Vec::new(),
+        };
+        let filters = filters
+            .iter()
+            .map(|f| c.pred(f))
+            .collect::<Option<Vec<_>>>()?;
+        Some(TypedFilters {
+            tops: c.tops,
+            slots: c.slots,
+            sort_slot: None,
             filters,
         })
     }
@@ -432,7 +460,9 @@ impl TypedFilters {
                 None => return Check::Fallback,
             }
         }
-        if matches!(&slots[self.sort_slot], Datum::Val(v) if v.is_array() || v.is_object()) {
+        if self.sort_slot.is_some_and(
+            |sort| matches!(&slots[sort], Datum::Val(v) if v.is_array() || v.is_object()),
+        ) {
             return Check::Stop;
         }
         if self

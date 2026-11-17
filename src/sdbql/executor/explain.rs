@@ -669,6 +669,12 @@ impl<'a> QueryExecutor<'a> {
                                             &rows,
                                             &index_filter,
                                         ));
+                                        warnings.extend(self.range_collect_note(
+                                            clauses,
+                                            i,
+                                            &rows,
+                                            &index_filter,
+                                        ));
                                     }
 
                                     let mut new_rows = Vec::new();

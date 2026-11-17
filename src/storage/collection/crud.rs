@@ -1060,6 +1060,18 @@ impl Collection {
         docs: Vec<(String, Value)>,
         extra_deletes: Vec<Vec<u8>>,
     ) -> DbResult<usize> {
+        self.delete_docs_locked_as(docs, extra_deletes, true)
+    }
+
+    /// [`Self::delete_docs_locked`]; `whole` says whether each value is the
+    /// whole document, or only the fields index maintenance reads
+    /// (`indexed_view`), which is not what a change event may carry.
+    fn delete_docs_locked_as(
+        &self,
+        docs: Vec<(String, Value)>,
+        extra_deletes: Vec<Vec<u8>>,
+        whole: bool,
+    ) -> DbResult<usize> {
         if docs.is_empty() && extra_deletes.is_empty() {
             return Ok(0);
         }
@@ -1092,15 +1104,22 @@ impl Collection {
         // Blob chunks, vector entries and version pruning are separate from
         // the KvBatch, and only happen once the documents are really gone.
         let is_blob = self.collection_type.read().as_str() == "blob";
-        for (key, _) in &docs {
-            if is_blob {
-                if let Err(e) = self.delete_blob_data(key) {
-                    tracing::warn!("Failed to delete blob chunks for {}: {}", key, e);
+        // Asked once: looking through the vector indexes takes a lock per
+        // shard of their map, for each document, to find none.
+        let has_vectors = self.has_vector_indexes();
+        if is_blob || has_vectors || versioned {
+            for (key, _) in &docs {
+                if is_blob {
+                    if let Err(e) = self.delete_blob_data(key) {
+                        tracing::warn!("Failed to delete blob chunks for {}: {}", key, e);
+                    }
                 }
-            }
-            self.update_vector_indexes_on_delete(key);
-            if versioned {
-                self.prune_versions(key);
+                if has_vectors {
+                    self.update_vector_indexes_on_delete(key);
+                }
+                if versioned {
+                    self.prune_versions(key);
+                }
             }
         }
 
@@ -1112,12 +1131,27 @@ impl Collection {
         super::saturating_sub_usize(&self.doc_count, deleted);
         self.count_dirty.store(true, Ordering::Relaxed);
 
-        for (key, old_data) in docs {
-            let _ = self.emit_change(ChangeEvent {
-                type_: ChangeType::Delete,
-                key,
-                data: None,
-                old_data: Some(old_data),
+        if deleted == 1 {
+            // One document: what traversals keep is forgotten for it alone.
+            for (key, old_data) in docs {
+                let _ = self.emit_change(ChangeEvent {
+                    type_: ChangeType::Delete,
+                    key,
+                    data: None,
+                    old_data: whole.then_some(old_data),
+                });
+            }
+        } else {
+            // A batch: caches are dropped once for them all, and the events
+            // are built only for a subscriber.
+            let span = key_span(docs.iter().map(|(key, _)| key.as_str()));
+            self.publish_changes(span, false, || {
+                docs.iter().map(|(key, old_data)| ChangeEvent {
+                    type_: ChangeType::Delete,
+                    key: key.clone(),
+                    data: None,
+                    old_data: whole.then(|| old_data.clone()),
+                })
             });
         }
 
@@ -1322,22 +1356,40 @@ impl Collection {
         let db = &self.db;
         let cf = self.live_cf()?;
 
-        let mut seen: HashSet<String> = HashSet::with_capacity(keys.len());
-        let mut docs = Vec::new();
-        for key in keys {
-            // A repeated key would be counted and announced twice.
-            if !seen.insert(key.clone()) {
-                continue;
-            }
-            // Get document first (needed for index cleanup and change events)
-            match db.get_ks(&cf, Self::doc_key(&key)) {
-                Ok(Some(bytes)) => {
-                    if let Ok(doc) = deserialize_doc(&bytes) {
-                        docs.push((key, doc.to_value()));
+        // A repeated key would be counted and announced twice.
+        let mut seen: HashSet<&str> = HashSet::with_capacity(keys.len());
+        let keys: Vec<&String> = keys.iter().filter(|k| seen.insert(k.as_str())).collect();
+
+        // What is read of each document: index cleanup needs the fields
+        // some definition reads, a version record and a change subscriber
+        // the whole value. A large batch with neither decodes only those
+        // fields; were a subscriber to arrive before the batch is in, its
+        // events would say which documents went, without their values.
+        let meta = self.index_meta();
+        let whole = keys.len() < SLIM_DELETE_FROM
+            || self.is_versioned()
+            || self.change_sender.receiver_count() > 0
+            || meta.is_none();
+        let decode = |bytes: &[u8]| match (&meta, whole) {
+            (Some(meta), false) => deserialize_doc_projected(bytes, &meta.read_fields).ok(),
+            _ => deserialize_doc(bytes).ok().map(|doc| doc.to_value()),
+        };
+
+        // Read the documents first (index cleanup and change events), a
+        // batch of keys at a time.
+        let mut docs = Vec::with_capacity(keys.len());
+        for chunk in keys.chunks(1024) {
+            let doc_keys: Vec<Vec<u8>> = chunk.iter().map(|k| Self::doc_key(k)).collect();
+            for (key, found) in chunk.iter().zip(db.multi_get_pinned_ks(&cf, &doc_keys)) {
+                match found {
+                    Ok(Some(bytes)) => {
+                        if let Some(value) = decode(&bytes) {
+                            docs.push(((*key).clone(), value));
+                        }
                     }
+                    _ if must_exist => return Err(DbError::DocumentNotFound((*key).clone())),
+                    _ => {}
                 }
-                _ if must_exist => return Err(DbError::DocumentNotFound(key)),
-                _ => {}
             }
         }
 
@@ -1345,7 +1397,7 @@ impl Collection {
             return Ok(0);
         }
 
-        let deleted = self.delete_docs_locked(docs, Vec::new())?;
+        let deleted = self.delete_docs_locked_as(docs, Vec::new(), whole)?;
         drop(_key_guard);
         self.persist_vector_indexes_throttled();
         Ok(deleted)
@@ -1916,6 +1968,18 @@ impl Collection {
         snapshot: Option<&KvSnapshot<'_>>,
         mut f: impl FnMut(&[u8]) -> DbResult<bool>,
     ) -> DbResult<usize> {
+        self.for_each_doc_in(lower, upper, snapshot, |_, value| f(value))
+    }
+
+    /// [`Self::for_each_doc_bytes_in`], each document with its key (the
+    /// `_key`, without the `doc:` prefix).
+    pub fn for_each_doc_in(
+        &self,
+        lower: &[u8],
+        upper: &[u8],
+        snapshot: Option<&KvSnapshot<'_>>,
+        mut f: impl FnMut(&[u8], &[u8]) -> DbResult<bool>,
+    ) -> DbResult<usize> {
         let Some(cf) = self.ks.handle(&self.db) else {
             // Dropped mid-operation (concurrent database delete): nothing
             // to read, as the other scans answer.
@@ -1930,9 +1994,10 @@ impl Collection {
         let mut failed = None;
         let scanned = self
             .db
-            .for_each_ks(&cf, lower, upper, readahead, snapshot, |_, value| {
+            .for_each_ks(&cf, lower, upper, readahead, snapshot, |key, value| {
                 seen += 1;
-                match f(value) {
+                let key = key.strip_prefix(DOC_PREFIX.as_bytes()).unwrap_or(key);
+                match f(key, value) {
                     Ok(go_on) => go_on,
                     Err(e) => {
                         failed = Some(e);
@@ -2496,6 +2561,10 @@ impl Collection {
         Ok(())
     }
 }
+
+/// From this many documents, a batch delete decodes only the fields index
+/// maintenance reads of each (when nothing needs the whole document).
+const SLIM_DELETE_FROM: usize = 64;
 
 /// The smallest and largest of `keys`, as what a batch wrote.
 pub(super) fn key_span<'a>(keys: impl Iterator<Item = &'a str>) -> Wrote<'a> {

@@ -95,6 +95,10 @@ pub struct QueryExecutor<'a> {
     /// it is read (`execution::scan_collect`) instead of materialising the
     /// scan first. On by default; tests turn it off to compare the two.
     pub(super) stream_collect: bool,
+    /// Whether a subquery over an array in memory is walked where it is
+    /// (`execution::array_subquery`) instead of going through the pipeline.
+    /// On by default; tests turn it off to compare the two.
+    pub(super) array_subqueries: bool,
     /// How a streamed `COLLECT` reads the collection: typed reads, threads.
     pub(in crate::sdbql::executor) scan: execution::ScanSettings,
     /// Per-executor memo tables (row-policy gates, IN sets, window keys...).
@@ -196,6 +200,16 @@ struct ExecCaches {
     /// The first mistake of the query itself met while a FILTER was
     /// evaluated (see `QueryExecutor::filter_row`): the query fails with it.
     filter_mistake: parking_lot::Mutex<Option<String>>,
+    /// Whether a name is a collection of the query's database (document
+    /// or columnar) or a protected one, per name: asked for every run of a
+    /// subquery over a variable (see [`execution`]'s `array_subquery`).
+    collection_names: parking_lot::Mutex<HashMap<String, bool>>,
+    /// The elements of the arrays of documents subqueries iterate, each
+    /// behind an `Arc`, with the binding that holds the array.
+    /// In slots taken by thread, so that the threads of one query
+    /// (`par_rows`) neither wait for one another nor push each other's
+    /// arrays out.
+    array_elements: [parking_lot::Mutex<Vec<execution::SharedElements>>; 16],
 }
 
 impl ExecCaches {
@@ -243,6 +257,10 @@ impl ExecCaches {
         self.columnar.lock().clear();
         self.auto_index.lock().clear();
         *self.filter_mistake.lock() = None;
+        self.collection_names.lock().clear();
+        for slot in &self.array_elements {
+            slot.lock().clear();
+        }
     }
 }
 
@@ -261,6 +279,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            array_subqueries: true,
             scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
@@ -280,6 +299,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            array_subqueries: true,
             scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
@@ -299,6 +319,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            array_subqueries: true,
             scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
@@ -322,6 +343,7 @@ impl<'a> QueryExecutor<'a> {
             max_intermediate_rows: default_max_intermediate_rows(),
             reuse_within_query: true,
             stream_collect: true,
+            array_subqueries: true,
             scan: execution::ScanSettings::default(),
             caches: ExecCaches::default(),
         }
@@ -387,9 +409,18 @@ impl<'a> QueryExecutor<'a> {
         self
     }
 
+    /// Allow or forbid walking a subquery's array where it is (see
+    /// `array_subqueries`). Results are the same either way; for tests
+    /// that compare the two.
+    pub fn with_array_subqueries(mut self, on: bool) -> Self {
+        self.array_subqueries = on;
+        self
+    }
+
     /// Allow or forbid the typed reads of a streamed `COLLECT` (group keys,
     /// aggregate arguments and FILTER operands read from the stored bytes
-    /// instead of a decoded document). Results are the same either way; for
+    /// instead of a decoded document), and of a filtered REMOVE's scan
+    /// (`execution::scan_remove`). Results are the same either way; for
     /// tests and benchmarks that compare the two.
     pub fn with_typed_collect(mut self, on: bool) -> Self {
         self.scan.typed = on;
@@ -398,8 +429,10 @@ impl<'a> QueryExecutor<'a> {
 
     /// The most threads a streamed `COLLECT` may scan with (1: one), instead
     /// of `SOLIDB_SCAN_THREADS` or the CPUs available; and the fewest
-    /// documents worth a thread of their own (default 32,768). For tests and
-    /// benchmarks; the process-wide cap on scan threads still applies.
+    /// documents worth a thread of their own (default 32,768). Also the
+    /// threads a LET or a RETURN over many rows is evaluated on
+    /// (`execution::par_rows`). For tests and benchmarks; the process-wide
+    /// cap on scan threads still applies.
     pub fn with_scan_threads(mut self, threads: usize, min_docs_per_thread: usize) -> Self {
         self.scan.threads = Some(threads.max(1));
         self.scan.min_docs_per_thread = min_docs_per_thread.max(1);

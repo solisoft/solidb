@@ -488,6 +488,12 @@ impl Collection {
     }
 
     /// Update vector indexes on doc delete
+    /// Whether a deleted document may have anything in a vector index, or
+    /// an embedding pending for one.
+    pub(crate) fn has_vector_indexes(&self) -> bool {
+        !self.vector_indexes.is_empty() || !self.get_all_vector_index_configs().is_empty()
+    }
+
     pub(crate) fn update_vector_indexes_on_delete(&self, doc_key: &str) {
         let mut changed = false;
         for entry in self.vector_indexes.iter() {

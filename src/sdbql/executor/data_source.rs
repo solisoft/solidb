@@ -69,6 +69,23 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    /// Whether `name` is a collection the query could read (document or
+    /// columnar), or a protected one: what `FOR x IN name` may mean besides
+    /// a variable of the row. Asked of storage once per query and name.
+    pub(super) fn names_a_collection(&self, name: &str) -> bool {
+        if let Some(&known) = self.caches.collection_names.lock().get(name) {
+            return known;
+        }
+        let known = crate::storage::is_protected_collection(name)
+            || self.get_collection_untracked(name).is_ok()
+            || self.columnar_database(name).is_some();
+        self.caches
+            .collection_names
+            .lock()
+            .insert(name.to_string(), known);
+        known
+    }
+
     /// Resolve a collection a query is about to *write* to.
     ///
     /// Adds the write-only tier to [`Self::get_collection`]'s guard: `FOR d IN

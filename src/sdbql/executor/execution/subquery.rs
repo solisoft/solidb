@@ -22,6 +22,11 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         parent_ctx: &Context,
     ) -> DbResult<Vec<Value>> {
+        // An array in memory is walked where it is (`array_subquery`).
+        if let Some(rows) = self.try_array_subquery(query, parent_ctx)? {
+            self.caches.count_subquery_run();
+            return Ok(rows);
+        }
         // Start with parent context (enables correlation with outer query).
         // Bind variables stay in `self.bind_vars`; see `execute_with_stats`.
         let initial_bindings = parent_ctx.clone();

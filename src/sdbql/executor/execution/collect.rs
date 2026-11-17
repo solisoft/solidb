@@ -193,6 +193,13 @@ impl<'c> CollectFold<'c> {
         ex.check_budget(if self.check_held { self.held() } else { 0 })
     }
 
+    /// Number the rows that follow from `first` on: for a fold that takes
+    /// several stretches of a read, each numbered after the stretches
+    /// before it whichever thread reads them.
+    pub(super) fn number_from(&mut self, first: u64) {
+        self.base = first.saturating_sub(self.seen as u64);
+    }
+
     /// The ordinal the next row pushed without one gets: rows are numbered
     /// in the order they arrive.
     pub(super) fn next_ordinal(&self) -> u64 {

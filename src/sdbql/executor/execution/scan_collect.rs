@@ -188,6 +188,27 @@ struct IndexCollect<'q> {
     reads: Vec<Vec<super::super::index_opt::KeyRange>>,
 }
 
+/// A COLLECT behind a range on a single-field index.
+struct RangeCollect<'q> {
+    plan: Plan<'q>,
+    collection: crate::storage::Collection,
+    typed: TypedPlan,
+    /// The index entries to read.
+    range: super::super::index_opt::KeyRange,
+}
+
+/// Entries of a range read on the query's thread before any other is
+/// asked: a range that ends within them costs no thread.
+const RANGE_FOLD_FIRST: usize = 128;
+
+/// Entries a thread takes of a stretch of the index at a time; the rest
+/// waits for the next free thread.
+const RANGE_FOLD_STRETCH: usize = 512;
+
+/// Slices of a range per thread: how many keys fall in a slice is not
+/// known, so the threads take them one by one.
+const RANGE_FOLD_SLICES_PER_THREAD: usize = 8;
+
 /// What a scan split into key ranges gave: the merged fold, and the counts
 /// a sequential scan keeps.
 struct Partitioned<'c> {
@@ -522,6 +543,330 @@ impl QueryExecutor<'_> {
             filters: passes,
             note: String::new(),
         }))
+    }
+
+    /// The plan of [`Self::try_range_collect`] for `clauses[i]`, decided
+    /// without reading; `None` when the ordinary index read has to run: the
+    /// conditions of [`Self::plan_index_collect`], with a first choice of
+    /// the planner that is a range on a single-field index, for one outer
+    /// row.
+    fn plan_range_collect<'q>(
+        &self,
+        clauses: &'q [BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> Option<RangeCollect<'q>> {
+        if !self.stream_collect || !self.scan.typed || rows.len() != 1 {
+            return None;
+        }
+        let plan = plan(clauses, i)?;
+        let for_clause = plan.for_clause;
+        if plan.collect.into_var.is_some()
+            || !plan
+                .stages
+                .iter()
+                .all(|s| matches!(s, BodyClause::Filter(_)))
+            || super::super::index_opt::IndexHint::of(for_clause).is_some()
+            || self.row_policy_gate(&for_clause.collection).is_some()
+        {
+            return None;
+        }
+        let collection = self.scan_collect_source(for_clause, rows)?;
+        let var = &for_clause.variable;
+        let typed = TypedPlan::compile(self, var, plan.stages, plan.collect)?;
+        let range = self.single_range_read(&collection, filter, var, &rows[0])?;
+        Some(RangeCollect {
+            plan,
+            collection,
+            typed,
+            range,
+        })
+    }
+
+    /// What EXPLAIN says when [`Self::try_range_collect`] would run
+    /// `clauses[i]`.
+    pub(in crate::sdbql::executor) fn range_collect_note(
+        &self,
+        clauses: &[BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> Option<String> {
+        let found = self.plan_range_collect(clauses, i, rows, filter)?;
+        Some(format!(
+            "optimizer: COLLECT folded into the index read of '{}': the documents the index \
+             names are grouped as they are read, never held as rows (reading only {} from the \
+             stored bytes)",
+            found.plan.for_clause.collection,
+            found.typed.describe()
+        ))
+    }
+
+    /// [`Self::try_index_collect`] for a FOR whose FILTERs a range on a
+    /// single-field index serves (`FILTER x.d >= @from COLLECT …`): the
+    /// documents the index names are folded from their stored bytes, in
+    /// the index's order, each checked against every FILTER, none decoded
+    /// or held as a row. `Ok(None)` when the ordinary index read has to
+    /// run.
+    ///
+    /// The read starts on this thread. A range that goes on past its first
+    /// entries is cut into slices of key space, which this thread and the
+    /// scan threads take one after the other, each walking its slice of the
+    /// index and fetching the documents it names: the walk is as much of
+    /// the work as the fetch. The rows are numbered by slice, so the merged
+    /// folds are those of one thread reading the range in order — which is
+    /// why the range is never left to a scan of the collection, however
+    /// much of it the range names: a scan reads in key order, and which row
+    /// of a group comes first shows (`UNIQUE`, a key that is `1` in one
+    /// document and `1.0` in another).
+    pub(in crate::sdbql::executor) fn try_range_collect(
+        &self,
+        clauses: &[BodyClause],
+        i: usize,
+        rows: &[Context],
+        filter: &crate::sdbql::ast::Expression,
+    ) -> DbResult<Option<ScanCollectRun>> {
+        let Some(found) = self.plan_range_collect(clauses, i, rows, filter) else {
+            return Ok(None);
+        };
+        let run = match self.fold_range(&found, &rows[0], true) {
+            // Which row's error it is depends on the order the slices were
+            // read in: one thread, reading in order, reports it.
+            Err(_) => self.fold_range(&found, &rows[0], false)?,
+            Ok(run) => run,
+        };
+        let Partitioned {
+            fold,
+            scanned,
+            passes,
+            ..
+        } = run;
+        self.check_budget(fold.held())?;
+        let groups = fold.finish()?;
+        self.check_budget(groups.len())?;
+        Ok(Some(ScanCollectRun {
+            rows: groups,
+            consumed: found.plan.stages.len() + 2,
+            scanned,
+            filters: passes,
+            note: String::new(),
+        }))
+    }
+
+    /// The fold of the documents `found`'s index range names. On this
+    /// thread alone unless `spread`.
+    fn fold_range<'c>(
+        &self,
+        found: &RangeCollect<'c>,
+        outer: &Context,
+        spread: bool,
+    ) -> DbResult<Partitioned<'c>> {
+        let RangeCollect {
+            plan,
+            collection,
+            typed,
+            range: (prefix, start, end),
+        } = found;
+        let collect = plan.collect;
+        let doc = TypedDoc {
+            stages: plan.stages,
+            var: &plan.for_clause.variable,
+            fields: plan.fields.as_deref(),
+        };
+        // Set by a thread that fails: the others stop at their next look.
+        let stop = AtomicBool::new(false);
+        // What one thread folds.
+        struct Hand<'c, 't> {
+            fold: CollectFold<'c>,
+            reader: TypedReader<'t>,
+            scratch: Context,
+            passes: Vec<(usize, usize)>,
+            scanned: usize,
+        }
+        let hand = || Hand {
+            fold: CollectFold::for_partition(collect, 0),
+            reader: TypedReader::new(typed),
+            scratch: outer.clone(),
+            passes: vec![(0usize, 0usize); typed.filter_count()],
+            scanned: 0,
+        };
+        // A stretch of the index to read: its rows are numbered from
+        // `first`.
+        struct Stretch {
+            first: u64,
+            lo: Vec<u8>,
+            hi: Vec<u8>,
+        }
+        // Stretches waiting for a thread.
+        let waiting: parking_lot::Mutex<Vec<Stretch>> = parking_lot::Mutex::new(Vec::new());
+        // Read the first `limit` entries of `stretch` into `h`. What is
+        // left of it goes back to wait, before its documents are fetched:
+        // another thread can go on with the index meanwhile.
+        let read = |h: &mut Hand<'c, '_>, stretch: Stretch, limit: usize| -> DbResult<()> {
+            let (doc_keys, resume) =
+                collection.index_entry_doc_keys(prefix, &stretch.lo, &stretch.hi, limit);
+            if let Some(lo) = resume {
+                waiting.lock().push(Stretch {
+                    first: stretch.first + limit as u64,
+                    lo,
+                    hi: stretch.hi,
+                });
+            }
+            // The deadline, and what a fold that is not merged holds.
+            self.check_budget(h.fold.held())?;
+            h.fold.number_from(stretch.first);
+            collection.for_each_doc_bytes_of(&doc_keys, |bytes| {
+                if doc.fold(
+                    self,
+                    bytes,
+                    &mut h.reader,
+                    &mut h.fold,
+                    &mut h.scratch,
+                    &mut h.passes,
+                )? {
+                    h.scanned += 1;
+                }
+                Ok(())
+            })?;
+            Ok(())
+        };
+        // Stretches, one after the other, until none is waiting. A thread
+        // that leaves a rest is still here to take it: none is left behind
+        // by the threads that found nothing and went.
+        let work = |h: &mut Hand<'c, '_>| -> DbResult<()> {
+            while !stop.load(Ordering::Relaxed) {
+                let Some(stretch) = waiting.lock().pop() else {
+                    break;
+                };
+                let done = read(h, stretch, RANGE_FOLD_STRETCH);
+                if done.is_err() {
+                    stop.store(true, Ordering::Relaxed);
+                }
+                done?;
+            }
+            Ok(())
+        };
+
+        // The first entries here: a small range ends with them.
+        let mut mine = hand();
+        let whole = Stretch {
+            first: 0,
+            lo: start.clone(),
+            hi: end.clone(),
+        };
+        read(&mut mine, whole, RANGE_FOLD_FIRST)?;
+        let mut hands = Vec::new();
+        let rest = waiting.lock().pop();
+        if let Some(rest) = rest.filter(|_| !stop.load(Ordering::Relaxed)) {
+            let threads = if spread && CollectFold::mergeable(collect) {
+                self.scan
+                    .threads
+                    .unwrap_or_else(super::scan_threads::configured_threads)
+            } else {
+                1
+            };
+            let helpers = Helpers::take(threads.saturating_sub(1));
+            // Cut in key space, each slice numbered after the one before
+            // (a slice holds fewer than 2^40 entries).
+            let slices = if helpers.count() == 0 {
+                vec![(rest.lo, rest.hi)]
+            } else {
+                collection.key_range_slices(
+                    &rest.lo,
+                    &rest.hi,
+                    (helpers.count() + 1) * RANGE_FOLD_SLICES_PER_THREAD,
+                )
+            };
+            let spawned = helpers.count().min(slices.len());
+            {
+                let mut waiting = waiting.lock();
+                // Popped from the end: the first slices first.
+                for (at, (lo, hi)) in slices.into_iter().enumerate().rev() {
+                    waiting.push(Stretch {
+                        first: (at as u64 + 1) << 40,
+                        lo,
+                        hi,
+                    });
+                }
+            }
+            // What the threads that are done hold. A thread that finishes
+            // folds in whatever lies there and leaves the result: the folds
+            // are merged by the threads, several at a time, where merging
+            // them one after the other on this thread took as long as the
+            // read (a fold holds every group).
+            let pile: parking_lot::Mutex<Vec<Partitioned<'c>>> =
+                parking_lot::Mutex::new(Vec::new());
+            let settle = |mut done: Partitioned<'c>| loop {
+                let other = {
+                    let mut pile = pile.lock();
+                    match pile.pop() {
+                        Some(other) => other,
+                        None => {
+                            pile.push(done);
+                            return;
+                        }
+                    }
+                };
+                done.fold.merge(other.fold);
+                done.scanned += other.scanned;
+                for (total, part) in done.passes.iter_mut().zip(other.passes) {
+                    total.0 += part.0;
+                    total.1 += part.1;
+                }
+                done.partitions += other.partitions;
+            };
+            let results: Vec<DbResult<()>> = std::thread::scope(|s| {
+                let (work, hand, stop, settle) = (&work, &hand, &stop, &settle);
+                let others: Vec<_> = (0..spawned)
+                    .filter_map(|_| {
+                        std::thread::Builder::new()
+                            .name("solidb-scan".to_string())
+                            .spawn_scoped(s, move || {
+                                let mut h = hand();
+                                work(&mut h).map(|()| {
+                                    settle(Partitioned {
+                                        fold: h.fold,
+                                        scanned: h.scanned,
+                                        passes: h.passes,
+                                        partitions: 1,
+                                    })
+                                })
+                            })
+                            .ok()
+                    })
+                    .collect();
+                let mut results = vec![work(&mut mine)];
+                for handle in others {
+                    results.push(handle.join().unwrap_or_else(|_| {
+                        stop.store(true, Ordering::Relaxed);
+                        Err(DbError::InternalError("a scan thread panicked".to_string()))
+                    }));
+                }
+                results
+            });
+            drop(helpers);
+            for result in results {
+                result?;
+            }
+            hands = pile.into_inner();
+        }
+        let mut merged = Partitioned {
+            fold: mine.fold,
+            scanned: mine.scanned,
+            passes: mine.passes,
+            partitions: 1,
+        };
+        for h in hands {
+            merged.fold.merge(h.fold);
+            merged.scanned += h.scanned;
+            for (total, part) in merged.passes.iter_mut().zip(h.passes) {
+                total.0 += part.0;
+                total.1 += part.1;
+            }
+            merged.partitions += h.partitions;
+        }
+        Ok(merged)
     }
 
     /// The collection a streaming COLLECT would read for `for_clause`, or

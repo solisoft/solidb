@@ -134,6 +134,17 @@ fn in_list_is_indexable(value: &Value) -> bool {
     matches!(value, Value::Array(items) if items.len() <= MAX_INDEXED_IN_KEYS)
 }
 
+/// `value` as an index lookup takes it: a float that is a whole number
+/// (`30.0`) as the integer, which is how the data holds it.
+fn normalized_index_value(value: &Value) -> Value {
+    match value.as_f64() {
+        Some(f) if value.is_number() && f.fract() == 0.0 && f.is_finite() => {
+            Value::Number(serde_json::Number::from(f as i64))
+        }
+        _ => value.clone(),
+    }
+}
+
 fn is_range_op(op: &BinaryOperator) -> bool {
     matches!(
         op,
@@ -2039,6 +2050,55 @@ impl<'a> QueryExecutor<'a> {
         Some(out)
     }
 
+    /// The entries of the single-field index
+    /// [`Self::lookup_index_for_filter_limited`] would read for `filter`,
+    /// as `(prefix, start, end)`, when its first choice is a range read
+    /// upwards (`>`, `>=`) on such an index; `None` for any other read. For a
+    /// caller that reads the candidates' stored bytes itself and re-checks
+    /// the FILTER on each.
+    pub(super) fn single_range_read(
+        &self,
+        collection: &Collection,
+        filter: &Expression,
+        var_name: &str,
+        ctx: &Context,
+    ) -> Option<KeyRange> {
+        if collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0)
+        {
+            return None;
+        }
+        let candidates = self.read_candidates(collection, filter, var_name, ctx);
+        let Some(ReadPlan::Single(cond, name, _)) = self
+            .rank_reads(collection, candidates, var_name, ctx)
+            .into_iter()
+            .next()
+        else {
+            return None;
+        };
+        // `<` and `<=` are read from the bound down: another order of rows,
+        // left to the read that walks it.
+        let inclusive = match cond.op {
+            BinaryOperator::GreaterThan => false,
+            BinaryOperator::GreaterThanOrEqual => true,
+            _ => return None,
+        };
+        if cond.field == "_key" || cond.field == "_id" {
+            return None;
+        }
+        let index = collection.get_single_field_index_for_field(&cond.field)?;
+        if index.name != name {
+            return None;
+        }
+        let value = normalized_index_value(&cond.value);
+        Some(Collection::single_field_key_range(
+            &index.name,
+            &value,
+            inclusive,
+        ))
+    }
+
     /// [`Self::lookup_index_for_filter_limited`] honouring an index hint.
     ///
     /// The hinted indexes are tried first, in order. When none can serve the
@@ -2355,20 +2415,7 @@ impl<'a> QueryExecutor<'a> {
         // Normalize the value for index lookup
         // If it's a float that's actually an integer (e.g., 30.0), convert to integer
         // This handles the case where SDBQL parses "30" as 30.0 but data has integer 30
-        let normalized_value = if let Value::Number(n) = &condition.value {
-            if let Some(f) = n.as_f64() {
-                if f.fract() == 0.0 && f.is_finite() {
-                    // It's a whole number, try as integer first
-                    Value::Number(serde_json::Number::from(f as i64))
-                } else {
-                    condition.value.clone()
-                }
-            } else {
-                condition.value.clone()
-            }
-        } else {
-            condition.value.clone()
-        };
+        let normalized_value = normalized_index_value(&condition.value);
 
         match condition.op {
             BinaryOperator::Equal => {
