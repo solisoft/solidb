@@ -1,4 +1,4 @@
-use super::query::write_actor_from_claims;
+use super::query::write_actor_for_collection;
 use super::system::{is_physical_shard_collection, is_protected_collection, AppState};
 use crate::{
     error::DbError,
@@ -181,9 +181,8 @@ pub async fn insert_document(
     // still have to be added by an explicit migration; this only handles
     // the bare collection so the first `Model.create(...)` doesn't 404 on a
     // fresh database.
-    let collection = match database
-        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))
-    {
+    let actor = write_actor_for_collection(&state, claims.as_deref(), &db_name, &coll_name).await;
+    let collection = match database.get_collection_for_write(&coll_name, actor) {
         Ok(coll) => coll,
         Err(DbError::CollectionNotFound(_)) => {
             // Each auto-creation is a `create_cf`, which rewrites and fsyncs
@@ -200,8 +199,7 @@ pub async fn insert_document(
                 coll_name
             );
             database.create_collection(coll_name.clone(), None)?;
-            database
-                .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?
+            database.get_collection_for_write(&coll_name, actor)?
         }
         Err(e) => return Err(e),
     };
@@ -337,8 +335,8 @@ pub async fn insert_documents_batch(
     require_cluster_internal(claims.as_deref(), "_batch")?;
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database
-        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
+    let actor = write_actor_for_collection(&state, claims.as_deref(), &db_name, &coll_name).await;
+    let collection = database.get_collection_for_write(&coll_name, actor)?;
 
     // Use upsert for physical shard collections (prevents duplicates during resharding)
     // Physical shards have names like "users_s0", "users_s1", etc.
@@ -796,8 +794,8 @@ pub async fn update_document(
     Json(mut data): Json<Value>,
 ) -> Result<([(&'static str, &'static str); 1], Json<Value>), DbError> {
     let database = state.storage.get_database(&db_name)?;
-    let collection = database
-        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
+    let actor = write_actor_for_collection(&state, claims.as_deref(), &db_name, &coll_name).await;
+    let collection = database.get_collection_for_write(&coll_name, actor)?;
 
     // Check for upsert query param
     let upsert = params.get("upsert").map(|v| v == "true").unwrap_or(false);
@@ -949,8 +947,8 @@ pub async fn delete_document(
     }
 
     let database = state.storage.get_database(&db_name)?;
-    let collection = database
-        .get_collection_for_write(&coll_name, write_actor_from_claims(claims.as_deref()))?;
+    let actor = write_actor_for_collection(&state, claims.as_deref(), &db_name, &coll_name).await;
+    let collection = database.get_collection_for_write(&coll_name, actor)?;
 
     // Check for transaction context
     if let Some(tx_id) = get_transaction_id(&headers) {

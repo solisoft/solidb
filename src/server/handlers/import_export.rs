@@ -290,7 +290,13 @@ pub async fn import_collection(
     let database = state.storage.get_database(&db_name)?;
     // Import is a bulk write: the same tiers as the document API apply, or
     // `_scripts` could be installed by uploading a file.
-    let actor = crate::server::handlers::query::write_actor_from_claims(claims.as_deref());
+    let actor = crate::server::handlers::query::write_actor_for_collection(
+        &state,
+        claims.as_deref(),
+        &db_name,
+        &coll_name,
+    )
+    .await;
     let collection = database
         .get_collection_for_write(&coll_name, actor)
         .or_else(|e| {

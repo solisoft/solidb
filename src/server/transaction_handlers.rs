@@ -174,16 +174,20 @@ pub async fn insert_document_tx(
 
     // Get transaction
     let tx_arc = tx_manager.get(tx_id)?;
+    // Resolve the write identity before taking the transaction lock: the
+    // scoped-admin check awaits, and the lock guard is not held across it.
+    let actor = crate::server::handlers::query::write_actor_for_collection(
+        &state,
+        claims.as_deref(),
+        &db_name,
+        &coll_name,
+    )
+    .await;
     let mut tx = tx_arc.write().unwrap();
 
     // Scoped to the database named in the path (SEC-179), and resolved through
     // the write getter so all three protection tiers apply (SEC-180).
-    let collection = collection_for_write_in_database(
-        &state,
-        &db_name,
-        &coll_name,
-        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
-    )?;
+    let collection = collection_for_write_in_database(&state, &db_name, &coll_name, actor)?;
 
     // Perform transactional insert
     let wal = tx_manager.wal().clone();
@@ -241,16 +245,20 @@ pub async fn update_document_tx(
 
     // Get transaction
     let tx_arc = tx_manager.get(tx_id)?;
+    // Resolve the write identity before taking the transaction lock: the
+    // scoped-admin check awaits, and the lock guard is not held across it.
+    let actor = crate::server::handlers::query::write_actor_for_collection(
+        &state,
+        claims.as_deref(),
+        &db_name,
+        &coll_name,
+    )
+    .await;
     let mut tx = tx_arc.write().unwrap();
 
     // Scoped to the database named in the path (SEC-179), and resolved through
     // the write getter so all three protection tiers apply (SEC-180).
-    let collection = collection_for_write_in_database(
-        &state,
-        &db_name,
-        &coll_name,
-        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
-    )?;
+    let collection = collection_for_write_in_database(&state, &db_name, &coll_name, actor)?;
 
     // Perform transactional update
     let wal = tx_manager.wal().clone();
@@ -278,16 +286,20 @@ pub async fn delete_document_tx(
 
     // Get transaction
     let tx_arc = tx_manager.get(tx_id)?;
+    // Resolve the write identity before taking the transaction lock: the
+    // scoped-admin check awaits, and the lock guard is not held across it.
+    let actor = crate::server::handlers::query::write_actor_for_collection(
+        &state,
+        claims.as_deref(),
+        &db_name,
+        &coll_name,
+    )
+    .await;
     let mut tx = tx_arc.write().unwrap();
 
     // Scoped to the database named in the path (SEC-179), and resolved through
     // the write getter so all three protection tiers apply (SEC-180).
-    let collection = collection_for_write_in_database(
-        &state,
-        &db_name,
-        &coll_name,
-        crate::server::handlers::query::write_actor_from_claims(claims.as_deref()),
-    )?;
+    let collection = collection_for_write_in_database(&state, &db_name, &coll_name, actor)?;
 
     // Perform transactional delete
     let wal = tx_manager.wal().clone();
