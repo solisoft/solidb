@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`solidb user`: users and roles from a shell** ([#11](https://github.com/solisoft/solidb/pull/11), by Arnauld Nyaku). `list`, `create`, `delete`, `passwd`, `roles`, `grant` and `revoke`, the way `createuser`, `dropuser` and `ALTER ROLE … PASSWORD` do for PostgreSQL. Creating a user took three curl calls with the password on the command line. `solidb user create shop_app --role editor --database shop` creates the user and assigns the role, limited to one database; if the role cannot be assigned, the user is not kept. Passwords are never taken on the command line: the admin's comes from `SOLIDB_PASSWORD`, `--password-file` or a prompt, the one being set is typed twice or read with `--password-stdin`. Exit codes: 3 not found, 4 already exists, 5 authentication or permission refused, so a provisioning script can take "already exists" as done. See Tooling › solidb user.
+
+- **`PUT /_api/auth/users/:username/password`** (admin only) sets a user's password without the current one, for a user who has lost theirs; `PUT /_api/auth/password` only changes the caller's own and asks for the current one. 12 characters minimum, `404` for an unknown user, `204` when done. The old password stops working at once; tokens already issued stay valid until they expire. The change is replicated.
+
+### Fixed
+
+- **An admin of one database writes that database's `_jobs`** ([#12](https://github.com/solisoft/solidb/pull/12), by Arnauld Nyaku, and `64791a78`). `_jobs` is written by name with Admin only, and "admin" was read from the global `admin` role: an admin limited to one database was refused its own database's `_jobs` over HTTP (the driver already allowed it), so a Soli application had to run as a global admin just to enqueue its jobs. The document, transaction and import endpoints, and a query that writes on `/cursor`, `/sql` or the transactional query endpoint, now take an admin of the query's database. Nothing else opens: another database's `_jobs`, `_scripts`, `_env` and the other protected collections answer `403` as before, and row policies still look at the global role. Lua scripts are not covered yet.
+
 ## [2.12.1](https://github.com/solisoft/solidb/compare/v2.12.0...v2.12.1) (2026-11-16)
 
 Columnar collections on a table that keeps changing: indexes are built in

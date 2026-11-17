@@ -9,6 +9,20 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>solidb user</code>: users and roles from a shell</strong> &mdash; <code>list</code>, <code>create</code>, <code>delete</code>, <code>passwd</code>, <code>roles</code>, <code>grant</code> and <code>revoke</code>, the way <code>createuser</code>, <code>dropuser</code> and <code>ALTER ROLE &hellip; PASSWORD</code> do for PostgreSQL. Creating a user took three curl calls with the password on the command line. <code>solidb user create shop_app --role editor --database shop</code> creates the user and assigns the role, limited to one database; if the role cannot be assigned, the user is not kept. Passwords are never taken on the command line: the admin&rsquo;s comes from <code>SOLIDB_PASSWORD</code>, <code>--password-file</code> or a prompt, the one being set is typed twice or read with <code>--password-stdin</code>. Exit codes say what happened (3 not found, 4 already exists, 5 authentication or permission refused), so a provisioning script can take &ldquo;already exists&rdquo; as done. See <a href="/docs/tooling" class="text-cyan-400 hover:underline">Tooling</a>. Contributed by Arnauld Nyaku.</li>
+        <li><strong class="text-white">An admin can reset another user&rsquo;s password</strong> &mdash; <code>PUT /_api/auth/users/:username/password</code> with <code>{"password": "&hellip;"}</code> (admin only) sets a user&rsquo;s password without the current one, for a user who has lost theirs; <code>PUT /_api/auth/password</code> only changes the caller&rsquo;s own and asks for the current one. 12 characters minimum, <code>404</code> for an unknown user, <code>204</code> when done. The old password stops working at once; tokens already issued stay valid until they expire. The change is replicated.</li>
+        <li><strong class="text-white">An admin of one database writes that database&rsquo;s <code>_jobs</code></strong> &mdash; <code>_jobs</code> is written by name with Admin only, and &ldquo;admin&rdquo; was read from the global <code>admin</code> role: an admin limited to one database was refused its own database&rsquo;s <code>_jobs</code> over HTTP (the driver already allowed it), so a Soli application had to run as a global admin just to enqueue its jobs. The document, transaction and import endpoints, and a query that writes on <code>/cursor</code>, <code>/sql</code> or the transactional query endpoint, now take an admin of the query&rsquo;s database. Nothing else opens: another database&rsquo;s <code>_jobs</code>, <code>_scripts</code>, <code>_env</code> and the other protected collections answer <code>403</code> as before, and row policies still look at the global role. Lua scripts are not covered yet.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.12.1 -->
   <section id="v2-12-1" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
