@@ -582,6 +582,15 @@
              <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">LTE (<=)</span>
              <span class="px-2 py-1 bg-pink-500/20 text-pink-300 rounded text-xs font-mono">IN</span>
             </div>
+            <p class="text-sm text-gray-400 mt-4">
+              A <code>timestamp</code> column is compared by instant, whatever the writing of the stored value or of the filter's:
+              ISO&nbsp;8601 text (<code>2026-01-01T00:00:00Z</code>, <code>2026-01-01 01:00:00+01:00</code>, <code>2026-01-01</code>; no offset means UTC)
+              or a number of milliseconds since the epoch, read as seconds below 10,000,000,000 as the SDBQL date functions do.
+              <code>{"column": "timestamp", "op": "GTE", "value": "2026-01-01"}</code> keeps the rows from that day on, and an <code>EQ</code> finds an instant
+              inserted with another offset or as a number. A range against a value that is not a date answers <code>400</code>.
+              Rows whose value is null or not a date are kept by no range. Indexes do not serve a <code>timestamp</code> column.
+              This is the REST and driver filter: an SDBQL <code>FILTER</code> compares the stored values as they are, strings as strings.
+            </p>
           </div>
         </div>
       </section>

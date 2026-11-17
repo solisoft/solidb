@@ -34,7 +34,7 @@
             <h2 class="text-2xl font-bold text-white">Supported Ecosystems</h2>
           </div>
 
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-11 gap-4 text-center">
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-4 text-center">
               <% RGB = { "orange-500": "249,115,22", "green-500": "34,197,94", "cyan-500": "6,182,212", "cyan-400": "34,211,238", "red-400": "248,113,113", "yellow-500": "234,179,8", "purple-500": "168,85,247", "blue-500": "59,130,246", "blue-400": "96,165,250", "red-500": "239,68,68" } %>
 <% ecosystems = [
   { "id": "rust", "icon": "fab fa-rust", "hex": "#f97316", "name": "Rust" },
@@ -44,6 +44,7 @@
   { "id": "python", "icon": "fab fa-python", "hex": "#eab308", "name": "Python" },
   { "id": "php", "icon": "fab fa-php", "hex": "#a855f7", "name": "PHP" },
   { "id": "ruby", "icon": "fas fa-gem", "hex": "#ef4444", "name": "Ruby" },
+  { "id": "iyi", "icon": "fas fa-leaf", "hex": "#22d3ee", "name": "iyi" },
   { "id": "ios", "icon": "fab fa-apple", "hex": "#5a9fd4", "name": "iOS" },
   { "id": "android", "icon": "fab fa-android", "hex": "#3ddc84", "name": "Android" },
   { "id": "react-native", "icon": "fab fa-react", "hex": "#61dafb", "name": "React Native" },
@@ -153,6 +154,21 @@
     { "name": "begin_transaction", "signature": "begin_transaction(db, iso: nil)", "desc": "Start Transaction" },
     { "name": "commit_transaction", "signature": "commit_transaction(tx_id)", "desc": "Commit changes" },
     { "name": "rollback_transaction", "signature": "rollback_transaction(tx_id)", "desc": "Rollback changes" }
+  ] },
+  { "id": "iyi", "name": "iyi", "icon": "fas fa-leaf", "color": "cyan-400", "install": "iyi get github.com/solisoft/solidb_iyi --as solidb", "usage": "db = Client.new(\"127.0.0.1\", 6745)\ndb.auth(\"_system\", \"admin\", \"password\").or_panic\ndoc = db.insert(\"db\", \"users\", JSON.parse(%({\"name\": \"Ada\"}))).or_panic", "lang_code": "crystal", "commands": [
+    { "name": "connect", "signature": "connect : Nil | SolidbError", "desc": "Open the connection" },
+    { "name": "auth", "signature": "auth(db, user, pass)", "desc": "Auth" },
+    { "name": "ping", "signature": "ping : Int64 | SolidbError", "desc": "Server clock (ms)" },
+    { "name": "insert", "signature": "insert(db, col, doc, key = nil)", "desc": "Insert an Any" },
+    { "name": "bulk_insert", "signature": "bulk_insert(db, col, docs)", "desc": "Insert many" },
+    { "name": "get", "signature": "get(db, col, key)", "desc": "Fetch a document" },
+    { "name": "update", "signature": "update(db, col, key, doc, merge = true)", "desc": "Update a document" },
+    { "name": "delete", "signature": "delete(db, col, key)", "desc": "Remove a document" },
+    { "name": "query", "signature": "query(db, sdbql, bind_vars = nil)", "desc": "SDBQL statement" },
+    { "name": "begin_transaction", "signature": "begin_transaction(db, isolation = \"read_committed\")", "desc": "Start a transaction" },
+    { "name": "commit_transaction", "signature": "commit_transaction", "desc": "Commit changes" },
+    { "name": "rollback_transaction", "signature": "rollback_transaction", "desc": "Drop changes" },
+    { "name": "request", "signature": "request(Fields.new(cmd).set(name, value))", "desc": "Any other command" }
   ] },
   { "id": "ios", "name": "iOS", "icon": "fab fa-apple", "color": "blue-500", "install": "pod 'SoliDB'", "usage": "let client = SoliDBClient(host: \"localhost\", port: 6745)\ntry await client.connect()\ntry await client.auth(database: \"_system\", username: \"admin\", password: \"password\")\nlet doc = try await client.insert(database: \"db\", collection: \"users\", document: [\"name\": \"Alice\"])", "lang_code": "swift", "commands": [
     { "name": "connect", "signature": "connect() async throws", "desc": "Establish connection" },
@@ -340,6 +356,22 @@
                   Widget-based reactive API with streams. Works on iOS, Android, Web, and Desktop.
                   <a href="/docs/clients-flutter" class="text-<%= lang["color"] %> hover:underline ml-1">
                     View full Flutter documentation →
+                  </a>
+                </div>
+              </div>
+            </div>
+            <% end %>
+
+            <% if lang["id"] == "iyi" %>
+            <!-- iyi: Full Documentation Link -->
+            <div class="mt-8 p-4 bg-gray-900/30 rounded-xl border border-white/5">
+              <div class="flex items-start">
+                <i class="fas fa-leaf text-<%= lang["color"] %> mt-0.5 mr-3"></i>
+                <div class="text-xs text-gray-400 leading-relaxed">
+                  <strong class="text-gray-300">Written in iyi alone.</strong>
+                  Sockets from its standard library, its own MessagePack codec, no dependency and no C.
+                  <a href="/docs/clients-iyi" class="text-<%= lang["color"] %> hover:underline ml-1">
+                    View full iyi documentation →
                   </a>
                 </div>
               </div>

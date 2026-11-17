@@ -1135,3 +1135,154 @@ fn an_insert_is_checked_against_the_schema() {
         .unwrap());
     assert_eq!(col.count(), 4);
 }
+
+fn ts_column(name: &str, data_type: ColumnType, nullable: bool) -> ColumnDef {
+    ColumnDef {
+        name: name.to_string(),
+        data_type,
+        nullable,
+        indexed: false,
+        index_type: None,
+    }
+}
+
+/// A `timestamp` column is compared by instant. A range used to keep no
+/// row at all (ranges compared numbers only, and the values are texts),
+/// and an equality found only the writing that was inserted.
+#[test]
+fn a_timestamp_column_is_compared_by_instant() {
+    let (engine, _dir) = create_test_engine();
+    let db = engine.get_database("_system").unwrap();
+    // A few rows stay in the tail; 5,000 are sealed as a block.
+    for (name, rows) in [("ts_tail", 6_i64), ("ts_block", 5_000)] {
+        db.create_collection(format!("_columnar_{name}"), None)
+            .unwrap();
+        let col = ColumnarCollection::new(
+            name.to_string(),
+            "_system",
+            db.db_arc(),
+            vec![
+                ts_column("n", ColumnType::Int64, false),
+                ts_column("at", ColumnType::Timestamp, true),
+            ],
+            CompressionType::Lz4,
+        )
+        .unwrap();
+        // Row n is n minutes after midnight, 2026-01-01 UTC; row 3 has no
+        // instant, and row 4 is written with an offset.
+        let midnight = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z").unwrap();
+        col.insert_rows(
+            (0..rows)
+                .map(|n| {
+                    let at = midnight + chrono::Duration::minutes(n);
+                    match n {
+                        3 => json!({"n": n, "at": null}),
+                        4 => json!({"n": n, "at": "2026-01-01T01:04:00+01:00"}),
+                        _ => json!({"n": n, "at": at.to_rfc3339()}),
+                    }
+                })
+                .collect(),
+        )
+        .unwrap();
+        let kept = |filter: ColumnFilter| -> Vec<i64> {
+            let found = col.scan_filtered(&filter, &["n"]).unwrap();
+            assert_eq!(col.count_filtered(&filter).unwrap(), found.len() as u64);
+            found.iter().map(|row| row["n"].as_i64().unwrap()).collect()
+        };
+        let at = |text: &str| ("at".to_string(), json!(text));
+        let (c, v) = at("2026-01-01T00:02:00Z");
+        assert_eq!(kept(ColumnFilter::Lt(c, v)), vec![0, 1], "{name}");
+        let (c, v) = at("2026-01-01 00:02:00");
+        assert_eq!(kept(ColumnFilter::Lte(c, v)), vec![0, 1, 2], "{name}");
+        let (c, v) = at("2026-01-01T00:04:00Z");
+        assert_eq!(
+            kept(ColumnFilter::Gt(c, v)).len() as i64,
+            rows - 5,
+            "{name}"
+        );
+        let (c, v) = at("2026-01-01T00:04:00Z");
+        assert_eq!(
+            kept(ColumnFilter::Gte(c, v)).len() as i64,
+            rows - 4,
+            "{name}"
+        );
+        // A bound in seconds, and both sides of a range.
+        let both = ColumnFilter::And(vec![
+            ColumnFilter::Gte("at".to_string(), json!(1_767_225_660)),
+            ColumnFilter::Lt("at".to_string(), json!("2026-01-01T00:05:00.000Z")),
+        ]);
+        assert_eq!(kept(both), vec![1, 2, 4], "{name}");
+        // One instant, however it is written.
+        for writing in [
+            json!("2026-01-01T00:04:00Z"),
+            json!("2026-01-01T00:04:00.000+00:00"),
+            json!("2026-01-01 01:04:00+01:00"),
+            json!(1_767_225_840),
+            json!(1_767_225_840_000_i64),
+        ] {
+            let eq = ColumnFilter::Eq("at".to_string(), writing.clone());
+            assert_eq!(kept(eq), vec![4], "{name} {writing}");
+        }
+        let (c, v) = at("2026-01-01T00:01:00Z");
+        let among = ColumnFilter::In(c, vec![v, json!("2026-01-01T02:02:00+02:00")]);
+        assert_eq!(kept(among), vec![1, 2], "{name}");
+        let (c, v) = at("2026-01-01T00:04:00Z");
+        assert_eq!(
+            kept(ColumnFilter::Ne(c, v)).len() as i64,
+            rows - 1,
+            "{name}"
+        );
+        assert_eq!(
+            kept(ColumnFilter::Eq("at".to_string(), serde_json::Value::Null)),
+            vec![3],
+            "{name}"
+        );
+        // A bound that names no instant is refused, not answered with
+        // nothing.
+        let (c, v) = at("yesterday");
+        assert!(col.scan_filtered(&ColumnFilter::Gt(c, v), &["n"]).is_err());
+    }
+}
+
+/// Instants stored as integers: a block's bounds pass it over or take it
+/// whole, and a text bound finds them.
+#[test]
+fn a_timestamp_column_of_integers_is_compared_by_instant() {
+    let (engine, _dir) = create_test_engine();
+    let db = engine.get_database("_system").unwrap();
+    db.create_collection("_columnar_ts_int".to_string(), None)
+        .unwrap();
+    let col = ColumnarCollection::new(
+        "ts_int".to_string(),
+        "_system",
+        db.db_arc(),
+        vec![ts_column("at", ColumnType::Timestamp, false)],
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    // Seconds from midnight 2026-01-01 UTC, one row a second.
+    let midnight = 1_767_225_600_i64;
+    col.insert_rows((0..5_000).map(|n| json!({"at": midnight + n})).collect())
+        .unwrap();
+    let count = |filter: ColumnFilter| col.count_filtered(&filter).unwrap();
+    let at = || "at".to_string();
+    assert_eq!(
+        count(ColumnFilter::Lt(at(), json!("2026-01-01T00:01:00Z"))),
+        60
+    );
+    assert_eq!(
+        count(ColumnFilter::Gte(at(), json!("2026-01-01T00:01:00Z"))),
+        4_940
+    );
+    assert_eq!(count(ColumnFilter::Gt(at(), json!("2027-01-01"))), 0);
+    assert_eq!(count(ColumnFilter::Lt(at(), json!("2027-01-01"))), 5_000);
+    // The same bound in milliseconds.
+    assert_eq!(
+        count(ColumnFilter::Lt(at(), json!((midnight + 60) * 1000))),
+        60
+    );
+    assert_eq!(
+        count(ColumnFilter::Eq(at(), json!("2026-01-01T00:00:59Z"))),
+        1
+    );
+}

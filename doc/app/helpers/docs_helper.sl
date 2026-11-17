@@ -107,6 +107,7 @@ def docs_nav()
             { "slug": "clients-php", "label": "PHP" },
             { "slug": "clients-ruby", "label": "Ruby" },
             { "slug": "clients-elixir", "label": "Elixir" },
+            { "slug": "clients-iyi", "label": "iyi" },
             { "slug": "clients-rust", "label": "Rust" },
             { "slug": "clients-ios", "label": "iOS (Swift)" },
             { "slug": "clients-android", "label": "Android (Kotlin)" },

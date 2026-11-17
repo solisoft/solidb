@@ -1920,6 +1920,16 @@ impl ColumnarCollection {
         Ok(())
     }
 
+    /// Whether the schema says `column` holds instants: its comparisons
+    /// are then those of `Instants`, not of the values as written.
+    fn is_timestamp(&self, column: &str) -> bool {
+        self.meta.read().is_ok_and(|meta| {
+            meta.columns
+                .iter()
+                .any(|c| c.name == column && c.data_type == ColumnType::Timestamp)
+        })
+    }
+
     /// Read a single column for all rows or specific row IDs
     pub fn read_column(&self, column: &str, row_uuids: Option<&[String]>) -> DbResult<Vec<Value>> {
         self.check_column(column)?;
@@ -3251,6 +3261,10 @@ impl ColumnarCollection {
             | ColumnFilter::In(column, _) => column,
         };
         self.check_column(column)?;
+        if self.is_timestamp(column) {
+            let filter = Instants::of(filter)?;
+            return Ok(scan_instants(rows, &filter, column, row_range));
+        }
         let Some(index) = self.index_for(filter, column) else {
             return Ok(scan_leaf(rows, filter, column, row_range));
         };
@@ -3306,9 +3320,15 @@ impl ColumnarCollection {
         for (block, part) in parts(rows, row_range) {
             let ruled_out = block.is_some_and(|block| {
                 sides.iter().any(|side| {
-                    side.column()
-                        .and_then(|column| block.stats(column))
-                        .is_some_and(|stats| block_rules_out(stats, side))
+                    side.column().is_some_and(|column| {
+                        block.stats(column).is_some_and(|stats| {
+                            if self.is_timestamp(column) {
+                                instant_ends(stats.bounds, side) == Some((false, false))
+                            } else {
+                                block_rules_out(stats, side)
+                            }
+                        })
+                    })
                 })
             });
             if ruled_out {
@@ -3343,7 +3363,13 @@ impl ColumnarCollection {
     /// rows out of a million, card #891). There used to be a `minmax`
     /// index for ranges; it knew only what each block already does, and
     /// was removed.
+    ///
+    /// None answers for a `timestamp` column: an index holds the values as
+    /// they were written, and two writings of one instant are two entries.
     fn index_for(&self, filter: &ColumnFilter, column: &str) -> Option<ColumnarIndexType> {
+        if self.is_timestamp(column) {
+            return None;
+        }
         let index = self.get_index_type(column)?;
         let answers = match filter {
             ColumnFilter::Eq(..) | ColumnFilter::In(..) => true,
@@ -3678,6 +3704,198 @@ fn time_bucket(value: &Value, interval: &str) -> String {
         Some(start) => start.to_rfc3339(),
         None => value.to_string(),
     }
+}
+
+/// The instant a value of a `timestamp` column names, in microseconds
+/// since the epoch; `None` when it names none (null, a text that is not a
+/// date).
+///
+/// Read as the SDBQL date functions read a date (`parse_date_str`,
+/// `number_to_epoch_ms`): ISO 8601 text, with `T` or a space, a date
+/// alone, any fraction of a second, an offset or none (then UTC); a number
+/// is milliseconds, or seconds below `SECONDS_EPOCH_THRESHOLD`.
+fn instant(value: &Value) -> Option<i64> {
+    use crate::sdbql::executor::utils::{number_to_epoch_ms, parse_date_str};
+    match value {
+        Value::Number(number) => number_to_epoch_ms(number).ok()?.checked_mul(1000),
+        Value::String(text) => Some(parse_date_str(text)?.to_utc().timestamp_micros()),
+        _ => None,
+    }
+}
+
+/// A comparison on a `timestamp` column, with the instants its constants
+/// name read once.
+///
+/// The column takes a string or an integer, so one instant has many
+/// writings (`2026-01-01T00:00:00Z`, `2026-01-01 01:00:00+01:00`,
+/// `1767225600`). Compared as the values they are, an equality found only
+/// the writing that was inserted, and a range, which compares numbers
+/// only, found no row at all.
+struct Instants<'f> {
+    filter: &'f ColumnFilter,
+    /// The instant of each constant, in the filter's order.
+    at: Vec<Option<i64>>,
+}
+
+impl<'f> Instants<'f> {
+    /// A range against something that is not an instant is refused: it
+    /// would silently keep nothing.
+    fn of(filter: &'f ColumnFilter) -> DbResult<Self> {
+        let at: Vec<Option<i64>> = match filter {
+            ColumnFilter::Eq(_, value) | ColumnFilter::Ne(_, value) => vec![instant(value)],
+            ColumnFilter::In(_, values) => values.iter().map(instant).collect(),
+            ColumnFilter::Gt(column, bound)
+            | ColumnFilter::Gte(column, bound)
+            | ColumnFilter::Lt(column, bound)
+            | ColumnFilter::Lte(column, bound) => {
+                let Some(at) = instant(bound) else {
+                    return Err(DbError::BadRequest(format!(
+                        "Column '{column}' is a timestamp: {bound} is not one \
+                         (ISO 8601 text, or a number of seconds or milliseconds)"
+                    )));
+                };
+                vec![Some(at)]
+            }
+            ColumnFilter::And(_) | ColumnFilter::Or(_) => Vec::new(),
+        };
+        Ok(Self { filter, at })
+    }
+
+    /// Whether the comparison keeps a row holding `value`. Where either
+    /// side names no instant, an equality is that of the values (which is
+    /// what finds a null) and a range keeps nothing.
+    fn keeps(&self, value: &Value) -> bool {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        let held = instant(value);
+        let same = |wanted: &Value, at: Option<i64>| match (held, at) {
+            (Some(held), Some(at)) => held == at,
+            _ => value == wanted,
+        };
+        let order = || Some(held?.cmp(&self.at.first().copied().flatten()?));
+        match self.filter {
+            ColumnFilter::Eq(_, wanted) => same(wanted, self.at[0]),
+            ColumnFilter::Ne(_, wanted) => !same(wanted, self.at[0]),
+            ColumnFilter::In(_, wanted) => wanted
+                .iter()
+                .zip(&self.at)
+                .any(|(wanted, at)| same(wanted, *at)),
+            ColumnFilter::Gt(..) => order() == Some(Greater),
+            ColumnFilter::Gte(..) => matches!(order(), Some(Greater | Equal)),
+            ColumnFilter::Lt(..) => order() == Some(Less),
+            ColumnFilter::Lte(..) => matches!(order(), Some(Less | Equal)),
+            ColumnFilter::And(_) | ColumnFilter::Or(_) => false,
+        }
+    }
+}
+
+/// Whether a range on a `timestamp` column keeps the smallest and the
+/// largest integer of a block: `None` when that does not decide for those
+/// between them. It does only when both are read in the same unit: an
+/// integer is seconds below `SECONDS_EPOCH_THRESHOLD` and milliseconds
+/// from it, so the instants follow the integers on each side of it and
+/// not across.
+fn instant_ends(bounds: Bounds, filter: &ColumnFilter) -> Option<(bool, bool)> {
+    if !matches!(
+        filter,
+        ColumnFilter::Gt(..) | ColumnFilter::Gte(..) | ColumnFilter::Lt(..) | ColumnFilter::Lte(..)
+    ) {
+        return None;
+    }
+    let Bounds::Int(low, high) = bounds else {
+        return None;
+    };
+    let threshold = crate::sdbql::executor::utils::SECONDS_EPOCH_THRESHOLD as i64;
+    let unit = |value: i64| (value <= -threshold) as i8 - (value >= threshold) as i8;
+    if unit(low) != unit(high) {
+        return None;
+    }
+    let filter = Instants::of(filter).ok()?;
+    Some((
+        filter.keeps(&Value::from(low)),
+        filter.keeps(&Value::from(high)),
+    ))
+}
+
+/// `scan_leaf` for a `timestamp` column: the positions, among `range`, of
+/// the rows whose instant the comparison keeps, ascending. A block of
+/// strings reads each distinct string once.
+fn scan_instants(
+    rows: &RowSet,
+    filter: &Instants,
+    column: &str,
+    range: std::ops::Range<u64>,
+) -> Vec<u64> {
+    let range = range.start..range.end.min(rows.len() as u64);
+    let mut kept = Vec::new();
+    if !rows.in_order() {
+        kept.extend(
+            range.filter(|position| {
+                filter.keeps(&rows.value(rows.locate(*position as usize), column))
+            }),
+        );
+        return kept;
+    }
+    for (b, block) in rows.blocks.iter().enumerate() {
+        let start = rows.start(b) as u64;
+        let from = range.start.max(start);
+        let to = range.end.min(start + block.len() as u64);
+        if from >= to {
+            continue;
+        }
+        let Some(stats) = block.stats(column) else {
+            // Sealed before the column was added: null for every row.
+            if filter.keeps(&Value::Null) {
+                kept.extend(from..to)
+            }
+            continue;
+        };
+        match instant_ends(stats.bounds, filter.filter) {
+            Some((false, false)) => continue,
+            Some((true, true)) if !stats.nulls => {
+                kept.extend(from..to);
+                continue;
+            }
+            _ => {}
+        }
+        let Some(values) = block.column(column) else {
+            continue;
+        };
+        let inside = (from - start) as usize..(to - start) as usize;
+        let null = |row: usize| values.nulls.as_ref().is_some_and(|nulls| nulls[row]);
+        match &values.data {
+            ColData::Str { dict, codes } => {
+                let null_kept = filter.keeps(&Value::Null);
+                let of_string: Vec<bool> = dict
+                    .iter()
+                    .map(|text| filter.keeps(&Value::String(text.to_string())))
+                    .collect();
+                kept.extend(
+                    inside
+                        .filter(|&row| {
+                            if null(row) {
+                                null_kept
+                            } else {
+                                of_string[codes[row] as usize]
+                            }
+                        })
+                        .map(|row| start + row as u64),
+                );
+            }
+            _ => kept.extend(
+                inside
+                    .filter(|&row| filter.keeps(&values.value(row)))
+                    .map(|row| start + row as u64),
+            ),
+        }
+    }
+    let start = rows.start(rows.blocks.len()) as u64;
+    for (at, (_, row)) in rows.tail.iter().enumerate() {
+        let position = start + at as u64;
+        if range.contains(&position) && filter.keeps(row.get(column).unwrap_or(&Value::Null)) {
+            kept.push(position);
+        }
+    }
+    kept
 }
 
 /// Whether the comparison `filter` keeps a row holding `value`.

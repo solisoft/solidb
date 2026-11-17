@@ -1,0 +1,228 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-8">
+    <a href="/docs/clients" class="inline-flex items-center text-cyan-400 hover:text-cyan-300 font-medium transition-colors group">
+      <svg class="w-4 h-4 mr-2 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+      </svg>
+      Back to Clients Overview
+    </a>
+  </div>
+
+  <div class="space-y-12">
+    <div class="relative flex items-center">
+      <div class="flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-400 text-gray-950 mr-6">
+        <i class="fas fa-leaf text-3xl"></i>
+      </div>
+      <div>
+        <h1 class="text-5xl font-extrabold text-white mb-2 tracking-tight">iyi Client</h1>
+        <div class="flex items-center gap-4">
+          <span class="px-3 py-1 bg-cyan-400/10 text-cyan-400 text-xs font-bold uppercase tracking-wider rounded-full border border-cyan-400/20">Official SDK</span>
+          <span class="text-sm text-gray-400">v0.1.0</span>
+          <span class="text-sm text-gray-500">iyi 0.21+</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="text-gray-400 text-sm mb-4 leading-relaxed">The native driver for <a href="https://iyi.dev" class="text-cyan-400 hover:underline">iyi</a>: one TCP connection speaking the <a href="/docs/driver" class="text-cyan-400 hover:underline">binary protocol</a>. It is written in iyi alone. The language&rsquo;s standard library has sockets and no MessagePack, so the driver carries its own codec (<code class="text-cyan-400 bg-gray-800 px-1 rounded">solidb_iyi/msgpack</code>); it has no dependency and calls no C. Its source is <a href="https://github.com/solisoft/solidb_iyi" class="text-cyan-400 hover:underline">github.com/solisoft/solidb_iyi</a>, listed on <a href="https://packs.iyi.dev/" class="text-cyan-400 hover:underline">iyipacks</a> once its catalog has imported it. Checked with iyi 0.21.0 against SoliDB 2.11.0.</p>
+
+      <section id="installation" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Installation</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4 overflow-x-auto">
+          <pre><code class="language-bash">iyi get github.com/solisoft/solidb_iyi --as solidb</code></pre>
+        </div>
+        <p class="text-gray-400 text-sm mb-4 leading-relaxed">That writes <code class="text-cyan-400 bg-gray-800 px-1 rounded">require github.com/solisoft/solidb_iyi v0.1.0 as solidb</code> into <code class="text-cyan-400 bg-gray-800 px-1 rounded">iyi.mod</code> and fetches the newest version tag. Files then <code class="text-cyan-400 bg-gray-800 px-1 rounded">import solidb</code> for the root module, which holds <code class="text-cyan-400 bg-gray-800 px-1 rounded">Client</code>.</p>
+      </section>
+
+
+      <section id="quickstart" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Quick Start</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4 overflow-x-auto">
+          <pre><code class="language-crystal">module app
+
+import solidb::{Client, SolidbError}
+import std/json::{Any, JSON}
+
+db = Client.new("127.0.0.1", 6745)
+db.auth("_system", "admin", "secret").or_panic
+db.create_database("shop").or_panic
+db.create_collection("shop", "users").or_panic
+
+ada = db.insert("shop", "users", JSON.parse(%({"name": "Ada", "age": 36}))).or_panic
+puts "stored #{ada["_key"].as_s}"
+
+rows = db.query("shop", "FOR u IN users FILTER u.age &gt; @age RETURN u.name",
+                JSON.parse(%({"age": 30}))).or_panic
+rows.as_a.each { |name| puts name.as_s }
+
+case db.get("shop", "users", "nobody")
+in SolidbError then puts "refused: #{it.message}"
+in Any         then puts "found #{it.to_json}"
+end
+db.close</code></pre>
+        </div><p class="text-gray-400 text-sm mb-4 leading-relaxed">Values are <code class="text-cyan-400 bg-gray-800 px-1 rounded">Any</code>, from <code class="text-cyan-400 bg-gray-800 px-1 rounded">std/json</code>: a document is built and read the way a JSON one is.</p>
+      </section>
+
+
+      <section id="errors" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Errors</h3>
+        <p class="text-gray-400 text-sm mb-4 leading-relaxed">Every call answers its value or a <code class="text-cyan-400 bg-gray-800 px-1 rounded">SolidbError</code>, an ordinary member of its return type: <code class="text-cyan-400 bg-gray-800 px-1 rounded">!</code> passes it on, <code class="text-cyan-400 bg-gray-800 px-1 rounded">.or_panic</code> stops on it, a <code class="text-cyan-400 bg-gray-800 px-1 rounded">case</code> handles it. <code class="text-cyan-400 bg-gray-800 px-1 rounded">message</code> is the reason; <code class="text-cyan-400 bg-gray-800 px-1 rounded">kind</code> says where it came from.</p><div class="overflow-x-auto rounded-xl border border-white/5 mb-4">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Call</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Answers</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">ErrorKind::Connection</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400">The connection could not be made, or was lost. The client connects again at its next call, and must log in again.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">ErrorKind::Server</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400">The server refused the request: a missing document, a unique index, a query that does not parse.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">ErrorKind::Protocol</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400">A reply this driver does not read, or a frame over 16 MiB.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">ErrorKind::Transaction</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400">A transaction call that does not fit the client&rsquo;s state.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section id="connection" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Connection and authentication</h3>
+        <div class="overflow-x-auto rounded-xl border border-white/5 mb-4">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Call</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Answers</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">Client.new(host = "127.0.0.1", port = 6745)</code></td><td class="px-4 py-3 text-gray-500">Client</td><td class="px-4 py-3 text-gray-400">Nothing is opened yet.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">connect</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400">Opens the connection. Every call does it when there is none.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">close</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400">Closes it. A transaction left open is rolled back by the server.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">connected?</code></td><td class="px-4 py-3 text-gray-500">Bool</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">connect_timeout_ms = n, read_timeout_ms = n</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400">Milliseconds; none by default.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">ping</code></td><td class="px-4 py-3 text-gray-500">Int64</td><td class="px-4 py-3 text-gray-400">The server&rsquo;s clock, in milliseconds.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">auth(db, username, password)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400">Logs this connection in. <code>_system</code> for an administrator.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">auth_with_api_key(db, api_key)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"></td></tr>
+            </tbody>
+          </table>
+        </div><p class="text-gray-400 text-sm mb-4 leading-relaxed">A client is one connection and one conversation: two tasks must not call the same one at once. Give each task its own.</p>
+      </section>
+
+
+      <section id="databases" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Databases and collections</h3>
+        <div class="overflow-x-auto rounded-xl border border-white/5 mb-4">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Call</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Answers</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list_databases</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">Names.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">create_database(name), delete_database(name)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list_collections(db)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">create_collection(db, name, type = nil)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"><code>document</code> by default; <code>edge</code>, <code>timeseries</code>, <code>blob</code>.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">delete_collection(db, name)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">collection_stats(db, name)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section id="documents" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Documents</h3>
+        <div class="overflow-x-auto rounded-xl border border-white/5 mb-4">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Call</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Answers</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">insert(db, coll, document, key = nil)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">The stored document, with <code>_key</code>, <code>_id</code>, <code>_rev</code>.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">bulk_insert(db, coll, documents)</code></td><td class="px-4 py-3 text-gray-500">Int64</td><td class="px-4 py-3 text-gray-400">How many were stored.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">get(db, coll, key)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">A <code>Server</code> error when there is none.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">update(db, coll, key, document, merge = true)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">The document as stored afterwards.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">delete(db, coll, key)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list(db, coll, limit = 50, offset = 0)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section id="queries" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Queries and indexes</h3>
+        <div class="overflow-x-auto rounded-xl border border-white/5 mb-4">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Call</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Answers</th>
+                <th class="px-4 py-3 text-xs font-bold text-gray-400 uppercase border-b border-white/5">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">query(db, sdbql, bind_vars = nil, cache = true)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">The rows. <code>bind_vars</code> is a map of the query&rsquo;s <code>@names</code>.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">explain(db, sdbql, bind_vars = nil)</code></td><td class="px-4 py-3 text-gray-500">Any</td><td class="px-4 py-3 text-gray-400">The plan.</td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">create_index(db, coll, name, fields, unique = false, sparse = false)</code></td><td class="px-4 py-3 text-gray-500">Nil</td><td class="px-4 py-3 text-gray-400"></td></tr>
+              <tr><td class="px-4 py-3"><code class="text-cyan-400">list_indexes(db, coll), delete_index(db, coll, name)</code></td><td class="px-4 py-3 text-gray-500"></td><td class="px-4 py-3 text-gray-400"></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <section id="transactions" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Transactions</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4 overflow-x-auto">
+          <pre><code class="language-crystal">db.begin_transaction("shop", "serializable").or_panic
+db.update("shop", "accounts", "a", JSON.parse(%({"balance": 0}))).or_panic
+db.insert("shop", "accounts", JSON.parse(%({"balance": 100})), "b").or_panic
+db.commit_transaction.or_panic      # or db.rollback_transaction</code></pre>
+        </div><p class="text-gray-400 text-sm mb-4 leading-relaxed">Between <code class="text-cyan-400 bg-gray-800 px-1 rounded">begin_transaction</code> and its end, <code class="text-cyan-400 bg-gray-800 px-1 rounded">insert</code>, <code class="text-cyan-400 bg-gray-800 px-1 rounded">update</code>, <code class="text-cyan-400 bg-gray-800 px-1 rounded">delete</code> and <code class="text-cyan-400 bg-gray-800 px-1 rounded">query</code> are staged in the transaction and applied at commit. <code class="text-cyan-400 bg-gray-800 px-1 rounded">get</code> and <code class="text-cyan-400 bg-gray-800 px-1 rounded">list</code> read committed data, and <code class="text-cyan-400 bg-gray-800 px-1 rounded">bulk_insert</code> is refused. One transaction at a time per client; the isolation level is <code class="text-cyan-400 bg-gray-800 px-1 rounded">read_committed</code> (the default), <code class="text-cyan-400 bg-gray-800 px-1 rounded">repeatable_read</code> or <code class="text-cyan-400 bg-gray-800 px-1 rounded">serializable</code>.</p>
+      </section>
+
+
+      <section id="request" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Any other command</h3>
+        <p class="text-gray-400 text-sm mb-4 leading-relaxed">The server has many more commands than <code class="text-cyan-400 bg-gray-800 px-1 rounded">Client</code> has methods: triggers, scripts, roles, vector and geo indexes, columnar collections, the cluster. <code class="text-cyan-400 bg-gray-800 px-1 rounded">request</code> sends any of them and answers the reply&rsquo;s data; the <a href="/docs/driver" class="text-cyan-400 hover:underline">driver page</a> lists them.</p><div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4 overflow-x-auto">
+          <pre><code class="language-crystal">import solidb::{Client, Fields}
+
+db.request(Fields.new("truncate_collection").set("database", "shop").set("collection", "logs")).or_panic</code></pre>
+        </div>
+      </section>
+
+
+      <section id="limits" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">What to know</h3>
+        <ul class="space-y-2 text-gray-400 text-sm leading-relaxed list-disc pl-5">
+          <li>Integers are <code>Int64</code>. An unsigned integer past its largest value is read as the nearest float.</li>
+          <li>Binary values are read as the string of their bytes, and never written: <code>Any</code> has no binary kind.</li>
+          <li>A reply nested more than 64 arrays and maps deep is refused: a task&rsquo;s stack is 256 KiB.</li>
+          <li>A frame is at most 16 MiB either way, the server&rsquo;s own limit.</li>
+        </ul>
+      </section>
+
+
+      <section id="tests" class="mb-12 scroll-mt-24">
+        <h3 class="text-xl font-bold text-white mb-4">Tests</h3>
+        <div class="bg-gray-950 rounded-xl p-4 font-mono text-sm border border-white/5 mb-4 overflow-x-auto">
+          <pre><code class="language-bash"># in a clone of github.com/solisoft/solidb_iyi
+./run_tests.sh /path/to/solidb    # starts a throwaway server on port 6799
+iyi test solidb_iyi/msgpack_test.iyi  # the codec alone, no server</code></pre>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>

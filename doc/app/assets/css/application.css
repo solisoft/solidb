@@ -356,6 +356,18 @@ a { color: inherit; text-decoration: none; }
     font-size: clamp(2.5rem, 5.4vw, 4.1rem); line-height: 1.06; letter-spacing: -0.015em;
     text-wrap: balance;
 }
+/* The models, as an index: name in the display face, the SDBQL that reads
+   it in mono, a hairline under each. The whole row is the link. */
+.models { list-style: none; margin: 36px 0 0; padding: 0; max-width: 34em; border-top: 1px solid var(--rule-ink); }
+.models li { border-bottom: 1px solid var(--rule); }
+.models a {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap;
+    min-height: 44px; padding: 9px 0 8px; color: var(--text); text-decoration: none;
+}
+.models b { font-family: var(--font-display); font-weight: 400; font-size: 1.4rem; line-height: 1.2; letter-spacing: -0.005em; }
+.models code { font-family: var(--font-mono); font-size: 13px; color: var(--text-3); white-space: nowrap; }
+.models a:hover b, .models a:hover code { color: var(--accent-text); }
+.models a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hero-lede { margin: 28px 0 0; font-size: clamp(1.05rem, 1.5vw, 1.25rem); line-height: 1.55; color: var(--text-2); max-width: 36em; }
 .hero-cta { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 32px; }
 .hero-meta { margin: 28px 0 0; font-family: var(--font-mono); font-size: 13px; color: var(--text-3); }

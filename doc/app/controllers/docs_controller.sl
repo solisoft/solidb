@@ -94,7 +94,7 @@ class DocsController < Controller
             "api-documents", "api-indexes", "api-monitoring", "api-queries",
             "api-scripting", "api-transactions", "api-triggers", "api-vector", "architecture",
             "blobs", "changefeeds", "clients", "clients-android", "clients-elixir",
-            "clients-flutter", "clients-go", "clients-ios", "clients-laravel",
+            "clients-flutter", "clients-go", "clients-ios", "clients-iyi", "clients-laravel",
             "clients-nodejs", "clients-php", "clients-python", "clients-react-native",
             "clients-ruby", "clients-rust", "cluster", "columnar", "comparison", "counters", "documents",
             "driver", "foreign-keys", "getting-started", "graph-rag", "graphs", "hybrid-search", "indexes",

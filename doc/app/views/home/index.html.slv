@@ -31,11 +31,26 @@
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
-      <h1>Documents, graphs, vectors and search in one server.</h1>
+      <h1>Seven data models in one server.</h1>
+
+      <%# One row per model: its name, and the SDBQL that reads it. A model
+          belongs here once it has a docs page and a query form of its own;
+          the count in the h1 and in share_title (layouts/application) is
+          the number of rows. %>
+      <ul class="models" aria-label="The seven data models">
+        <li><a href="/docs/documents"><b>Documents</b><code>FOR … FILTER … RETURN</code></a></li>
+        <li><a href="/docs/graphs"><b>Graphs</b><code>1..3 OUTBOUND</code></a></li>
+        <li><a href="/docs/vector-search"><b>Vectors</b><code>VECTOR_SIMILARITY</code></a></li>
+        <li><a href="/docs/sdbql-functions-search"><b>Full-text search</b><code>FULLTEXT · BM25</code></a></li>
+        <li><a href="/docs/timeseries"><b>Time series</b><code>TIME_BUCKET</code></a></li>
+        <li><a href="/docs/columnar"><b>Columnar tables</b><code>COLLECT … AGGREGATE</code></a></li>
+        <li><a href="/docs/sdbql-functions-geo"><b>Geo</b><code>GEO_DISTANCE</code></a></li>
+      </ul>
+
       <p class="hero-lede">
-        SoliDB keeps them, with time-series, geo and blobs, in one RocksDB store
-        behind one query language, SDBQL. The captures on this page come from real
-        servers. Each one names the release it shipped in and links to the post that
+        All seven, and blobs beside them, live in one RocksDB store behind one
+        query language, SDBQL. The captures on this page come from real servers.
+        Each one names the release it shipped in and links to the post that
         shows how it was taken.
       </p>
       <div class="hero-cta">
