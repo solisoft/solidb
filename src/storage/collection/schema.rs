@@ -202,6 +202,23 @@ impl Collection {
         }
     }
 
+    /// Hold a document about to be written to the collection's JSON schema
+    /// and field rules, on a write path that builds no validator of its
+    /// own: a transaction's inserts and updates and a batch of upserts,
+    /// which a schema did not check before (card #946). `value` is the
+    /// document whole. Not for a write another node already accepted.
+    pub(crate) fn validate_written(&self, value: &Value) -> DbResult<()> {
+        if crate::storage::foreign_keys::is_unchecked() {
+            return Ok(());
+        }
+        match self.get_cached_schema_validator()? {
+            Some(validator) => validator
+                .validate(value)
+                .map_err(|e| DbError::InvalidDocument(format!("Schema validation failed: {}", e))),
+            None => Ok(()),
+        }
+    }
+
     /// Declare the collection's field rules, in place of those it had; an
     /// empty list removes them. Documents already stored are not checked:
     /// a rule holds the writes made from now on.

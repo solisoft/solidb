@@ -638,13 +638,18 @@ Rules that keep it sound:
   path's answer and error are the decoded path's
   (`raw_writes_are_held_to_the_field_rules` compares replies and stored
   bytes).
-- **A write path that validates no schema must call `check_field_rules`
-  itself**: `insert_tx`, `update_tx_guarded` and `upsert_batch` do. A new
-  write path does one or the other.
+- **A write path with no validator of its own calls
+  `Collection::validate_written`** on the whole document (schema and
+  rules): `insert_tx`, `update_tx_guarded` and `upsert_batch` do. Until
+  card #946 they checked nothing, so a transaction stored what an insert
+  refused. A new write path validates one way or the other.
 - A replicated write is not checked (`active_field_rules` returns nothing
   inside `foreign_keys::unchecked`): the origin accepted it.
 - Rules are local to a node, as a JSON schema is: not replicated, not in a
-  full sync, not dumped.
+  full sync. `solidb-dump` writes a `field_rules` and a `schema` record per
+  collection and `solidb-restore` declares them after the data
+  (`declare_validations`): a document stored before a rule existed would
+  be refused on its way back in.
 
 ### Foreign keys
 

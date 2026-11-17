@@ -250,6 +250,73 @@ fn an_upsert_batch_and_a_transaction_are_held_to_the_rules() {
     assert!(c.get("t1").is_err());
 }
 
+/// Card #946: a JSON schema was checked by a plain insert and not by a
+/// transaction or a batch of upserts, which took what the insert refused.
+#[test]
+fn a_json_schema_is_checked_in_a_transaction_and_an_upsert_batch() {
+    use solidb::storage::schema::{CollectionSchema, SchemaValidationMode};
+    let (engine, _tmp) = engine();
+    engine.initialize().unwrap();
+    engine.create_database("app".to_string()).unwrap();
+    let db = engine.get_database("app").unwrap();
+    db.create_collection("people".to_string(), None).unwrap();
+    engine.initialize_transactions().unwrap();
+    let c = db.get_collection("people").unwrap();
+    c.set_json_schema(CollectionSchema::new(
+        "people".to_string(),
+        json!({
+            "type": "object",
+            "required": ["name"],
+            "properties": {"name": {"type": "string"}, "age": {"type": "integer", "minimum": 0}}
+        }),
+        SchemaValidationMode::Strict,
+    ))
+    .unwrap();
+    c.insert(json!({"_key": "a", "name": "Ada", "age": 36}))
+        .unwrap();
+    let schema = |result: Result<_, solidb::error::DbError>| match result {
+        Ok(()) => panic!("accepted"),
+        Err(e) => assert!(e.to_string().contains("Schema validation failed"), "{e}"),
+    };
+    schema(c.insert(json!({"age": 1})).map(|_| ()));
+
+    schema(
+        c.upsert_batch(vec![("b".to_string(), json!({"age": 1}))])
+            .map(|_| ()),
+    );
+    schema(
+        c.upsert_batch(vec![("a".to_string(), json!({"age": -1}))])
+            .map(|_| ()),
+    );
+    assert_eq!(c.count(), 1);
+    assert_eq!(c.get("a").unwrap().data["age"], json!(36));
+    c.upsert_batch(vec![("a".to_string(), json!({"age": 37}))])
+        .unwrap();
+
+    let manager = engine.transaction_manager().unwrap();
+    let tx_id = manager.begin(Default::default()).unwrap();
+    let tx_arc = manager.get(tx_id).unwrap();
+    {
+        let mut tx = tx_arc.write().unwrap();
+        let (wal, locks) = (manager.wal().clone(), manager.lock_manager().clone());
+        schema(
+            c.insert_tx(&mut tx, &wal, &locks, json!({"_key": "t1", "age": 5}))
+                .map(|_| ()),
+        );
+        schema(
+            c.update_tx(&mut tx, &wal, &locks, "a", json!({"name": 7}))
+                .map(|_| ()),
+        );
+        c.insert_tx(&mut tx, &wal, &locks, json!({"_key": "t2", "name": "Tess"}))
+            .unwrap();
+        c.update_tx(&mut tx, &wal, &locks, "a", json!({"age": 38}))
+            .unwrap();
+    }
+    engine.commit_transaction(tx_id).unwrap();
+    assert_eq!(c.count(), 2);
+    assert_eq!(c.get("a").unwrap().data["age"], json!(38));
+}
+
 #[test]
 fn rules_are_kept_replaced_and_removed() {
     let tmp = TempDir::new().unwrap();

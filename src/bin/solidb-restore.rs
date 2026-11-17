@@ -89,6 +89,8 @@ fn control_record_type(record: &Value) -> Option<String> {
             | "index"
             | "foreign_key"
             | "counter"
+            | "field_rules"
+            | "schema"
             | "document"
             | "columnar"
             | "columnar_row"
@@ -731,6 +733,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    // Declared once every document is in: a document stored
+                    // before a rule or a schema existed is not held to it.
+                    if matches!(record_type.as_deref(), Some("field_rules" | "schema")) {
+                        if let Some((db, coll)) = resolve_target(&doc, &args) {
+                            VALIDATIONS
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .push((db, coll, doc));
+                        }
+                        buffer.clear();
+                        continue;
+                    }
+
                     if record_type.as_deref() == Some("index") {
                         if let Some((db, coll)) = current_batch_meta.clone() {
                             flush_batch(
@@ -881,6 +896,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     declare_foreign_keys(&client, &base_url, &mut total_imported, &mut total_failed).await;
     declare_counters(&client, &base_url, &mut total_imported, &mut total_failed).await;
+    declare_validations(&client, &base_url, &mut total_imported, &mut total_failed).await;
 
     eprintln!("✓ Restore completed");
     eprintln!("  → {} items imported", total_imported.to_string().green());
@@ -1762,6 +1778,68 @@ async fn declare_foreign_keys(
     }
 }
 
+/// Field rules and JSON schemas to declare once the data is in:
+/// `(database, collection, record)`.
+static VALIDATIONS: std::sync::Mutex<Vec<(String, String, Value)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Declare the field rules and JSON schemas held back during the restore,
+/// in place of those the target collection has. They hold the writes made
+/// from then on: the restored documents are not checked against them.
+async fn declare_validations(
+    client: &reqwest::Client,
+    base_url: &str,
+    total_imported: &mut u64,
+    total_failed: &mut u64,
+) {
+    let held = std::mem::take(&mut *VALIDATIONS.lock().unwrap_or_else(|e| e.into_inner()));
+    for (database, collection, record) in held {
+        let collection_url = format!(
+            "{}/_api/database/{}/collection/{}",
+            base_url,
+            path_seg(&database),
+            path_seg(&collection)
+        );
+        let (what, request) = if record["_type"] == "field_rules" {
+            (
+                "field rules",
+                client
+                    .put(format!("{collection_url}/rules"))
+                    .json(&serde_json::json!({ "rules": record["rules"] })),
+            )
+        } else {
+            (
+                "schema",
+                client
+                    .post(format!("{collection_url}/schema"))
+                    .json(&serde_json::json!({
+                        "schema": record["schema"],
+                        "validationMode": record["validationMode"],
+                    })),
+            )
+        };
+        match request.send().await {
+            Ok(resp) if resp.status().is_success() => *total_imported += 1,
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!(
+                    " Warning: the {} of {}/{} were not declared: {} {}",
+                    what, database, collection, status, text
+                );
+                *total_failed += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    " Warning: the {} of {}/{} were not declared: {}",
+                    what, database, collection, e
+                );
+                *total_failed += 1;
+            }
+        }
+    }
+}
+
 /// Counter fields to declare once the data is in: `(database, collection,
 /// record)`.
 static COUNTERS: std::sync::Mutex<Vec<(String, String, Value)>> = std::sync::Mutex::new(Vec::new());
@@ -2369,6 +2447,8 @@ COMMIT;
             "index",
             "foreign_key",
             "counter",
+            "field_rules",
+            "schema",
             "document",
             "columnar",
             "columnar_row",

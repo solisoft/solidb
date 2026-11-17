@@ -1260,8 +1260,10 @@ impl Collection {
             positions.insert(key.clone(), pending.len());
             pending.push((key, old_value, doc, existed));
         }
-        for (_, _, doc, _) in &pending {
-            self.check_field_rules(&doc.data)?;
+        if self.get_cached_schema_validator()?.is_some() {
+            for (_, _, doc, _) in &pending {
+                self.validate_written(&doc.to_value())?;
+            }
         }
 
         // The documents this batch creates are numbered, in batch order;

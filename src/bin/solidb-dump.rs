@@ -1239,6 +1239,51 @@ async fn dump_collection_indexes(
         }
     }
 
+    // What the collection asks of its documents: its field rules and its
+    // JSON schema. Restore declares them once the documents are in, as it
+    // declares a foreign key: a document stored before a rule existed is
+    // not held to it, and would be refused on its way back in. A server
+    // from before field rules answers 404 to the first.
+    let url = format!(
+        "{}/_api/database/{}/collection/{}/rules",
+        base_url, db, coll
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if body["rules"].as_array().is_some_and(|r| !r.is_empty()) {
+                    let record = serde_json::json!({
+                        "_type": "field_rules",
+                        "_database": database,
+                        "_collection": collection,
+                        "rules": body["rules"],
+                    });
+                    writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                }
+            }
+        }
+    }
+    let url = format!(
+        "{}/_api/database/{}/collection/{}/schema",
+        base_url, db, coll
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<Value>().await {
+                if !body["schema"].is_null() {
+                    let record = serde_json::json!({
+                        "_type": "schema",
+                        "_database": database,
+                        "_collection": collection,
+                        "schema": body["schema"],
+                        "validationMode": body["validationMode"],
+                    });
+                    writeln!(output, "{}", serde_json::to_string(&record)?)?;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

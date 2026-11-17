@@ -130,10 +130,6 @@ impl Collection {
         if let Some(defs) = self.counters() {
             self.refuse_given_numbers(&defs, &data)?;
         }
-        // When the write is staged, as outside a transaction: the
-        // statement that breaks a rule is the one refused.
-        self.check_field_rules(&data)?;
-
         let key = if let Some(obj) = data.as_object_mut() {
             if let Some(key_value) = obj.remove("_key") {
                 if let Some(key_str) = key_value.as_str() {
@@ -160,6 +156,9 @@ impl Collection {
         )?;
 
         let doc = Document::with_key(&self.name, key.clone(), data);
+        // When the write is staged, as outside a transaction: the
+        // statement that breaks the schema or a rule is the one refused.
+        self.validate_written(&doc.to_value())?;
         self.check_unique_constraints(&key, &doc.to_value())?;
 
         tx.add_operation(Operation::Insert {
@@ -262,7 +261,7 @@ impl Collection {
         }
         let new_data = Self::updated_value(&self.name, key, &old_data, data);
         self.numbers_unchanged(&old_data, &new_data)?;
-        self.check_field_rules(&new_data)?;
+        self.validate_written(&new_data)?;
 
         if self.collection_type.read().as_str() == "edge" {
             self.validate_edge_document(&new_data)?;
