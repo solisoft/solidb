@@ -2555,6 +2555,10 @@ impl Collection {
         /// Documents deleted per batch: bounds the keys held and locked at once.
         const BATCH: usize = 10_000;
 
+        if let Some(deleted) = self.prune_range_older_than(timestamp_ms)? {
+            return Ok(deleted);
+        }
+
         let db = &self.db;
         let cf = self.ks.handle(&self.db).ok_or_else(|| {
             DbError::CollectionNotFound(format!(
@@ -2591,6 +2595,88 @@ impl Collection {
             deleted += self.delete_batch(batch)?;
         }
         Ok(deleted)
+    }
+
+    /// [`Self::prune_older_than`] as one range delete, when the documents
+    /// are all there is to remove: no index of any kind, no history, no
+    /// collection referring to this one, nobody subscribed to its changes.
+    /// The keys to prune are then a run at the front of the collection:
+    /// they are counted (the keys are read, not the documents) and removed
+    /// as one range, where each used to be deleted on its own (card #866).
+    ///
+    /// `None` when something else has to follow the documents out, or when
+    /// a key that is not a generated one lies among them: the caller then
+    /// deletes them in batches, and leaves such a key alone as it always
+    /// has.
+    fn prune_range_older_than(&self, timestamp_ms: u64) -> DbResult<Option<usize>> {
+        if self.collection_type.read().as_str() == "blob"
+            || !self.get_all_indexes().is_empty()
+            || !self.get_all_geo_indexes().is_empty()
+            || !self.get_all_fulltext_indexes().is_empty()
+            || !self.get_all_ttl_indexes().is_empty()
+            || self.has_vector_indexes()
+            || self.is_versioned()
+            || self.referenced().is_some()
+            || self.change_sender.receiver_count() > 0
+        {
+            return Ok(None);
+        }
+        let _gate = self.enter_gate(false)?;
+        let db = &self.db;
+        let cf = self.live_cf()?;
+        let prefix = DOC_PREFIX.as_bytes();
+
+        let mut first: Option<Vec<u8>> = None;
+        let mut last: Vec<u8> = Vec::new();
+        let mut count = 0usize;
+        for (key_bytes, _value) in db.prefix_iterator_ks(&cf, prefix).flatten() {
+            if !key_bytes.starts_with(prefix) {
+                break;
+            }
+            let Some(doc_key) = std::str::from_utf8(&key_bytes[prefix.len()..])
+                .ok()
+                .filter(|key| is_canonical_uuid(key))
+            else {
+                // A key the client chose: it is never pruned, so the old
+                // documents are not one range.
+                return Ok(None);
+            };
+            let Ok(uuid) = uuid::Uuid::parse_str(doc_key) else {
+                return Ok(None);
+            };
+            if (uuid.as_u128() >> 80) as u64 >= timestamp_ms {
+                // Every generated key after this one is at least as recent.
+                break;
+            }
+            if first.is_none() {
+                first = Some(key_bytes.to_vec());
+            }
+            last = key_bytes.to_vec();
+            count += 1;
+        }
+        let Some(first) = first else {
+            return Ok(Some(0));
+        };
+        // Up to and including the last key counted.
+        let mut past = last.clone();
+        past.push(0);
+        let mut batch = KvBatch::default();
+        batch.delete_range_ks(&cf, first.as_slice(), past.as_slice());
+        db.write(batch)
+            .map_err(|e| DbError::InternalError(format!("Failed to prune: {}", e)))?;
+
+        super::saturating_sub_usize(&self.doc_count, count);
+        self.count_dirty.store(true, Ordering::Relaxed);
+        // What is kept by key range (column blocks) and every cached result
+        // goes, once for the range.
+        let key_of = |bytes: &[u8]| String::from_utf8_lossy(&bytes[prefix.len()..]).into_owned();
+        let (lo, hi) = (key_of(&first), key_of(&last));
+        self.publish_changes(
+            Wrote::Span(&lo, &hi),
+            false,
+            std::iter::empty::<ChangeEvent>,
+        );
+        Ok(Some(count))
     }
 
     // ==================== Validation ====================
