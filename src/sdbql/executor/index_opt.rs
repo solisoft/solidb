@@ -2601,8 +2601,8 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    /// The rows of `FOR v IN c FILTER v._key == x` (or `IN` a list), read
-    /// by key for each outer row: what the stored documents and
+    /// The rows of `FOR v IN c FILTER v._key == x` (or `_id`, or `IN` a
+    /// list), read by key for each outer row: what the stored documents and
     /// the executor's transaction say together. `None` when the FILTER is
     /// anything else, which is left to the scan.
     pub(super) fn rows_by_key(
@@ -2627,9 +2627,8 @@ impl<'a> QueryExecutor<'a> {
             let Some(condition) = self
                 .extract_indexable_condition(filter, &for_clause.variable, ctx)
                 .filter(|c| {
-                    // `_id` is left to the scan: the id of a document the
-                    // transaction inserted is not matched by the read by id.
-                    c.field == "_key" && matches!(c.op, BinaryOperator::Equal | BinaryOperator::In)
+                    (c.field == "_key" || c.field == "_id")
+                        && matches!(c.op, BinaryOperator::Equal | BinaryOperator::In)
                 })
             else {
                 return Ok(None);

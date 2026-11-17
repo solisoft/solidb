@@ -684,7 +684,7 @@ async fn a_transaction_reads_its_own_writes_by_scan_and_by_index() {
     for level in ["read_committed", "repeatable_read", "serializable"] {
         let app = App::new().await;
         wards(&app).await;
-        let reads: [(&str, Value, Value); 13] = [
+        let reads: [(&str, Value, Value); 15] = [
             // By key: read by key, not by a scan of the collection, and
             // still what the transaction staged (card #861).
             (
@@ -701,6 +701,16 @@ async fn a_transaction_reads_its_own_writes_by_scan_and_by_index() {
                 "FOR d IN doctors FILTER d._key IN ['carl', 'gus', 'dora'] SORT d._key RETURN d._key",
                 json!(["carl", "dora"]),
                 json!(["dora", "gus"]),
+            ),
+            (
+                "FOR d IN doctors FILTER d._id == 'iso:doctors/gus' RETURN d.shifts",
+                json!([]),
+                json!([9]),
+            ),
+            (
+                "FOR d IN doctors FILTER d._id IN ['iso:doctors/emil', 'iso:doctors/carl'] RETURN d.shifts",
+                json!([3, 1]),
+                json!([30]),
             ),
             (
                 "FOR d IN doctors FILTER d._key == 'emil' FILTER d.shifts > 5 RETURN d._key",

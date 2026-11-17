@@ -590,10 +590,11 @@ staged documents over the stored ones in key order (`overlay_staged`), and
 every path that answers from an index or from the stored bytes steps aside
 for that scan, at the same guards as for a row policy
 (`row_policy_applies(..) || tx_wrote(..)`). A new fast path needs that guard.
-The one read that does not step aside is `FILTER v._key == x` (or `IN` a list):
+The one read that does not step aside is `FILTER v._key == x` (or `_id`, or `IN` a
+list):
 `QueryExecutor::rows_by_key`, called from the FOR scan in `clauses.rs`, reads by
 key, which returns what was staged; without it a transfer's second `UPDATE`
-scanned its collection (card #861). A filter on `_id` is left to the scan.
+scanned its collection (card #861).
 Not overlaid: the functions that search an index (`FULLTEXT`, vector, geo),
 graph traversals over the edge index, `AS OF` scans.
 
