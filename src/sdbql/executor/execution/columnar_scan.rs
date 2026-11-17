@@ -2332,7 +2332,7 @@ impl QueryExecutor<'_> {
         let Ok(database) = self.storage.get_database(db_name) else {
             return Ok(None);
         };
-        if !self.is_columnar(&database, name) {
+        if !self.is_columnar(&database, name) || self.row_policy_applies(name) {
             return Ok(None);
         }
         // Before anything is read of it: a transaction that tracks its

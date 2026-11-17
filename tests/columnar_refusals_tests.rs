@@ -326,3 +326,110 @@ async fn columnar_writes_in_a_transaction_and_shared_names_are_refused() {
     // The columnar collection is still the one the name reads.
     assert_eq!(count().await, json!(2));
 }
+
+/// The HTTP `query` and `aggregate` of a columnar collection take one
+/// comparison and no expression: they cannot apply a row policy, so they
+/// are refused to a caller it binds. A query applies it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_row_policy_closes_the_columnar_reads_that_cannot_apply_it() {
+    let tmp = TempDir::new().unwrap();
+    let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+    engine.initialize().unwrap();
+    let app = create_router(
+        engine.clone(),
+        None,
+        None,
+        None,
+        None,
+        Arc::new(ScriptStats::default()),
+        None,
+        None,
+        0,
+    );
+    let admin = common::seed_user_token(&engine, "columnar_admin", &["admin"]);
+    let viewer = common::seed_user_token(&engine, "a", &["viewer"]);
+    let base = "/_api/database/_system";
+    let (status, body) = call(
+        &app,
+        &admin,
+        "POST",
+        &format!("{base}/columnar"),
+        Some(json!({"name": "m", "columns": [
+            {"name": "host", "type": "string"}, {"name": "v", "type": "float64"}]})),
+    )
+    .await;
+    assert!(status.is_success(), "{status} {body}");
+    let rows = json!({"rows": [{"host": "a", "v": 1.0}, {"host": "a", "v": 2.0}, {"host": "b", "v": 5.0}]});
+    let (status, body) = call(
+        &app,
+        &admin,
+        "POST",
+        &format!("{base}/columnar/m/insert"),
+        Some(rows),
+    )
+    .await;
+    assert!(status.is_success(), "{status} {body}");
+
+    let query = json!({"columns": ["host", "v"]});
+    let aggregate = json!({"column": "v", "operation": "SUM"});
+    let cursor = json!({"query": "FOR r IN m COLLECT AGGREGATE s = SUM(r.v), n = COUNT() RETURN [s, n]", "cache": false});
+    let read = |token: String, path: &'static str, body: Value| {
+        let app = app.clone();
+        async move {
+            call(
+                &app,
+                &token,
+                "POST",
+                &format!("/_api/database/_system/{path}"),
+                Some(body),
+            )
+            .await
+        }
+    };
+    // No policy: both read everything.
+    for token in [&admin, &viewer] {
+        let (status, body) = read(token.clone(), "columnar/m/query", query.clone()).await;
+        assert!(
+            status.is_success() && body.contains("\"count\":3"),
+            "{status} {body}"
+        );
+        let (status, body) = read(token.clone(), "columnar/m/aggregate", aggregate.clone()).await;
+        assert!(
+            status.is_success() && body.contains("8.0"),
+            "{status} {body}"
+        );
+    }
+    let (status, body) = read(
+        admin.clone(),
+        "cursor",
+        json!({"query": "RETURN ROW_POLICY('m', 'doc.host == CURRENT_USER')"}),
+    )
+    .await;
+    assert!(status.is_success(), "{status} {body}");
+
+    // The caller it binds: refused where it cannot be applied, applied
+    // by a query.
+    for path in ["columnar/m/query", "columnar/m/aggregate"] {
+        let body = if path.ends_with("query") {
+            query.clone()
+        } else {
+            aggregate.clone()
+        };
+        let (status, text) = read(viewer.clone(), path, body.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {text}");
+        assert!(text.contains("row policy"), "{text}");
+        let (status, text) = read(admin.clone(), path, body).await;
+        assert!(status.is_success(), "{path}: {status} {text}");
+    }
+    let (status, body) = read(viewer.clone(), "cursor", cursor.clone()).await;
+    assert!(status.is_success(), "{status} {body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["result"],
+        json!([[3.0, 2]])
+    );
+    let (_, body) = read(admin.clone(), "cursor", cursor).await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["result"],
+        json!([[8.0, 3]])
+    );
+}

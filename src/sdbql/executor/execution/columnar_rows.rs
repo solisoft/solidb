@@ -47,6 +47,25 @@ impl QueryExecutor<'_> {
         };
         let meta = columnar.metadata()?;
 
+        // A row policy reads the row, whatever the query reads of it:
+        // whole rows, those the policy keeps, and the limit after it.
+        if let Some(gate) = self.row_policy_gate(name) {
+            let columns: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+            let pushed = self.pushed_filter(&for_clause.variable, filters, &meta.columns, ctx);
+            let rows = match pushed {
+                Some(filter) => columnar.scan_filtered(&filter, &columns)?,
+                None => columnar.read_columns_limited(&columns, None)?,
+            };
+            let mut rows: Vec<Value> = rows
+                .into_iter()
+                .filter(|row| self.row_policy_allows(&gate, row, ctx))
+                .collect();
+            if let Some(limit) = limit {
+                rows.truncate(limit);
+            }
+            return Ok(Some(rows));
+        }
+
         // The columns the query reads of the row; all of them when it
         // reads the row whole.
         let projected = self.scan_projection_for(for_clause);
@@ -202,8 +221,9 @@ impl QueryExecutor<'_> {
         ctx: &Context,
     ) -> DbResult<Option<u64>> {
         let name = for_clause.collection.as_str();
-        // A LET-bound array of that name is iterated, not the collection.
-        if ctx.contains_key(name) {
+        // A LET-bound array of that name is iterated, not the collection;
+        // under a row policy the rows are read, for the policy to see.
+        if ctx.contains_key(name) || self.row_policy_applies(name) {
             return Ok(None);
         }
         let Some(columnar) = self.columnar_source(name)? else {

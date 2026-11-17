@@ -275,12 +275,13 @@ fn explain_says_how_a_columnar_collection_is_read() {
     );
 }
 
-/// Card #896: no read of a columnar collection consults a row policy. One
-/// declared on its name used to answer "collection not found", and one
-/// declared on the collection that backs it was stored and never applied.
-/// Both are refused, and say why.
+/// Card #955: a row policy on a columnar collection is applied to every
+/// query that reads it, as on a document collection holding the same
+/// rows. It is kept on the collection that backs it, under either name
+/// (declared on the backing name it used to be stored and never applied,
+/// card #896).
 #[test]
-fn a_row_policy_on_a_columnar_collection_is_refused() {
+fn a_row_policy_on_a_columnar_collection_is_applied() {
     use solidb::sdbql::QueryPrincipal;
     let (engine, _col, _dir) = fixture();
     let admin = QueryPrincipal {
@@ -291,42 +292,80 @@ fn a_row_policy_on_a_columnar_collection_is_refused() {
         can_admin: true,
         admin_of_database: false,
     };
-    let ask = |query: &str| {
+    let reader = QueryPrincipal {
+        user: "h3".into(),
+        roles: vec!["viewer".into()],
+        can_read: true,
+        can_write: false,
+        can_admin: false,
+        admin_of_database: false,
+    };
+    let ask = |who: &QueryPrincipal, query: &str| {
         QueryExecutor::with_database(&engine, "app".to_string())
-            .with_principal(admin.clone())
+            .with_principal(who.clone())
             .execute(&parse(query).expect("query parses"))
             .map_err(|e| e.to_string())
     };
+    let queries = [
+        "FOR r IN c SORT r.v LIMIT 5 RETURN [r.host, r.v]",
+        "FOR r IN c FILTER r.v >= 100 AND r.v < 160 SORT r.v RETURN r.v",
+        "FOR r IN c FILTER r.ok == true COLLECT WITH COUNT INTO n RETURN n",
+        "RETURN LENGTH(FOR r IN c FILTER r.v < 5000 RETURN 1)",
+        "FOR r IN c COLLECT h = r.host AGGREGATE n = COUNT(), s = SUM(r.v), a = AVG(r.ms) RETURN [h, n, s, a]",
+        "FOR r IN c COLLECT AGGREGATE s = SUM(r.v), hi = MAX(r.v), d = COUNT_DISTINCT(r.host) RETURN [s, hi, d]",
+        "FOR r IN c FILTER r.host == 'h1' COLLECT WITH COUNT INTO n RETURN n",
+        "FOR r IN c COLLECT AGGREGATE m = MEDIAN(r.v), p = PERCENTILE(r.v, 90) RETURN [m, p]",
+    ];
+    let both = |who: &QueryPrincipal| -> Vec<Vec<Value>> {
+        queries
+            .iter()
+            .map(|q| {
+                let columnar = ask(who, &q.replace(" IN c", " IN m")).unwrap();
+                let documents = ask(who, &q.replace(" IN c", " IN d")).unwrap();
+                assert_eq!(columnar, documents, "{}: {q}", who.user);
+                columnar
+            })
+            .collect()
+    };
+    let open = both(&reader);
+
     for name in ["m", "_columnar_m"] {
-        for query in [
-            format!("RETURN ROW_POLICY('{name}', 'doc.host == CURRENT_USER')"),
-            format!("RETURN ROW_POLICY('{name}', null)"),
-            format!("RETURN ROW_POLICY('{name}')"),
-        ] {
-            let refused = ask(&query).unwrap_err();
-            assert!(
-                refused.contains("'m' is a columnar collection"),
-                "{query}: {refused}"
-            );
-            assert!(refused.contains("row policies do not apply"), "{refused}");
-        }
+        assert_eq!(
+            ask(
+                &admin,
+                &format!("RETURN ROW_POLICY('{name}', 'doc.host == CURRENT_USER')")
+            )
+            .unwrap(),
+            vec![json!("doc.host == CURRENT_USER")]
+        );
+        assert_eq!(
+            ask(&admin, "RETURN ROW_POLICY('m')").unwrap(),
+            vec![json!("doc.host == CURRENT_USER")]
+        );
+        ask(&admin, "RETURN ROW_POLICY('d', 'doc.host == CURRENT_USER')").unwrap();
+        // The reader sees the rows of its host, whatever the query reads
+        // of them; an admin sees every row.
+        let bound = both(&reader);
+        assert_ne!(bound, open);
+        assert_eq!(bound[0][0], json!(["h3", 3]));
+        assert_eq!(bound[6], vec![json!(0)]);
+        assert_eq!(bound[5][0][2], json!(1));
+        assert_eq!(both(&admin), {
+            // (An admin is not bound: the answers before any policy.)
+            let unbound: Vec<Vec<Value>> = queries
+                .iter()
+                .map(|q| ask(&admin, &q.replace(" IN c", " IN d")).unwrap())
+                .collect();
+            unbound
+        });
+        // Only an admin declares or lifts one.
+        assert!(ask(&reader, "RETURN ROW_POLICY('m', 'true')").is_err());
+        // Lifted, every row is back.
+        assert_eq!(
+            ask(&admin, &format!("RETURN ROW_POLICY('{name}', null)")).unwrap(),
+            vec![Value::Null]
+        );
+        ask(&admin, "RETURN ROW_POLICY('d', null)").unwrap();
+        assert_eq!(both(&reader), open);
     }
-    // Nothing was stored on the backing collection.
-    let backing = engine
-        .get_database("app")
-        .unwrap()
-        .system_collection("_columnar_m")
-        .unwrap();
-    assert_eq!(backing.get_row_policy(), None);
-    // A document collection takes one as before.
-    assert_eq!(
-        ask("RETURN ROW_POLICY('d', 'doc.host == CURRENT_USER')")
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        ask("RETURN ROW_POLICY('d')").unwrap(),
-        vec![json!("doc.host == CURRENT_USER")]
-    );
 }

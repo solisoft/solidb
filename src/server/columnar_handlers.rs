@@ -191,6 +191,15 @@ pub struct QueryColumnarResponse {
 /// document routes stage a write with) is refused, as SDBQL refuses an
 /// `INSERT INTO` a columnar collection inside one. It used to be stored
 /// as if the header were not there.
+/// Whether the caller is an admin, whom a row policy does not bind; a
+/// request with no claims comes from an instance that authenticates
+/// nothing.
+fn admin(claims: &Option<axum::Extension<crate::server::auth::Claims>>) -> bool {
+    claims.as_ref().is_none_or(|claims| {
+        crate::server::handlers::query::principal_from_claims(&claims.0).can_admin
+    })
+}
+
 fn outside_a_transaction(headers: &axum::http::HeaderMap, what: &str) -> Result<(), DbError> {
     if headers.contains_key("X-Transaction-ID") {
         return Err(DbError::OperationNotSupported(format!(
@@ -689,9 +698,11 @@ pub async fn prune_columnar_handler(
 pub async fn aggregate_columnar_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Json(req): Json<AggregateRequest>,
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
+    db.columnar_policy_lets(&collection, admin(&claims))?;
     let op = AggregateOp::from_str(&req.operation).ok_or_else(|| {
         DbError::BadRequest(format!(
             "Unknown aggregation operation: {}. Supported: SUM, AVG, COUNT, MIN, MAX, COUNT_DISTINCT",
@@ -758,9 +769,11 @@ pub async fn aggregate_columnar_handler(
 pub async fn query_columnar_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
     Json(req): Json<QueryColumnarRequest>,
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
+    db.columnar_policy_lets(&collection, admin(&claims))?;
 
     let filter = req
         .filter

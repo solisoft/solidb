@@ -591,6 +591,14 @@ impl<'a> QueryExecutor<'a> {
         let coll = match self.get_collection(collection) {
             Ok(c) => c,
             Err(_) => {
+                // A columnar collection keeps its policy on the collection
+                // that backs it.
+                if let Some(database) = self.columnar_database(collection) {
+                    let backing = database
+                        .get_collection(&format!("_columnar_{}", collection))
+                        .ok()?;
+                    return self.row_policy_gate_for(&backing, collection);
+                }
                 let backing = self.resolve_search_view_collection(collection).ok()??;
                 self.get_collection(&backing).ok()?
             }

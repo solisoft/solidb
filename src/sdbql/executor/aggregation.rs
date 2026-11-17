@@ -84,6 +84,8 @@ impl<'a> QueryExecutor<'a> {
             || collect_clause.count_var.is_some()
             || for_clause.system_time.is_some()
             || for_clause.valid_time.is_some()
+            // Under a row policy the rows are read, for the policy to see.
+            || self.row_policy_applies(collection_name)
         {
             return Ok(None);
         }

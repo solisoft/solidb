@@ -709,6 +709,30 @@ impl Database {
     }
 
     /// Check if a collection is a columnar collection
+    /// The row policy declared on the columnar collection `name`: kept on
+    /// the collection that backs it, as a document collection keeps its
+    /// own.
+    pub fn columnar_row_policy(&self, name: &str) -> Option<String> {
+        self.get_collection(&format!("_columnar_{}", name))
+            .ok()?
+            .get_row_policy()
+    }
+
+    /// Refuse a read of the columnar collection `name` that cannot apply
+    /// its row policy (the HTTP and driver `query` and `aggregate`, which
+    /// take one comparison and no expression) to a caller the policy
+    /// binds: everyone but an admin.
+    pub fn columnar_policy_lets(&self, name: &str, admin: bool) -> DbResult<()> {
+        if !admin && self.columnar_row_policy(name).is_some() {
+            return Err(DbError::Forbidden(format!(
+                "a row policy is declared on the columnar collection '{}': read it with a \
+                 query, which applies it",
+                name
+            )));
+        }
+        Ok(())
+    }
+
     pub fn is_columnar_collection(&self, collection_name: &str) -> bool {
         let cf_name = self.columnar_cf_name(collection_name);
         let pending = &self.pending_cf_drops;

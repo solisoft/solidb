@@ -537,7 +537,12 @@ pub fn handle_aggregate_columnar(
     group_by: Option<Vec<String>>,
     filter: Option<String>,
 ) -> Response {
-    match handler.storage.get_database(&database) {
+    let admin = handler.query_principal(&database).can_admin;
+    match handler
+        .storage
+        .get_database(&database)
+        .and_then(|db| db.columnar_policy_lets(&collection, admin).map(|()| db))
+    {
         Ok(db) => match db.aggregate_columnar(&collection, aggregations, group_by, filter) {
             Ok(results) => Response::ok(serde_json::json!(results)),
             Err(e) => Response::error(DriverError::DatabaseError(e.to_string())),
@@ -559,6 +564,7 @@ pub fn handle_query_columnar(
 ) -> Response {
     let rows = || -> crate::error::DbResult<Vec<Value>> {
         let db = handler.storage.get_database(&database)?;
+        db.columnar_policy_lets(&collection, handler.query_principal(&database).can_admin)?;
         let filter = match filter.filter(|f| !f.trim().is_empty()) {
             Some(filter) => {
                 let json: Value = serde_json::from_str(&filter).map_err(|e| {

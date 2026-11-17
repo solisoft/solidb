@@ -1228,6 +1228,17 @@ Rules that keep it sound:
   columnar collection under a shared name, and the other is out of
   reach. A replicated creation is not refused (`foreign_keys::unchecked`).
   A new way to create a collection has to make the same check.
+- **A row policy on a columnar collection** is kept on the collection
+  that backs it (`Database::columnar_row_policy`; `ROW_POLICY` takes
+  either name) and `row_policy_gate` reads it there. Every SDBQL read
+  steps aside for it: `columnar_for_rows` builds whole rows and filters
+  them with the policy before the scan's limit, and the fold, the count
+  and the older ungrouped aggregate (`try_columnar_collect`,
+  `columnar_count`, `aggregation.rs`) leave the query to the rows
+  (`row_policy_applies`). The HTTP and driver `query` and `aggregate`
+  cannot apply one and refuse a caller it binds
+  (`Database::columnar_policy_lets`). A new read of a columnar
+  collection has to do one or the other.
 - **A columnar write is never part of a transaction**: SDBQL refuses an
   `INSERT INTO` inside one, and the HTTP insert, deletes and truncate
   refuse the `X-Transaction-ID` header (`outside_a_transaction`). A new
