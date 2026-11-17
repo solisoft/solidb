@@ -1036,8 +1036,8 @@ compare columns with constants or with each other (`==` `!=` `<` `<=` `>`
 other condition computed from the columns, the keys are columns,
 `TIME_BUCKET(column, "<fixed interval>")` or expressions of the columns,
 and the aggregates are `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`,
-`COUNT_DISTINCT`, the variance family, `MEDIAN`, `PERCENTILE` or
-`APPROX_COUNT_DISTINCT` of a column or of an expression of the columns: on several threads, into a
+`COUNT_DISTINCT`, the variance family, `MEDIAN`, `PERCENTILE`,
+`APPROX_COUNT_DISTINCT` or `BIT_*` of a column or of an expression of the columns: on several threads, into a
 table of groups handed to the same `CollectFold` as rows, with the exact
 state of each sum. A single integer key of small range is grouped in plain
 arrays indexed by the key (`Flat`): a sum and, beside it, the total of what
@@ -1210,6 +1210,17 @@ Rules that keep it sound:
   node removes is not logged, since each node removes by the same rule.
   A new way to give a row an id that is not the instant it was inserted
   changes what a retention removes.
+- **One name, one collection.** `Database::create_collection` refuses a
+  name a columnar collection holds, `sync::columnar::create` one a
+  document collection holds, and `CREATE MATERIALIZED VIEW` (which
+  creates through the engine) checks for itself: a query reads the
+  columnar collection under a shared name, and the other is out of
+  reach. A replicated creation is not refused (`foreign_keys::unchecked`).
+  A new way to create a collection has to make the same check.
+- **A columnar write is never part of a transaction**: SDBQL refuses an
+  `INSERT INTO` inside one, and the HTTP insert, deletes and truncate
+  refuse the `X-Transaction-ID` header (`outside_a_transaction`). A new
+  columnar write endpoint has to refuse it too.
 - **SDBQL writes one way**: `INSERT … INTO` a columnar name is taken by
   `QueryExecutor::insert_into_columnar` before the document path (and the
   streaming insert steps aside for it); `get_collection_for_write` refuses

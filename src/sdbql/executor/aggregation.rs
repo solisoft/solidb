@@ -302,6 +302,13 @@ pub(super) enum Slice<'a> {
     /// The distinct values of the rows pushed, null among them if a row
     /// holds it: what `COUNT_DISTINCT` keeps.
     Each(&'a [Value]),
+    /// The bits of the integers among the rows pushed, combined as the
+    /// aggregate combines them (`None`: no integer), and whether a row
+    /// holds a number that is not one: what `BIT_AND` and its kin keep.
+    Bits {
+        acc: Option<i64>,
+        invalid: bool,
+    },
     /// How many distinct values the rows pushed hold, null among them if
     /// a row holds it, for a group that is pushed whole and once: nothing
     /// else of it is folded, before or after.
@@ -602,12 +609,23 @@ impl AggregateAccumulator {
         matches!(kind, AggKind::Median | AggKind::Percentile)
     }
 
+    /// Whether this kind folds bits ([`Slice::Bits`]).
+    pub(super) fn takes_bits(kind: AggKind) -> bool {
+        matches!(kind, AggKind::BitAnd | AggKind::BitOr | AggKind::BitXor)
+    }
+
+    /// One step of a bit aggregate of `kind`: `acc` with `n`.
+    pub(super) fn bits(kind: AggKind, acc: Option<i64>, n: i64) -> i64 {
+        bit_combine(kind, acc, n)
+    }
+
     /// The kinds that take, of a group met in column arrays, something
     /// kept for them alone — distinct values, squares, the numbers, a
-    /// sketch — and not what [`Self::takes_slices`] kinds read.
+    /// sketch, bits — and not what [`Self::takes_slices`] kinds read.
     pub(super) fn takes_its_own(kind: AggKind) -> bool {
         Self::takes_moments(kind)
             || Self::takes_numbers(kind)
+            || Self::takes_bits(kind)
             || matches!(kind, AggKind::CountDistinct | AggKind::ApproxDistinct)
     }
 
@@ -655,6 +673,7 @@ impl AggregateAccumulator {
                 | Some(Slice::Moments { .. })
                 | Some(Slice::Sketch(_))
                 | Some(Slice::Counted(_))
+                | Some(Slice::Bits { .. })
                 | None => {}
             },
             Self::Avg { sum, count } => match values {
@@ -688,6 +707,7 @@ impl AggregateAccumulator {
                 | Some(Slice::Moments { .. })
                 | Some(Slice::Sketch(_))
                 | Some(Slice::Counted(_))
+                | Some(Slice::Bits { .. })
                 | None => {}
             },
             Self::Min(_) | Self::Max(_) => {
@@ -726,6 +746,7 @@ impl AggregateAccumulator {
                     | Some(Slice::Moments { .. })
                     | Some(Slice::Sketch(_))
                     | Some(Slice::Counted(_))
+                    | Some(Slice::Bits { .. })
                     | None => None,
                 };
                 if let Some(extreme) = extreme {
@@ -760,6 +781,18 @@ impl AggregateAccumulator {
             Self::ApproxDistinct(sketch) => {
                 if let Some(Slice::Sketch(theirs)) = values {
                     sketch.merge(theirs);
+                }
+            }
+            Self::Bits { kind, acc, invalid } => {
+                if let Some(Slice::Bits {
+                    acc: theirs,
+                    invalid: bad,
+                }) = values
+                {
+                    if let Some(n) = theirs {
+                        *acc = Some(bit_combine(*kind, *acc, *n));
+                    }
+                    *invalid |= bad;
                 }
             }
             _ => debug_assert!(false, "push_slice on an aggregate that takes rows"),

@@ -48,6 +48,7 @@ use serde_json::Value;
 
 use super::super::aggregation::{AggKind, AggregateAccumulator, Slice};
 use super::super::builtins::approx::Hll;
+use super::super::builtins::array::as_int;
 use super::super::builtins::math::Moments;
 use super::super::datum::Datum;
 use super::super::exact_sum::ExactSum;
@@ -220,6 +221,12 @@ struct Acc {
     squares: ExactSum,
     /// The numbers themselves, for a median or a percentile.
     values: Vec<f64>,
+    /// The integers combined, for `BIT_AND` and its kin, and whether a
+    /// number that is not an integer was met (the result is then null).
+    bits: Option<i64>,
+    not_bits: bool,
+    /// Which of them combined `bits`: what a merge combines with.
+    bit_kind: Option<AggKind>,
     /// The sketch of the argument's values, for `APPROX_COUNT_DISTINCT`.
     sketch: Hll,
     /// The extremes, and whether each is held as an integer.
@@ -274,6 +281,11 @@ impl Acc {
         self.squares.merge(&other.squares);
         self.values.extend_from_slice(&other.values);
         self.sketch.merge(&other.sketch);
+        self.not_bits |= other.not_bits;
+        if let (Some(n), Some(kind)) = (other.bits, other.bit_kind) {
+            self.bits = Some(AggregateAccumulator::bits(kind, self.bits, n));
+            self.bit_kind = Some(kind);
+        }
         if let Some((v, int)) = other.min {
             if self.min.is_none_or(|(held, _)| v < held) {
                 self.min = Some((v, int));
@@ -1498,6 +1510,25 @@ fn fold_by_row(
                     acc.sum.add(x);
                     acc.squares.add_square(x);
                 }
+                // Bits: an integer, or a float that is one, as the
+                // aggregate reads a value.
+                Some(column) if AggregateAccumulator::takes_bits(*kind) => {
+                    let n = match &column.data {
+                        ColData::Int(values) => Some(values[row]),
+                        ColData::Float(values) | ColData::Mixed { values, .. } => {
+                            serde_json::Number::from_f64(values[row])
+                                .and_then(|n| as_int(&Value::Number(n)))
+                        }
+                        _ => return,
+                    };
+                    match n {
+                        Some(n) => {
+                            acc.bits = Some(AggregateAccumulator::bits(*kind, acc.bits, n));
+                            acc.bit_kind = Some(*kind);
+                        }
+                        None => acc.not_bits = true,
+                    }
+                }
                 // A median, a percentile: the numbers, unless another of
                 // the same argument keeps them.
                 Some(_) if shared[at] != at => {}
@@ -2117,6 +2148,12 @@ impl QueryExecutor<'_> {
                     }
                     if *kind == AggKind::ApproxDistinct {
                         return arg.as_ref().map(|_| Slice::Sketch(&acc.sketch));
+                    }
+                    if AggregateAccumulator::takes_bits(*kind) {
+                        return arg.as_ref().map(|_| Slice::Bits {
+                            acc: acc.bits,
+                            invalid: acc.not_bits,
+                        });
                     }
                     arg.as_ref().map(|_| match (acc.min, acc.max, acc.missing) {
                         (Some(min), Some(max), 0) => Slice::Total {

@@ -8,7 +8,15 @@
 
 - **The numbers a `MEDIAN` or a `PERCENTILE` keeps count for an eighth of a row against `SOLIDB_MAX_INTERMEDIATE_ROWS`.** Each counted as a whole row, so a median over more values than the ceiling (5,000,000 by default) was refused, and three percentiles of one column over 2,000,000 rows too. A number is eight bytes, where a row is at least several times that.
 
+### Fixed
+
+- **A columnar write sent as part of a transaction is refused.** `POST …/columnar/{c}/insert`, the two row deletes and the truncate, sent with the `X-Transaction-ID` header the document routes stage a write with, were carried out at once as if the header were not there: the rows were visible before the commit and stayed after a rollback. They now answer `501 OperationNotSupported` (`inserting into a columnar collection is not supported in a transaction`), as an SDBQL `INSERT INTO` a columnar collection inside a transaction already did.
+
+- **One name, one collection: a columnar collection and a document collection can no longer share a name.** `CREATE MATERIALIZED VIEW m AS …` (or creating a document collection `m`) was accepted while a columnar collection `m` existed, and a columnar collection could be created under the name of a document collection or a view. A query went on reading the columnar one, so the other was unreachable by name. Each is now refused with `409 CollectionAlreadyExists`. An instance that already holds such a pair keeps both.
+
 ### Added
+
+- **Columnar: `BIT_AND`, `BIT_OR` and `BIT_XOR` are computed from the column arrays.** They sent the whole query to the rows.
 
 - **`PERCENTILE` and `APPROX_COUNT_DISTINCT` are aggregates.** `COLLECT … AGGREGATE p = PERCENTILE(doc.amount, 95)` (also `QUANTILE`, and a third argument `"interpolation"`) and `n = APPROX_COUNT_DISTINCT(doc.user)` answer what the functions of those names answer over the group's values. Until now the only way was `COLLECT … INTO g` and the function over `g`, which holds every value of every group as a row. What follows the first argument is a number, a string or a bind variable (`PERCENTILE(doc.amount, @p)`), not an expression of the row; a rank that is not a number from 0 to 100 gives `null`, as the function does. A second argument to an aggregate that takes one (`SUM(doc.x, 2)`) now says so instead of `Expected RightParen, got Comma`.
 

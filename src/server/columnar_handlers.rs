@@ -186,6 +186,21 @@ pub struct QueryColumnarResponse {
 
 // ==================== Handlers ====================
 
+/// A columnar write is stored at once and is not undone by a rollback: one
+/// sent as part of a transaction (`X-Transaction-ID`, the header the
+/// document routes stage a write with) is refused, as SDBQL refuses an
+/// `INSERT INTO` a columnar collection inside one. It used to be stored
+/// as if the header were not there.
+fn outside_a_transaction(headers: &axum::http::HeaderMap, what: &str) -> Result<(), DbError> {
+    if headers.contains_key("X-Transaction-ID") {
+        return Err(DbError::OperationNotSupported(format!(
+            "{} a columnar collection is not supported in a transaction",
+            what
+        )));
+    }
+    Ok(())
+}
+
 /// Create a new columnar collection
 ///
 /// # Endpoint
@@ -382,8 +397,10 @@ pub async fn delete_columnar_handler(
 pub async fn insert_columnar_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<InsertColumnarRequest>,
 ) -> Result<impl IntoResponse, DbError> {
+    outside_a_transaction(&headers, "inserting into")?;
     let db = state.storage.get_database(&db_name)?;
 
     let inserted_ids = crate::sync::columnar::insert(
@@ -413,7 +430,9 @@ pub async fn insert_columnar_handler(
 pub async fn delete_columnar_row_handler(
     State(state): State<AppState>,
     Path((db_name, collection, id)): Path<(String, String, String)>,
+    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, DbError> {
+    outside_a_transaction(&headers, "deleting from")?;
     let db = state.storage.get_database(&db_name)?;
     let deleted = crate::sync::columnar::delete_rows(
         &db,
@@ -454,8 +473,10 @@ pub struct DeleteColumnarRowsRequest {
 pub async fn delete_columnar_rows_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<DeleteColumnarRowsRequest>,
 ) -> Result<impl IntoResponse, DbError> {
+    outside_a_transaction(&headers, "deleting from")?;
     let db = state.storage.get_database(&db_name)?;
     let log = state.replication_log.as_deref();
     let deleted = match (req.ids, req.filter) {
@@ -488,7 +509,9 @@ pub async fn delete_columnar_rows_handler(
 pub async fn truncate_columnar_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, DbError> {
+    outside_a_transaction(&headers, "truncating")?;
     let db = state.storage.get_database(&db_name)?;
     crate::sync::columnar::truncate(&db, state.replication_log.as_deref(), &collection)?;
     Ok(Json(

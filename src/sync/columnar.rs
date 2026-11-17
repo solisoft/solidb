@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use super::log::{LogEntry, SyncLog};
 use super::protocol::Operation;
-use crate::error::DbResult;
+use crate::error::{DbError, DbResult};
 use crate::storage::columnar::{ColumnDef, ColumnarCollection, ColumnarIndexType, CompressionType};
 use crate::storage::Database;
 
@@ -61,6 +61,10 @@ pub fn create(
     columns: Vec<ColumnDef>,
     compression: CompressionType,
 ) -> DbResult<ColumnarCollection> {
+    // One name, one collection (see `Database::create_collection`).
+    if db.get_collection(name).is_ok() {
+        return Err(DbError::CollectionAlreadyExists(name.to_string()));
+    }
     db.create_collection(backing(name), None)?;
     let col = ColumnarCollection::new(
         name.to_string(),

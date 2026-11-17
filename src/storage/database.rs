@@ -89,6 +89,12 @@ impl Database {
         collection_type: Option<String>,
     ) -> DbResult<()> {
         let cf_name = self.collection_cf_name(&collection_name);
+        // One name, one collection: a query names a columnar collection
+        // and a document collection the same way, and reads the columnar
+        // one. (A replicated creation is taken as the origin made it.)
+        if !super::foreign_keys::is_unchecked() && self.is_columnar_collection(&collection_name) {
+            return Err(DbError::CollectionAlreadyExists(collection_name));
+        }
 
         // Default to "document" if not specified
         let type_ = collection_type.unwrap_or_else(|| "document".to_string());

@@ -85,6 +85,16 @@ impl<'a> QueryExecutor<'a> {
         // The view collection always lives in this executor's own database.
         let full_view_name = format!("{}:{}", db_name, view_name);
 
+        // A columnar collection holds the name: a query reads it under
+        // that name, and would go on reading it, not the view.
+        if self
+            .storage
+            .get_database(db_name)
+            .is_ok_and(|database| database.is_columnar_collection(view_name))
+        {
+            return Err(DbError::CollectionAlreadyExists(view_name.to_string()));
+        }
+
         // 1. An existing view (or collection) short-circuits before any work.
         if self.storage.get_collection(&full_view_name).is_ok() {
             if clause.if_not_exists {

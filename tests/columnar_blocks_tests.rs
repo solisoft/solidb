@@ -447,6 +447,12 @@ fn a_collect_over_the_blocks_answers_what_the_rows_answer() {
         // once.
         "FOR r IN sales COLLECT d = r.device AGGREGATE a = PERCENTILE(r.amount, 50), b = PERCENTILE(r.amount, 95), m = MEDIAN(r.amount), c = PERCENTILE(r.bytes, 95), e = MEDIAN(r.bytes), f = PERCENTILE(r.amount, 99, 'interpolation') RETURN [d, a, b, m, c, e, f]",
         "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE m = MEDIAN(r.amount * 2), p = PERCENTILE(r.amount * 2, 90), q = PERCENTILE(r.amount, 90) RETURN [c, m, p, q]",
+        // Bits: integers, floats that are integers, one that is not
+        // (null), nulls passed over, no row.
+        "FOR r IN sales COLLECT d = r.device AGGREGATE a = BIT_AND(r.bytes), o = BIT_OR(r.bytes), x = BIT_XOR(r.user), n = COUNT() RETURN [d, a, o, x, n]",
+        "FOR r IN sales FILTER r.ts >= 11000 COLLECT c = r.country AGGREGATE o = BIT_OR(r.bytes), f = BIT_OR(r.amount), x = BIT_XOR(r.user * 2) RETURN [c, o, f, x]",
+        "FOR r IN sales COLLECT u = r.user AGGREGATE x = BIT_XOR(r.bytes), a = BIT_AND(r.bytes % 16) SORT u LIMIT 9 RETURN [u, x, a]",
+        "FOR r IN sales FILTER r.ts < 0 COLLECT AGGREGATE a = BIT_AND(r.bytes), o = BIT_OR(r.user) RETURN [a, o]",
         // A column of values of several kinds, in a condition.
         "FOR r IN sales FILTER r.tag == 't1' COLLECT d = r.device AGGREGATE n = COUNT() RETURN [d, n]",
         "FOR r IN sales FILTER r.tag > 5 AND r.tag != null COLLECT AGGREGATE n = COUNT(), s = SUM(r.bytes) RETURN [n, s]",
