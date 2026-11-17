@@ -66,6 +66,48 @@ pub(crate) fn update_guard(
     Some((var.clone(), rev.to_string()))
 }
 
+/// [`update_guard`] for a sharded collection, whose documents live in
+/// physical collections (`<name>_s<shard>`): the variable and the `_rev` of
+/// the document the selector names, when the query read it from
+/// `collection`.
+pub(crate) fn sharded_update_guard(
+    selector: &Expression,
+    ctx: &Context,
+    key: &str,
+    collection: &str,
+) -> Option<(String, String)> {
+    let var = match selector {
+        Expression::Variable(v) => v,
+        Expression::FieldAccess(base, field) | Expression::OptionalFieldAccess(base, field)
+            if field == "_key" =>
+        {
+            match base.as_ref() {
+                Expression::Variable(v) => v,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    let doc = ctx.get(var)?.as_object()?;
+    if doc.get("_key").and_then(Value::as_str) != Some(key) {
+        return None;
+    }
+    // `coll/key`, `db:coll/key`, and either with the shard's suffix.
+    let id = doc.get("_id").and_then(Value::as_str)?;
+    let held_in = id.rsplit_once('/')?.0;
+    let held_in = held_in.rsplit_once(':').map_or(held_in, |(_, name)| name);
+    let of_collection = held_in == collection
+        || held_in
+            .strip_prefix(collection)
+            .and_then(|rest| rest.strip_prefix("_s"))
+            .is_some_and(|shard| !shard.is_empty() && shard.bytes().all(|b| b.is_ascii_digit()));
+    if !of_collection {
+        return None;
+    }
+    let rev = doc.get("_rev").and_then(Value::as_str)?;
+    Some((var.clone(), rev.to_string()))
+}
+
 impl QueryExecutor<'_> {
     /// Write one row of an `UPDATE` / `REPLACE`: guarded by the revision it
     /// read, and evaluated again under the key's lock when that document has
@@ -175,6 +217,92 @@ impl QueryExecutor<'_> {
         })
     }
 
+    /// One row of a plain `UPDATE` on a sharded collection, `NEW` bound in
+    /// the row that comes back; `None` when the row no longer passes its
+    /// filters or its document is gone.
+    ///
+    /// The shard that holds the document compares the revision the query
+    /// read and refuses a stale write. There is no lock to hold across
+    /// nodes, so the row is then evaluated again on the current document
+    /// and written with that revision, a few times over: the writer that a
+    /// concurrent one keeps overtaking fails with a conflict rather than
+    /// overwrite a value it did not read (card #799). An `UPDATE` that names
+    /// no document the query read is written as it is.
+    pub(super) fn update_row_sharded(
+        &self,
+        clauses: &[BodyClause],
+        at: usize,
+        update: &UpdateClause,
+        target: &super::mutations::ShardedTarget,
+        mut ctx: Context,
+    ) -> DbResult<Option<Context>> {
+        /// Evaluations of one row before the statement gives up.
+        const ATTEMPTS: usize = 16;
+        let changes_of = |this: &Self, ctx: &Context| -> DbResult<(String, Value)> {
+            let selector_value = this.evaluate_expr_with_context(&update.selector, ctx)?;
+            let key = selector_key(&selector_value, "UPDATE")?;
+            let changes = if update.changes == update.selector {
+                selector_value
+            } else {
+                this.evaluate_expr_with_context(&update.changes, ctx)?
+            };
+            if !changes.is_object() {
+                return Err(DbError::ExecutionError(
+                    "UPDATE: changes must be object".to_string(),
+                ));
+            }
+            Ok((key, changes))
+        };
+        let (key, mut changes) = changes_of(self, &ctx)?;
+        let guard = sharded_update_guard(&update.selector, &ctx, &key, &update.collection);
+        let mut expected = guard.as_ref().map(|(_, rev)| rev.clone());
+        for _ in 0..ATTEMPTS {
+            if let Some(written) =
+                self.shard_update_guarded(target, &key, changes, expected.clone())?
+            {
+                ctx.insert("NEW".to_string(), written);
+                return Ok(Some(ctx));
+            }
+            // The document moved on since this row was computed.
+            let Some((var, read_rev)) = &guard else {
+                return Err(DbError::InternalError(
+                    "UPDATE: an unguarded write reported a conflict".to_string(),
+                ));
+            };
+            let start = self.rerun_start(clauses, at, update, var).map_err(|why| {
+                DbError::ConflictError(format!(
+                    "UPDATE: document '{key}' of {} changed while this query ran \
+                     (read at revision '{read_rev}'), and {why}; retry the query",
+                    update.collection
+                ))
+            })?;
+            let Some(current) = self.shard_current(target, &key)? else {
+                return Ok(None);
+            };
+            expected = current
+                .get("_rev")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            ctx.insert(var.clone(), current);
+            if !self.rerun_row(&clauses[start + 1..at], &mut ctx)? {
+                return Ok(None);
+            }
+            let (named, again) = changes_of(self, &ctx)?;
+            if named != key {
+                return Err(DbError::ConflictError(format!(
+                    "UPDATE: document '{key}' of {} changed while this query ran, and the \
+                     row now names another document; retry the query",
+                    update.collection
+                )));
+            }
+            changes = again;
+        }
+        Err(DbError::ConflictError(format!(
+            "UPDATE: document '{key}' of {} kept changing while this query ran; retry the query",
+            update.collection
+        )))
+    }
+
     /// A transaction's `UPDATE` whose document moved on since the query read
     /// it. The transaction holds the key's lock by now (it waited for it if
     /// another held it), so no other transaction can change the document
@@ -254,7 +382,7 @@ impl QueryExecutor<'_> {
     /// clause `at`, when everything between it and the `UPDATE` can be
     /// evaluated again for one row without writing anything. Otherwise why
     /// not.
-    fn rerun_start(
+    pub(super) fn rerun_start(
         &self,
         clauses: &[BodyClause],
         at: usize,
@@ -287,7 +415,7 @@ impl QueryExecutor<'_> {
 
     /// Evaluate the `FILTER`s, `SEARCH`es and `LET`s of `between` on `ctx`
     /// again; `false` when the row no longer passes.
-    fn rerun_row(&self, between: &[BodyClause], ctx: &mut Context) -> DbResult<bool> {
+    pub(super) fn rerun_row(&self, between: &[BodyClause], ctx: &mut Context) -> DbResult<bool> {
         for clause in between {
             match clause {
                 BodyClause::Filter(f) => {

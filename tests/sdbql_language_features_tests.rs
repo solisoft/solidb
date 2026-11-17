@@ -1300,3 +1300,46 @@ fn a_batch_on_a_collection_of_documents_alone_writes_what_the_full_path_writes()
         assert_eq!(stored(&engine, name), kept, "{name}");
     }
 }
+
+/// Card #799: a merge with `mergeObjects` (or `keepNull: false`) is computed
+/// by the statement from the stored document. Written by key, with no
+/// document the query read to guard it, it used to be read and written with
+/// nothing held in between: writers of different attributes of one nested
+/// object erased each other's.
+#[test]
+fn concurrent_custom_merges_by_key_lose_nothing() {
+    let (engine, _tmp) = engine();
+    engine
+        .create_collection("profiles".to_string(), None)
+        .unwrap();
+    run(&engine, r#"INSERT {_key: "p", prefs: {}} INTO profiles"#);
+    const WRITERS: usize = 8;
+    const ROUNDS: usize = 40;
+    std::thread::scope(|scope| {
+        for w in 0..WRITERS {
+            let engine = &engine;
+            scope.spawn(move || {
+                for r in 0..ROUNDS {
+                    // By key, and through INSERT's update mode.
+                    let q = if r % 2 == 0 {
+                        format!(
+                            r#"UPDATE "p" WITH {{prefs: {{w{w}r{r}: 1}}}} IN profiles OPTIONS {{mergeObjects: true}}"#
+                        )
+                    } else {
+                        format!(
+                            r#"INSERT {{_key: "p", prefs: {{w{w}r{r}: 1}}}} INTO profiles OPTIONS {{overwriteMode: "update", mergeObjects: true}}"#
+                        )
+                    };
+                    run(engine, &q);
+                }
+            });
+        }
+    });
+    assert_eq!(
+        one(
+            &engine,
+            r#"RETURN LENGTH(ATTRIBUTES(DOCUMENT("profiles/p").prefs))"#
+        ),
+        json!(WRITERS * ROUNDS)
+    );
+}

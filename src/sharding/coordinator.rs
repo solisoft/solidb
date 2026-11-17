@@ -2883,6 +2883,29 @@ impl ShardCoordinator {
         key: &str,
         document: serde_json::Value,
     ) -> Result<serde_json::Value, crate::error::DbError> {
+        self.update_guarded(database, collection, config, key, document, None)
+            .await?
+            .ok_or_else(|| {
+                crate::error::DbError::InternalError(
+                    "an unguarded update reported a conflict".to_string(),
+                )
+            })
+    }
+
+    /// [`Self::update`] carrying the revision its changes were computed
+    /// from: the shard that holds the document compares it under the key's
+    /// lock, and `None` comes back, with nothing written, when the document
+    /// has moved on since (card #799). The caller evaluates its row again
+    /// on the current document.
+    pub async fn update_guarded(
+        &self,
+        database: &str,
+        collection: &str,
+        config: &CollectionShardConfig,
+        key: &str,
+        document: serde_json::Value,
+        expected_rev: Option<&str>,
+    ) -> Result<Option<serde_json::Value>, crate::error::DbError> {
         use crate::sharding::router::ShardRouter;
 
         let mut document = document;
@@ -2914,7 +2937,13 @@ impl ShardCoordinator {
             // Apply update locally. `collection.update` merges, and the merged
             // document is what the caller (and `NEW`) must see; a forwarded
             // update already returns it.
-            let merged = coll.update(key, document.clone())?.to_value();
+            let merged = match expected_rev {
+                Some(rev) => match coll.update_if_unchanged(key, document.clone(), rev)? {
+                    crate::storage::Guarded::Written(doc) => doc.to_value(),
+                    crate::storage::Guarded::Moved(_) => return Ok(None),
+                },
+                None => coll.update(key, document.clone())?.to_value(),
+            };
 
             if let Some(ref log) = self.replication_log {
                 let entry = LogEntry {
@@ -2934,7 +2963,7 @@ impl ShardCoordinator {
                 let _ = log.append(entry);
             }
 
-            Ok(merged)
+            Ok(Some(merged))
         } else {
             // Forward
             if let Some(mgr) = &self.cluster_manager {
@@ -2949,27 +2978,36 @@ impl ShardCoordinator {
                     );
                     let secret = self.cluster_secret();
 
-                    let res = client
+                    let mut request = client
                         .put(&url)
                         .header("X-Shard-Direct", "true")
-                        .header("X-Cluster-Secret", secret)
-                        .json(&document)
-                        .send()
-                        .await
-                        .map_err(|e| {
-                            crate::error::DbError::InternalError(format!(
-                                "Forwarding update failed: {}",
-                                e
-                            ))
-                        })?;
+                        .header("X-Cluster-Secret", secret);
+                    if let Some(rev) = expected_rev {
+                        request = request.header("If-Match", format!("\"{rev}\""));
+                    }
+                    let res = request.json(&document).send().await.map_err(|e| {
+                        crate::error::DbError::InternalError(format!(
+                            "Forwarding update failed: {}",
+                            e
+                        ))
+                    })?;
 
                     if res.status().is_success() {
                         let val: serde_json::Value = res.json().await.map_err(|e| {
                             crate::error::DbError::InternalError(format!("Invalid response: {}", e))
                         })?;
-                        Ok(val)
+                        Ok(Some(val))
                     } else {
-                        Err(remote_failure("update", res).await)
+                        match remote_failure("update", res).await {
+                            // The node that holds the shard found another
+                            // revision under the key's lock.
+                            crate::error::DbError::ConflictError(m)
+                                if expected_rev.is_some() && m.contains("has been modified") =>
+                            {
+                                Ok(None)
+                            }
+                            e => Err(e),
+                        }
                     }
                 } else {
                     Err(crate::error::DbError::InternalError(

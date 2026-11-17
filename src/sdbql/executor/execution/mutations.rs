@@ -345,6 +345,38 @@ impl<'a> QueryExecutor<'a> {
         })
     }
 
+    /// [`Self::shard_update`] carrying the revision the changes were
+    /// computed from; `None` when the document has moved on since.
+    pub(super) fn shard_update_guarded(
+        &self,
+        t: &ShardedTarget,
+        key: &str,
+        patch: Value,
+        expected_rev: Option<String>,
+    ) -> DbResult<Option<Value>> {
+        let (coord, db, coll, config, key) = (
+            t.coord.clone(),
+            t.database.clone(),
+            t.collection.clone(),
+            t.config.clone(),
+            key.to_string(),
+        );
+        self.on_shards("update", async move {
+            coord
+                .update_guarded(&db, &coll, &config, &key, patch, expected_rev.as_deref())
+                .await
+        })
+    }
+
+    /// The current version of a sharded document, or `None` when it is gone.
+    pub(super) fn shard_current(&self, t: &ShardedTarget, key: &str) -> DbResult<Option<Value>> {
+        match self.shard_get(t, key) {
+            Ok(doc) => Ok(Some(doc)),
+            Err(DbError::DocumentNotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     fn shard_insert(&self, t: &ShardedTarget, document: Value) -> DbResult<Value> {
         let (coord, db, coll, config) = (
             t.coord.clone(),
@@ -585,6 +617,22 @@ impl<'a> QueryExecutor<'a> {
                 None => collection.insert_or_replace(body)?,
             };
             (Some(existing.into_value()), doc)
+        } else if options.needs_custom_merge() && expected_rev.is_none() && !locked {
+            // The merge is computed here, from the document as it is read:
+            // read and write it under the key's lock, or a write that lands
+            // in between is replaced by one that never saw it (card #799).
+            return collection.with_write_lock(key, || {
+                self.write_update_row(
+                    collection,
+                    collection_name,
+                    key,
+                    changes,
+                    replace,
+                    options,
+                    want_old,
+                    RowGuard::Locked,
+                )
+            });
         } else if options.needs_custom_merge() {
             let existing = collection.get(key)?;
             if expected_rev.is_some_and(|rev| existing.revision() != rev) {

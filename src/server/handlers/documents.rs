@@ -837,22 +837,40 @@ pub async fn update_document(
             if let Some(ref coordinator) = state.shard_coordinator {
                 // Check for direct shard access
                 if !is_verified_shard_direct(&headers, claims.as_deref()) {
-                    // The coordinator has no compare-and-swap, so an If-Match
-                    // would be dropped and a concurrent write overwritten.
-                    if if_match.is_some() {
-                        return Err(DbError::BadRequest(
-                            "If-Match is not supported on sharded collections".to_string(),
-                        ));
-                    }
                     if replace {
+                        // A replace has no compare-and-swap through the
+                        // coordinator: an If-Match would be dropped and a
+                        // concurrent write overwritten.
+                        if if_match.is_some() {
+                            return Err(DbError::BadRequest(
+                                "If-Match is not supported for a replace on a sharded collection"
+                                    .to_string(),
+                            ));
+                        }
                         let doc = coordinator
                             .replace(&db_name, &coll_name, &shard_config, &key, data)
                             .await?;
                         return Ok(update_reply(doc, true));
                     }
+                    // The shard that holds the document compares the
+                    // revision under the key's lock.
                     let doc = coordinator
-                        .update(&db_name, &coll_name, &shard_config, &key, data)
-                        .await?;
+                        .update_guarded(
+                            &db_name,
+                            &coll_name,
+                            &shard_config,
+                            &key,
+                            data,
+                            if_match.as_deref(),
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            DbError::ConflictError(format!(
+                                "Document '{}' has been modified. Expected revision '{}'",
+                                key,
+                                if_match.as_deref().unwrap_or_default()
+                            ))
+                        })?;
                     return Ok(update_reply(doc, false));
                 }
             }

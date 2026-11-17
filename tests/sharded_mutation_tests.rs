@@ -374,3 +374,167 @@ fn two_engines_do_not_share_shard_configs() {
     assert_eq!(shards(&a), 3);
     assert_eq!(shards(&b), 7);
 }
+
+/// Card #799: an UPDATE computed from the document the query read does not
+/// overwrite what another writer stored in between. The shard compares the
+/// revision; the row is then evaluated again on the current document.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_updates_of_one_sharded_document_lose_nothing() {
+    let f = Arc::new(fixture().await);
+    seed(&f).await;
+    run(&f, r#"UPDATE "k1" WITH {n: 0, log: []} IN c"#)
+        .await
+        .unwrap();
+
+    const WRITERS: usize = 8;
+    const ROUNDS: usize = 25;
+    let mut writers = Vec::new();
+    for w in 0..WRITERS {
+        let f = f.clone();
+        writers.push(tokio::spawn(async move {
+            let mut conflicts = 0;
+            for r in 0..ROUNDS {
+                let q = format!(
+                    r#"FOR d IN c FILTER d._key == "k1" UPDATE d WITH {{n: d.n + 1, log: PUSH(d.log, "{w}-{r}")}} IN c RETURN NEW.n"#
+                );
+                // A writer that keeps being overtaken is told so, and tries
+                // again: what it must never do is write over a value it did
+                // not read.
+                loop {
+                    match run(&f, &q).await {
+                        Ok(rows) => {
+                            assert_eq!(rows.len(), 1, "{rows:?}");
+                            break;
+                        }
+                        Err(e) if e.contains("retry the query") => conflicts += 1,
+                        Err(e) => panic!("{e}"),
+                    }
+                }
+            }
+            conflicts
+        }));
+    }
+    for writer in writers {
+        writer.await.unwrap();
+    }
+    let out = run(
+        &f,
+        r#"FOR d IN c FILTER d._key == "k1" RETURN [d.n, LENGTH(d.log), COUNT_DISTINCT(d.log)]"#,
+    )
+    .await
+    .unwrap();
+    let total = WRITERS * ROUNDS;
+    assert_eq!(out, vec![json!([total, total, total])]);
+}
+
+/// A row whose document moved on is evaluated again: its FILTER decides on
+/// the current version, so two workers cannot both claim one job.
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn a_sharded_update_claims_a_job_once() {
+    let f = Arc::new(fixture().await);
+    run(
+        &f,
+        r#"FOR i IN 1..40 INSERT {_key: CONCAT("j", i), status: "pending"} INTO c"#,
+    )
+    .await
+    .unwrap();
+    let mut workers = Vec::new();
+    for w in 0..6 {
+        let f = f.clone();
+        workers.push(tokio::spawn(async move {
+            let q = format!(
+                r#"FOR j IN c FILTER j.status == "pending" UPDATE j WITH {{status: "taken", by: {w}}} IN c RETURN NEW._key"#
+            );
+            loop {
+                match run(&f, &q).await {
+                    Ok(rows) => return rows.len(),
+                    Err(e) if e.contains("retry the query") => {}
+                    Err(e) => panic!("{e}"),
+                }
+            }
+        }));
+    }
+    let mut claimed = 0;
+    for worker in workers {
+        claimed += worker.await.unwrap();
+    }
+    // Every job taken, each by one worker.
+    assert_eq!(claimed, 40);
+    let out = run(
+        &f,
+        r#"RETURN LENGTH(FOR j IN c FILTER j.status == "taken" RETURN 1)"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, vec![json!(40)]);
+}
+
+/// An UPDATE that names no document the query read is written as before,
+/// and one whose document is gone leaves its row out.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_sharded_update_by_key_and_of_a_missing_document() {
+    let f = fixture().await;
+    seed(&f).await;
+    let out = run(
+        &f,
+        r#"FOR i IN 1..3 UPDATE CONCAT("k", i) WITH {n: i * 100} IN c RETURN NEW.n"#,
+    )
+    .await
+    .unwrap();
+    assert_eq!(out, vec![json!(100), json!(200), json!(300)]);
+    let missing = run(&f, r#"UPDATE "nope" WITH {n: 1} IN c"#).await;
+    assert!(missing.is_err(), "{missing:?}");
+}
+
+/// What `PUT …/document/c/key` with `If-Match` asks of the coordinator on a
+/// sharded collection: a stale revision writes nothing and says so.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_coordinator_refuses_an_update_computed_from_an_old_revision() {
+    let f = fixture().await;
+    seed(&f).await;
+    let config = CollectionShardConfig {
+        num_shards: 3,
+        shard_key: "_key".to_string(),
+        replication_factor: 1,
+    };
+    let current = f.coord.get("d", "c", "k3").await.unwrap();
+    let rev = current["_rev"].as_str().unwrap().to_string();
+
+    let stale = f
+        .coord
+        .update_guarded(
+            "d",
+            "c",
+            &config,
+            "k3",
+            json!({"n": 99}),
+            Some("not-the-revision"),
+        )
+        .await
+        .unwrap();
+    assert!(stale.is_none());
+    assert_eq!(f.coord.get("d", "c", "k3").await.unwrap()["n"], json!(3));
+
+    let written = f
+        .coord
+        .update_guarded("d", "c", &config, "k3", json!({"n": 30}), Some(&rev))
+        .await
+        .unwrap()
+        .expect("the current revision writes");
+    assert_eq!(written["n"], json!(30));
+    assert_ne!(written["_rev"].as_str().unwrap(), rev);
+    // The revision it replaced is stale in its turn.
+    let again = f
+        .coord
+        .update_guarded("d", "c", &config, "k3", json!({"n": 31}), Some(&rev))
+        .await
+        .unwrap();
+    assert!(again.is_none());
+    // And without a revision the update is written as before.
+    let plain = f
+        .coord
+        .update("d", "c", &config, "k3", json!({"n": 32}))
+        .await
+        .unwrap();
+    assert_eq!(plain["n"], json!(32));
+}

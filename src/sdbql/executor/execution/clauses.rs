@@ -934,58 +934,27 @@ impl<'a> QueryExecutor<'a> {
                                 "UPDATE: Delegating to ShardCoordinator for {}",
                                 update_clause.collection
                             );
-                            let handle = tokio::runtime::Handle::current();
-                            let db_name = self.database.as_deref().unwrap_or("_system").to_string();
-                            let coll_name = update_clause.collection.clone();
-                            let config = config.clone();
-
-                            for ctx in &mut rows {
-                                // Evaluate selector (Duplicated logic)
-                                let selector_value =
-                                    self.evaluate_expr_with_context(&update_clause.selector, ctx)?;
-                                let key = match &selector_value {
-                                    Value::String(s) => s.clone(),
-                                    Value::Object(obj) => obj
-                                        .get("_key")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .ok_or_else(|| {
-                                            DbError::ExecutionError(
-                                                "UPDATE: missing _key".to_string(),
-                                            )
-                                        })?,
-                                    _ => {
-                                        return Err(DbError::ExecutionError(
-                                            "UPDATE: invalid selector".to_string(),
-                                        ))
-                                    }
-                                };
-                                let changes =
-                                    self.evaluate_expr_with_context(&update_clause.changes, ctx)?;
-                                if !changes.is_object() {
-                                    return Err(DbError::ExecutionError(
-                                        "UPDATE: changes must be object".to_string(),
-                                    ));
+                            let target = ShardedTarget {
+                                coord: coordinator.clone(),
+                                config: config.clone(),
+                                database: self.database.as_deref().unwrap_or("_system").to_string(),
+                                collection: update_clause.collection.clone(),
+                            };
+                            let input = std::mem::take(&mut rows);
+                            let mut kept = Vec::with_capacity(input.len());
+                            for ctx in input {
+                                if let Some(ctx) = self.update_row_sharded(
+                                    clauses,
+                                    i,
+                                    update_clause,
+                                    &target,
+                                    ctx,
+                                )? {
+                                    stats.documents_updated += 1;
+                                    kept.push(ctx);
                                 }
-
-                                let coord = coordinator.clone();
-                                let db = db_name.clone();
-                                let coll = coll_name.clone();
-                                let conf = config.clone();
-                                let k = key;
-                                let doc = changes;
-
-                                let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                                handle.spawn(async move {
-                                    let res = coord.update(&db, &coll, &conf, &k, doc).await;
-                                    let _ = tx.send(res);
-                                });
-                                let updated_doc = recv_sharded(rx, "update")?;
-                                stats.documents_updated += 1;
-
-                                // Inject NEW variable
-                                ctx.insert("NEW".to_string(), updated_doc.clone());
                             }
+                            rows = kept;
                             i += 1; // CRITICAL: Advance to next clause
                             continue;
                         }
