@@ -1,0 +1,128 @@
+<article class="post">
+<header class="post-header wrap-narrow">
+  <span class="eyebrow">Vector search · Benchmarks</span>
+  <h1><%= post["title"] %></h1>
+  <p class="post-meta"><time datetime="<%= post["date"] %>"><%= post["display_date"] %></time> · <%= post["read_minutes"] %> min read</p>
+  <p class="post-lede">After documents, graphs, time series and columns, vectors. We loaded a million embeddings into SoliDB, PostgreSQL with pgvector and LanceDB, and measured each search twice: how often it finds the true nearest neighbours, then how fast. The first run found two bugs in SoliDB that made its recall stop near 0.6 whatever we asked of it. This is what they were, what replaced them, and where the two others are still ahead.</p>
+  <p class="post-note">Every figure on this page was measured on November 18, 2026 on one machine. pgvector ran in a container with 4 cores and 16 GB; SoliDB and LanceDB ran under the same limits in a systemd scope (the same cores, the same memory ceiling, no swap), and the harness on other cores. SoliDB is a build of <code>main</code> after 2.14.0; nothing here is in a release yet.</p>
+</header>
+<div class="wrap-narrow"><%- partial("blog/cover", {"post": post, "css_class": "post-cover", "loading": "eager"}) %></div>
+
+<div class="post-body wrap-narrow">
+<nav class="post-toc" aria-label="In this post">
+  <p class="post-toc-title">In this post</p>
+  <ol>
+    <li><a href="#what">What was measured</a></li>
+    <li><a href="#results">The results</a></li>
+    <li><a href="#before">Where 2.14.0 stood</a></li>
+    <li><a href="#changed">What changed</a></li>
+    <li><a href="#limits">Where the others are ahead, and what this does not show</a></li>
+    <li><a href="#run">Running it</a></li>
+  </ol>
+</nav>
+
+<section id="what"><h2>What was measured</h2>
+<p>The data is generated: 1,000,000 vectors of 128 dimensions, drawn around 100 centres and normalised, as embeddings are clustered and usually normalised. Each vector carries an integer <code>id</code> and a category <code>cat</code>, one of ten. 500 query vectors are drawn the same way, apart from the data. Before anything is timed, the harness computes the exact ten nearest neighbours of every query by brute force, once over all the vectors and once over each query's category.</p>
+<table>
+  <thead><tr><th>Scenario</th><th>What one request asks</th></tr></thead>
+  <tbody>
+    <tr><td><code>search</code></td><td>The ten vectors nearest to a query (cosine).</td></tr>
+    <tr><td><code>filtered</code></td><td>The ten nearest among those of one category: a filter that a tenth of the vectors pass.</td></tr>
+  </tbody>
+</table>
+<p>All three build an HNSW graph with the same settings, 16 links a node and a candidate list of 200 while building, and are searched at three widths, <code>ef</code> 40, 100 and 200: the number of candidates a search keeps, which trades speed for recall. Each width is measured twice. First <strong>recall@10</strong>: the share of the true ten nearest that the answer contains, over the 500 queries. Then requests per second and latency, at one client and at eight, the median of three runs of ten seconds. A search that is faster but finds fewer of the right answers is not faster at the same thing, so the two are always read together here.</p>
+<p>SoliDB receives <code>VECTOR_SEARCH</code> in SDBQL over its native driver, on documents <code>{id, cat, emb}</code> with an HNSW index on <code>emb</code>. PostgreSQL 17 with pgvector holds a table <code>items(id, cat, emb vector(128))</code>, an HNSW index with <code>vector_cosine_ops</code> built after the load as pgvector advises, an index on <code>cat</code>, and <code>hnsw.iterative_scan = relaxed_order</code> so that a filtered search still returns ten rows. LanceDB 0.41 is a library: it runs in its client's process, with no server and no network, and was used that way, from Python, with an <code>IVF_HNSW_SQ</code> index and a prefilter on <code>cat</code>.</p>
+</section>
+
+<section id="results"><h2>The results</h2>
+<p>Building the index over the million vectors already loaded:</p>
+<table>
+  <thead><tr><th>Index build</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
+  <tbody>
+    <tr><td>1,000,000 × 128</td><td>124 s</td><td>153 s</td><td>42 s</td></tr>
+  </tbody>
+</table>
+<p>The plain search, one client. Requests per second, with recall@10 in parentheses:</p>
+<table>
+  <thead><tr><th>One client</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>ef</code> 40</td><td>4,613 (0.724)</td><td>1,379 (0.712)</td><td>819 (0.664)</td></tr>
+    <tr><td><code>ef</code> 100</td><td>2,669 (0.898)</td><td>705 (0.895)</td><td>750 (0.846)</td></tr>
+    <tr><td><code>ef</code> 200</td><td>1,606 (0.955)</td><td>443 (0.960)</td><td>681 (0.914)</td></tr>
+  </tbody>
+</table>
+<figure class="post-figure"><svg viewBox="0 0 680 198" role="img" aria-labelledby="vec-plain-t">
+<title id="vec-plain-t">Ten nearest neighbours at ef 100, one client, requests per second: SoliDB 2,669, LanceDB 750, pgvector 705, at a recall of 0.898, 0.846 and 0.895.</title>
+<text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Ten nearest of a million at ef 100, one client (requests per second)</text>
+<line x1="170" y1="46" x2="170" y2="158" stroke="#29322f"/>
+<text x="20" y="72" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB</text>
+<rect x="170" y="56" width="420" height="24" rx="3" fill="#f5a623"/>
+<text x="600" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2,669</text>
+<text x="20" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">LanceDB</text>
+<rect x="170" y="94" width="118" height="24" rx="3" fill="#6b746c"/>
+<text x="298" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">750</text>
+<text x="20" y="148" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">pgvector</text>
+<rect x="170" y="132" width="111" height="24" rx="3" fill="#6b746c"/>
+<text x="291" y="149" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">705</text>
+<text x="20" y="184" font-family="Inter, sans-serif" font-size="12" fill="#6b746c">Bars share one scale starting at 0. Recall@10: SoliDB 0.898, pgvector 0.895, LanceDB 0.846. 4 cores each.</text>
+</svg><figcaption>At about the same recall as pgvector, SoliDB answers 3.8 times as many searches. LanceDB's figure includes its Python client, which runs in the same process.</figcaption></figure>
+<p>Eight clients:</p>
+<table>
+  <thead><tr><th>Eight clients</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>ef</code> 40</td><td>24,184</td><td>7,679</td><td>1,430</td></tr>
+    <tr><td><code>ef</code> 100</td><td>13,247</td><td>4,004</td><td>1,399</td></tr>
+    <tr><td><code>ef</code> 200</td><td>6,647</td><td>2,522</td><td>1,376</td></tr>
+  </tbody>
+</table>
+<p>The filtered search, a filter that a tenth of the vectors pass:</p>
+<table>
+  <thead><tr><th>Filtered</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
+  <tbody>
+    <tr><td><code>ef</code> 40, 1 client</td><td>800 (0.961)</td><td>586 (0.830)</td><td>134 (0.927)</td></tr>
+    <tr><td><code>ef</code> 200, 1 client</td><td>760 (0.961)</td><td>429 (0.915)</td><td>117 (0.951)</td></tr>
+    <tr><td><code>ef</code> 40, 8 clients</td><td>2,150</td><td>3,432</td><td>534</td></tr>
+    <tr><td><code>ef</code> 100, 8 clients</td><td>2,285</td><td>3,010</td><td>509</td></tr>
+    <tr><td><code>ef</code> 200, 8 clients</td><td>2,638</td><td>2,484</td><td>484</td></tr>
+  </tbody>
+</table>
+<p>SoliDB answers the plain search three to four times as fast as pgvector at every width and both concurrencies, at a recall within half a point of it. It builds its index a fifth faster than pgvector, and LanceDB three times faster than SoliDB. On the filtered search its recall is the highest at every width, and it is ahead at one client; at eight clients pgvector is ahead at <code>ef</code> 40 and 100, by up to 60%.</p>
+</section>
+
+<section id="before"><h2>Where 2.14.0 stood</h2>
+<p>The first run, on 20,000 vectors of 64 dimensions, gave SoliDB a recall@10 of 0.64. Not unusual at a small <code>ef</code>, except that at <code>ef</code> 200 it was 0.64 too, and at 400. A wider search spent more time and found nothing more. To rule out the harness, we compared SoliDB's HNSW search with its own exact search (<code>SORT VECTOR_SIMILARITY</code> over every document): 54% of the true neighbours, whatever the width.</p>
+<p>The filtered search was worse: 0.40, again whatever the width.</p>
+<p>And building the index of 300,000 vectors took 652 seconds, where pgvector took 24.</p>
+</section>
+
+<section id="changed"><h2>What changed</h2>
+<p><strong>How links are chosen.</strong> An HNSW graph links each vector to some of its neighbours, and a search walks those links. SoliDB linked each new vector to the M vectors nearest to it. On vectors spread evenly that works; on clustered vectors every one of those M is in the same cluster, so no link leaves it. The graph falls apart into islands, one per cluster, and a search that enters the wrong island can widen as much as it likes: there is no way out. The paper that defines HNSW (Malkov and Yashunin) gives a rule for exactly this: take a candidate only if it is nearer to the new vector than to every neighbour already taken. A neighbour that is close but redundant gives way to one in another direction, and the islands are joined. With it, recall@10 on the first data went from 0.64 to 0.9995 at <code>ef</code> 40 and 1.0 at 200, and a test now fails on the old rule.</p>
+<p><strong>How a filter is applied.</strong> An HNSW graph knows nothing of categories, so a filtered search takes candidates and checks the filter on each. SoliDB took one batch of four times the ten asked for: with a filter that a tenth pass, about four of them survived. It now searches again four times wider while fewer than ten pass, up to the whole index, as pgvector 0.8's iterative scan does. Each candidate is checked on the fields the filter names, without decoding the rest of its document; the embedding is most of it.</p>
+<p><strong>How the graph is stored in memory.</strong> The graph kept its nodes, their links and their vectors in maps keyed by the document's key. Every distance a search computed began by hashing a string, every link was a copy of one, and every search allocated a set of them to remember what it had visited. The nodes are now numbered, their links are lists of numbers, the vectors sit one after the other in a single array, normalised once so that a cosine is a dot product, and the visited set is reused. That alone took the searches from 1,557 to 5,529 a second at one client on 300,000 vectors. Indexes saved by earlier versions are read and renumbered when they are loaded.</p>
+<p><strong>How an index is built.</strong> A new index over stored documents was filled one vector at a time. The graph was built on every core at 10,000 vectors, and each of the remaining ones was then linked on a single thread: the server used one core of eight. The vectors are now stored as one batch and the graph is built once, on every core, a lock on each node's links. 652 seconds became 97 on 300,000 vectors, and a million take 124.</p>
+</section>
+
+<section id="limits"><h2>Where the others are ahead, and what this does not show</h2>
+<ul>
+<li><strong>Filtered searches at eight clients</strong>: pgvector 3,432 a second at <code>ef</code> 40, SoliDB 2,150, with a p99 of 10 ms against 3.4. SoliDB's widening lets a selective query read thousands of candidates, and at eight clients those queries are the tail. pgvector's recall there is lower (0.83 against 0.96), but that is not the same as being slower.</li>
+<li><strong>The index build</strong>: LanceDB builds its index in 42 seconds, a third of SoliDB's time. Its index is not the same: an IVF partitioning with quantized vectors under the graph, which is also why its recall is lower at the same width.</li>
+<li><strong>Memory</strong>: not compared here. Our script recorded the size of the process that launched SoliDB rather than SoliDB's; pgvector's container used 1.6 GB. SoliDB currently keeps the vectors twice, once by document key and once in the graph's array.</li>
+<li><strong>LanceDB through Python.</strong> Its searches at eight threads hardly go faster than at one: they measure the Python client holding its interpreter lock as much as the engine. The Rust library would be faster, and a Rust harness would be the fairer test.</li>
+<li><strong>Generated data.</strong> The vectors are clustered Gaussians, not the embeddings of a real model. Recall at a given width depends on the data, and a public set with its ground truth (SIFT, GloVe, or a text embedding set) would make the figures comparable to others'.</li>
+<li><strong>Two questions.</strong> No inserts while searching, no deletes, no updates of vectors, no other metric, no dimension above 128, no quantization in SoliDB or pgvector. Each would move these numbers.</li>
+<li><strong>Not a container for SoliDB.</strong> The same limits as pgvector's container, set by systemd rather than by an image. The other posts ran every database in a container; this one does not for two of the three.</li>
+<li><strong>This is a build of <code>main</code>.</strong> When it is released, the published image will be measured again and the figures put beside these.</li>
+</ul>
+</section>
+
+<section id="run"><h2>Running it</h2>
+<div class="code-card post-code"><div class="cc-bar"><span class="dotk"></span> terminal</div><pre>cd benchmarks/compare
+cargo build --release --bin solidb-vec
+pip install lancedb pyarrow numpy        <span class="tok-com"># for the LanceDB configuration</span>
+SOLIDB_BIN=../../target/release/solidb LANCE_PYTHON=python3 ./vec.sh all
+N=20000 DIM=64 QUERIES=200 SECS=3 RUNS=1 ./vec.sh all   <span class="tok-com"># a smoke pass</span></pre></div>
+<p><code>vec.sh</code> starts each database in turn under the same limits, and <code>solidb-vec</code> generates the data, computes the exact answers and measures each engine; LanceDB is measured by <code>vec_lance.py</code> on the same vectors and answers, which <code>solidb-vec --engine dump</code> writes. The statements sent to each database are in the result files. If one of them is not the one you would have written for your database, that is the place to say so.</p>
+</section>
+</div>
+<footer class="post-footer wrap-narrow"><a href="/blog">← All posts</a></footer>
+</article>

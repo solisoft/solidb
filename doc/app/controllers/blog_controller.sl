@@ -72,6 +72,18 @@ class BlogController < Controller
   def posts
     return [
       {
+        "slug": "solidb-against-pgvector-lancedb-on-vector-search",
+        "title": "SoliDB against pgvector and LanceDB on vector search",
+        "date": "2026-11-18",
+        "display_date": "November 18, 2026",
+        "summary": "A million embeddings, the ten nearest of each query, recall and speed read together. "
+        + "The first run found SoliDB's recall stuck near 0.6 whatever the search width: its graph "
+        + "fell apart on clustered data. It now answers three to four times as fast as pgvector at "
+        + "the same recall; what changed, and where pgvector and LanceDB are still ahead.",
+        "tags": ["Vector search", "Performance", "Benchmarks"],
+        "read_minutes": 9
+      },
+      {
         "slug": "solidb-against-clickhouse-on-a-columnar-table",
         "title": "SoliDB against ClickHouse on a columnar table",
         "date": "2026-11-15",

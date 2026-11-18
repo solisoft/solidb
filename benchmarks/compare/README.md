@@ -980,3 +980,38 @@ The published `ghcr.io/solisoft/solidb:v2.5.0` through `v2.7.2` images do not st
 - **The cause:** the release binary is built on `ubuntu-latest` (glibc 2.39), and the Dockerfile's base, `debian:bookworm-slim`, has glibc 2.36.
 - **The workaround:** `solidb-image.sh` builds the 2.7.2 run's image from the official release binary, checked against the SHA-256 GitHub records, on `debian:trixie-slim`.
 - **Fixed in 2.7.3.** That release ships a working image, which `run.sh` uses by default.
+
+## Vector search (`vec.sh`)
+
+The same vectors and the same nearest-neighbour searches against SoliDB,
+PostgreSQL with pgvector and LanceDB (card #979). `solidb-vec` generates
+the vectors (clustered around 100 centres, normalised), computes the exact
+ten nearest neighbours of every query by brute force, plain and within one
+of ten categories, then measures each engine: recall@10 over every query,
+then requests/s and latency at each `ef` and concurrency. A faster search
+with a lower recall is not faster at the same thing: read the two together.
+
+- **SoliDB**: documents `{id, cat, emb}`, an HNSW index on `emb` created
+  after the load, `VECTOR_SEARCH` over the driver with `ef` (and a
+  `filter` on `cat`).
+- **pgvector**: `items(id, cat, emb vector(dim))`, an HNSW index with
+  `vector_cosine_ops` built after the load, an index on `cat`,
+  `hnsw.ef_search` per search and `hnsw.iterative_scan = relaxed_order`.
+- **LanceDB**: a library in its client's process, measured by
+  `vec_lance.py` on what `solidb-vec --engine dump` writes; IVF_HNSW_SQ, a
+  prefilter on `cat`. From Python: at several threads it measures its
+  client as much as its engine.
+
+SoliDB and LanceDB run in a systemd scope with the limits of pgvector's
+container (`DB_CPUS`, `DB_MEM`, no swap).
+
+```bash
+cargo build --release --bin solidb-vec
+SOLIDB_BIN=../../target/release/solidb LANCE_PYTHON=python3 ./vec.sh all
+N=20000 DIM=64 QUERIES=200 SECS=3 RUNS=1 ./vec.sh all     # a smoke pass
+```
+
+Results: `results/2026-11-18-vec-1m/` (1,000,000 × 128, the blog post's
+figures) and `results/2026-11-18-vec-prelim/` (300,000 × 128, before the
+fixes of cards #983 and #984), each with its notes.
+

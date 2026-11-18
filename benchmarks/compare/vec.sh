@@ -7,13 +7,17 @@
 #   N=20000 DIM=64 QUERIES=200 SECS=3 RUNS=1 ./vec.sh all     smoke pass
 #
 # Configurations:
-#   solidb     a SoliDB binary (SOLIDB_BIN), solistore, on DB_CPUS; HNSW index
+#   solidb     a SoliDB binary (SOLIDB_BIN), solistore; HNSW index
 #              on the documents' `emb` field, VECTOR_SEARCH over the driver.
 #   pgvector   PostgreSQL + pgvector in a container on DB_CPUS and DB_MEM;
 #              HNSW (vector_cosine_ops) built after the load.
 #   lancedb    LanceDB embedded, in the client's process (vec_lance.py in
-#              LANCE_PYTHON's environment): pinned to DB_CPUS, since that
-#              process does the work a server does for the others. No network.
+#              LANCE_PYTHON's environment), held to the servers' limits, since
+#              that process does the work a server does for the others. No network.
+#
+# SoliDB and LanceDB run in a systemd scope with the container's limits
+# (AllowedCPUs=DB_CPUS, MemoryMax=DB_MEM, no swap): the same cores and
+# memory as pgvector's container, without building an image.
 #
 # Every engine gets the same HNSW settings (M=16, ef_construction=200) and is
 # measured at the same ef values: recall@10 against the exact answers the
@@ -51,13 +55,19 @@ wait_port() {
   return 1
 }
 
+# Run a command with the database's limits: DB_CPUS, DB_MEM, no swap.
+limited() {
+  sudo systemd-run --scope --quiet -p AllowedCPUs="$DB_CPUS" -p MemoryMax="${DB_MEM^^}" \
+    -p MemorySwapMax=0 --uid="$(id -u)" --gid="$(id -g)" "$@"
+}
+
 run_one() {
   local cfg=$1 data=$ROOT/data/vec-$cfg status=0
   $SUDO_RM "$data"
   mkdir -p "$data"
   case $cfg in
     solidb)
-      taskset -c "$DB_CPUS" env SOLIDB_ADMIN_PASSWORD=$PASSWORD SOLIDB_ENGINE=solistore \
+      limited env SOLIDB_ADMIN_PASSWORD=$PASSWORD SOLIDB_ENGINE=solistore \
         "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua >"$OUT/solidb.server.log" 2>&1 &
       local server=$!
       wait_port 6800
@@ -86,7 +96,7 @@ run_one() {
       local ef conc
       ef=$(sed -n 's/.*--ef \([^ ]*\).*/\1/p' <<<"${ARGS[*]}")
       conc=$(sed -n 's/.*--concurrency \([^ ]*\).*/\1/p' <<<"${ARGS[*]}")
-      taskset -c "$DB_CPUS" "$LANCE_PYTHON" "$HERE/vec_lance.py" "$data/dump" --ef "$ef" --concurrency "$conc" \
+      limited "$LANCE_PYTHON" "$HERE/vec_lance.py" "$data/dump" --ef "$ef" --concurrency "$conc" \
         --warm "${WARM:-3}" --secs "${SECS:-10}" --runs "${RUNS:-3}" --table-dir "$data/table" \
         --out "$OUT/lancedb.json" 2>&1 | tee "$OUT/lancedb.log" || status=$?
       ;;
