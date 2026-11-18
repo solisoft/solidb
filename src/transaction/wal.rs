@@ -268,13 +268,26 @@ impl WalWriter {
     /// after startup recovery and on checkpoint — so the file cannot grow
     /// without bound (audit M7). Lock order matches `write_and_sync`
     /// (buffer, then file).
+    ///
+    /// The file is emptied through a handle of its own, opened for writing.
+    /// The writer's handle is opened in append mode, which on Windows gives
+    /// the right to append and not the right to write: `set_len` on it was
+    /// refused there ("Access is denied"), so the log was never emptied and
+    /// was read whole at every start (card #960). The writer's handle goes
+    /// on appending afterwards, from the start of the emptied file: an
+    /// append is written at the end of the file as it is then.
     pub fn truncate(&self) -> DbResult<()> {
         let mut buffer = self.buffer.lock().unwrap();
-        let file = self.file.lock().unwrap();
+        // Held so that no append lands between the two steps below.
+        let _file = self.file.lock().unwrap();
         buffer.entries.clear();
-        file.set_len(0)
+        let emptied = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&self.path)
             .map_err(|e| DbError::InternalError(format!("Failed to truncate WAL: {}", e)))?;
-        file.sync_all()
+        emptied
+            .sync_all()
             .map_err(|e| DbError::InternalError(format!("Failed to sync WAL: {}", e)))?;
         self.pending_writes.store(0, Ordering::SeqCst);
         Ok(())
@@ -573,5 +586,15 @@ mod tests {
         // Still usable afterwards; appends start from the empty file.
         writer.write_commit(TransactionId::from_u64(8)).unwrap();
         assert_eq!(WalReader::new(&wal_path).read_all().unwrap().len(), 1);
+
+        // Emptied again with entries behind it, the next append is the
+        // file's only entry and starts at its first byte.
+        writer.truncate().unwrap();
+        assert_eq!(std::fs::metadata(&wal_path).unwrap().len(), 0);
+        writer.write_begin(TransactionId::from_u64(9)).unwrap();
+        writer.write_commit(TransactionId::from_u64(9)).unwrap();
+        let text = std::fs::read_to_string(&wal_path).unwrap();
+        assert!(text.starts_with('{'), "{text:?}");
+        assert_eq!(WalReader::new(&wal_path).read_all().unwrap().len(), 2);
     }
 }
