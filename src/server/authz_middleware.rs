@@ -146,6 +146,10 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     if is_columnar_schema_change(method, path) {
         return PermissionAction::Admin;
     }
+    // Restoring a tag replaces every row; dropping one frees what it kept.
+    if is_columnar_tag_change(method, path) {
+        return PermissionAction::Admin;
+    }
     if path.ends_with("/repl") {
         return PermissionAction::Admin;
     }
@@ -222,6 +226,21 @@ fn is_columnar_schema_change(method: &Method, path: &str) -> bool {
         .unwrap_or_default()
         .split('/');
     parts.nth(1) == Some("columnar") && parts.nth(1) == Some("columns")
+}
+
+/// Restoring or dropping a tag of a columnar collection
+/// (`…/columnar/{collection}/tags/{tag}[/restore]`). Taking one and listing
+/// them are not.
+fn is_columnar_tag_change(method: &Method, path: &str) -> bool {
+    let parts: Vec<&str> = path
+        .strip_prefix("/_api/database/")
+        .unwrap_or_default()
+        .split('/')
+        .collect();
+    let tagged = parts.get(1) == Some(&"columnar") && parts.get(3) == Some(&"tags");
+    tagged
+        && ((*method == Method::DELETE && parts.len() == 5)
+            || (*method == Method::POST && parts.len() == 6 && parts[5] == "restore"))
 }
 
 /// Declaring, dropping or moving a counter field, or setting its next
@@ -320,6 +339,26 @@ mod tests {
 
     // `required_action` is fed the matched route *template*, so every path in
     // these tests is written the way the router reports it.
+
+    /// Card #981: restoring or dropping a columnar tag is Admin; taking one
+    /// is a write and listing them a read.
+    #[test]
+    fn columnar_tags_restore_and_drop_need_admin() {
+        let base = "/_api/database/{db}/columnar/{collection}/tags";
+        assert_eq!(
+            required_action(&Method::POST, base),
+            PermissionAction::Write
+        );
+        assert_eq!(required_action(&Method::GET, base), PermissionAction::Read);
+        assert_eq!(
+            required_action(&Method::DELETE, &format!("{base}/{{tag}}")),
+            PermissionAction::Admin
+        );
+        assert_eq!(
+            required_action(&Method::POST, &format!("{base}/{{tag}}/restore")),
+            PermissionAction::Admin
+        );
+    }
 
     #[test]
     fn test_required_action_defaults() {

@@ -193,6 +193,9 @@ struct ExecCaches {
     /// storage (a registry read, 0.52 µs); with the auto-index flag below,
     /// that was ~10% of an 11 µs correlated subquery run.
     columnar: parking_lot::Mutex<HashMap<String, bool>>,
+    /// The tag each columnar collection is read at in this query
+    /// (`FOR … OPTIONS {tag}`, card #981), from the query's FOR clauses.
+    columnar_tags: parking_lot::Mutex<HashMap<String, String>>,
     /// `Collection::auto_index_enabled` per collection: a storage read
     /// (0.56 µs) that every index-path FOR made, once per run of a
     /// correlated subquery.
@@ -255,6 +258,7 @@ impl ExecCaches {
         *self.bm25_query.lock() = None;
         self.scan_projections.lock().clear();
         self.columnar.lock().clear();
+        self.columnar_tags.lock().clear();
         self.auto_index.lock().clear();
         *self.filter_mistake.lock() = None;
         self.collection_names.lock().clear();
@@ -497,6 +501,46 @@ impl<'a> QueryExecutor<'a> {
     /// previous query, or a policy that changed in between.
     pub fn reset_query_caches(&self) {
         self.caches.clear();
+    }
+
+    /// Note the tags `query` reads its columnar collections at (card #981):
+    /// one per collection, and only on a columnar collection.
+    pub(crate) fn note_columnar_tags(&self, query: &crate::sdbql::Query) -> DbResult<()> {
+        let tags = crate::storage::query_cache::columnar_tags(query)?;
+        if tags.is_empty() {
+            return Ok(());
+        }
+        if let Some(database) = self
+            .database
+            .as_ref()
+            .and_then(|db| self.storage.get_database(db).ok())
+        {
+            for name in tags.keys() {
+                if !self.is_columnar(&database, name) {
+                    return Err(DbError::BadRequest(format!(
+                        "FOR OPTIONS tag reads a columnar collection; '{name}' is not one"
+                    )));
+                }
+            }
+        }
+        *self.caches.columnar_tags.lock() = tags;
+        Ok(())
+    }
+
+    /// The columnar collection `name` as this query reads it: at the tag
+    /// its FOR names, else as it is.
+    pub(crate) fn open_columnar(
+        &self,
+        name: &str,
+        db_name: &str,
+        database: &crate::storage::Database,
+    ) -> DbResult<crate::storage::ColumnarCollection> {
+        let columnar =
+            crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
+        match self.caches.columnar_tags.lock().get(name).cloned() {
+            Some(tag) => columnar.at_tag(&tag),
+            None => Ok(columnar),
+        }
     }
 
     /// The row ceiling this executor enforces.

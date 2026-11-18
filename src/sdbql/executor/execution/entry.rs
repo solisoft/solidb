@@ -30,6 +30,7 @@ impl<'a> QueryExecutor<'a> {
         self.caches
             .enable_reuse(self.reuse_within_query && !query.has_mutations());
         crate::sdbql::executor::builtins::crypto::reset_query_budget();
+        self.note_columnar_tags(query)?;
         // Handle CREATE MATERIALIZED VIEW
         if let Some(ref clause) = query.create_materialized_view_clause {
             return self.execute_create_materialized_view(clause);

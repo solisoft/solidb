@@ -33,7 +33,16 @@ const COL_IDX_BITMAP_PREFIX: &str = "col_idx_bmp:"; // col_idx_bmp:{column}:{enc
                                                     // What a `minmax` index stored, through 2.11: nothing writes it any more,
                                                     // and whatever is left under it is deleted (`retire_minmax`, drop, truncate).
 const COL_IDX_MINMAX_PREFIX: &str = "col_idx_mm:";
-const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:"; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
+const COL_IDX_BLOOM_PREFIX: &str = "col_idx_blo:";
+/// `col_tag:{tag}` -> `tags::TagMeta`: a tag of the collection (card #981).
+const COL_TAG_PREFIX: &str = "col_tag:";
+/// `col_kept:{block}:{epoch}` -> a block as it was before a write retired it,
+/// kept for the tags that name it; `col_kept:tail:{tag}` -> a tag's tail,
+/// sealed when the tag was taken.
+const COL_KEPT_PREFIX: &str = "col_kept:";
+
+mod tags;
+pub use tags::TagInfo; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
 /// The rows one bloom filter of a bloom index answers for.
 const BLOOM_CHUNK_ROWS: u64 = 1000;
@@ -150,6 +159,12 @@ pub struct ColumnarCollectionMeta {
     /// `None`: rows are kept until they are deleted.
     #[serde(default)]
     pub retention_secs: Option<u64>,
+    /// Moved by each tag taken: a block retired at an epoch is kept under
+    /// it (`col_kept:{block}:{epoch}`), and a tag reads, for each of its
+    /// blocks, the first copy kept at or after its own epoch, else the
+    /// block as stored (`tags.rs`).
+    #[serde(default)]
+    pub block_epoch: u64,
 }
 
 /// An index build that was accepted and has not finished.
@@ -625,6 +640,9 @@ pub struct ColumnarCollection {
     /// Where the backing collection keeps its keys.
     ks: Keyspace,
     meta: Arc<RwLock<ColumnarCollectionMeta>>,
+    /// Set on a handle that reads a tag (`at_tag`): its blocks are the
+    /// tag's, it has no tail and no index, and it is never written.
+    at: Option<Arc<tags::TagView>>,
 }
 
 impl Clone for ColumnarCollection {
@@ -635,6 +653,7 @@ impl Clone for ColumnarCollection {
             cf_name: self.cf_name.clone(),
             ks: self.ks.clone(),
             meta: self.meta.clone(),
+            at: self.at.clone(),
         }
     }
 }
@@ -681,6 +700,7 @@ impl ColumnarCollection {
             index_base: Default::default(),
             index_builds: Default::default(),
             retention_secs: None,
+            block_epoch: 0,
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -706,6 +726,7 @@ impl ColumnarCollection {
             cf_name,
             ks,
             meta: Arc::new(RwLock::new(meta)),
+            at: None,
         };
         // Nothing of an earlier collection of that name is kept.
         *created.store().blocks.write() = Some(Vec::new());
@@ -748,6 +769,7 @@ impl ColumnarCollection {
             cf_name,
             ks,
             meta: Arc::new(RwLock::new(meta)),
+            at: None,
         };
         if format < BLOCK_FORMAT {
             loaded.migrate()?;
@@ -825,6 +847,9 @@ impl ColumnarCollection {
     pub(crate) fn larger_than_kept(&self) -> bool {
         // What a row of a few columns takes decoded, at the least.
         const ROW: usize = 48;
+        if self.at.is_some() {
+            return false;
+        }
         self.store().blocks.read().is_none() && self.count().saturating_mul(ROW) > decoded_budget()
     }
 
@@ -844,6 +869,18 @@ impl ColumnarCollection {
             .map_err(|e| DbError::InternalError(e.to_string()))?
             .compression
             .clone();
+        if let Some(view) = &self.at {
+            let wanted: Vec<Arc<ColBlock>> = view
+                .blocks
+                .iter()
+                .filter(|block| only.is_none_or(|only| only.contains(&block.key)))
+                .cloned()
+                .collect();
+            for part in wanted.chunks(at_once.max(1)) {
+                f(part.to_vec())?;
+            }
+            return Ok(());
+        }
         let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
         if only.is_none() {
             WINDOWED_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -897,6 +934,9 @@ impl ColumnarCollection {
 
     /// The blocks, in the order of their keys: from memory, or read once.
     fn blocks(&self, cf: &KsCf, compression: &CompressionType) -> DbResult<Vec<Arc<ColBlock>>> {
+        if let Some(view) = &self.at {
+            return Ok(view.blocks.clone());
+        }
         let store = self.store();
         store.used.store(
             USES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
@@ -941,6 +981,10 @@ impl ColumnarCollection {
         cf: &KsCf,
         compression: &CompressionType,
     ) -> DbResult<Vec<(String, serde_json::Map<String, Value>)>> {
+        // A tag's tail was sealed into one of its blocks.
+        if self.at.is_some() {
+            return Ok(Vec::new());
+        }
         let prefix = COL_ROW_PREFIX.as_bytes();
         let mut rows = Vec::new();
         for (key, bytes) in self.db.prefix_iterator_ks(cf, prefix).flatten() {
@@ -1484,8 +1528,10 @@ impl ColumnarCollection {
         // single row goes, sealed anew from the rows left otherwise.
         let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
         let mut rewritten: Vec<(String, Option<ColBlock>)> = Vec::new();
+        let pins = self.pinned(&cf)?;
         for (at, gone) in in_blocks {
             let block = &rows.blocks[at];
+            self.retire(&cf, &mut batch, &pins, meta.block_epoch, &block.key)?;
             let old_key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
             let smaller = if gone.len() >= block.len() {
                 None
@@ -1600,7 +1646,9 @@ impl ColumnarCollection {
         let merged = ColBlock::seal(&names, &rows);
 
         let mut batch = KvBatch::default();
+        let pins = self.pinned(&cf)?;
         for block in merged_from {
+            self.retire(&cf, &mut batch, &pins, meta.block_epoch, &block.key)?;
             batch.delete_ks(&cf, format!("{}{}", COL_BLOCK_PREFIX, block.key).as_bytes());
         }
         self.stage_block(&cf, &mut batch, &meta.compression, &merged)?;
@@ -1730,6 +1778,7 @@ impl ColumnarCollection {
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         let mut batch = KvBatch::default();
         if let Some((column, renamed)) = &stored {
+            let pins = self.pinned(&cf)?;
             let prefix = COL_BLOCK_PREFIX.as_bytes();
             for (key, bytes) in db.prefix_iterator_ks(&cf, prefix).flatten() {
                 if !key.starts_with(prefix) {
@@ -1749,6 +1798,7 @@ impl ColumnarCollection {
                 let Some(at) = block.names.iter().position(|n| n == column) else {
                     continue;
                 };
+                self.retire(&cf, &mut batch, &pins, meta.block_epoch, &block.key)?;
                 match renamed {
                     Some(to) => block.rename_column(at, to),
                     None => block.remove_column(at),
@@ -1853,6 +1903,7 @@ impl ColumnarCollection {
         let mut removed = 0u64;
         let mut first: Option<String> = None;
         let mut rewritten: Vec<(String, Option<ColBlock>)> = Vec::new();
+        let pins = self.pinned(&cf)?;
         for block in &rows.blocks {
             if block.key.as_str() >= cutoff.as_str() {
                 continue;
@@ -1872,6 +1923,7 @@ impl ColumnarCollection {
             if old == 0 {
                 continue;
             }
+            self.retire(&cf, &mut batch, &pins, meta.block_epoch, &block.key)?;
             let old_key = format!("{}{}", COL_BLOCK_PREFIX, block.key);
             batch.delete_ks(&cf, old_key.as_bytes());
             let smaller = if old == len {
@@ -2317,6 +2369,11 @@ impl ColumnarCollection {
         // of its prefix: `col:` sorts right before `col_idx…`/`col_meta:`,
         // and an unbounded walk used to delete the schema along with the data.
         let mut batch = KvBatch::default();
+        // The blocks a tag names are kept for it.
+        let pins = self.pinned(&cf)?;
+        for key in &pins {
+            self.retire(&cf, &mut batch, &pins, meta.block_epoch, key)?;
+        }
         for prefix in [
             COL_DATA_PREFIX,
             COL_BLOCK_PREFIX,

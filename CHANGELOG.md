@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Tags of a columnar collection.** `POST …/columnar/{c}/tags {"tag": "q3"}` names the collection's rows as they are; `FOR r IN c OPTIONS {tag: "q3"}` reads them later as they were, whatever was inserted, deleted, compacted, pruned or changed in the schema since; `POST …/tags/q3/restore` (Admin) makes them the collection's rows again, and `DELETE …/tags/q3` (Admin) frees what only that tag kept. Blocks are never changed in place, so taking a tag copies nothing but the rows not yet sealed into a block; a write that replaces or removes a block a tag names keeps a copy first (`col_kept:`). Local to the node: not replicated, not dumped; a restore is refused while the node replicates. Branches (a collection that starts from a tag's blocks) are to come.
+
 ### Changed
 
 - **A new data directory is created on solistore.** Through 2.13.0 it was created on RocksDB unless `SOLIDB_ENGINE=solistore` said otherwise; now it is solistore unless `SOLIDB_ENGINE=rocksdb` says otherwise. Nothing changes for a directory that holds data: it is opened with the engine recorded in its `ENGINE` file (RocksDB, for one from before that file), and upgrading converts nothing. To move a RocksDB directory, stop the server and run `solidb-migrate-engine <data-dir>`, as before. The server's start-up log now names the engine (`Storage engine initialized: solistore`). Building from source, the `engine-solistore` feature is on by default; `cargo build --no-default-features` gives a binary with RocksDB alone, whose new directories are RocksDB's. See RocksDB & solistore.

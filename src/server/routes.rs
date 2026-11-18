@@ -728,6 +728,19 @@ pub fn create_router(
             put(super::columnar_handlers::truncate_columnar_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/tags",
+            post(super::columnar_handlers::create_columnar_tag_handler)
+                .get(super::columnar_handlers::list_columnar_tags_handler),
+        )
+        .route(
+            "/_api/database/{db}/columnar/{collection}/tags/{tag}",
+            delete(super::columnar_handlers::drop_columnar_tag_handler),
+        )
+        .route(
+            "/_api/database/{db}/columnar/{collection}/tags/{tag}/restore",
+            post(super::columnar_handlers::restore_columnar_tag_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/compact",
             post(super::columnar_handlers::compact_columnar_handler),
         )

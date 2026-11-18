@@ -356,6 +356,67 @@
         </div>
       </section>
 
+      <section id="tags" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-sky-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(14,165,233,0.5)]">
+              <i class="fas fa-tag text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Tags</h2>
+          </div>
+
+          <p class="text-gray-300 mb-6">
+            A tag names the rows of a collection as they are now: a query reads them later as they were, whatever was inserted, deleted, compacted or pruned since, and a restore makes them the collection's rows again. Keep the rows a report or a training run was computed on, or take a tag before a load you may want to undo. Blocks are never changed in place, so a tag copies nothing when it is taken but the few rows not yet sealed into a block; a write that would replace or remove a block a tag names keeps a copy of it first.
+          </p>
+
+          <div class="space-y-6">
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/tags</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Takes a tag. A name is 1 to 128 letters, digits, <code>_</code>, <code>-</code> or <code>.</code>. <code>GET</code> on the same path lists the tags.</p>
+              <pre><code class="language-json text-sm">{ "tag": "q3" }</code></pre>
+              <pre class="mt-4"><code class="language-json text-sm">{ "tag": "q3", "created_at": 1795022013, "row_count": 3000000, "blocks": 46 }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs font-bold rounded">SDBQL</span>
+                <code class="text-gray-300">FOR r IN metrics OPTIONS { tag: "q3" }</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Reads the collection as the tag holds it, through the same paths as any read: aggregations on the arrays, counts, filters. No index is used. A query reads a collection at one tag, or as it is: reading it both ways in one query is refused.</p>
+              <pre><code class="language-sql text-sm">FOR r IN metrics OPTIONS { tag: "q3" }
+  COLLECT host = r.host AGGREGATE avg = AVG(r.cpu)
+  RETURN { host, avg }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/tags/:tag/restore</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Needs Admin. The collection's rows and schema become the tag's; what it held is kept for the other tags that name it. Its indexes answer for no row afterwards: create them again. Refused while the node replicates.</p>
+              <pre><code class="language-json text-sm">{ "status": "restored", "rows": 3000000 }</code></pre>
+            </div>
+
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <div class="flex items-center gap-3 mb-4">
+                <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded">DELETE</span>
+                <code class="text-gray-300">/_api/database/:db/columnar/:collection/tags/:tag</code>
+              </div>
+              <p class="text-gray-400 text-sm mb-4">Needs Admin. Drops the tag; the copies only it kept are freed.</p>
+            </div>
+          </div>
+
+          <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
+            <li>Tags are local to the node: not replicated, not sent to a joining node, not in <code>solidb-dump</code>.</li>
+            <li>A schema change rewrites every block, so it keeps a copy of every block a tag names: the space a tag takes grows with what is rewritten after it.</li>
+            <li>Dropping the collection drops its tags.</li>
+          </ul>
+        </div>
+      </section>
+
       <!-- Aggregations Section -->
       <section id="compacting" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">

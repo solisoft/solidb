@@ -577,12 +577,21 @@ impl Parser {
                     };
                 }
                 "forceIndexHint" => options.force_index_hint = option_bool("FOR", &key, &value)?,
+                "tag" => match value {
+                    Value::String(tag) => options.tag = Some(tag),
+                    other => {
+                        return Err(DbError::ParseError(format!(
+                            "FOR OPTIONS tag must be a string, got {}",
+                            other
+                        )))
+                    }
+                },
                 // AQL knobs with no SoliDB equivalent.
                 "useCache" | "lookahead" | "maxProjections" | "disableIndex"
                 | "useIndexForSort" => {}
                 _ => {
                     return Err(DbError::ParseError(format!(
-                        "Unknown FOR option '{}'. Supported: indexHint, forceIndexHint",
+                        "Unknown FOR option '{}'. Supported: indexHint, forceIndexHint, tag",
                         key
                     )))
                 }

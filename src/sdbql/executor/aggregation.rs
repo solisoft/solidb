@@ -19,7 +19,7 @@ use super::types::Context;
 use super::{compare_values, hash_value, values_equal, QueryExecutor};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
-use crate::storage::{AggregateOp, ColumnarCollection};
+use crate::storage::AggregateOp;
 
 impl<'a> QueryExecutor<'a> {
     pub(super) fn try_columnar_aggregation(
@@ -95,11 +95,10 @@ impl<'a> QueryExecutor<'a> {
         self.note_columnar_read(&database, collection_name)?;
 
         // Load columnar collection
-        let columnar =
-            match ColumnarCollection::load(collection_name.clone(), db_name, database.db_arc()) {
-                Ok(c) => c,
-                Err(_) => return Ok(None),
-            };
+        let columnar = match self.open_columnar(collection_name, db_name, &database) {
+            Ok(c) => c,
+            Err(_) => return Ok(None),
+        };
         let meta = match columnar.metadata() {
             Ok(m) => m,
             Err(_) => return Ok(None),

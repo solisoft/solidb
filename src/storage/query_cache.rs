@@ -592,6 +592,9 @@ struct CollectionWalk {
     bound: HashSet<String>,
     /// Set once something makes the collection set unknowable.
     unknown: bool,
+    /// Each FOR over a named source, with the tag it reads at
+    /// (`OPTIONS {tag}`, card #981).
+    tags: Vec<(String, Option<String>)>,
 }
 
 impl CollectionWalk {
@@ -717,6 +720,10 @@ impl CollectionWalk {
             self.expr(e);
         } else {
             self.source(&f.collection);
+            self.tags.push((
+                f.collection.trim_matches('`').to_string(),
+                f.options.as_ref().and_then(|o| o.tag.clone()),
+            ));
         }
         if let Some(e) = &f.system_time {
             self.expr(e);
@@ -856,6 +863,34 @@ pub fn cacheable_collections(query: &crate::sdbql::Query) -> Option<CollectionRe
         }
     }
     Some(refs)
+}
+
+/// The tag each collection a query reads at (`FOR … OPTIONS {tag}`, card
+/// #981), for the collections read at one. A collection is read at one tag
+/// in a query, or as it is: a query that reads it both ways, or at two tags,
+/// is refused.
+pub fn columnar_tags(
+    query: &crate::sdbql::Query,
+) -> crate::error::DbResult<HashMap<String, String>> {
+    let mut walk = CollectionWalk::default();
+    walk.query(query);
+    let mut seen: HashMap<String, Option<String>> = HashMap::new();
+    for (name, tag) in walk.tags {
+        match seen.get(&name) {
+            Some(before) if *before != tag => {
+                return Err(crate::error::DbError::BadRequest(format!(
+                    "A query reads '{name}' at one tag, or as it is, not both"
+                )))
+            }
+            _ => {
+                seen.insert(name, tag);
+            }
+        }
+    }
+    Ok(seen
+        .into_iter()
+        .filter_map(|(name, tag)| tag.map(|tag| (name, tag)))
+        .collect())
 }
 
 #[cfg(test)]

@@ -250,8 +250,7 @@ impl QueryExecutor<'_> {
             return Ok(None);
         }
         self.note_columnar_read(&database, name)?;
-        let columnar =
-            crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
+        let columnar = self.open_columnar(name, db_name, &database)?;
         if columnar.larger_than_kept() {
             return Ok(None);
         }

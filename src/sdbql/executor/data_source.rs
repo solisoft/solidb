@@ -274,11 +274,7 @@ impl<'a> QueryExecutor<'a> {
         }
         self.note_columnar_read(&database, name)?;
 
-        Ok(Some(crate::storage::ColumnarCollection::load(
-            name.to_string(),
-            db_name,
-            database.db_arc(),
-        )?))
+        Ok(Some(self.open_columnar(name, db_name, &database)?))
     }
 
     /// Try to optimize columnar aggregation queries

@@ -1478,6 +1478,21 @@ Rules that keep it sound:
   new way to hold blocks across a query should go through `row_set()`.
   A count goes block by block and gathers no positions
   (`count_filtered`, `by_block`).
+- **A tag names blocks, and a block a tag names is copied before it goes**
+  (`storage/columnar/tags.rs`, card #981): `col_tag:{tag}` lists the block
+  keys and the epoch (`ColumnarCollectionMeta::block_epoch`, moved by each
+  tag taken); the tail is sealed into `col_kept:tail:{tag}`. Every path
+  that replaces or removes a block calls `retire` first, which copies a
+  pinned block under `col_kept:{block}:{epoch}` once per epoch: today
+  `delete_found`, `merge_one_run`, `change_schema`, `prune_before`,
+  `truncate` and `restore_tag`. A new way to rewrite or delete a block has
+  to call it, or tags read what the write left. A tag reads, per block,
+  the first copy at or after its epoch, else the block as stored. SDBQL
+  opens a collection at its tag through `QueryExecutor::open_columnar`
+  (the tags come from `query_cache::columnar_tags`, one per collection per
+  query): a new SDBQL read of a columnar collection opens it there. A
+  handle at a tag (`at`) has no tail and no index and is never written.
+  Tags are local: a restore is refused while the node replicates.
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.

@@ -1094,3 +1094,100 @@ pub async fn delete_columnar_index_handler(
         "column": column
     })))
 }
+
+/// `{"tag": "q3"}`.
+#[derive(Debug, Deserialize)]
+pub struct TagRequest {
+    pub tag: String,
+}
+
+/// Take a tag of a columnar collection: a name for its rows as they are
+/// now, read later with `FOR r IN c OPTIONS {tag: "q3"}` and restored with
+/// `…/tags/{tag}/restore`. Nothing is copied but the rows not yet sealed
+/// into a block. Local to this node (card #981).
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/tags`
+pub async fn create_columnar_tag_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    Json(req): Json<TagRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let info = tokio::task::spawn_blocking(move || {
+        crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?
+            .create_tag(&req.tag)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok((axum::http::StatusCode::CREATED, Json(info)))
+}
+
+/// The tags of a columnar collection.
+///
+/// # Endpoint
+/// `GET /_api/database/{db}/columnar/{collection}/tags`
+pub async fn list_columnar_tags_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let tags =
+        crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?.list_tags()?;
+    Ok(Json(serde_json::json!({ "tags": tags })))
+}
+
+/// Drop a tag; the blocks only it kept are freed. Admin.
+///
+/// # Endpoint
+/// `DELETE /_api/database/{db}/columnar/{collection}/tags/{tag}`
+pub async fn drop_columnar_tag_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, tag)): Path<(String, String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    tokio::task::spawn_blocking(move || {
+        crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?.drop_tag(&tag)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(serde_json::json!({ "status": "dropped" })))
+}
+
+/// Make a tag the collection's rows again. Admin. Refused while this node
+/// replicates: a tag is local, and the peers would keep the rows it
+/// replaced.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/tags/{tag}/restore`
+pub async fn restore_columnar_tag_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection, tag)): Path<(String, String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, DbError> {
+    outside_a_transaction(&headers, "restoring a tag")?;
+    if state
+        .replication_log
+        .as_deref()
+        .is_some_and(|log| log.is_active())
+    {
+        return Err(DbError::OperationNotSupported(
+            "Restoring a tag is refused while this node replicates: tags are local, \
+             and the peers would keep the rows it replaces"
+                .to_string(),
+        ));
+    }
+    let db = state.storage.get_database(&db_name)?;
+    let name = collection.clone();
+    let rows = tokio::task::spawn_blocking(move || {
+        crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?
+            .restore_tag(&tag)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    crate::storage::query_cache::invalidate_collection(&db_name, &format!("_columnar_{name}"));
+    crate::storage::query_cache::invalidate_collection(&db_name, &name);
+    Ok(Json(
+        serde_json::json!({ "status": "restored", "rows": rows }),
+    ))
+}

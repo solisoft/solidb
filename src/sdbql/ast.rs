@@ -715,6 +715,10 @@ pub struct ForOptions {
     pub index_hint: Vec<String>,
     #[serde(default)]
     pub force_index_hint: bool,
+    /// `tag: "q3"`: read a columnar collection as its tag `q3` holds it
+    /// (card #981).
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
