@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [2.15.0](https://github.com/solisoft/solidb/compare/v2.14.0...v2.15.0) (2026-11-18)
+
+Columnar collections take tags (their rows as they were, read and restored),
+branches (a collection that starts from a tag's rows without copying them)
+and shards across a cluster, with aggregations computed on each shard.
+Collections export as Parquet and Arrow. Vector search finds the true
+nearest neighbours on clustered data, follows a filter inside the graph,
+builds its index on every core and keeps each vector once. A new data
+directory is created on solistore.
 
 ### Added
 
