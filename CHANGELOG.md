@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [2.14.0](https://github.com/solisoft/solidb/compare/v2.13.0...v2.14.0) (2026-11-18)
+
+Field rules (required fields, types, bounds and allowed values checked on the
+driver's fast write path), point-in-time restore, foreign keys on edges that
+link several collections and deferred on import, a periodic constraint check
+on a cluster, row policies and change events on columnar collections, more
+aggregates computed from the column arrays, and Windows as a service and in
+the notification area. Transaction writes are now replicated on a cluster.
+`VARIANCE` and `STDDEV` may differ from earlier versions in their last digits.
 
 ### Changed
 
