@@ -241,12 +241,9 @@ async fn timed<E: Engine>(
     Ok((done.load(Ordering::Relaxed), elapsed, lats))
 }
 
-async fn run<E: Engine>(a: Args) -> Res<()> {
-    let engine = Arc::new(E::open(&a.settings).await?);
-    let version = engine.version().await?;
-    eprintln!("[vec] {} {version}", a.engine);
-
-    // The data, and the exact answers, before anything is timed.
+/// The data, and the exact answers of every query, plain and filtered,
+/// before anything is timed.
+fn truth(a: &Args) -> (Arc<Vec<Vec<f32>>>, Vec<Case>, Vec<Case>) {
     let began = Instant::now();
     let data: Arc<Vec<Vec<f32>>> = Arc::new((0..a.n).map(|i| vector(0, i, a.dim)).collect());
     let mut cases = Vec::new();
@@ -300,6 +297,54 @@ async fn run<E: Engine>(a: Args) -> Res<()> {
         a.queries,
         began.elapsed().as_secs_f64()
     );
+
+    (data, cases, filtered)
+}
+
+/// Write the data, the queries and their exact answers for an engine that
+/// runs outside this harness (LanceDB, from Python: `vec_lance.py`).
+/// `data.f32` and `queries.f32` hold the vectors one after the other as
+/// little-endian f32; `truth.json` the answers and each query's category.
+fn dump(a: &Args) -> Res<()> {
+    let dir = a
+        .out
+        .clone()
+        .ok_or("--out <directory> is required with --engine dump")?;
+    std::fs::create_dir_all(&dir)?;
+    let (data, cases, filtered) = truth(a);
+    let write = |name: &str, rows: &mut dyn Iterator<Item = &Vec<f32>>| -> Res<()> {
+        let mut bytes = Vec::new();
+        for v in rows {
+            for x in v {
+                bytes.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        std::fs::write(format!("{dir}/{name}"), bytes)?;
+        Ok(())
+    };
+    write("data.f32", &mut data.iter())?;
+    write("queries.f32", &mut cases.iter().map(|c| &c.vector))?;
+    let report = json!({
+        "n": a.n, "dim": a.dim, "k": a.k, "categories": CATEGORIES,
+        "cats": filtered.iter().map(|c| c.cat).collect::<Vec<_>>(),
+        "plain": cases.iter().map(|c| &c.want).collect::<Vec<_>>(),
+        "filtered": filtered.iter().map(|c| &c.want).collect::<Vec<_>>(),
+    });
+    std::fs::write(format!("{dir}/truth.json"), serde_json::to_string(&report)?)?;
+    eprintln!(
+        "[vec] dumped {} vectors and {} queries to {dir}",
+        a.n,
+        cases.len()
+    );
+    Ok(())
+}
+
+async fn run<E: Engine>(a: Args) -> Res<()> {
+    let engine = Arc::new(E::open(&a.settings).await?);
+    let version = engine.version().await?;
+    eprintln!("[vec] {} {version}", a.engine);
+
+    let (data, cases, filtered) = truth(&a);
 
     // Load, then build the index (some engines build it as they load).
     engine.reset(a.dim).await?;
@@ -382,6 +427,7 @@ async fn run<E: Engine>(a: Args) -> Res<()> {
 async fn main() -> Res<()> {
     let a = parse_args();
     match a.engine.as_str() {
+        "dump" => dump(&a),
         "solidb" => run::<engines::soli::Soli>(a).await,
         "pgvector" => run::<engines::pgvector::PgVector>(a).await,
         other => Err(format!("unknown engine {other}").into()),
