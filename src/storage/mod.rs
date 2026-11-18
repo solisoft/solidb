@@ -2,6 +2,8 @@
 /// [`kv::Kv`]; it no longer means RocksDB is underneath.
 pub type RocksDb = kv::Kv;
 
+#[cfg(feature = "export-arrow")]
+pub mod arrow_export;
 pub mod blocks;
 pub mod cf_ops;
 pub mod codec;

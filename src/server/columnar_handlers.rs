@@ -1240,3 +1240,21 @@ pub async fn list_columnar_branches_handler(
         crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?.branches()?;
     Ok(Json(serde_json::json!({ "branches": branches })))
 }
+
+/// Export a columnar collection: `?format=parquet` (one zstd-compressed
+/// file) or `?format=arrow` (an Arrow IPC stream), the row id first in
+/// `_id`. Read by pyarrow, pandas, Polars, DuckDB (card #980).
+///
+/// # Endpoint
+/// `GET /_api/database/{db}/columnar/{collection}/export`
+pub async fn export_columnar_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<
+        crate::server::handlers::import_export::ExportQuery,
+    >,
+) -> Result<axum::response::Response, DbError> {
+    let format = query.format.unwrap_or_else(|| "parquet".to_string());
+    crate::server::handlers::import_export::export_typed(state, db_name, collection, &format, true)
+        .await
+}

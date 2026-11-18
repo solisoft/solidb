@@ -65,11 +65,22 @@ fn import_doc_batch(
     }
 }
 
+/// `?format=parquet|arrow` on an export; JSON lines without it.
+#[derive(Debug, Default, Deserialize)]
+pub struct ExportQuery {
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
 pub async fn export_collection(
     State(state): State<AppState>,
     Path((db_name, coll_name)): Path<(String, String)>,
+    Query(query): Query<ExportQuery>,
     _headers: HeaderMap,
 ) -> Result<Response, DbError> {
+    if let Some(format) = query.format.as_deref().filter(|f| *f != "jsonl") {
+        return export_typed(state, db_name, coll_name, format, false).await;
+    }
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
     let shard_config = collection.get_shard_config();
@@ -632,4 +643,135 @@ pub async fn import_collection(
         answer["orphans"] = Value::Array(orphans);
     }
     Ok(Json(answer))
+}
+
+/// A collection exported as Parquet or an Arrow IPC stream (card #980),
+/// written on a blocking thread and sent as it is written: nothing holds
+/// more than a batch and a megabyte of output.
+pub(crate) async fn export_typed(
+    state: AppState,
+    db_name: String,
+    name: String,
+    format: &str,
+    columnar: bool,
+) -> Result<Response, DbError> {
+    #[cfg(feature = "export-arrow")]
+    {
+        use crate::storage::arrow_export::{export_collection, export_columnar, ExportFormat};
+        let format = ExportFormat::parse(format).ok_or_else(|| {
+            DbError::BadRequest(format!(
+                "Unknown export format '{format}': jsonl, parquet or arrow"
+            ))
+        })?;
+        let database = state.storage.get_database(&db_name)?;
+        // Checked before the response starts: an error after it is a cut
+        // stream.
+        let source = if columnar {
+            Err(crate::storage::ColumnarCollection::load(
+                name.clone(),
+                &db_name,
+                database.db_arc(),
+            )?)
+        } else {
+            let collection = database.get_collection(&name)?;
+            if collection
+                .get_shard_config()
+                .is_some_and(|c| c.num_shards > 0)
+            {
+                return Err(DbError::BadRequest(
+                    "A sharded collection is exported as JSON lines only".to_string(),
+                ));
+            }
+            if collection.get_type() == "blob" {
+                return Err(DbError::BadRequest(
+                    "A blob collection is exported as JSON lines only".to_string(),
+                ));
+            }
+            Ok(collection)
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(8);
+        tokio::task::spawn_blocking(move || {
+            let out = ChannelWriter {
+                tx: tx.clone(),
+                buf: Vec::with_capacity(ChannelWriter::PIECE),
+            };
+            let done = match &source {
+                Ok(collection) => export_collection(collection, format, out),
+                Err(columnar) => export_columnar(columnar, format, out),
+            };
+            if let Err(e) = done {
+                let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
+            }
+        });
+        let stream = async_stream::stream! {
+            while let Some(piece) = rx.recv().await {
+                yield piece;
+            }
+        };
+        let filename = sanitize_filename(&format!("{name}.{}", format.extension()));
+        Response::builder()
+            .header("Content-Type", format.content_type())
+            .header(
+                "Content-Disposition",
+                format!("attachment; filename=\"{filename}\""),
+            )
+            .body(Body::from_stream(stream))
+            .map_err(|e| DbError::InternalError(e.to_string()))
+    }
+    #[cfg(not(feature = "export-arrow"))]
+    {
+        let _ = (state, db_name, name, columnar);
+        Err(DbError::BadRequest(format!(
+            "Export format '{format}' needs a server built with the `export-arrow` feature"
+        )))
+    }
+}
+
+/// Sends what is written to it in pieces of [`Self::PIECE`]; the rest when
+/// dropped. A piece the client no longer reads is an error, which stops the
+/// export.
+#[cfg(feature = "export-arrow")]
+struct ChannelWriter {
+    tx: tokio::sync::mpsc::Sender<Result<bytes::Bytes, std::io::Error>>,
+    buf: Vec<u8>,
+}
+
+#[cfg(feature = "export-arrow")]
+impl ChannelWriter {
+    const PIECE: usize = 1 << 20;
+
+    fn send(&mut self) -> std::io::Result<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let piece = bytes::Bytes::from(std::mem::replace(
+            &mut self.buf,
+            Vec::with_capacity(Self::PIECE),
+        ));
+        self.tx
+            .blocking_send(Ok(piece))
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "client gone"))
+    }
+}
+
+#[cfg(feature = "export-arrow")]
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.buf.extend_from_slice(data);
+        if self.buf.len() >= Self::PIECE {
+            self.send()?;
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.send()
+    }
+}
+
+#[cfg(feature = "export-arrow")]
+impl Drop for ChannelWriter {
+    fn drop(&mut self) {
+        let _ = self.send();
+    }
 }

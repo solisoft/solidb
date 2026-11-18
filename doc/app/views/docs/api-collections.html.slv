@@ -378,6 +378,12 @@
                    ...
                  </div>
                </div>
+               <div class="mt-4">
+                 <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Parquet and Arrow</h4>
+                 <p class="text-sm text-gray-400 mb-2"><code>?format=parquet</code> returns one zstd-compressed Parquet file, <code>?format=arrow</code> an Arrow IPC stream: what pyarrow, pandas, Polars, DuckDB and LanceDB read directly, with types. The documents are read twice: once to find each top-level field's type, once to write them. <code>_key</code> comes first; <code>_id</code> and <code>_rev</code> are left out; <code>_created_at</code> and <code>_updated_at</code> are timestamps. A field with a vector index is a fixed-size list of <code>float32</code>, which a reader takes as a tensor; a field of numbers only is <code>int64</code> or <code>float64</code>; a list of numbers is a list of <code>float64</code>; a field that holds values of several kinds, objects or lists of anything else is its JSON text. Every column is nullable. Sharded and blob collections are exported as JSON lines only. A columnar collection is exported with <code>GET /_api/database/:db/columnar/:collection/export?format=parquet</code>, its row id first in <code>_id</code>.</p>
+                 <pre><code class="language-python text-sm">import pyarrow.parquet as pq
+table = pq.read_table("docs.parquet")   # curl …/collection/docs/export?format=parquet -o docs.parquet</code></pre>
+               </div>
             </div>
               <div class="p-6 hover:bg-white/5 transition-colors">
                 <div class="flex items-center gap-3 mb-4">

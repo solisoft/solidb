@@ -126,6 +126,12 @@ fuser = { version = "0.16", optional = true }
 # The pure-Rust storage engine meant to replace RocksDB (integration step S2,
 # see storage/kv). A data directory records which engine wrote it.
 solistore = { version = "0.4.2", optional = true }
+# Collections exported as Parquet and Arrow IPC streams (card #980), for
+# the tools that read training data that way. Large: behind `export-arrow`.
+arrow-array = { version = "60.1.0", optional = true }
+arrow-schema = { version = "60.1.0", optional = true }
+arrow-ipc = { version = "60.1.0", optional = true, default-features = false }
+parquet = { version = "60.1.0", optional = true, default-features = false, features = ["arrow", "zstd"] }
 
 # Daemon mode (Unix only)
 # daemonize crate removed - using custom implementation in src/daemon.rs
@@ -281,6 +287,8 @@ opt-level = 1
 [dev-dependencies]
 tokio-test = "0.4"
 solidb-client = { path = "clients/rust-client" }
+# Read back the Arrow exports in tests/arrow_export_tests.rs.
+arrow-select = "60.1.0"
 
 # Memory allocator: jemalloc fragments far less than glibc malloc and returns
 # freed memory to the OS. With one column family per collection plus many
@@ -332,13 +340,15 @@ tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
-default = ["engine-solistore"]
+default = ["engine-solistore", "export-arrow"]
 fuse = ["dep:fuser"]
 # solistore, built in beside RocksDB and the engine of a new data directory
 # (`SOLIDB_ENGINE=rocksdb` picks RocksDB for one). On by default: a binary
 # built with `--no-default-features` creates and opens RocksDB directories
 # only, and refuses a solistore one by name.
 engine-solistore = ["dep:solistore"]
+# `?format=parquet|arrow` on the collection and columnar exports.
+export-arrow = ["dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc", "dep:parquet"]
 # The six files in tests/ that are benchmarks rather than tests. Off by
 # default, so `cargo test` does not build them — see the [[test]] blocks below.
 bench-tests = []

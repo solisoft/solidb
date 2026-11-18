@@ -733,6 +733,10 @@ pub fn create_router(
                 .get(super::columnar_handlers::list_columnar_tags_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/export",
+            get(super::columnar_handlers::export_columnar_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/branches",
             post(super::columnar_handlers::create_columnar_branch_handler)
                 .get(super::columnar_handlers::list_columnar_branches_handler),

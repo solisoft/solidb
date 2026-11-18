@@ -237,6 +237,14 @@ Two mechanisms, and they are not interchangeable:
 Because a checkpoint hard-links SSTs on the same filesystem, it is not
 protection against losing that filesystem — copy it elsewhere.
 
+**Parquet and Arrow exports** (`storage/arrow_export.rs`, feature
+`export-arrow`, on by default; card #980) are for reading data elsewhere,
+not for backups: nothing reads them back into SoliDB. A document
+collection is read twice (types, then rows); a new kind of field value
+that `Seen::note` does not know becomes JSON text. The HTTP side writes on
+a blocking thread into a channel (`ChannelWriter`), so a response holds a
+batch and a megabyte, never the export.
+
 **To an instant after a checkpoint** (card #852): the replication log is the
 history. `SOLIDB_SYNC_LOG_KEEP_SECS` keeps it (written from the start, and
 not pruned younger than that: `log::keep_secs`, `worker::prune_sync_log`);
