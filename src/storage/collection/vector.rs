@@ -311,6 +311,13 @@ impl Collection {
         let mut fetch = k.saturating_mul(overfetch.max(1)).max(k);
         // What each document read so far answered: the document when it
         // passes the filter, `None` when it fails it or is gone.
+        // The top-level fields the filter's paths start with.
+        let mut filtered_fields: Vec<String> = filter
+            .keys()
+            .map(|path| path.split('.').next().unwrap_or(path).to_string())
+            .collect();
+        filtered_fields.sort();
+        filtered_fields.dedup();
         let mut checked: std::collections::HashMap<String, Option<Value>> =
             std::collections::HashMap::new();
         loop {
@@ -324,12 +331,16 @@ impl Collection {
                     break;
                 }
                 let kept = checked.entry(r.doc_key.clone()).or_insert_with(|| {
-                    match self.get(&r.doc_key) {
-                        Ok(d) => {
-                            Some(d.to_value()).filter(|doc| Self::doc_matches_filter(doc, filter))
-                        }
-                        Err(_) => None, // doc deleted since indexing
+                    // Only the fields the filter names are decoded to check
+                    // it (an embedding is most of a document); the whole
+                    // document is read for the candidates that pass.
+                    let passes = self
+                        .get_value_projected(&r.doc_key, &filtered_fields)
+                        .is_ok_and(|v| Self::doc_matches_filter(&v, filter));
+                    if !passes {
+                        return None;
                     }
+                    self.get(&r.doc_key).ok().map(|d| d.to_value()) // None: deleted since indexing
                 });
                 if let Some(doc) = kept {
                     out.push((doc.clone(), r.score));
