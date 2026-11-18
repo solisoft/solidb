@@ -23,7 +23,7 @@ pub struct CollectionShardConfig {
 }
 
 /// Shard assignment information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShardAssignment {
     pub shard_id: u16,
     pub primary_node: String,
@@ -305,7 +305,7 @@ impl ShardCoordinator {
 
     /// Compute shard table assignments based on current cluster state
     /// Only uses HEALTHY nodes to ensure data availability
-    fn compute_shard_table(
+    pub(crate) fn compute_shard_table(
         &self,
         database: &str,
         collection: &str,

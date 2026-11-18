@@ -110,6 +110,33 @@ pub struct CreateColumnarRequest {
     pub columns: Vec<ColumnDefRequest>,
     #[serde(default)]
     pub compression: Option<String>,
+    /// Split the collection into this many shards (card #899), by the
+    /// column `shard_key`, each on `replication_factor` nodes.
+    #[serde(default)]
+    pub num_shards: Option<u16>,
+    #[serde(default)]
+    pub shard_key: Option<String>,
+    #[serde(default)]
+    pub replication_factor: Option<u16>,
+}
+
+/// A request a coordinating node sends a shard's node: written here only,
+/// never logged (`sharding::columnar`).
+fn shard_direct(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get("X-Shard-Direct")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "true")
+}
+
+/// Whether the columnar collection `name` is sharded.
+fn sharded(
+    db: &crate::storage::Database,
+    name: &str,
+) -> Option<crate::storage::columnar::ColumnarShards> {
+    crate::storage::ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())
+        .ok()
+        .and_then(|col| col.sharding())
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,6 +258,7 @@ fn outside_a_transaction(headers: &axum::http::HeaderMap, what: &str) -> Result<
 pub async fn create_columnar_handler(
     State(state): State<AppState>,
     Path(db_name): Path<String>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<CreateColumnarRequest>,
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
@@ -264,15 +292,45 @@ pub async fn create_columnar_handler(
         }
     };
 
-    // Created here and logged for the peers.
     let count = columns.len();
-    let col = crate::sync::columnar::create(
-        &db,
-        state.replication_log.as_deref(),
-        &req.name,
-        columns,
-        compression,
-    )?;
+    if let Some(num_shards) = req.num_shards.filter(|n| *n > 0) {
+        let shard_key = req.shard_key.clone().ok_or_else(|| {
+            DbError::BadRequest(
+                "A sharded columnar collection needs a shard_key column".to_string(),
+            )
+        })?;
+        let name = req.name.clone();
+        let replication_factor = req.replication_factor.unwrap_or(1);
+        let state = state.clone();
+        let col = tokio::task::spawn_blocking(move || {
+            crate::sharding::columnar::create(
+                state.shard_coordinator.as_deref(),
+                &db,
+                state.replication_log.as_deref(),
+                &name,
+                columns,
+                compression,
+                num_shards,
+                &shard_key,
+                replication_factor,
+            )
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+        return Ok(Json(CreateColumnarResponse {
+            status: "created".to_string(),
+            name: col.name,
+            columns: count,
+        }));
+    }
+    // Created here and logged for the peers; a shard a coordinator asks
+    // for is not logged.
+    let log = if shard_direct(&headers) {
+        None
+    } else {
+        state.replication_log.as_deref()
+    };
+    let col = crate::sync::columnar::create(&db, log, &req.name, columns, compression)?;
 
     // Store metadata reference in a system collection if needed
     // For now, the metadata is stored in the column family itself
@@ -376,10 +434,33 @@ pub async fn get_columnar_handler(
 pub async fn delete_columnar_handler(
     State(state): State<AppState>,
     Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
-
-    crate::sync::columnar::drop(&db, state.replication_log.as_deref(), &collection)?;
+    let log = if shard_direct(&headers) {
+        None
+    } else {
+        state.replication_log.as_deref()
+    };
+    if let Some(shards) = sharded(&db, &collection) {
+        let state = state.clone();
+        let name = collection.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::sharding::columnar::drop(
+                state.shard_coordinator.as_deref(),
+                &db,
+                state.replication_log.as_deref(),
+                &name,
+                &shards,
+            )
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+        return Ok(Json(
+            serde_json::json!({"status": "deleted", "name": collection}),
+        ));
+    }
+    crate::sync::columnar::drop(&db, log, &collection)?;
 
     Ok(Json(serde_json::json!({
         "status": "deleted",
@@ -412,6 +493,25 @@ pub async fn insert_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     outside_a_transaction(&headers, "inserting into")?;
     let db = state.storage.get_database(&db_name)?;
+    if sharded(&db, &collection).is_some() {
+        let state = state.clone();
+        let rows = req.rows;
+        let ids = tokio::task::spawn_blocking(move || {
+            crate::sharding::columnar::insert(
+                state.shard_coordinator.as_deref(),
+                &db,
+                &collection,
+                rows,
+            )
+        })
+        .await
+        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+        return Ok(Json(InsertColumnarResponse {
+            status: "ok".to_string(),
+            inserted: ids.len(),
+            ids,
+        }));
+    }
 
     let inserted_ids = crate::sync::columnar::insert(
         &db,
@@ -704,6 +804,7 @@ pub async fn aggregate_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
     db.columnar_policy_lets(&collection, admin(&claims))?;
+    crate::sync::columnar::refuse_if_sharded(&db, &collection, "this endpoint (use SDBQL)")?;
     let op = AggregateOp::from_str(&req.operation).ok_or_else(|| {
         DbError::BadRequest(format!(
             "Unknown aggregation operation: {}. Supported: SUM, AVG, COUNT, MIN, MAX, \
@@ -777,6 +878,7 @@ pub async fn query_columnar_handler(
 ) -> Result<impl IntoResponse, DbError> {
     let db = state.storage.get_database(&db_name)?;
     db.columnar_policy_lets(&collection, admin(&claims))?;
+    crate::sync::columnar::refuse_if_sharded(&db, &collection, "this endpoint (use SDBQL)")?;
 
     let filter = req
         .filter
@@ -1257,4 +1359,76 @@ pub async fn export_columnar_handler(
     let format = query.format.unwrap_or_else(|| "parquet".to_string());
     crate::server::handlers::import_export::export_typed(state, db_name, collection, &format, true)
         .await
+}
+
+/// The rows of a shard, for the node that coordinates a sharded collection
+/// (card #899): MessagePack `[[id, row], …]`, ascending by id. Only on a
+/// request that says it is one (`X-Shard-Direct`).
+///
+/// # Endpoint
+/// `GET /_api/database/{db}/columnar/{collection}/rows`
+pub async fn shard_rows_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+) -> Result<axum::response::Response, DbError> {
+    if !shard_direct(&headers) {
+        return Err(DbError::BadRequest(
+            "This endpoint serves the nodes of a cluster (X-Shard-Direct)".to_string(),
+        ));
+    }
+    let db = state.storage.get_database(&db_name)?;
+    let bytes = tokio::task::spawn_blocking(move || {
+        let rows = crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?
+            .rows_with_ids()?;
+        rmp_serde::to_vec(&rows).map_err(|e| DbError::InternalError(e.to_string()))
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    axum::response::Response::builder()
+        .header("Content-Type", "application/msgpack")
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| DbError::InternalError(e.to_string()))
+}
+
+/// Rows a coordinating node writes into a shard under the ids it gave them
+/// (card #899): MessagePack `[[id, row], …]`, checked against the schema
+/// there. Not logged. Only with `X-Shard-Direct`.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/rows`
+pub async fn shard_insert_rows_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<impl IntoResponse, DbError> {
+    if !shard_direct(&headers) {
+        return Err(DbError::BadRequest(
+            "This endpoint serves the nodes of a cluster (X-Shard-Direct)".to_string(),
+        ));
+    }
+    let rows: Vec<crate::sharding::columnar::IdRow> = rmp_serde::from_slice(&body)
+        .map_err(|e| DbError::BadRequest(format!("shard rows: {e}")))?;
+    let db = state.storage.get_database(&db_name)?;
+    let written = tokio::task::spawn_blocking(move || {
+        let col = crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?;
+        // Checked here too: the header is a client's to send.
+        let (ids, rows): (Vec<String>, Vec<serde_json::Value>) = rows
+            .into_iter()
+            .map(|(id, row)| (id, serde_json::Value::Object(row)))
+            .unzip();
+        if ids.iter().any(|id| uuid::Uuid::parse_str(id).is_err()) {
+            return Err(DbError::BadRequest(
+                "a shard row's id is a UUID".to_string(),
+            ));
+        }
+        let rows = col.conform_rows(rows)?;
+        col.insert_rows_with_ids(ids.into_iter().zip(rows).collect())
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok(Json(
+        serde_json::json!({ "status": "ok", "inserted": written }),
+    ))
 }

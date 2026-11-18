@@ -537,6 +537,18 @@ impl<'a> QueryExecutor<'a> {
     ) -> DbResult<crate::storage::ColumnarCollection> {
         let columnar =
             crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
+        // A sharded collection is read as the rows of its shards, gathered
+        // (card #899).
+        if let Some(shards) = columnar.sharding() {
+            self.refuse_untracked_read("a sharded collection")?;
+            let rows = crate::sharding::columnar::gather(
+                self.shard_coordinator.as_deref(),
+                database,
+                name,
+                &shards,
+            )?;
+            return columnar.gathered(rows);
+        }
         match self.caches.columnar_tags.lock().get(name).cloned() {
             Some(tag) => columnar.at_tag(&tag),
             None => Ok(columnar),

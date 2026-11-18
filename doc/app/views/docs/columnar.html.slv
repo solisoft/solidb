@@ -356,6 +356,33 @@
         </div>
       </section>
 
+      <section id="sharding" class="scroll-mt-24">
+        <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
+          <div class="flex items-center mb-6">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg mr-4 shadow-[0_0_15px_rgba(99,102,241,0.5)]">
+              <i class="fas fa-network-wired text-sm"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white">Sharding</h2>
+          </div>
+          <p class="text-gray-300 mb-6">
+            A columnar collection can be split into shards across the nodes of a cluster: each row goes to the shard its <code>shard_key</code> column hashes to, and each shard lives on <code>replication_factor</code> nodes. Rows are inserted and queried through the collection's name, from any node.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+              <code class="text-gray-300">/_api/database/:db/columnar</code>
+            </div>
+            <pre><code class="language-json text-sm">{ "name": "metrics", "columns": [ &hellip; ], "num_shards": 8, "shard_key": "host", "replication_factor": 2 }</code></pre>
+          </div>
+          <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
+            <li>The node an insert reaches checks the rows against the schema, gives them their ids, and writes each shard on each of its nodes: a shard's copies hold the same rows under the same ids. The shards are columnar collections named <code>metrics_s0</code>, <code>metrics_s1</code>&hellip;</li>
+            <li>An SDBQL query reads the rows of every shard and answers what it would answer on one collection.</li>
+            <li>Dropping the collection drops its shards on every node.</li>
+            <li>Not yet on a sharded collection: deletes, truncate, column changes, indexes, retention, compaction, tags, branches, and the <code>/query</code> and <code>/aggregate</code> endpoints (use SDBQL). They are refused.</li>
+          </ul>
+        </div>
+      </section>
+
       <section id="tags" class="scroll-mt-24">
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8 hover:border-white/10 transition-colors">
           <div class="flex items-center mb-6">

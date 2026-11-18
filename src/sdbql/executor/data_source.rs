@@ -167,6 +167,22 @@ impl<'a> QueryExecutor<'a> {
             .iter()
             .map(|ctx| self.evaluate_expr_with_context(&clause.document, ctx))
             .collect::<DbResult<Vec<Value>>>()?;
+        // A sharded collection's rows go to its shards (card #899).
+        let sharded = crate::storage::ColumnarCollection::load(
+            clause.collection.clone(),
+            &database.name,
+            database.db_arc(),
+        )
+        .is_ok_and(|col| col.sharding().is_some());
+        if sharded {
+            let ids = crate::sharding::columnar::insert(
+                self.shard_coordinator.as_deref(),
+                &database,
+                &clause.collection,
+                documents,
+            )?;
+            return Ok(Some(ids.len()));
+        }
         let inserted = crate::sync::columnar::insert(
             &database,
             self.replication,

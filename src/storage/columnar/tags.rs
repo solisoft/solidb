@@ -247,6 +247,12 @@ impl ColumnarCollection {
     fn take_tag(&self, tag: &str) -> DbResult<TagInfo> {
         self.refuse_on_view()?;
         self.refuse_on_branch("tagged")?;
+        if self.sharding().is_some() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{}' is sharded, which is not tagged",
+                self.name
+            )));
+        }
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
         let mut meta = self.meta.write().map_err(internal)?;
@@ -414,6 +420,32 @@ impl ColumnarCollection {
         meta.columns = tagged.columns;
         meta.compression = tagged.compression;
         meta.row_count = tagged.row_count;
+        meta.tail_rows = 0;
+        meta.index_rows.clear();
+        meta.index_base.clear();
+        meta.index_builds.clear();
+        Ok(Self {
+            name: self.name.clone(),
+            db: self.db.clone(),
+            cf_name: self.cf_name.clone(),
+            ks: self.ks.clone(),
+            meta: Arc::new(RwLock::new(meta)),
+            at: Some(Arc::new(TagView { blocks })),
+            branch: None,
+        })
+    }
+
+    /// A handle that reads `rows` (id and row, ascending by id) as this
+    /// collection's: what a sharded collection gathers from its shards.
+    /// Like a tag's, it has no tail and no index and is never written.
+    pub fn gathered(&self, rows: Vec<(String, serde_json::Map<String, Value>)>) -> DbResult<Self> {
+        let mut meta = self.meta.read().map_err(internal)?.clone();
+        let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+        let blocks = rows
+            .chunks(BLOCK_ROWS)
+            .map(|part| Arc::new(ColBlock::seal(&names, part)))
+            .collect();
+        meta.row_count = rows.len() as u64;
         meta.tail_rows = 0;
         meta.index_rows.clear();
         meta.index_base.clear();

@@ -96,6 +96,17 @@ impl ColumnType {
     }
 }
 
+/// How a sharded columnar collection is split (card #899): rows go to the
+/// shard their `shard_key` column hashes to, on the nodes of its
+/// assignment.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ColumnarShards {
+    pub num_shards: u16,
+    pub shard_key: String,
+    pub replication_factor: u16,
+    pub assignments: HashMap<u16, crate::sharding::coordinator::ShardAssignment>,
+}
+
 /// Column definition for columnar collections
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnDef {
@@ -175,6 +186,11 @@ pub struct ColumnarCollectionMeta {
     /// blocks it starts from, read in place until it writes them.
     #[serde(default)]
     pub parent: Option<BranchOf>,
+    /// Set on a sharded collection (card #899): it holds no rows of its
+    /// own; they are in its shards, `{name}_s{shard}`, on the nodes the
+    /// assignments name (`sharding::columnar`).
+    #[serde(default)]
+    pub sharding: Option<ColumnarShards>,
 }
 
 /// An index build that was accepted and has not finished.
@@ -715,6 +731,7 @@ impl ColumnarCollection {
             retention_secs: None,
             block_epoch: 0,
             parent: None,
+            sharding: None,
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -4405,6 +4422,57 @@ fn scan_block(
 /// over without a word. A column holding values of several kinds is also
 /// stored as JSON text, which no aggregation reads as an array.
 ///
+impl ColumnarCollection {
+    /// `rows` checked against the schema as an insert checks them: what a
+    /// sharded insert sends its shards, which take them as they are.
+    pub fn conform_rows(&self, rows: Vec<Value>) -> DbResult<Vec<serde_json::Map<String, Value>>> {
+        let schema = self.metadata()?.columns;
+        rows.into_iter()
+            .enumerate()
+            .map(|(at, row)| conform(&schema, at, row))
+            .collect()
+    }
+
+    /// How the collection is sharded, when it is.
+    pub fn sharding(&self) -> Option<ColumnarShards> {
+        self.meta.read().ok().and_then(|m| m.sharding.clone())
+    }
+
+    /// Mark this new, empty collection as the sharded collection `shards`
+    /// describes.
+    pub fn set_sharding(&self, shards: ColumnarShards) -> DbResult<()> {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        let mut meta = self
+            .meta
+            .write()
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        let mut new_meta = meta.clone();
+        new_meta.sharding = Some(shards);
+        let mut batch = KvBatch::default();
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        self.db
+            .write(batch)
+            .map_err(|e| DbError::InternalError(e.to_string()))?;
+        *meta = new_meta;
+        Ok(())
+    }
+
+    /// The rows the collection holds, with their ids, ascending: what a
+    /// sharded collection gathers of one of its shards.
+    pub fn rows_with_ids(&self) -> DbResult<Vec<(String, serde_json::Map<String, Value>)>> {
+        let rows = self.row_set()?;
+        let mut out: Vec<(String, serde_json::Map<String, Value>)> = rows
+            .positions()
+            .map(|(block, row)| match rows.blocks.get(block) {
+                Some(b) => (b.uuids().text(row), b.row(row)),
+                None => rows.tail[row].clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+}
+
 /// Only for rows a client inserts: a replicated row was accepted by its
 /// origin and is taken as it is.
 fn conform(

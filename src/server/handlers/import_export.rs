@@ -667,11 +667,28 @@ pub(crate) async fn export_typed(
         // Checked before the response starts: an error after it is a cut
         // stream.
         let source = if columnar {
-            Err(crate::storage::ColumnarCollection::load(
+            let col = crate::storage::ColumnarCollection::load(
                 name.clone(),
                 &db_name,
                 database.db_arc(),
-            )?)
+            )?;
+            // A sharded collection's rows, gathered from its shards.
+            match col.sharding() {
+                Some(shards) => {
+                    let (coord, db, n) = (
+                        state.shard_coordinator.clone(),
+                        database.clone(),
+                        name.clone(),
+                    );
+                    let rows = tokio::task::spawn_blocking(move || {
+                        crate::sharding::columnar::gather(coord.as_deref(), &db, &n, &shards)
+                    })
+                    .await
+                    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+                    Err(col.gathered(rows)?)
+                }
+                None => Err(col),
+            }
         } else {
             let collection = database.get_collection(&name)?;
             if collection

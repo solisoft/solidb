@@ -1511,6 +1511,18 @@ Rules that keep it sound:
   (`sync::columnar::writing_for`): a new logged columnar write uses it. A
   branch has no branch, no tag, and its columns are not renamed or dropped
   (those rewrite blocks it does not hold).
+- **A sharded columnar collection holds no rows** (`sharding/columnar.rs`,
+  card #899): its meta says how it is split (`ColumnarShards`, replicated
+  in the create's `Definition` and a full sync); its rows are in
+  `{name}_s{shard}` on the nodes of each assignment. Inserts go through
+  `sharding::columnar::insert` (rows checked and given their ids by the
+  coordinator, every copy written with the same ids, not logged), reads
+  through `QueryExecutor::open_columnar`, which gathers the shards into a
+  read-only handle (`gathered`, the tag view). A write that does not route
+  to the shards must be refused (`sync::columnar::refuse_if_sharded`): on
+  the empty collection it would silently write nothing that is read. Shard
+  requests carry `X-Shard-Direct` and are never logged; a shard's rows
+  sent over HTTP are checked against its schema on arrival.
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.

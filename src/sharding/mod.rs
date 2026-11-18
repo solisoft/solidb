@@ -7,6 +7,7 @@ pub mod assignment;
 pub mod batch;
 pub mod blob_rebalance;
 pub mod cleanup;
+pub mod columnar;
 pub mod coordinator;
 pub mod distribution;
 pub mod export_stream;

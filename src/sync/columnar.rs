@@ -40,6 +40,10 @@ struct Definition {
     /// How long rows are kept; an older node neither sends nor reads it.
     #[serde(default)]
     retention_secs: Option<u64>,
+    /// How a sharded collection is split (card #899), so that every node
+    /// knows where its shards are.
+    #[serde(default)]
+    sharding: Option<crate::storage::columnar::ColumnarShards>,
 }
 
 /// The payload of a `ColumnarSetRetention`.
@@ -73,6 +77,7 @@ pub fn create_branch(
     branch: &str,
     from: Option<&str>,
 ) -> DbResult<ColumnarCollection> {
+    refuse_if_sharded(db, parent, "a branch")?;
     let source = ColumnarCollection::load(parent.to_string(), &db.name, db.db_arc())?;
     if source.is_branch() {
         return Err(DbError::OperationNotSupported(format!(
@@ -106,6 +111,51 @@ pub fn create_branch(
     made
 }
 
+/// Create the collection that stands for a sharded columnar collection
+/// (card #899) and log it, with how it is split, for the peers. It holds no
+/// rows: its shards are created by `sharding::columnar::create`.
+pub fn create_sharded(
+    db: &Database,
+    log: Option<&SyncLog>,
+    name: &str,
+    columns: Vec<ColumnDef>,
+    compression: CompressionType,
+    sharding: crate::storage::columnar::ColumnarShards,
+) -> DbResult<ColumnarCollection> {
+    let col = create(db, None, name, columns.clone(), compression.clone())?;
+    col.set_sharding(sharding.clone())?;
+    if let Some(log) = writing(log) {
+        log.append(LogEntry::new_op(
+            db.name.as_str(),
+            name,
+            Operation::ColumnarCreateCollection,
+            "",
+            serde_json::to_vec(&Definition {
+                columns,
+                compression,
+                retention_secs: None,
+                sharding: Some(sharding),
+            })
+            .ok(),
+        ));
+    }
+    ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())
+}
+
+/// A write this version does not route to the shards of a sharded
+/// collection is refused on it (card #899): it would change the empty
+/// collection that stands for them.
+pub fn refuse_if_sharded(db: &Database, name: &str, what: &str) -> DbResult<()> {
+    let sharded = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())
+        .is_ok_and(|col| col.sharding().is_some());
+    if sharded {
+        return Err(DbError::OperationNotSupported(format!(
+            "'{name}' is sharded: {what} is not supported on it yet (inserts and SDBQL reads are)"
+        )));
+    }
+    Ok(())
+}
+
 /// Create a columnar collection on this node and log it for the peers.
 pub fn create(
     db: &Database,
@@ -136,6 +186,7 @@ pub fn create(
                 columns,
                 compression,
                 retention_secs: None,
+                sharding: None,
             })
             .ok(),
         ));
@@ -275,6 +326,7 @@ pub fn delete_rows(
     name: &str,
     ids: &[String],
 ) -> DbResult<Vec<String>> {
+    refuse_if_sharded(db, name, "deleting rows")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let deleted = col.delete_rows(ids)?;
     log_deleted(log, db, name, &deleted);
@@ -291,6 +343,7 @@ pub fn delete_where(
     name: &str,
     filter: &crate::storage::columnar::ColumnFilter,
 ) -> DbResult<usize> {
+    refuse_if_sharded(db, name, "deleting rows")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let deleted = col.delete_where(filter)?;
     log_deleted(log, db, name, &deleted);
@@ -301,6 +354,7 @@ pub fn delete_where(
 /// Empty a collection on this node, keeping its columns, and log it for
 /// the peers.
 pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()> {
+    refuse_if_sharded(db, name, "truncating")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.truncate()?;
     if let Some(log) = writing_for(log, db, name) {
@@ -342,6 +396,7 @@ pub fn add_column(
     name: &str,
     column: ColumnDef,
 ) -> DbResult<()> {
+    refuse_if_sharded(db, name, "changing the columns")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.add_column(column.clone())?;
     log_column(
@@ -357,6 +412,7 @@ pub fn add_column(
 
 /// Drop a column of a collection, and log it for the peers.
 pub fn drop_column(db: &Database, log: Option<&SyncLog>, name: &str, column: &str) -> DbResult<()> {
+    refuse_if_sharded(db, name, "changing the columns")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.drop_column(column)?;
     log_column(log, db, name, Operation::ColumnarDropColumn, column, None);
@@ -371,6 +427,7 @@ pub fn rename_column(
     from: &str,
     to: &str,
 ) -> DbResult<()> {
+    refuse_if_sharded(db, name, "changing the columns")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.rename_column(from, to)?;
     log_column(
@@ -447,6 +504,7 @@ pub fn set_retention(
     name: &str,
     seconds: Option<u64>,
 ) -> DbResult<()> {
+    refuse_if_sharded(db, name, "a retention")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.set_retention(seconds)?;
     if let Some(log) = writing_for(log, db, name) {
@@ -471,6 +529,7 @@ pub fn apply_set_retention(db: &Database, name: &str, data: &[u8]) -> DbResult<(
 /// Remove the rows a collection's retention no longer keeps, on this node.
 /// Returns how many went.
 pub fn prune(db: &Database, name: &str) -> DbResult<u64> {
+    refuse_if_sharded(db, name, "pruning")?;
     let pruned =
         ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.prune_expired()?;
     announce(db, name, ChangeType::Delete, pruned as usize, &[]);
@@ -481,6 +540,7 @@ pub fn prune(db: &Database, name: &str) -> DbResult<u64> {
 /// there were, and how many there are. Not logged: the rows are what they
 /// were, and each node holds them in blocks of its own.
 pub fn compact(db: &Database, name: &str) -> DbResult<(usize, usize)> {
+    refuse_if_sharded(db, name, "compacting")?;
     ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?.compact()
 }
 
@@ -515,14 +575,17 @@ pub fn apply_create(db: &Database, name: &str, data: &[u8]) -> DbResult<()> {
     // The backing collection may be left from a create that stopped half
     // way; `new` says so if it is really missing.
     let _ = db.create_collection(backing(name), None);
-    ColumnarCollection::new(
+    let col = ColumnarCollection::new(
         name.to_string(),
         &db.name,
         db.db_arc(),
         definition.columns,
         definition.compression,
-    )?
-    .set_retention(definition.retention_secs)?;
+    )?;
+    col.set_retention(definition.retention_secs)?;
+    if let Some(sharding) = definition.sharding {
+        col.set_sharding(sharding)?;
+    }
     Ok(())
 }
 
@@ -552,6 +615,7 @@ pub fn create_index(
     column: &str,
     index_type: ColumnarIndexType,
 ) -> DbResult<()> {
+    refuse_if_sharded(db, name, "an index")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.create_index(column, index_type.clone())?;
     if let Some(log) = writing_for(log, db, name) {
@@ -578,6 +642,7 @@ pub fn start_index_build(
     index_type: ColumnarIndexType,
     replace: bool,
 ) -> DbResult<std::sync::Arc<crate::storage::columnar::IndexBuild>> {
+    refuse_if_sharded(db, name, "an index")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let build = col.start_index_build(column, index_type.clone(), replace)?;
     if let Some(log) = writing_for(log, db, name) {
@@ -601,6 +666,7 @@ pub fn rebuild_index(
     column: &str,
     index_type: ColumnarIndexType,
 ) -> DbResult<()> {
+    refuse_if_sharded(db, name, "an index")?;
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     if !col.has_index(column) {
         return create_index(db, log, name, column, index_type);
@@ -691,6 +757,7 @@ pub(crate) fn full_sync_definition(col: &ColumnarCollection) -> DbResult<Vec<u8>
         columns,
         compression: meta.compression,
         retention_secs: meta.retention_secs,
+        sharding: meta.sharding,
     })?)
 }
 
