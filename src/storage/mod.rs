@@ -18,6 +18,7 @@ pub mod field_rules;
 pub mod foreign_keys;
 pub mod geo;
 pub(crate) mod group_commit;
+pub mod hnsw;
 pub mod http_client;
 pub mod index;
 pub(crate) mod kept;

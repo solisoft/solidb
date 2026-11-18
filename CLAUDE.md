@@ -656,6 +656,21 @@ way. `compute_index_entries_for_update` writes nothing for an index whose
 values did not change: a repair that counts on an update rewriting an
 entry has to call for it.
 
+### Vector indexes: the HNSW graph
+
+`storage/hnsw.rs` holds the graph: nodes numbered `u32`, links as numbers,
+vectors in one arena (normalised for cosine, so a distance is `1 - dot`),
+removed nodes marked and skipped, a visited set reused per thread. Links
+are chosen with the HNSW paper's heuristic (`Graph::select`): taking the M
+nearest cut clustered data into islands (card #979). A whole index is
+built on several threads (`Graph::build`, a lock per node's links). The
+index saves the graph behind `FORMAT_V4` (`storage/vector.rs`); the arena
+and the key-to-number map are not saved but rebuilt from the index's
+vectors (`Graph::restore`). A graph saved by 2.14.0 or earlier
+(`LegacyGraph`, keyed by strings, field order fixed by bincode) is
+renumbered at load (`Graph::from_legacy`). A change to what is saved needs
+a new marker, and the older ones kept readable.
+
 ### Field rules
 
 A collection declares what it asks of top-level fields of its documents:
