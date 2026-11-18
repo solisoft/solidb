@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **A new data directory is created on solistore.** Through 2.13.0 it was created on RocksDB unless `SOLIDB_ENGINE=solistore` said otherwise; now it is solistore unless `SOLIDB_ENGINE=rocksdb` says otherwise. Nothing changes for a directory that holds data: it is opened with the engine recorded in its `ENGINE` file (RocksDB, for one from before that file), and upgrading converts nothing. To move a RocksDB directory, stop the server and run `solidb-migrate-engine <data-dir>`, as before. The server's start-up log now names the engine (`Storage engine initialized: solistore`). Building from source, the `engine-solistore` feature is on by default; `cargo build --no-default-features` gives a binary with RocksDB alone, whose new directories are RocksDB's. See RocksDB & solistore.
+
 ## [2.14.0](https://github.com/solisoft/solidb/compare/v2.13.0...v2.14.0) (2026-11-18)
 
 Field rules (required fields, types, bounds and allowed values checked on the

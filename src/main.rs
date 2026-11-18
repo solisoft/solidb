@@ -888,7 +888,7 @@ async fn async_main(args: Args) -> anyhow::Result<()> {
     let storage = StorageEngine::with_cluster_config(&args.data_dir, cluster_config.clone())?;
     storage.set_local_node(given_node_id, !args.peers.is_empty());
     storage.initialize()?;
-    tracing::info!("Storage engine initialized");
+    tracing::info!("Storage engine initialized: {}", storage.engine_kind());
     if args.migrate_only {
         storage.flush()?;
         tracing::info!("--migrate-only: storage is on the 2.x layout; exiting");

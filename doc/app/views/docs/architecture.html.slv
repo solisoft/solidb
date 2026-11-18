@@ -518,7 +518,7 @@
                 <i class="fas fa-hdd text-green-500 mr-2"></i> Storage Engine
               </h3>
               <ul class="space-y-2 text-sm text-gray-400">
-                <li><strong class="text-gray-300">RocksDB:</strong> LSM-tree storage with column families, compression, compaction.</li>
+                <li><strong class="text-gray-300">solistore or RocksDB:</strong> LSM-tree storage with column families, compression, compaction. A new data directory is solistore&rsquo;s; one that holds data keeps its engine (<a href="/docs/storage-engine" class="text-indigo-400 hover:underline">RocksDB &amp; solistore</a>).</li>
                 <li><strong class="text-gray-300">Column Families:</strong> Separate namespaces for collections, indexes, metadata.</li>
                 <li><strong class="text-gray-300">Write Batches:</strong> Atomic multi-key operations for consistency.</li>
               </ul>
@@ -565,7 +565,7 @@
               src/
             </div>
             <div class="p-4 space-y-2">
-              <div class="flex"><span class="text-cyan-400 w-40">storage/</span><span class="text-gray-500"># Document storage, collections, indexes (RocksDB wrapper)</span></div>
+              <div class="flex"><span class="text-cyan-400 w-40">storage/</span><span class="text-gray-500"># Document storage, collections, indexes, over solistore or RocksDB</span></div>
               <div class="flex"><span class="text-purple-400 w-40">sdbql/</span><span class="text-gray-500"># Query language: lexer, parser, AST, executor</span></div>
               <div class="flex"><span class="text-indigo-400 w-40">server/</span><span class="text-gray-500"># HTTP handlers, routes, auth, WebSocket</span></div>
               <div class="flex"><span class="text-blue-400 w-40">cluster/</span><span class="text-gray-500"># Node discovery, health checks, HLC clocks</span></div>

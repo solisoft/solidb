@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 📄 **JSON Document Storage** — Store and query JSON documents with ease
 - 📊 **Columnar Storage** — Column-oriented storage for analytics workloads with LZ4 compression and specialized indexes (Sorted, Hash, Bitmap, Bloom)
 - 🗃️ **Blob Storage** — Native support for storing and retrieving binary files
-- 💾 **RocksDB Storage** — Production-grade persistence with automatic crash recovery; all collections share one keyspace, so creating or dropping a collection costs the same at ten collections or ten thousand
+- 💾 **Two storage engines** — solistore, a pure-Rust engine, for a new data directory, and RocksDB, which existing directories stay on; persistence with automatic crash recovery; all collections share one keyspace, so creating or dropping a collection costs the same at ten collections or ten thousand
 
 ### Query Language
 - 🔍 **SDBQL Query Language** — Familiar query syntax inspired by ArangoDB, plus as-of joins, lambdas, sketches, and time-travel scans

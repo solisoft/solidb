@@ -14,7 +14,7 @@
         <div class="relative">
           <h1 class="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 mb-4 tracking-tight">RocksDB &amp; solistore</h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Every SoliDB data directory lives in one ordered key-value engine underneath the documents, indexes and logs. Since 2.4.0 there are two: RocksDB, the default, and solistore, a pure-Rust engine written to replace it. This page covers how a server picks one, how to move an existing directory to solistore, and how to go back.
+            Every SoliDB data directory lives in one ordered key-value engine underneath the documents, indexes and logs. Since 2.4.0 there are two: RocksDB, and solistore, a pure-Rust engine written to replace it. A new data directory is created on solistore; through 2.13.0 it was created on RocksDB. A directory that already holds data keeps its engine. This page covers how a server picks one, how to move an existing directory to solistore, and how to go back.
           </p>
         </div>
       </div>
@@ -27,13 +27,16 @@
             A data directory records the engine that wrote it in a file named <code class="text-amber-300">ENGINE</code>, and a server always opens it with that engine. You choose only when a directory is created:
           </p>
           <ul class="list-disc pl-6 space-y-2 text-gray-300 mb-6">
-            <li>A <strong>new</strong> directory takes <code class="text-amber-300">SOLIDB_ENGINE</code>: <code>rocksdb</code> (the default) or <code>solistore</code>. Any other value refuses to start.</li>
-            <li>An <strong>existing</strong> directory ignores <code class="text-amber-300">SOLIDB_ENGINE</code>. Changing it does not convert anything; use <a href="#migrate" class="text-indigo-400 hover:underline">the migration tool</a>.</li>
+            <li>A <strong>new</strong> directory takes <code class="text-amber-300">SOLIDB_ENGINE</code>: <code>solistore</code> (the default) or <code>rocksdb</code>. Any other value refuses to start. Through 2.13.0 the default was <code>rocksdb</code>.</li>
+            <li>An <strong>existing</strong> directory ignores <code class="text-amber-300">SOLIDB_ENGINE</code> and the default alike. Upgrading the server converts nothing: a RocksDB directory is opened as RocksDB for as long as you leave it one. To move it, use <a href="#migrate" class="text-indigo-400 hover:underline">the migration tool</a>.</li>
             <li>A directory from before 2.4 has no <code>ENGINE</code> file. If it holds RocksDB's <code>OPTIONS-*</code> files it is opened as RocksDB. Anything else without the file is refused rather than guessed at.</li>
           </ul>
           <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto">
-<pre><span class="text-gray-500"># a new directory on solistore</span>
-SOLIDB_ENGINE=solistore solidb --port 6745 --data-dir ./data-solistore
+<pre><span class="text-gray-500"># a new directory: solistore</span>
+solidb --port 6745 --data-dir ./data
+
+<span class="text-gray-500"># a new directory on RocksDB</span>
+SOLIDB_ENGINE=rocksdb solidb --port 6745 --data-dir ./data-rocksdb
 
 <span class="text-gray-500"># which engine an existing directory uses</span>
 cat ./data/ENGINE</pre>
@@ -46,13 +49,17 @@ cat ./data/ENGINE</pre>
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
           <h2 class="text-2xl font-bold text-white mb-6">Getting a build with solistore</h2>
           <p class="text-gray-300 mb-4 leading-relaxed">
-            The release binaries and the Docker image are built with solistore from 2.4.0 on, and the archives include <code class="text-amber-300">solidb-migrate-engine</code>. Building from source, solistore is a Cargo feature:
+            The release binaries and the Docker image are built with solistore from 2.4.0 on, and the archives include <code class="text-amber-300">solidb-migrate-engine</code>. Building from source, solistore is the Cargo feature <code class="text-amber-300">engine-solistore</code>, which is now on by default; through 2.13.0 it had to be asked for with <code>--features engine-solistore</code>.
           </p>
           <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto mb-4">
-<pre>cargo build --release --features engine-solistore</pre>
+<pre><span class="text-gray-500"># both engines</span>
+cargo build --release
+
+<span class="text-gray-500"># RocksDB only: new directories are RocksDB's</span>
+cargo build --release --no-default-features</pre>
           </div>
           <p class="text-gray-300 leading-relaxed">
-            A binary built without the feature still recognises a solistore directory and refuses it by name (<code class="text-gray-400">… uses the solistore engine; this binary was built without the engine-solistore feature</code>). Before 2.4, the same situation surfaced as a misleading RocksDB error, <code class="text-gray-400">Corruption: checksum mismatch … MANIFEST-… may be corrupted</code>. If you see that on a directory whose <code>ENGINE</code> file says <code>solistore</code>, the data is fine; the binary is the wrong one.
+            A binary built without the feature creates its new directories on RocksDB. It still recognises a solistore directory and refuses it by name (<code class="text-gray-400">… uses the solistore engine; this binary was built without the engine-solistore feature</code>). Before 2.4, the same situation surfaced as a misleading RocksDB error, <code class="text-gray-400">Corruption: checksum mismatch … MANIFEST-… may be corrupted</code>. If you see that on a directory whose <code>ENGINE</code> file says <code>solistore</code>, the data is fine; the binary is the wrong one.
           </p>
         </div>
       </section>
@@ -148,7 +155,7 @@ mv ./data.rocksdb-backup-1792059661 ./data</pre>
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
           <h2 class="text-2xl font-bold text-white mb-6">Status</h2>
           <p class="text-gray-300 mb-4 leading-relaxed">
-            RocksDB remains the default and the engine to use for production data. solistore passes SoliDB&rsquo;s full test suite, and is ahead of RocksDB in every phase of the server benchmark, but it has not yet run in production, and its on-disk format may still change before 1.0. Keep the RocksDB backup until you are confident in a migrated directory.
+            solistore is the engine of a new data directory; through 2.13.0 that was RocksDB. RocksDB stays compiled into every release binary, opens the directories it wrote, and is still available for a new one with <code>SOLIDB_ENGINE=rocksdb</code>. SoliDB&rsquo;s full test suite runs on both engines at every change. solistore&rsquo;s on-disk format may still change before its 1.0. Keep the RocksDB backup until you are confident in a migrated directory.
           </p>
           <p class="text-gray-300 leading-relaxed">
             Why it exists, its design and the measurements: <a href="/blog/solistore-a-storage-engine-of-our-own" class="text-indigo-400 hover:underline">solistore, a storage engine of our own</a>. The crate is <a href="https://crates.io/crates/solistore" class="text-indigo-400 hover:underline">solistore on crates.io</a> (API documentation on <a href="https://docs.rs/solistore" class="text-indigo-400 hover:underline">docs.rs</a>), and the source is at <a href="https://github.com/solisoft/solistore" class="text-indigo-400 hover:underline">github.com/solisoft/solistore</a>.

@@ -1392,8 +1392,7 @@ where
 /// `SOLIDB_BENCH_SERVER_THREADS` (8), `SOLIDB_BENCH_CONC` (`1,32`) and
 /// `SOLIDB_BENCH_SERIES` (`inproc,phases,by_customer,get,recent,join`)
 /// override the defaults;
-/// `SOLIDB_ENGINE=solistore` runs it on solistore (built with
-/// `engine-solistore`).
+/// `SOLIDB_ENGINE=rocksdb` runs it on RocksDB.
 #[test]
 #[ignore]
 fn benchmark_driver_by_customer() {
@@ -1963,7 +1962,7 @@ fn reset_peak_rss() {
 }
 
 /// The full-scan COLLECT shapes, every way they can run, on the engine
-/// `SOLIDB_ENGINE` selects (RocksDB unless it says `solistore`):
+/// `SOLIDB_ENGINE` selects (solistore unless it says `rocksdb`):
 ///
 /// - materialised (`with_streaming_collect(false)`, the path before 2.7.3);
 /// - streamed, decoding the fields read (`with_typed_collect(false)`, the
@@ -1987,7 +1986,7 @@ fn bench_full_scan_collect(docs: usize) {
     let sample = orders.scan_values(Some(1)).remove(0);
     let mut data = sample.as_object().unwrap().clone();
     data.retain(|k, _| !k.starts_with('_'));
-    let engine_name = std::env::var("SOLIDB_ENGINE").unwrap_or_else(|_| "rocksdb".to_string());
+    let engine_name = engine.engine_kind().to_string();
     let threads: usize = std::env::var("BENCH_THREADS")
         .ok()
         .and_then(|v| v.parse().ok())

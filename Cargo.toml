@@ -332,9 +332,12 @@ tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
+default = ["engine-solistore"]
 fuse = ["dep:fuser"]
-# Build solistore in beside RocksDB; `SOLIDB_ENGINE=solistore` picks it for a
-# new data directory.
+# solistore, built in beside RocksDB and the engine of a new data directory
+# (`SOLIDB_ENGINE=rocksdb` picks RocksDB for one). On by default: a binary
+# built with `--no-default-features` creates and opens RocksDB directories
+# only, and refuses a solistore one by name.
 engine-solistore = ["dep:solistore"]
 # The six files in tests/ that are benchmarks rather than tests. Off by
 # default, so `cargo test` does not build them — see the [[test]] blocks below.

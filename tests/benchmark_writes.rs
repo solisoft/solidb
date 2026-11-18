@@ -22,7 +22,7 @@
 //! everyone else's load, and the CPU time much less.
 //!
 //! Run with:
-//!   cargo test --profile ci --features bench-tests,engine-solistore \
+//!   cargo test --profile ci --features bench-tests \
 //!     --config 'profile.ci.package.solidb.opt-level=3' \
 //!     --test benchmark_writes -- --ignored --nocapture
 //! (the `ci` profile builds this crate at opt-level 1, which is no way to

@@ -93,8 +93,8 @@ server and a fleet of app dev servers goes to swap. Runs get killed part-way and
 tell you nothing.
 
 Run the targeted forms above — the specific `--test <name>`, or a pattern — and
-let the `test` job in CI run the whole thing (`test-solistore` runs it again
-on the solistore engine). The other six CI jobs (`fmt`,
+let the `test` job in CI run the whole thing (`test-rocksdb` runs it again
+on RocksDB). The other six CI jobs (`fmt`,
 `clippy`, `docs-sync`, `audit`, `msrv`, `windows-check`) are all cheap enough to
 reproduce locally and are the ones worth checking before a push.
 
@@ -392,15 +392,19 @@ size of its key range (flushed data only; memtable and SST count read 0).
 `solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
 `solidb_cf_ops_total` now counts only legacy column-family drops.
 
-### Storage engines: `storage::kv` (RocksDB, and solistore behind a feature)
+### Storage engines: `storage::kv` (solistore for a new directory, RocksDB for the existing ones)
 
 All storage goes through `storage::kv::Kv` (aliased `RocksDb` for
 history): RocksDB's method names, SoliDB's own types (`KvCf`, `KvBatch`,
 `KvIter`, `KvError`). `rust_rocksdb` is named only under `storage/kv/` and
 in tests that build a 1.x directory by hand — keep it that way. A second
-engine, solistore (github.com/solisoft/solistore, pure Rust), is compiled in
-with `--features engine-solistore`; the plan is
-`solistore/docs/solidb-integration.md` in that repository.
+engine, solistore (github.com/solisoft/solistore, pure Rust), is the Cargo
+feature `engine-solistore`, on by default; the plan is
+`solistore/docs/solidb-integration.md` in that repository. It is the engine
+of a new data directory (`EngineKind::default_for_new`; through 2.13.0 that
+was RocksDB). Nothing converts a directory that holds data: a RocksDB one is
+opened as RocksDB until `solidb-migrate-engine` is run on it, server
+stopped. A binary built with `--no-default-features` has RocksDB alone.
 
 A data directory is opened with the engine recorded in its `ENGINE` file. An
 unmarked directory with RocksDB `OPTIONS-*` files is RocksDB's; anything
@@ -409,14 +413,15 @@ column family written to it.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SOLIDB_ENGINE` | `rocksdb` | Engine for a *new* data directory (`rocksdb` or `solistore`). Ignored for an existing one. |
+| `SOLIDB_ENGINE` | `solistore` | Engine for a *new* data directory (`solistore` or `rocksdb`). Ignored for an existing one. |
 | `SOLIDB_DURABILITY` | eventual | solistore only. `full` fsyncs every commit (concurrent commits share it); eventual fsyncs in the background. `sync` writes (transaction commits) always wait. |
 | `SOLIDB_DURABILITY_INTERVAL_MS` | 100 | solistore only: the eventual mode's fsync interval, i.e. what a power loss can lose. |
 
-To run tests on solistore, build with the feature and set
-`SOLIDB_ENGINE=solistore` (rbuild does not forward the environment: build
-with `rbuild cargo db-kv test --features engine-solistore --no-run`, then run
-the binaries over ssh).
+Tests run on solistore, as a server's new directory does. To run them on
+RocksDB set `SOLIDB_ENGINE=rocksdb`, which is what the `test-rocksdb` CI job
+does (rbuild does not forward the environment: build with
+`rbuild cargo db-kv test --no-run`, then run the binaries over ssh). A
+storage change has to hold on both.
 
 ### Raw rows: driver reads that never decode (2.0.5)
 

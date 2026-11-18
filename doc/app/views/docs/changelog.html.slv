@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">A new data directory is created on solistore</strong> &mdash; through 2.13.0 it was created on RocksDB unless <code>SOLIDB_ENGINE=solistore</code> said otherwise; now it is solistore unless <code>SOLIDB_ENGINE=rocksdb</code> says otherwise. Nothing changes for a directory that holds data: it is opened with the engine recorded in its <code>ENGINE</code> file (RocksDB, for one from before that file), and upgrading converts nothing. To move a RocksDB directory, stop the server and run <code>solidb-migrate-engine &lt;data-dir&gt;</code>, as before. The server&rsquo;s start-up log now names the engine (<code>Storage engine initialized: solistore</code>). Building from source, the <code>engine-solistore</code> feature is on by default; <code>cargo build --no-default-features</code> gives a binary with RocksDB alone, whose new directories are RocksDB&rsquo;s. See <a href="/docs/storage-engine" class="text-cyan-400 hover:underline">RocksDB &amp; solistore</a>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.14.0 -->
   <section id="v2-14-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

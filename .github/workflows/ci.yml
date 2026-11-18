@@ -90,15 +90,17 @@ jobs:
       - name: Run the client and sdbql-core tests
         run: cargo test --profile ci -p solidb-client -p sdbql-core
 
-  # The same suite on the solistore engine: every data directory a test
-  # creates is opened as solistore (SOLIDB_ENGINE), so a storage change has
-  # to hold on both engines. Tests that build a 1.x RocksDB directory by hand
-  # mark it as RocksDB's and run on it regardless.
-  test-solistore:
+  # The same suite on RocksDB. The `test` job above runs on solistore, the
+  # engine a new data directory gets; here every directory a test creates is
+  # opened as RocksDB (SOLIDB_ENGINE), which existing installations still
+  # run on, so a storage change has to hold on both engines. Tests that
+  # build a 1.x RocksDB directory by hand mark it as RocksDB's and run on it
+  # in either job.
+  test-rocksdb:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
-      SOLIDB_ENGINE: solistore
+      SOLIDB_ENGINE: rocksdb
     steps:
       - uses: actions/checkout@v5
 
@@ -119,12 +121,12 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: test-solistore
+          key: test-rocksdb
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
-      - name: Run tests on solistore
-        run: cargo test --profile ci --features engine-solistore --lib --bins --tests
+      - name: Run tests on RocksDB
+        run: cargo test --profile ci --lib --bins --tests
 
   # A short pass of the fault harness (faults/, card #864): the server is
   # killed with SIGKILL while transactions and single inserts are written,
@@ -351,7 +353,7 @@ jobs:
     # mention it is how the site fell three versions behind.
     # `audit` deliberately does not gate: an unfixable transitive advisory
     # should raise a flag, not block a release.
-    needs: [test, test-solistore, clippy, fmt, msrv, docs-sync]
+    needs: [test, test-rocksdb, clippy, fmt, msrv, docs-sync]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -442,8 +444,10 @@ jobs:
         shell: pwsh
         run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
-      # solistore is compiled in so a release binary opens either engine's
-      # data directory; RocksDB stays the engine for a new one.
+      # solistore is a default feature, named here so that a change to the
+      # defaults cannot ship a release binary without it: it is the engine of
+      # a new data directory, and RocksDB is compiled in beside it for the
+      # existing ones.
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --features engine-solistore
 

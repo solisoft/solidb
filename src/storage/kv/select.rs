@@ -5,8 +5,13 @@
 //! `OPTIONS-*` files predates the file and is RocksDB's; one that holds a
 //! database of neither kind is refused rather than guessed at (both engines
 //! write a `CURRENT`). A new directory gets the engine named by
-//! `SOLIDB_ENGINE` (`rocksdb`, the default, or `solistore`), and the file is
-//! written once the open has succeeded. Checkpoints carry it too.
+//! `SOLIDB_ENGINE` (`solistore` or `rocksdb`), and solistore when it names
+//! none; a binary built without the `engine-solistore` feature has only
+//! RocksDB to give. The file is written once the open has succeeded.
+//! Checkpoints carry it too.
+//!
+//! Only a new directory is concerned: one that holds a database keeps its
+//! engine until `solidb-migrate-engine` is run on it.
 
 use std::fmt;
 use std::path::Path;
@@ -44,15 +49,32 @@ impl fmt::Display for EngineKind {
     }
 }
 
+impl EngineKind {
+    /// The engine of a new directory when `SOLIDB_ENGINE` names none:
+    /// solistore, in a binary that has it.
+    pub fn default_for_new() -> Self {
+        if cfg!(feature = "engine-solistore") {
+            EngineKind::Solistore
+        } else {
+            EngineKind::Rocksdb
+        }
+    }
+}
+
 /// The engine for a new directory.
 fn configured() -> Result<EngineKind, KvError> {
-    match std::env::var("SOLIDB_ENGINE") {
-        Ok(name) if !name.trim().is_empty() => EngineKind::parse(&name).ok_or_else(|| {
+    named(std::env::var("SOLIDB_ENGINE").ok().as_deref())
+}
+
+/// The engine `SOLIDB_ENGINE` asks for, given its value.
+fn named(variable: Option<&str>) -> Result<EngineKind, KvError> {
+    match variable {
+        Some(name) if !name.trim().is_empty() => EngineKind::parse(name).ok_or_else(|| {
             KvError::new(format!(
-                "SOLIDB_ENGINE={name}: expected \"rocksdb\" or \"solistore\""
+                "SOLIDB_ENGINE={name}: expected \"solistore\" or \"rocksdb\""
             ))
         }),
-        _ => Ok(EngineKind::Rocksdb),
+        _ => Ok(EngineKind::default_for_new()),
     }
 }
 
@@ -162,6 +184,39 @@ mod tests {
 
     fn write_engine(dir: &Path, name: &str) {
         std::fs::write(dir.join(ENGINE_FILE), format!("{name}\n")).unwrap();
+    }
+
+    #[cfg(feature = "engine-solistore")]
+    #[test]
+    fn a_new_directory_is_solistore_unless_the_variable_names_rocksdb() {
+        assert_eq!(named(None).unwrap(), EngineKind::Solistore);
+        assert_eq!(named(Some("  ")).unwrap(), EngineKind::Solistore);
+        assert_eq!(named(Some("solistore")).unwrap(), EngineKind::Solistore);
+        assert_eq!(named(Some("rocksdb")).unwrap(), EngineKind::Rocksdb);
+        assert!(named(Some("leveldb")).is_err());
+    }
+
+    #[cfg(not(feature = "engine-solistore"))]
+    #[test]
+    fn a_new_directory_is_rocksdb_in_a_binary_without_solistore() {
+        assert_eq!(named(None).unwrap(), EngineKind::Rocksdb);
+        assert_eq!(named(Some("rocksdb")).unwrap(), EngineKind::Rocksdb);
+    }
+
+    /// The default does not reach a directory that holds a database: one
+    /// made by RocksDB before the `ENGINE` file existed stays RocksDB's.
+    #[test]
+    fn a_directory_that_holds_a_rocksdb_database_keeps_it_whatever_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let kv = super::super::rocks::open(dir.path(), &["x"]).unwrap();
+            kv.put(b"k", b"v").unwrap();
+        }
+        for _ in 0..2 {
+            let kv = open(dir.path(), &["x"]).unwrap();
+            assert_eq!(kv.engine_kind(), EngineKind::Rocksdb);
+            assert_eq!(kv.get(b"k").unwrap().as_deref(), Some(&b"v"[..]));
+        }
     }
 
     #[test]
