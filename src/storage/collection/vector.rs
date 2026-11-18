@@ -68,7 +68,31 @@ impl Collection {
         // Load data
         let data_key = Self::vec_data_key(name);
         if let Some(bytes) = db.get_ks(&cf, &data_key)? {
-            match super::vector::VectorIndex::deserialize(&bytes) {
+            let loaded = match chunked_header(&bytes) {
+                // Read piece by piece, never whole.
+                Some((generation, count)) => {
+                    let mut next = 0u32;
+                    let reader = ChunkReader {
+                        chunk: Vec::new(),
+                        at: 0,
+                        next: move || -> std::io::Result<Option<Vec<u8>>> {
+                            if next >= count {
+                                return Ok(None);
+                            }
+                            let key = vec_chunk_key(name, generation, next);
+                            next += 1;
+                            match db.get_ks(&cf, &key) {
+                                Ok(Some(chunk)) => Ok(Some(chunk)),
+                                Ok(None) => Err(std::io::Error::other("a piece is missing")),
+                                Err(e) => Err(std::io::Error::other(e.to_string())),
+                            }
+                        },
+                    };
+                    super::vector::VectorIndex::deserialize_from(reader)
+                }
+                None => super::vector::VectorIndex::deserialize(&bytes),
+            };
+            match loaded {
                 Ok(index) => {
                     let index_arc = Arc::new(index);
                     self.vector_indexes
@@ -239,6 +263,11 @@ impl Collection {
         self.invalidate_index_meta();
         deleted?;
         db.delete_ks(&cf, Self::vec_data_key(name))
+            .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
+        let (from, to) = vec_chunk_range(name, 0, u64::MAX);
+        let mut batch = crate::storage::kv::KvBatch::default();
+        batch.delete_range_ks(&cf, from, to);
+        db.write(batch)
             .map_err(|e| DbError::InternalError(format!("Failed to delete vector data: {}", e)))?;
 
         Ok(())
@@ -552,15 +581,45 @@ impl Collection {
             .iter()
             .map(|e| (e.key().clone(), Arc::clone(e.value())))
             .collect();
+        // Each index is written in pieces under a new generation, then the
+        // header that names it, then the older pieces are deleted: a crash
+        // in between leaves the header on a whole generation. Written as one
+        // value, a million vectors of 128 dimensions were one 800 MB buffer,
+        // then as much in the memtable (card #986).
+        let failed = |name: &str, e: String| {
+            DbError::InternalError(format!("Failed to persist vector index {}: {}", name, e))
+        };
         for (name, index_arc) in snapshot {
-            let bytes = index_arc.serialize()?;
-            db.put_ks(&cf, Self::vec_data_key(&name), &bytes)
-                .map_err(|e| {
-                    DbError::InternalError(format!(
-                        "Failed to persist vector index {}: {}",
-                        name, e
-                    ))
-                })?;
+            let data_key = Self::vec_data_key(&name);
+            let previous = db
+                .get_ks(&cf, &data_key)
+                .map_err(|e| failed(&name, e.to_string()))?
+                .and_then(|bytes| chunked_header(&bytes))
+                .map_or(0, |(generation, _)| generation);
+            let generation = previous + 1;
+            let mut count = 0u32;
+            {
+                let mut writer = ChunkWriter {
+                    buf: Vec::with_capacity(VEC_CHUNK_BYTES),
+                    put: |piece: &[u8]| -> std::io::Result<()> {
+                        db.put_ks(&cf, vec_chunk_key(&name, generation, count), piece)
+                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                        count += 1;
+                        Ok(())
+                    },
+                };
+                index_arc.serialize_into(&mut writer)?;
+                writer.finish().map_err(|e| failed(&name, e.to_string()))?;
+            }
+            let mut header = VEC_CHUNKED.to_vec();
+            header.extend_from_slice(&generation.to_be_bytes());
+            header.extend_from_slice(&count.to_be_bytes());
+            db.put_ks(&cf, &data_key, &header)
+                .map_err(|e| failed(&name, e.to_string()))?;
+            let (from, to) = vec_chunk_range(&name, 0, generation);
+            let mut batch = crate::storage::kv::KvBatch::default();
+            batch.delete_range_ks(&cf, from, to);
+            db.write(batch).map_err(|e| failed(&name, e.to_string()))?;
         }
         Ok(())
     }
@@ -795,6 +854,101 @@ pub(crate) fn release_pending_embed(n: u64) {
     super::saturating_sub_u64(&PENDING_EMBED_COUNT, n);
 }
 
+/// What `vec_data:<name>` starts with when the index is saved in pieces:
+/// then the generation (u64) and the number of pieces (u32), big-endian.
+/// An index saved whole (2.14.x and earlier) starts otherwise.
+const VEC_CHUNKED: &[u8] = b"\xffSVCHUNK";
+/// The size of a saved piece.
+const VEC_CHUNK_BYTES: usize = 16 << 20;
+
+fn chunked_header(bytes: &[u8]) -> Option<(u64, u32)> {
+    let rest = bytes.strip_prefix(VEC_CHUNKED)?;
+    let generation = u64::from_be_bytes(rest.get(..8)?.try_into().ok()?);
+    let count = u32::from_be_bytes(rest.get(8..12)?.try_into().ok()?);
+    Some((generation, count))
+}
+
+/// The keys of `name`'s pieces of generations `[from, to)`. The name's
+/// length comes first, so that no name's keys run into another's.
+fn vec_chunk_range(name: &str, from: u64, to: u64) -> (Vec<u8>, Vec<u8>) {
+    let base = format!("{}{}:{}:", VEC_CHUNK_PREFIX, name.len(), name);
+    (
+        format!("{base}{from:016x}").into_bytes(),
+        if to == u64::MAX {
+            format!("{base}g").into_bytes()
+        } else {
+            format!("{base}{to:016x}").into_bytes()
+        },
+    )
+}
+
+fn vec_chunk_key(name: &str, generation: u64, n: u32) -> Vec<u8> {
+    format!(
+        "{}{}:{}:{generation:016x}:{n:08x}",
+        VEC_CHUNK_PREFIX,
+        name.len(),
+        name
+    )
+    .into_bytes()
+}
+
+/// Hands what it is written to `put` in pieces of `VEC_CHUNK_BYTES`.
+struct ChunkWriter<F: FnMut(&[u8]) -> std::io::Result<()>> {
+    buf: Vec<u8>,
+    put: F,
+}
+
+impl<F: FnMut(&[u8]) -> std::io::Result<()>> ChunkWriter<F> {
+    fn finish(mut self) -> std::io::Result<()> {
+        if !self.buf.is_empty() {
+            (self.put)(&self.buf)?;
+        }
+        Ok(())
+    }
+}
+
+impl<F: FnMut(&[u8]) -> std::io::Result<()>> std::io::Write for ChunkWriter<F> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let room = VEC_CHUNK_BYTES - self.buf.len();
+        let taken = data.len().min(room);
+        self.buf.extend_from_slice(&data[..taken]);
+        if self.buf.len() == VEC_CHUNK_BYTES {
+            (self.put)(&self.buf)?;
+            self.buf.clear();
+        }
+        Ok(taken)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Reads the pieces `next` gives, one after the other.
+struct ChunkReader<F: FnMut() -> std::io::Result<Option<Vec<u8>>>> {
+    chunk: Vec<u8>,
+    at: usize,
+    next: F,
+}
+
+impl<F: FnMut() -> std::io::Result<Option<Vec<u8>>>> std::io::Read for ChunkReader<F> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        while self.at == self.chunk.len() {
+            match (self.next)()? {
+                Some(chunk) => {
+                    self.chunk = chunk;
+                    self.at = 0;
+                }
+                None => return Ok(0),
+            }
+        }
+        let n = out.len().min(self.chunk.len() - self.at);
+        out[..n].copy_from_slice(&self.chunk[self.at..self.at + n]);
+        self.at += n;
+        Ok(n)
+    }
+}
+
 #[cfg(test)]
 mod truncate_tests {
     use crate::storage::StorageEngine;
@@ -815,5 +969,91 @@ mod truncate_tests {
 
         coll.truncate().unwrap();
         assert_eq!(coll.count_embed_pending(), 0);
+    }
+
+    /// Card #986: an index is saved in pieces under a new generation each
+    /// time, the older pieces deleted, and read back piece by piece; a
+    /// dropped index leaves no piece.
+    #[test]
+    fn a_vector_index_is_saved_in_pieces() {
+        use super::{chunked_header, vec_chunk_key};
+        use crate::storage::keyspace::KsDbExt;
+        use crate::storage::VectorIndexConfig;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
+        engine.create_database("d".to_string()).unwrap();
+        let db = engine.get_database("d").unwrap();
+        db.create_collection("c".to_string(), None).unwrap();
+        let coll = db.get_collection("c").unwrap();
+        // 11,000 vectors of 400 floats: 17.6 MB of arena, two pieces.
+        let docs: Vec<_> = (0..11_000)
+            .map(|i| {
+                let v: Vec<f64> = (0..400)
+                    .map(|j| (i as f64 * 0.37 + j as f64 * 1.3).sin())
+                    .collect();
+                json!({"_key": format!("k{i}"), "emb": v})
+            })
+            .collect();
+        coll.insert_batch(docs).unwrap();
+        coll.create_vector_index(VectorIndexConfig::new(
+            "v".to_string(),
+            "emb".to_string(),
+            400,
+        ))
+        .unwrap();
+        let cf = coll.ks.handle(&coll.db).unwrap();
+        let header = |coll: &super::Collection| {
+            let bytes = coll
+                .db
+                .get_ks(&cf, super::Collection::vec_data_key("v"))
+                .unwrap()
+                .unwrap();
+            chunked_header(&bytes).unwrap()
+        };
+        let (first, pieces) = header(&coll);
+        assert!(pieces >= 2, "{pieces} pieces");
+        let query: Vec<f32> = (0..400)
+            .map(|j| (1234.0f64 * 0.37 + j as f64 * 1.3).sin() as f32)
+            .collect();
+        let top = |coll: &super::Collection| -> Vec<String> {
+            coll.vector_search("v", &query, 5, Some(64))
+                .unwrap()
+                .into_iter()
+                .map(|r| r.doc_key)
+                .collect()
+        };
+        let before = top(&coll);
+        assert_eq!(before.len(), 5);
+
+        coll.persist_vector_indexes().unwrap();
+        let (second, _) = header(&coll);
+        assert_eq!(second, first + 1);
+        assert!(coll
+            .db
+            .get_ks(&cf, vec_chunk_key("v", first, 0))
+            .unwrap()
+            .is_none());
+        assert!(coll
+            .db
+            .get_ks(&cf, vec_chunk_key("v", second, 0))
+            .unwrap()
+            .is_some());
+
+        // Read back from the pieces.
+        coll.vector_indexes.clear();
+        assert_eq!(coll.get_vector_index("v").unwrap().len(), 11_000);
+        assert_eq!(top(&coll), before);
+
+        coll.drop_vector_index("v").unwrap();
+        assert!(coll
+            .db
+            .get_ks(&cf, vec_chunk_key("v", second, 0))
+            .unwrap()
+            .is_none());
+        assert!(coll
+            .db
+            .get_ks(&cf, vec_chunk_key("v", second, 1))
+            .unwrap()
+            .is_none());
     }
 }

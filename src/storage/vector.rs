@@ -59,6 +59,15 @@ pub struct QuantizedVectors {
 impl QuantizedVectors {
     /// Create new quantized storage from full-precision vectors
     pub fn from_full_vectors(vectors: &HashMap<String, Vec<f32>>, dimension: usize) -> Self {
+        let pairs: Vec<(&str, &[f32])> = vectors
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_slice()))
+            .collect();
+        Self::from_pairs(&pairs, dimension)
+    }
+
+    /// The same from `(key, vector)` pairs.
+    pub fn from_pairs(vectors: &[(&str, &[f32])], dimension: usize) -> Self {
         if vectors.is_empty() {
             return Self {
                 vectors: HashMap::new(),
@@ -73,7 +82,7 @@ impl QuantizedVectors {
         let mut min_vals = vec![f32::MAX; dimension];
         let mut max_vals = vec![f32::MIN; dimension];
 
-        for vec in vectors.values() {
+        for (_, vec) in vectors {
             for (i, &v) in vec.iter().enumerate() {
                 min_vals[i] = min_vals[i].min(v);
                 max_vals[i] = max_vals[i].max(v);
@@ -83,7 +92,12 @@ impl QuantizedVectors {
         // Quantize all vectors
         let quantized: HashMap<String, Vec<u8>> = vectors
             .iter()
-            .map(|(k, v)| (k.clone(), Self::quantize_vector(v, &min_vals, &max_vals)))
+            .map(|(k, v)| {
+                (
+                    k.to_string(),
+                    Self::quantize_vector(v, &min_vals, &max_vals),
+                )
+            })
             .collect();
 
         Self {
@@ -247,7 +261,12 @@ pub fn dot_product_asymmetric(query: &[f32], quantized: &[u8], params: &ScalarQu
 pub struct VectorIndex {
     /// Index configuration
     config: VectorIndexConfig,
-    /// Stored vectors: doc_key -> vector (full precision)
+    /// Stored vectors: doc_key -> vector (full precision), while the index
+    /// has no graph. Once it has one, the graph's arena is their only store
+    /// (`Graph::vector_of`, normalised for cosine, which changes no cosine
+    /// score) and this map is empty: holding both kept every vector twice
+    /// (card #986). Locks are taken in this order: `vectors`,
+    /// `quantized_vectors`, `hnsw_graph`.
     vectors: RwLock<HashMap<String, Vec<f32>>>,
     /// Quantized vectors for memory-efficient storage (optional)
     quantized_vectors: RwLock<Option<QuantizedVectors>>,
@@ -280,7 +299,7 @@ impl VectorIndex {
 
     /// Build the HNSW graph from existing vectors
     fn build_hnsw_graph(&self) {
-        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         if vectors.len() < self.hnsw_threshold() {
             return;
         }
@@ -296,9 +315,10 @@ impl VectorIndex {
             threads,
         );
 
-        // Store the graph
+        // Store the graph; it holds the vectors from now on.
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         *hnsw = Some(graph);
+        *vectors = HashMap::new();
     }
 
     /// Get the index configuration
@@ -308,7 +328,9 @@ impl VectorIndex {
 
     /// Get the number of indexed vectors
     pub fn len(&self) -> usize {
-        self.vectors.read().unwrap_or_else(|e| e.into_inner()).len()
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        hnsw.as_ref().map_or(vectors.len(), |g| g.len())
     }
 
     /// Check if the index is empty
@@ -347,13 +369,7 @@ impl VectorIndex {
             )));
         }
 
-        // Insert into vectors HashMap
-        {
-            let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
-            vectors.insert(doc_key.to_string(), vector.to_vec());
-        }
-
-        // Also insert into quantized vectors if they exist
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         {
             let mut quantized = self
                 .quantized_vectors
@@ -363,22 +379,19 @@ impl VectorIndex {
                 q.insert(doc_key, vector);
             }
         }
-
-        // Update HNSW graph if it exists or threshold is reached
-        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
-        let count = vectors.len();
-        drop(vectors);
-
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         if let Some(graph) = hnsw.as_mut() {
-            // Graph exists, insert into it
+            // The graph is the store.
             graph.insert(doc_key, vector);
-        } else if count >= self.hnsw_threshold() {
+            return Ok(());
+        }
+        vectors.insert(doc_key.to_string(), vector.to_vec());
+        if vectors.len() >= self.hnsw_threshold() {
             // Threshold reached, build the graph
             drop(hnsw);
+            drop(vectors);
             self.build_hnsw_graph();
         }
-
         Ok(())
     }
 
@@ -430,49 +443,48 @@ impl VectorIndex {
 
     /// Remove a vector by document key
     pub fn remove(&self, doc_key: &str) -> DbResult<bool> {
-        // Remove from vectors HashMap
-        let removed = {
-            let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
-            vectors.remove(doc_key).is_some()
-        };
-
-        if removed {
-            // Also remove from quantized vectors if they exist
-            {
-                let mut quantized = self
-                    .quantized_vectors
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner());
-                if let Some(q) = quantized.as_mut() {
-                    q.remove(doc_key);
-                }
-            }
-
-            // Also remove from HNSW graph if it exists
-            let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
-            if let Some(graph) = hnsw.as_mut() {
-                graph.remove(doc_key);
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
+        let in_map = vectors.remove(doc_key).is_some();
+        {
+            let mut quantized = self
+                .quantized_vectors
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(q) = quantized.as_mut() {
+                q.remove(doc_key);
             }
         }
-
-        Ok(removed)
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
+        let in_graph = match hnsw.as_mut() {
+            Some(graph) => {
+                let had = graph.contains(doc_key);
+                graph.remove(doc_key);
+                had
+            }
+            None => false,
+        };
+        Ok(in_map || in_graph)
     }
 
     /// Check if a document has a vector in the index
     pub fn contains(&self, doc_key: &str) -> bool {
-        self.vectors
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key(doc_key)
+        self.get_with(doc_key, |_| ()).is_some()
     }
 
-    /// Get a vector by document key
+    /// Get a vector by document key. Once the index has a graph, a cosine
+    /// index gives it normalised.
     pub fn get(&self, doc_key: &str) -> Option<Vec<f32>> {
-        self.vectors
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(doc_key)
-            .cloned()
+        self.get_with(doc_key, |v| v.to_vec())
+    }
+
+    /// `f` of the vector kept for `doc_key`, wherever it is kept.
+    fn get_with<T>(&self, doc_key: &str, f: impl FnOnce(&[f32]) -> T) -> Option<T> {
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
+        if let Some(v) = vectors.get(doc_key) {
+            return Some(f(v));
+        }
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        hnsw.as_ref()?.vector_of(doc_key).map(f)
     }
 
     /// Search for similar vectors
@@ -692,19 +704,12 @@ impl VectorIndex {
             )));
         }
 
-        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
-        let doc_vec = match vectors.get(doc_key) {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-
-        let score = match self.config.metric {
+        let metric = self.config.metric;
+        Ok(self.get_with(doc_key, |doc_vec| match metric {
             VectorMetric::Cosine => cosine_similarity(query, doc_vec),
             VectorMetric::Euclidean => euclidean_distance(query, doc_vec),
             VectorMetric::DotProduct => dot_product(query, doc_vec),
-        };
-
-        Ok(Some(score))
+        }))
     }
 
     /// Serialize the index to bytes for persistence
@@ -714,6 +719,14 @@ impl VectorIndex {
     /// size. `VectorIndexDataV4Ref` encodes as `VectorIndexDataV4` decodes,
     /// behind the `FORMAT_V4` marker.
     pub fn serialize(&self) -> DbResult<Vec<u8>> {
+        let mut out = Vec::new();
+        self.serialize_into(&mut out)?;
+        Ok(out)
+    }
+
+    /// [`Self::serialize`] into `out` as it goes: a writer that stores what
+    /// it is given in pieces saves the index without holding it whole.
+    pub fn serialize_into(&self, mut out: impl std::io::Write) -> DbResult<()> {
         let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let quantized = self
             .quantized_vectors
@@ -721,20 +734,61 @@ impl VectorIndex {
             .unwrap_or_else(|e| e.into_inner());
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
 
-        let data = VectorIndexDataV4Ref {
+        let data = VectorIndexDataV5Ref {
             config: &self.config,
             vectors: &vectors,
             quantized_vectors: &quantized,
             hnsw_graph: &hnsw,
+            arena: hnsw.as_ref().map_or(&[][..], |g| g.arena()),
         };
-        let mut out = FORMAT_V4.to_vec();
-        bincode::serialize_into(&mut out, &data)
+        out.write_all(FORMAT_V5)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
-        Ok(out)
+        bincode::serialize_into(&mut out, &data)
+            .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
+    }
+
+    /// An index [`Self::serialize_into`] wrote, read as it comes (V5 only).
+    pub fn deserialize_from(mut input: impl std::io::Read) -> DbResult<Self> {
+        let mut marker = [0u8; 8];
+        input
+            .read_exact(&mut marker)
+            .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
+        if marker[..] != *FORMAT_V5 {
+            return Err(DbError::InternalError(
+                "Deserialization error: not a V5 vector index".to_string(),
+            ));
+        }
+        let data: VectorIndexDataV5 = bincode::deserialize_from(input)
+            .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
+        Self::from_v5(data)
+    }
+
+    fn from_v5(data: VectorIndexDataV5) -> DbResult<Self> {
+        let mut graph = data.hnsw_graph;
+        if let Some(g) = graph.as_mut() {
+            if !g.restore_arena(data.arena) {
+                return Err(DbError::InternalError(
+                    "Deserialization error: the graph's vectors do not match its nodes".to_string(),
+                ));
+            }
+        }
+        Ok(Self {
+            config: data.config,
+            vectors: RwLock::new(data.vectors),
+            quantized_vectors: RwLock::new(data.quantized_vectors),
+            hnsw_graph: RwLock::new(graph),
+        })
     }
 
     /// Deserialize a vector index from bytes
     pub fn deserialize(bytes: &[u8]) -> DbResult<Self> {
+        // V5 (card #986): the graph's vectors saved as its arena, the map
+        // only for an index without a graph.
+        if let Some(rest) = bytes.strip_prefix(FORMAT_V5) {
+            let data: VectorIndexDataV5 = bincode::deserialize(rest)
+                .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
+            return Self::from_v5(data);
+        }
         // V4 (numbered graph, card #983): behind its marker.
         if let Some(rest) = bytes.strip_prefix(FORMAT_V4) {
             let data: VectorIndexDataV4 = bincode::deserialize(rest)
@@ -743,12 +797,12 @@ impl VectorIndex {
             if let Some(g) = graph.as_mut() {
                 g.restore(&data.vectors);
             }
-            return Ok(Self {
-                config: data.config,
-                vectors: RwLock::new(data.vectors),
-                quantized_vectors: RwLock::new(data.quantized_vectors),
-                hnsw_graph: RwLock::new(graph),
-            });
+            return Ok(Self::loaded(
+                data.config,
+                data.vectors,
+                data.quantized_vectors,
+                graph,
+            ));
         }
         // Up to 2.14.0 the graph was keyed by strings: it is renumbered.
         let legacy = |config: &VectorIndexConfig,
@@ -760,23 +814,18 @@ impl VectorIndex {
         // Try V3 format first (with quantization)
         if let Ok(data) = bincode::deserialize::<VectorIndexDataV3>(bytes) {
             let graph = legacy(&data.config, &data.vectors, data.hnsw_graph);
-            return Ok(Self {
-                config: data.config,
-                vectors: RwLock::new(data.vectors),
-                quantized_vectors: RwLock::new(data.quantized_vectors),
-                hnsw_graph: RwLock::new(graph),
-            });
+            return Ok(Self::loaded(
+                data.config,
+                data.vectors,
+                data.quantized_vectors,
+                graph,
+            ));
         }
 
         // Try V2 format (with HNSW graph)
         if let Ok(data) = bincode::deserialize::<VectorIndexDataV2>(bytes) {
             let graph = legacy(&data.config, &data.vectors, data.hnsw_graph);
-            return Ok(Self {
-                config: data.config,
-                vectors: RwLock::new(data.vectors),
-                quantized_vectors: RwLock::new(None),
-                hnsw_graph: RwLock::new(graph),
-            });
+            return Ok(Self::loaded(data.config, data.vectors, None, graph));
         }
 
         // Fall back to V1 format (without HNSW graph)
@@ -789,6 +838,27 @@ impl VectorIndex {
             quantized_vectors: RwLock::new(None),
             hnsw_graph: RwLock::new(None),
         })
+    }
+
+    /// An index read from an older format: once the graph has its vectors,
+    /// the map is not kept.
+    fn loaded(
+        config: VectorIndexConfig,
+        vectors: HashMap<String, Vec<f32>>,
+        quantized: Option<QuantizedVectors>,
+        graph: Option<Graph>,
+    ) -> Self {
+        let vectors = if graph.is_some() {
+            HashMap::new()
+        } else {
+            vectors
+        };
+        Self {
+            config,
+            vectors: RwLock::new(vectors),
+            quantized_vectors: RwLock::new(quantized),
+            hnsw_graph: RwLock::new(graph),
+        }
     }
 
     /// Check if HNSW graph is currently active
@@ -830,15 +900,23 @@ impl VectorIndex {
     /// Returns the number of vectors quantized.
     pub fn quantize(&self) -> DbResult<usize> {
         let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
-        let count = vectors.len();
-
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        let pairs: Vec<(&str, &[f32])> = match hnsw.as_ref() {
+            Some(graph) => graph.live_vectors().collect(),
+            None => vectors
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_slice()))
+                .collect(),
+        };
+        let count = pairs.len();
         if count == 0 {
             return Ok(0);
         }
 
         // Build quantized storage from full-precision vectors
-        let quantized = QuantizedVectors::from_full_vectors(&vectors, self.config.dimension);
-        drop(vectors);
+        let quantized = QuantizedVectors::from_pairs(&pairs, self.config.dimension);
+        drop(pairs);
+        drop(hnsw);
 
         // Store the quantized vectors
         let mut quantized_lock = self
@@ -846,6 +924,7 @@ impl VectorIndex {
             .write()
             .unwrap_or_else(|e| e.into_inner());
         *quantized_lock = Some(quantized);
+        drop(vectors);
 
         Ok(count)
     }
@@ -946,14 +1025,36 @@ struct VectorIndexDataV3 {
     hnsw_graph: Option<LegacyGraph>,
 }
 
-/// Borrowing twin of `VectorIndexDataV3` for serialization without cloning.
-/// Field order and types must match it exactly: serde encodes `&T` as `T`.
+/// Borrowing twin of `VectorIndexDataV4`, which 2.14.x wrote; kept to
+/// write V4 indexes in tests. Field order and types must match it exactly:
+/// serde encodes `&T` as `T`.
+#[cfg(test)]
 #[derive(Serialize)]
 struct VectorIndexDataV4Ref<'a> {
     config: &'a VectorIndexConfig,
     vectors: &'a HashMap<String, Vec<f32>>,
     quantized_vectors: &'a Option<QuantizedVectors>,
     hnsw_graph: &'a Option<Graph>,
+}
+
+/// V5 (card #986): the V4 fields, then the graph's arena; `vectors` is empty
+/// when there is a graph. Field order and types as `VectorIndexDataV5`.
+#[derive(Serialize)]
+struct VectorIndexDataV5Ref<'a> {
+    config: &'a VectorIndexConfig,
+    vectors: &'a HashMap<String, Vec<f32>>,
+    quantized_vectors: &'a Option<QuantizedVectors>,
+    hnsw_graph: &'a Option<Graph>,
+    arena: &'a [f32],
+}
+
+#[derive(Deserialize)]
+struct VectorIndexDataV5 {
+    config: VectorIndexConfig,
+    vectors: HashMap<String, Vec<f32>>,
+    quantized_vectors: Option<QuantizedVectors>,
+    hnsw_graph: Option<Graph>,
+    arena: Vec<f32>,
 }
 
 /// V4 (card #983): the graph numbered (`storage/hnsw.rs`), behind
@@ -969,6 +1070,8 @@ struct VectorIndexDataV4 {
 /// What a V4 index's bytes start with. Bincode of an older format starts
 /// with the config's name length as a u64, which this cannot be.
 const FORMAT_V4: &[u8] = b"\xffSVIDX4\x00";
+/// What a V5 index's bytes start with.
+const FORMAT_V5: &[u8] = b"\xffSVIDX5\x00";
 
 /// Calculate cosine similarity between two vectors
 ///
@@ -1202,10 +1305,11 @@ mod tests {
         // Serialize
         let bytes = index.serialize().unwrap();
 
-        // The borrowed serializer writes the V4 encoding behind its marker.
-        let rest = bytes.strip_prefix(FORMAT_V4).expect("the V4 marker");
-        let v4: VectorIndexDataV4 = bincode::deserialize(rest).unwrap();
-        assert_eq!(v4.vectors.len(), 2);
+        // The borrowed serializer writes the V5 encoding behind its marker.
+        let rest = bytes.strip_prefix(FORMAT_V5).expect("the V5 marker");
+        let v5: VectorIndexDataV5 = bincode::deserialize(rest).unwrap();
+        assert_eq!(v5.vectors.len(), 2);
+        assert!(v5.arena.is_empty());
 
         // Deserialize
         let restored = VectorIndex::deserialize(&bytes).unwrap();
@@ -1265,6 +1369,74 @@ mod tests {
             restored.search(&[1.0, 0.0, 0.0], 1, 10).unwrap()[0].doc_key,
             "a"
         );
+    }
+
+    /// Card #986: once the graph exists it is the only store of the
+    /// vectors; reads, updates and removals go through it, and an index
+    /// saved as V4 (the map beside the graph) loads without the map.
+    #[test]
+    fn the_graph_holds_the_vectors_once() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), 8);
+        let index = VectorIndex::new(config.clone()).unwrap();
+        let mut kept = HashMap::new();
+        for i in 0..10_050 {
+            let v: Vec<f32> = (0..8).map(|_| rng.gen_range(-1.0..1.0)).collect();
+            index.insert(&format!("d{i}"), &v).unwrap();
+            kept.insert(format!("d{i}"), v);
+        }
+        assert!(index.is_hnsw_active());
+        assert!(index.vectors.read().unwrap().is_empty());
+        assert_eq!(index.len(), 10_050);
+        // A cosine index gives a vector back normalised: same direction.
+        let q = &kept["d77"];
+        assert!((index.similarity("d77", q).unwrap().unwrap() - 1.0).abs() < 1e-5);
+        assert!(index.contains("d77"));
+        // Replace, remove, insert past the graph.
+        index.insert("d77", &[1.0; 8]).unwrap();
+        assert!((index.similarity("d77", &[2.0; 8]).unwrap().unwrap() - 1.0).abs() < 1e-5);
+        assert!(index.remove("d78").unwrap());
+        assert!(!index.remove("d78").unwrap());
+        assert!(!index.contains("d78"));
+        index.insert("new", &[0.5; 8]).unwrap();
+        assert_eq!(index.len(), 10_050);
+        assert!(index.vectors.read().unwrap().is_empty());
+        assert_eq!(index.quantize().unwrap(), 10_050);
+
+        // V5 round trip.
+        let restored = VectorIndex::deserialize(&index.serialize().unwrap()).unwrap();
+        assert_eq!(restored.len(), 10_050);
+        assert!(!restored.contains("d78"));
+        assert_eq!(restored.get("new"), index.get("new"));
+        let first = |i: &VectorIndex| i.search(&kept["d500"], 1, 64).unwrap()[0].doc_key.clone();
+        assert_eq!(first(&restored), "d500");
+
+        // An index saved by 2.14.x: the map beside the graph.
+        let graph = index.hnsw_graph.read().unwrap();
+        let mut map = HashMap::new();
+        for (key, v) in graph.as_ref().unwrap().live_vectors() {
+            map.insert(key.to_string(), v.to_vec());
+        }
+        let mut v4 = FORMAT_V4.to_vec();
+        bincode::serialize_into(
+            &mut v4,
+            &VectorIndexDataV4Ref {
+                config: &config,
+                vectors: &map,
+                quantized_vectors: &None,
+                hnsw_graph: &graph,
+            },
+        )
+        .unwrap();
+        drop(graph);
+        let old = VectorIndex::deserialize(&v4).unwrap();
+        assert!(old.vectors.read().unwrap().is_empty());
+        assert_eq!(old.len(), 10_050);
+        assert_eq!(first(&old), "d500");
+        // Normalised again on the way in: equal to the last bit or so.
+        let (a, b) = (old.get("new").unwrap(), index.get("new").unwrap());
+        assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-6));
     }
 
     /// A graph built past the threshold, saved and loaded, answers as before.

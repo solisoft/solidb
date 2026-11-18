@@ -18,3 +18,10 @@
   others, before #984; its memory reading was wrong (it held the `sudo`
   process that started SoliDB, fixed in `vec.sh`), so it is not kept.
   `pgvector.memory` is the container's.
+- `solidb-986.json` / `.memory`: after cards #985 and #986 (an index
+  created by streaming the documents; each vector held once, in the graph;
+  the index saved in pieces), same settings: speed unchanged within noise,
+  RSS 4.35 GB at the end instead of 5.3. `solidb-986-cache64.memory`: a
+  short run with `SOLIDB_ARGS="--block-cache 64MB"`, 1.83 GB (2.63 before
+  #986), what the index and the server hold without the storage cache.
+

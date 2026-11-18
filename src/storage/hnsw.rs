@@ -244,6 +244,47 @@ impl Graph {
         self.live == 0
     }
 
+    /// The vector kept for `key` (normalised for cosine), if it is in the
+    /// graph.
+    pub fn vector_of(&self, key: &str) -> Option<&[f32]> {
+        self.ids.get(key).map(|&id| self.vector(id))
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.ids.contains_key(key)
+    }
+
+    /// Every node's key and vector, removed ones apart.
+    pub fn live_vectors(&self) -> impl Iterator<Item = (&str, &[f32])> + '_ {
+        self.ids
+            .iter()
+            .map(|(key, &id)| (key.as_str(), self.vector(id)))
+    }
+
+    /// The vectors, `dim` floats a node in node order (removed ones
+    /// included), as an index saves them.
+    pub fn arena(&self) -> &[f32] {
+        &self.arena
+    }
+
+    /// After a load: the vectors as [`Self::arena`] gave them. `false`
+    /// when the arena does not match the nodes (nothing is restored).
+    pub fn restore_arena(&mut self, arena: Vec<f32>) -> bool {
+        if arena.len() != self.keys.len() * self.dim || self.removed.len() != self.keys.len() {
+            return false;
+        }
+        self.ids.clear();
+        self.live = 0;
+        self.arena = arena;
+        for (id, key) in self.keys.iter().enumerate() {
+            if !self.removed[id] {
+                self.ids.insert(key.clone(), id as u32);
+                self.live += 1;
+            }
+        }
+        true
+    }
+
     fn vector(&self, id: u32) -> &[f32] {
         let at = id as usize * self.dim;
         &self.arena[at..at + self.dim]

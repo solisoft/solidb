@@ -71,6 +71,7 @@ pub const SCHEMA_KEY: &str = "_stats:schema"; // JSON Schema for validation
 pub const FIELD_RULES_KEY: &str = "_stats:field_rules"; // storage::field_rules
 pub const VEC_META_PREFIX: &str = "vec_meta:"; // Vector index metadata
 pub const VEC_DATA_PREFIX: &str = "vec_data:"; // Vector index data (serialized VectorIndex)
+pub const VEC_CHUNK_PREFIX: &str = "vec_chunk:"; // Vector index data saved in pieces (`collection/vector.rs`, `persist_vector_index_map`)
 pub const EMBED_PENDING_PREFIX: &str = "embed_pending:"; // Pending auto-embedding markers (index:doc_key -> empty)
 pub const DOCV_PREFIX: &str = "docv:"; // Document version history (docv:<key>:<inverted_ts> -> VersionRecord)
 pub const VERSIONING_META_KEY: &str = "versioning_enabled"; // Per-collection versioning flag

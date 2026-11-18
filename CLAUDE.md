@@ -671,6 +671,17 @@ vectors (`Graph::restore`). A graph saved by 2.14.0 or earlier
 renumbered at load (`Graph::from_legacy`). A change to what is saved needs
 a new marker, and the older ones kept readable.
 
+Once an index has a graph, the graph's arena is the only store of its
+vectors (`VectorIndex::vectors` is then empty; `get_with` reads either):
+a cosine index gives its vectors back normalised, which changes no cosine
+score. Locks are taken `vectors`, `quantized_vectors`, `hnsw_graph`, in
+that order. An index is saved as `FORMAT_V5` (the arena beside the graph)
+in pieces of 16 MB (`vec_chunk:<len>:<name>:<generation>:<n>`), then the
+header `vec_data:<name>` that names the generation, then the older pieces
+are deleted, so that a crash leaves the header on a whole generation; it
+is read piece by piece (`VectorIndex::deserialize_from`). A value of
+`vec_data:` without the header is an index saved whole (2.14.x).
+
 A filtered search (`VECTOR_SEARCH(…, {filter})`, the driver's) follows the
 filter in the walk at level 0 (`Graph::search_filtered`, called through
 `Collection::filtered_walk`): every node is walked through, only one that
