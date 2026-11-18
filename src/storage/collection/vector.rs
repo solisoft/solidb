@@ -170,17 +170,11 @@ impl Collection {
             vec![]
         };
 
-        // Insert direct vectors
-        for (key, v) in direct_vectors {
-            if v.len() == config.dimension {
-                let _ = index.insert(&key, &v);
-            }
-        }
-
-        // Insert generated (filter bad dims)
+        // Every vector in one batch: the graph is built once, on every CPU.
+        let mut batch = direct_vectors;
         for (key, v) in keys_for_embed.into_iter().zip(generated_embeddings) {
             if v.len() == config.dimension {
-                let _ = index.insert(&key, &v);
+                batch.push((key, v));
             } else if !v.is_empty() {
                 tracing::warn!(
                     "Batch embed dim mismatch for key {} in index {}: got {} expected {}",
@@ -191,6 +185,7 @@ impl Collection {
                 );
             }
         }
+        index.insert_many(batch);
 
         // Persist populated index
         self.persist_vector_indexes()?;

@@ -382,6 +382,52 @@ impl VectorIndex {
         Ok(())
     }
 
+    /// Insert many vectors at once (an index created over stored documents):
+    /// all of them are stored, then, past the HNSW threshold and with no
+    /// graph yet, the graph is built once on every CPU (`Graph::build`).
+    /// One `insert` after another built the graph at the threshold and then
+    /// linked every later vector on one thread: 300,000 vectors took 97 s
+    /// on one core of eight (card #983). Vectors of another dimension are
+    /// left out. Returns how many were stored.
+    pub fn insert_many(&self, items: Vec<(String, Vec<f32>)>) -> usize {
+        let dim = self.config.dimension;
+        let items: Vec<(String, Vec<f32>)> =
+            items.into_iter().filter(|(_, v)| v.len() == dim).collect();
+        if items.is_empty() {
+            return 0;
+        }
+        let stored = items.len();
+        let had_graph = self
+            .hnsw_graph
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some();
+        if had_graph {
+            // A graph exists: link each one as `insert` does.
+            for (key, v) in &items {
+                let _ = self.insert(key, v);
+            }
+            return stored;
+        }
+        {
+            let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
+            let mut quantized = self
+                .quantized_vectors
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
+            for (key, v) in items {
+                if let Some(q) = quantized.as_mut() {
+                    q.insert(&key, &v);
+                }
+                vectors.insert(key, v);
+            }
+        }
+        if self.len() >= self.hnsw_threshold() {
+            self.build_hnsw_graph();
+        }
+        stored
+    }
+
     /// Remove a vector by document key
     pub fn remove(&self, doc_key: &str) -> DbResult<bool> {
         // Remove from vectors HashMap
@@ -1119,6 +1165,38 @@ mod tests {
         assert_eq!(restored.len(), 2);
         assert!(restored.contains("doc1"));
         assert!(restored.contains("doc2"));
+    }
+
+    /// A batch past the threshold builds the graph once and answers as
+    /// inserts one by one do; one under it stays brute force.
+    #[test]
+    fn a_batch_insert_builds_the_graph_once() {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), 8);
+        let small = VectorIndex::new(config.clone()).unwrap();
+        assert_eq!(
+            small.insert_many(vec![
+                ("a".into(), vec![1.0; 8]),
+                ("bad".into(), vec![1.0; 3])
+            ]),
+            1
+        );
+        assert!(!small.is_hnsw_active());
+        let index = VectorIndex::new(config).unwrap();
+        let items: Vec<(String, Vec<f32>)> = (0..12_000)
+            .map(|i| {
+                (
+                    format!("d{i}"),
+                    (0..8).map(|_| rng.gen_range(-1.0..1.0)).collect(),
+                )
+            })
+            .collect();
+        let q = items[123].1.clone();
+        assert_eq!(index.insert_many(items), 12_000);
+        assert!(index.is_hnsw_active());
+        assert_eq!(index.len(), 12_000);
+        assert_eq!(index.search(&q, 1, 64).unwrap()[0].doc_key, "d123");
     }
 
     /// An index written by 2.14.0 or earlier (V3, no marker) is still read.
