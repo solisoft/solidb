@@ -69,13 +69,16 @@ run_one() {
     solidb)
       limited env SOLIDB_ADMIN_PASSWORD=$PASSWORD SOLIDB_ENGINE=solistore \
         "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua >"$OUT/solidb.server.log" 2>&1 &
-      local server=$!
+      local scope=$!
       wait_port 6800
+      # $! is sudo's; the server is the process listening on the port.
+      local server
+      server=$(ss -Hltnp 'sport = :6800' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
       taskset -c "$CLIENT_CPUS" "$BIN" --engine solidb --addr 127.0.0.1:6800 --password $PASSWORD \
         "${ARGS[@]}" --out "$OUT/solidb.json" 2>&1 | tee "$OUT/solidb.log" || status=$?
-      echo "rss_kb $(ps -o rss= -p $server)" >"$OUT/solidb.memory"
-      kill $server
-      wait $server 2>/dev/null || true
+      echo "rss_kb $(ps -o rss= -p "$server")" >"$OUT/solidb.memory"
+      kill "$server"
+      wait $scope 2>/dev/null || true
       ;;
     pgvector)
       $DOCKER rm -f $NAME >/dev/null 2>&1 || true

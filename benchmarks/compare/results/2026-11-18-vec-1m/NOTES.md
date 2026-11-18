@@ -11,5 +11,10 @@
 - 1,000,000 vectors of 128 dimensions (100 clusters, normalised), 500
   queries, top-10, cosine; HNSW M=16, ef_construction=200; medians of 3 runs
   of 10 s at each of ef 40/100/200 and 1/8 clients.
-- `solidb.memory` is wrong: it holds the size of the `sudo` process that
-  started SoliDB, not SoliDB's. `pgvector.memory` is the container's.
+- `solidb.json` / `.memory`: the build with card #984 (a filtered search
+  follows the filter in the graph's walk, `ef` counting the documents
+  that pass), run alone afterwards on the same host and limits. These are
+  the post's figures. `solidb-6308c887.json` is the run beside the two
+  others, before #984; its memory reading was wrong (it held the `sudo`
+  process that started SoliDB, fixed in `vec.sh`), so it is not kept.
+  `pgvector.memory` is the container's.

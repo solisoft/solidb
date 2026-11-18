@@ -537,6 +537,53 @@ impl VectorIndex {
         self.brute_force_search(query, limit)
     }
 
+    /// [`Self::search`] among the documents whose key `passes`, the filter
+    /// followed in the graph's walk ([`Graph::search_filtered`]). `None`
+    /// when the index has no graph yet: the caller filters a plain search.
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        limit: usize,
+        ef: usize,
+        max_checks: usize,
+        passes: &mut dyn FnMut(&str) -> bool,
+    ) -> DbResult<Option<Vec<VectorSearchResult>>> {
+        if query.len() != self.config.dimension {
+            return Err(DbError::BadRequest(format!(
+                "Query vector dimension mismatch: expected {}, got {}",
+                self.config.dimension,
+                query.len()
+            )));
+        }
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        let Some(graph) = hnsw.as_ref() else {
+            return Ok(None);
+        };
+        let ef = ef
+            .max(limit)
+            .max(40)
+            .min(MAX_HNSW_EF.max(limit.min(graph.len())));
+        Ok(Some(
+            graph
+                .search_filtered(query, limit, ef, max_checks, passes)
+                .into_iter()
+                .map(|(doc_key, distance)| VectorSearchResult {
+                    doc_key,
+                    score: self.score_of(distance),
+                })
+                .collect(),
+        ))
+    }
+
+    /// The score a search reports for a graph distance.
+    fn score_of(&self, distance: f32) -> f32 {
+        match self.config.metric {
+            VectorMetric::Cosine => 1.0 - distance, // distance was 1-similarity
+            VectorMetric::Euclidean => distance,    // keep as distance
+            VectorMetric::DotProduct => -distance,  // distance was -dot_product
+        }
+    }
+
     /// Perform brute-force linear search
     fn brute_force_search(&self, query: &[f32], limit: usize) -> DbResult<Vec<VectorSearchResult>> {
         // Check if we have quantized vectors - use asymmetric search if so

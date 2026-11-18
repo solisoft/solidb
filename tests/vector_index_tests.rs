@@ -874,3 +874,86 @@ fn test_vector_update_skips_reindex_when_embedding_unchanged() {
         "d1 should have moved off its old direction; score={d1_score}"
     );
 }
+
+/// Card #984: a filtered search over a graph follows the filter in the
+/// graph's walk and checks what the filter names on projections kept
+/// between queries. Its answer must be the exact one on easy data, and a
+/// document written since must be read as it is now, by an update one at a
+/// time as by a batch.
+#[test]
+fn a_filtered_search_over_a_graph_sees_writes() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("items".to_string(), None).unwrap();
+    let coll = engine.get_collection("items").unwrap();
+    // 12,000 points on a circle: past the graph threshold, and the nearest
+    // of a key are its neighbours by number.
+    let n = 12_000;
+    let point = |i: usize| {
+        let a = i as f64 / n as f64 * std::f64::consts::TAU;
+        vec![a.cos(), a.sin(), 0.5]
+    };
+    let docs: Vec<_> = (0..n)
+        .map(|i| json!({"_key": format!("p{i}"), "embedding": point(i), "cat": i % 10}))
+        .collect();
+    coll.insert_batch(docs).unwrap();
+    coll.create_vector_index(VectorIndexConfig::new(
+        "emb".to_string(),
+        "embedding".to_string(),
+        3,
+    ))
+    .unwrap();
+    let query: Vec<f32> = point(5_000).iter().map(|x| *x as f32).collect();
+    let filter = |cat: i64| {
+        let mut f = serde_json::Map::new();
+        f.insert("cat".to_string(), json!(cat));
+        f
+    };
+    let keys = |found: &[(serde_json::Value, f32)]| -> Vec<String> {
+        found
+            .iter()
+            .map(|(doc, _)| doc["_key"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let found = coll
+        .vector_search_filtered("emb", &query, 3, 4, Some(40), &filter(3))
+        .unwrap();
+    let mut got = keys(&found);
+    got.sort();
+    assert_eq!(got, vec!["p4993", "p5003", "p5013"]);
+    assert!(found.iter().all(|(doc, _)| doc["cat"] == json!(3)));
+
+    // p5000 itself now passes, p5003 no longer does.
+    coll.update("p5000", json!({"cat": 3})).unwrap();
+    coll.update("p5003", json!({"cat": 4})).unwrap();
+    let mut got = keys(
+        &coll
+            .vector_search_filtered("emb", &query, 3, 4, Some(40), &filter(3))
+            .unwrap(),
+    );
+    got.sort();
+    assert_eq!(got, vec!["p4993", "p5000", "p5013"]);
+
+    // The same through a batch update.
+    coll.update_batch(&[
+        ("p5001".to_string(), json!({"cat": 3})),
+        ("p5013".to_string(), json!({"cat": 7})),
+    ])
+    .unwrap();
+    let mut got = keys(
+        &coll
+            .vector_search_filtered("emb", &query, 3, 4, Some(40), &filter(3))
+            .unwrap(),
+    );
+    got.sort();
+    assert_eq!(got, vec!["p4993", "p5000", "p5001"]);
+
+    // And a delete.
+    coll.delete("p5000").unwrap();
+    let mut got = keys(
+        &coll
+            .vector_search_filtered("emb", &query, 3, 4, Some(40), &filter(3))
+            .unwrap(),
+    );
+    got.sort();
+    assert_eq!(got, vec!["p4983", "p4993", "p5001"]);
+}

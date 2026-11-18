@@ -39,25 +39,25 @@
 <table>
   <thead><tr><th>Index build</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
   <tbody>
-    <tr><td>1,000,000 × 128</td><td>124 s</td><td>153 s</td><td>42 s</td></tr>
+    <tr><td>1,000,000 × 128</td><td>129 s</td><td>153 s</td><td>42 s</td></tr>
   </tbody>
 </table>
 <p>The plain search, one client. Requests per second, with recall@10 in parentheses:</p>
 <table>
   <thead><tr><th>One client</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
   <tbody>
-    <tr><td><code>ef</code> 40</td><td>4,613 (0.724)</td><td>1,379 (0.712)</td><td>819 (0.664)</td></tr>
-    <tr><td><code>ef</code> 100</td><td>2,669 (0.898)</td><td>705 (0.895)</td><td>750 (0.846)</td></tr>
-    <tr><td><code>ef</code> 200</td><td>1,606 (0.955)</td><td>443 (0.960)</td><td>681 (0.914)</td></tr>
+    <tr><td><code>ef</code> 40</td><td>4,690 (0.713)</td><td>1,379 (0.712)</td><td>819 (0.664)</td></tr>
+    <tr><td><code>ef</code> 100</td><td>2,675 (0.898)</td><td>705 (0.895)</td><td>750 (0.846)</td></tr>
+    <tr><td><code>ef</code> 200</td><td>1,723 (0.963)</td><td>443 (0.960)</td><td>681 (0.914)</td></tr>
   </tbody>
 </table>
 <figure class="post-figure"><svg viewBox="0 0 680 198" role="img" aria-labelledby="vec-plain-t">
-<title id="vec-plain-t">Ten nearest neighbours at ef 100, one client, requests per second: SoliDB 2,669, LanceDB 750, pgvector 705, at a recall of 0.898, 0.846 and 0.895.</title>
+<title id="vec-plain-t">Ten nearest neighbours at ef 100, one client, requests per second: SoliDB 2,675, LanceDB 750, pgvector 705, at a recall of 0.898, 0.846 and 0.895.</title>
 <text x="20" y="30" font-family="Inter, sans-serif" font-size="13" fill="#9ba39c">Ten nearest of a million at ef 100, one client (requests per second)</text>
 <line x1="170" y1="46" x2="170" y2="158" stroke="#29322f"/>
 <text x="20" y="72" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">SoliDB</text>
 <rect x="170" y="56" width="420" height="24" rx="3" fill="#f5a623"/>
-<text x="600" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2,669</text>
+<text x="600" y="73" font-family="JetBrains Mono, monospace" font-size="12" fill="#f5a623">2,675</text>
 <text x="20" y="110" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">LanceDB</text>
 <rect x="170" y="94" width="118" height="24" rx="3" fill="#6b746c"/>
 <text x="298" y="111" font-family="JetBrains Mono, monospace" font-size="12" fill="#ece6d6">750</text>
@@ -70,23 +70,23 @@
 <table>
   <thead><tr><th>Eight clients</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
   <tbody>
-    <tr><td><code>ef</code> 40</td><td>24,184</td><td>7,679</td><td>1,430</td></tr>
-    <tr><td><code>ef</code> 100</td><td>13,247</td><td>4,004</td><td>1,399</td></tr>
-    <tr><td><code>ef</code> 200</td><td>6,647</td><td>2,522</td><td>1,376</td></tr>
+    <tr><td><code>ef</code> 40</td><td>24,060</td><td>7,679</td><td>1,430</td></tr>
+    <tr><td><code>ef</code> 100</td><td>12,353</td><td>4,004</td><td>1,399</td></tr>
+    <tr><td><code>ef</code> 200</td><td>7,858</td><td>2,522</td><td>1,376</td></tr>
   </tbody>
 </table>
-<p>The filtered search, a filter that a tenth of the vectors pass:</p>
+<p>The filtered search, a filter that a tenth of the vectors pass. Here <code>ef</code> does not mean the same in each: in SoliDB it counts the vectors kept that pass the filter, in pgvector the candidates kept before it is applied. The same width gives SoliDB a higher recall and more work, so read this table by recall rather than by row:</p>
 <table>
   <thead><tr><th>Filtered</th><th>SoliDB</th><th>pgvector</th><th>LanceDB</th></tr></thead>
   <tbody>
-    <tr><td><code>ef</code> 40, 1 client</td><td>800 (0.961)</td><td>586 (0.830)</td><td>134 (0.927)</td></tr>
-    <tr><td><code>ef</code> 200, 1 client</td><td>760 (0.961)</td><td>429 (0.915)</td><td>117 (0.951)</td></tr>
-    <tr><td><code>ef</code> 40, 8 clients</td><td>2,150</td><td>3,432</td><td>534</td></tr>
-    <tr><td><code>ef</code> 100, 8 clients</td><td>2,285</td><td>3,010</td><td>509</td></tr>
-    <tr><td><code>ef</code> 200, 8 clients</td><td>2,638</td><td>2,484</td><td>484</td></tr>
+    <tr><td><code>ef</code> 40, 1 client</td><td>734 (0.972)</td><td>586 (0.830)</td><td>134 (0.927)</td></tr>
+    <tr><td><code>ef</code> 200, 1 client</td><td>259 (0.996)</td><td>429 (0.915)</td><td>117 (0.951)</td></tr>
+    <tr><td><code>ef</code> 40, 8 clients</td><td>3,579</td><td>3,432</td><td>534</td></tr>
+    <tr><td><code>ef</code> 100, 8 clients</td><td>1,961 (0.994)</td><td>3,010 (0.858)</td><td>509 (0.949)</td></tr>
+    <tr><td><code>ef</code> 200, 8 clients</td><td>1,343</td><td>2,484</td><td>484</td></tr>
   </tbody>
 </table>
-<p>SoliDB answers the plain search three to four times as fast as pgvector at every width and both concurrencies, at a recall within half a point of it. It builds its index a fifth faster than pgvector, and LanceDB three times faster than SoliDB. On the filtered search its recall is the highest at every width, and it is ahead at one client; at eight clients pgvector is ahead at <code>ef</code> 40 and 100, by up to 60%.</p>
+<p>SoliDB answers the plain search three to four times as fast as pgvector at every width and both concurrencies, at a recall within half a point of it. It builds its index a sixth faster than pgvector, and LanceDB three times faster than SoliDB. On the filtered search, SoliDB at <code>ef</code> 40 finds 97% of the true neighbours, more than pgvector or LanceDB at any width measured, and answers more searches a second than either at any of their widths, at one client and at eight. At the same <code>ef</code> pgvector is faster at 100 and 200, where it finds 86% and 92% and SoliDB 99%.</p>
 </section>
 
 <section id="before"><h2>Where 2.14.0 stood</h2>
@@ -97,16 +97,16 @@
 
 <section id="changed"><h2>What changed</h2>
 <p><strong>How links are chosen.</strong> An HNSW graph links each vector to some of its neighbours, and a search walks those links. SoliDB linked each new vector to the M vectors nearest to it. On vectors spread evenly that works; on clustered vectors every one of those M is in the same cluster, so no link leaves it. The graph falls apart into islands, one per cluster, and a search that enters the wrong island can widen as much as it likes: there is no way out. The paper that defines HNSW (Malkov and Yashunin) gives a rule for exactly this: take a candidate only if it is nearer to the new vector than to every neighbour already taken. A neighbour that is close but redundant gives way to one in another direction, and the islands are joined. With it, recall@10 on the first data went from 0.64 to 0.9995 at <code>ef</code> 40 and 1.0 at 200, and a test now fails on the old rule.</p>
-<p><strong>How a filter is applied.</strong> An HNSW graph knows nothing of categories, so a filtered search takes candidates and checks the filter on each. SoliDB took one batch of four times the ten asked for: with a filter that a tenth pass, about four of them survived. It now searches again four times wider while fewer than ten pass, up to the whole index, as pgvector 0.8's iterative scan does. Each candidate is checked on the fields the filter names, without decoding the rest of its document; the embedding is most of it.</p>
+<p><strong>How a filter is applied.</strong> An HNSW graph knows nothing of categories, so a filtered search takes candidates and checks the filter on each. SoliDB took one batch of four times the ten asked for: with a filter that a tenth pass, about four of them survived. It now follows the filter in the walk itself: every vector on the way is walked through, only those that pass are kept, and the walk goes on until the <code>ef</code> nearest that pass are found. A first version started the search again four times wider while fewer than ten passed, as pgvector 0.8's iterative scan does; that took two searches and a read of every candidate, and left SoliDB 60% behind pgvector at eight clients. Each vector the walk would keep is checked on the fields the filter names, read once and kept in memory between queries; any write of the document forgets it.</p>
 <p><strong>How the graph is stored in memory.</strong> The graph kept its nodes, their links and their vectors in maps keyed by the document's key. Every distance a search computed began by hashing a string, every link was a copy of one, and every search allocated a set of them to remember what it had visited. The nodes are now numbered, their links are lists of numbers, the vectors sit one after the other in a single array, normalised once so that a cosine is a dot product, and the visited set is reused. That alone took the searches from 1,557 to 5,529 a second at one client on 300,000 vectors. Indexes saved by earlier versions are read and renumbered when they are loaded.</p>
-<p><strong>How an index is built.</strong> A new index over stored documents was filled one vector at a time. The graph was built on every core at 10,000 vectors, and each of the remaining ones was then linked on a single thread: the server used one core of eight. The vectors are now stored as one batch and the graph is built once, on every core, a lock on each node's links. 652 seconds became 97 on 300,000 vectors, and a million take 124.</p>
+<p><strong>How an index is built.</strong> A new index over stored documents was filled one vector at a time. The graph was built on every core at 10,000 vectors, and each of the remaining ones was then linked on a single thread: the server used one core of eight. The vectors are now stored as one batch and the graph is built once, on every core, a lock on each node's links. 652 seconds became 97 on 300,000 vectors, and a million take 129.</p>
 </section>
 
 <section id="limits"><h2>Where the others are ahead, and what this does not show</h2>
 <ul>
-<li><strong>Filtered searches at eight clients</strong>: pgvector 3,432 a second at <code>ef</code> 40, SoliDB 2,150, with a p99 of 10 ms against 3.4. SoliDB's widening lets a selective query read thousands of candidates, and at eight clients those queries are the tail. pgvector's recall there is lower (0.83 against 0.96), but that is not the same as being slower.</li>
+<li><strong>Filtered searches at the same width</strong>: at <code>ef</code> 100 and 200 pgvector answers more searches a second, 3,010 and 2,484 against 1,961 and 1,343 at eight clients, at a lower recall. Whoever tunes <code>ef</code> on pgvector should expect to set it lower on SoliDB for a filtered search, and the latency of a selective filter grows with it: a p99 of 9.4 ms at <code>ef</code> 200.</li>
 <li><strong>The index build</strong>: LanceDB builds its index in 42 seconds, a third of SoliDB's time. Its index is not the same: an IVF partitioning with quantized vectors under the graph, which is also why its recall is lower at the same width.</li>
-<li><strong>Memory</strong>: not compared here. Our script recorded the size of the process that launched SoliDB rather than SoliDB's; pgvector's container used 1.6 GB. SoliDB currently keeps the vectors twice, once by document key and once in the graph's array.</li>
+<li><strong>Memory</strong>: SoliDB's process held 5.3 GB at the end of the run, pgvector's container 1.6 GB. SoliDB's figure includes a storage cache sized from the memory it may use, and it keeps the vectors twice, once by document key and once in the graph's array; the second is the one to remove.</li>
 <li><strong>LanceDB through Python.</strong> Its searches at eight threads hardly go faster than at one: they measure the Python client holding its interpreter lock as much as the engine. The Rust library would be faster, and a Rust harness would be the fairer test.</li>
 <li><strong>Generated data.</strong> The vectors are clustered Gaussians, not the embeddings of a real model. Recall at a given width depends on the data, and a public set with its ground truth (SIFT, GloVe, or a text embedding set) would make the figures comparable to others'.</li>
 <li><strong>Two questions.</strong> No inserts while searching, no deletes, no updates of vectors, no other metric, no dimension above 128, no quantization in SoliDB or pgvector. Each would move these numbers.</li>

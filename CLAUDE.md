@@ -671,6 +671,17 @@ vectors (`Graph::restore`). A graph saved by 2.14.0 or earlier
 renumbered at load (`Graph::from_legacy`). A change to what is saved needs
 a new marker, and the older ones kept readable.
 
+A filtered search (`VECTOR_SEARCH(…, {filter})`, the driver's) follows the
+filter in the walk at level 0 (`Graph::search_filtered`, called through
+`Collection::filtered_walk`): every node is walked through, only one that
+passes is kept, and `ef` bounds those kept. A node is checked on the
+fields the filter names, read once and kept between queries in a map of
+`storage/kept.rs` of its own (`kept::vertices` under a marker field), which
+every single write forgets and every batch empties, as for traversals. A
+write path that reaches neither `emit_change` nor
+`invalidate_cached_queries` would leave filtered searches reading the old
+values. An index below its graph threshold widens a plain search instead.
+
 ### Field rules
 
 A collection declares what it asks of top-level fields of its documents:

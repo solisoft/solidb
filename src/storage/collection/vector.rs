@@ -271,8 +271,16 @@ impl Collection {
         index.search(query, k, ef_search.unwrap_or(100))
     }
 
-    /// Nearest-neighbour search with an optional equality metadata filter applied
-    /// to the hydrated documents. HNSW has no filter push-down: `k * overfetch`
+    /// Nearest-neighbour search with an optional equality metadata filter.
+    ///
+    /// With a graph, the filter is followed in the graph's walk
+    /// ([`Self::filtered_walk`]): `ef` bounds the documents that pass, as
+    /// pgvector's `hnsw.ef_search` does, and a selective filter widens the
+    /// walk rather than starting it again (card #984: two searches and a
+    /// read of each candidate per query put SoliDB 60% behind pgvector at
+    /// eight clients).
+    ///
+    /// Without one (an index below its graph threshold): `k * overfetch`
     /// candidates are fetched, hydrated and filtered, and while fewer than `k`
     /// of them pass and the index holds more, the search is run again four
     /// times wider (its `ef` at least that wide), up to the whole index or
@@ -313,6 +321,19 @@ impl Collection {
             .collect();
         filtered_fields.sort();
         filtered_fields.dedup();
+        if !filter.is_empty() {
+            if let Some(found) = self.filtered_walk(
+                name,
+                query,
+                k,
+                ef_search.unwrap_or_else(|| fetch.max(100)),
+                MAX_FILTERED_CANDIDATES,
+                filter,
+                &filtered_fields,
+            )? {
+                return Ok(found);
+            }
+        }
         let mut checked: std::collections::HashMap<String, Option<Value>> =
             std::collections::HashMap::new();
         loop {
@@ -350,6 +371,67 @@ impl Collection {
                 .min(held)
                 .min(MAX_FILTERED_CANDIDATES);
         }
+    }
+
+    /// The filtered search in the graph's walk ([`VectorIndex::search_filtered`]):
+    /// each node the walk would keep is checked on the fields the filter
+    /// names, read once and kept between queries in the map traversals
+    /// keep their projections in (`storage/kept.rs`), which every write of
+    /// a document forgets. The whole document is read for the `k` kept.
+    /// `None` when the index has no graph.
+    #[allow(clippy::too_many_arguments)]
+    fn filtered_walk(
+        &self,
+        name: &str,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+        max_checks: usize,
+        filter: &serde_json::Map<String, Value>,
+        fields: &[String],
+    ) -> DbResult<Option<Vec<(Value, f32)>>> {
+        // Answered from the in-memory index and the kept projections.
+        self.note_range_read();
+        let index = self.get_vector_index(name)?;
+        // A map of its own: a traversal's projection of the same fields
+        // is not read the same way.
+        let mut kept_as: Vec<String> = Vec::with_capacity(fields.len() + 1);
+        kept_as.push("\u{0}vector filter".to_string());
+        kept_as.extend_from_slice(fields);
+        let kept = crate::storage::kept::vertices(self.ks.state(), Some(&kept_as));
+        let mut passes = |key: &str| -> bool {
+            if let Some(found) = kept.as_ref().and_then(|kept| kept.get(key)) {
+                return Self::doc_matches_filter(&found, filter);
+            }
+            let seen = kept.as_ref().map(|kept| kept.epoch());
+            let Ok(projected) = self.get_value_projected(key, fields) else {
+                return false; // deleted since indexing
+            };
+            let ok = Self::doc_matches_filter(&projected, filter);
+            if let Some(kept) = &kept {
+                let size = 48 * fields.len().max(1);
+                kept.put(
+                    key,
+                    &std::sync::Arc::new(projected),
+                    size,
+                    seen.unwrap_or_default(),
+                );
+            }
+            ok
+        };
+        let Some(found) = index.search_filtered(query, k, ef, max_checks, &mut passes)? else {
+            return Ok(None);
+        };
+        Ok(Some(
+            found
+                .into_iter()
+                .filter_map(|r| {
+                    self.get(&r.doc_key)
+                        .ok()
+                        .map(|doc| (doc.to_value(), r.score))
+                })
+                .collect(),
+        ))
     }
 
     /// True when the document equals `filter` on every field (dotted paths allowed).

@@ -479,13 +479,117 @@ impl Graph {
                 out.extend_from_slice(ls);
             }
         };
+        let ep = self.descend(&q, entry, &read);
+        let mut found = self.search_layer(&q, &ep, ef.max(k), 0, &read);
+        found.truncate(k);
+        found
+            .into_iter()
+            .map(|n| (self.keys[n.id as usize].clone(), n.d))
+            .collect()
+    }
+
+    /// The entry point at level 0: the nearest node found going down the
+    /// upper levels from `entry`.
+    fn descend(&self, q: &[f32], entry: u32, read: &dyn Fn(u32, usize, &mut Vec<u32>)) -> Vec<u32> {
         let mut ep = vec![entry];
         for l in (1..=self.max_level).rev() {
-            if let Some(best) = self.search_layer(&q, &ep, 1, l, &read).first() {
+            if let Some(best) = self.search_layer(q, &ep, 1, l, read).first() {
                 ep = vec![best.id];
             }
         }
-        let mut found = self.search_layer(&q, &ep, ef.max(k), 0, &read);
+        ep
+    }
+
+    /// The `k` nodes nearest to `query` among those whose key `passes`,
+    /// nearest first, with their distances.
+    ///
+    /// The filter is followed in the walk at level 0: every node is
+    /// walked through, but only one that passes is kept, and the walk goes
+    /// on until the `ef` nearest that pass are found and no node left to
+    /// walk is nearer than the furthest of them. A selective filter makes
+    /// the walk wider, not the search start again. `passes` is asked at
+    /// most once per node, and only of a node that would be kept; the walk
+    /// stops after asking it `max_checks` times, and answers with what it
+    /// found (fewer than `k` when the filter is that rare).
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+        max_checks: usize,
+        passes: &mut dyn FnMut(&str) -> bool,
+    ) -> Vec<(String, f32)> {
+        let Some(entry) = self.entry else {
+            return Vec::new();
+        };
+        if query.len() != self.dim || k == 0 {
+            return Vec::new();
+        }
+        let q = prepared(query, self.metric);
+        let read = |n: u32, l: usize, out: &mut Vec<u32>| {
+            out.clear();
+            if let Some(ls) = self.links[n as usize].get(l) {
+                out.extend_from_slice(ls);
+            }
+        };
+        let ep = self.descend(&q, entry, &read);
+        let ef = ef.max(k);
+        let mut found = with_visited(self.keys.len(), |first_visit| {
+            let checks = std::cell::Cell::new(0usize);
+            let mut check = |id: u32| {
+                checks.set(checks.get() + 1);
+                passes(&self.keys[id as usize])
+            };
+            // Every node walked through, nearest first.
+            let mut candidates: BinaryHeap<Near> = BinaryHeap::new();
+            // Only those that pass, furthest first.
+            let mut result: BinaryHeap<Far> = BinaryHeap::new();
+            for &e in &ep {
+                if first_visit(e) && !self.removed[e as usize] {
+                    let d = self.dist_to(&q, e);
+                    candidates.push(Near { d, id: e });
+                    if check(e) {
+                        result.push(Far { d, id: e });
+                    }
+                }
+            }
+            let mut neighbours = Vec::new();
+            while let Some(current) = candidates.pop() {
+                let furthest = result.peek().map_or(f32::MAX, |f| f.d);
+                if result.len() >= ef && current.d > furthest {
+                    break;
+                }
+                read(current.id, 0, &mut neighbours);
+                for &n in &neighbours {
+                    if !first_visit(n) || self.removed[n as usize] {
+                        continue;
+                    }
+                    let d = self.dist_to(&q, n);
+                    let furthest = result.peek().map_or(f32::MAX, |f| f.d);
+                    if result.len() < ef || d < furthest {
+                        candidates.push(Near { d, id: n });
+                        if check(n) {
+                            result.push(Far { d, id: n });
+                            if result.len() > ef {
+                                result.pop();
+                            }
+                        }
+                    }
+                }
+                if checks.get() >= max_checks {
+                    break;
+                }
+            }
+            result
+                .into_iter()
+                .map(|f| Near { d: f.d, id: f.id })
+                .collect::<Vec<Near>>()
+        });
+        found.sort_by(|a, b| {
+            a.d.partial_cmp(&b.d)
+                .unwrap_or(Ordering::Equal)
+                .then(a.id.cmp(&b.id))
+        });
         found.truncate(k);
         found
             .into_iter()
@@ -727,6 +831,57 @@ mod tests {
         assert_eq!(g.len(), 3);
         assert_eq!(g.search(&[0.0, 1.0], 1, 10)[0].0, "c");
         assert_eq!(g.search(&[1.0, 0.05], 2, 10)[0].0, "a");
+    }
+
+    #[test]
+    fn a_filtered_search_finds_the_nearest_that_pass() {
+        let vectors = data(3_000, 16);
+        let g = Graph::build(16, VectorMetric::Cosine, 16, 200, &vectors, 4);
+        // A tenth of the keys pass.
+        let passes = |key: &str| key.trim_start_matches('d').parse::<usize>().unwrap() % 10 == 3;
+        let mut hits = 0;
+        let mut asked = 0;
+        for probe in (0..3_000).step_by(97).map(|i| format!("d{i}")) {
+            let q = &vectors[&probe];
+            let mut exact: Vec<(String, f32)> = vectors
+                .iter()
+                .filter(|(key, _)| passes(key))
+                .map(|(key, v)| {
+                    (
+                        key.clone(),
+                        distance(
+                            &prepared(q, VectorMetric::Cosine),
+                            &prepared(v, VectorMetric::Cosine),
+                            VectorMetric::Cosine,
+                        ),
+                    )
+                })
+                .collect();
+            exact.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            let mut checked = std::collections::HashSet::new();
+            let got = g.search_filtered(q, 10, 40, usize::MAX, &mut |key| {
+                assert!(checked.insert(key.to_string()), "{key} checked twice");
+                passes(key)
+            });
+            assert_eq!(got.len(), 10);
+            assert!(got.iter().all(|(key, _)| passes(key)));
+            let want: std::collections::HashSet<&str> =
+                exact[..10].iter().map(|(k, _)| k.as_str()).collect();
+            hits += got
+                .iter()
+                .filter(|(key, _)| want.contains(key.as_str()))
+                .count();
+            asked += 10;
+        }
+        assert!(hits * 100 >= asked * 95, "recall {hits}/{asked}");
+        // A filter nothing passes stops at the cap.
+        let mut calls = 0;
+        let none = g.search_filtered(&vectors["d0"], 10, 40, 500, &mut |_| {
+            calls += 1;
+            false
+        });
+        assert!(none.is_empty());
+        assert!(calls < 600, "{calls} checks");
     }
 
     #[test]
