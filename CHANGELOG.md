@@ -8,6 +8,12 @@
 
 ### Fixed
 
+- **Vector search finds the nearest neighbours on clustered data.** The HNSW graph linked each new vector to its M nearest only. On clustered vectors, which is what embeddings are, every link stayed inside its cluster, the graph fell apart into islands, and a search that entered the wrong one never left it: recall@10 stayed near 0.64 whatever `ef` (20,000 vectors of 64 dimensions, 100 clusters). Links are now chosen with the HNSW paper's heuristic, which keeps a candidate only if it is nearer to the new vector than to the neighbours already taken: recall@10 0.9995 at `ef` 40, 1.0 at 200. Building an index takes about twice as long (10.5 s → 23 s for those 20,000 vectors); search speed is unchanged.
+
+- **A filtered vector search returns its k rows.** `VECTOR_SEARCH(…, {filter: …})` checked one fixed round of 4·k candidates, so a filter that 10% of the documents pass returned about 4 of the 10 nearest. It now searches again four times wider while fewer than k candidates pass, up to the whole index (at most 10,000 candidates), each document read once: recall@10 0.40 → 1.0 on the same data, at 2.3 ms a search instead of 0.7 ms.
+
+- **`benchmarks/compare` has a vector harness** (`solidb-vec`): recall@k against exact answers computed by the harness, then requests/s and latency, for plain and filtered searches, on SoliDB and pgvector (LanceDB to come).
+
 - **A data directory's `ENGINE` marker survives a power loss.** It was written without an fsync, after the engine had created its files: a power loss soon after a directory was made left it empty, and no start could open the directory (`unknown storage engine ""`). It is now written before the engine opens, to a file of its own that is fsynced and renamed into place, and an empty marker is read as absent. Found by the fault harness's new power-loss runs (`faults/power.sh`, on LazyFS).
 
 - **`libz-sys` 1.1.31 → 1.1.33** (RUSTSEC-2026-0544, a heap buffer overflow in the zlib bindings RocksDB's build links). Whether SoliDB reached the affected path was not established; the upgrade is the advisory's fix.

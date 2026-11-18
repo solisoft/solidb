@@ -432,14 +432,49 @@ impl HnswGraph {
         results
     }
 
-    /// Select M best neighbors using the simple heuristic
-    fn select_neighbors(&self, candidates: &[Neighbor], m: usize) -> Vec<String> {
-        // Simple heuristic: just take the M closest
-        candidates
-            .iter()
-            .take(m)
-            .map(|n| n.doc_key.clone())
-            .collect()
+    /// Up to `m` of `candidates` (sorted nearest first, each with its
+    /// distance to the base point) to link the base point to: the HNSW
+    /// paper's heuristic (Malkov & Yashunin, algorithm 4). A candidate is
+    /// taken only if it is nearer to the base than to every neighbour taken
+    /// before it; the ones passed over then fill what is left of `m`.
+    ///
+    /// Taking the `m` nearest alone, as this did, links every point of a
+    /// cluster to points of the same cluster: on clustered data (what
+    /// embeddings are) the graph fell apart into islands, a search that
+    /// entered the wrong one never left it, and recall@10 stayed near 0.5
+    /// whatever `ef` (card #979).
+    fn select_neighbors(
+        candidates: &[Neighbor],
+        m: usize,
+        vectors: &HashMap<String, Vec<f32>>,
+        metric: VectorMetric,
+    ) -> Vec<String> {
+        let mut selected: Vec<&Neighbor> = Vec::with_capacity(m);
+        let mut passed_over: Vec<&Neighbor> = Vec::new();
+        for candidate in candidates {
+            if selected.len() >= m {
+                break;
+            }
+            let diverse = match vectors.get(&candidate.doc_key) {
+                Some(v) => selected.iter().all(|s| {
+                    Self::calculate_distance(v, &s.doc_key, vectors, metric) > candidate.distance
+                }),
+                None => false,
+            };
+            if diverse {
+                selected.push(candidate);
+            } else {
+                passed_over.push(candidate);
+            }
+        }
+        // Keep the connections pruned above when there is room left.
+        for candidate in passed_over {
+            if selected.len() >= m {
+                break;
+            }
+            selected.push(candidate);
+        }
+        selected.into_iter().map(|n| n.doc_key.clone()).collect()
     }
 
     /// Insert a new vector into the graph
@@ -504,7 +539,7 @@ impl HnswGraph {
             );
 
             // Select best neighbors
-            let selected = self.select_neighbors(&candidates, m_level);
+            let selected = Self::select_neighbors(&candidates, m_level, vectors, metric);
 
             // Add connections from new node to selected neighbors
             if level < new_node.neighbors.len() {
@@ -535,12 +570,13 @@ impl HnswGraph {
                                     .partial_cmp(&b.distance)
                                     .unwrap_or(Ordering::Equal)
                             });
-                            // Select best M neighbors (inline to avoid borrow conflict)
-                            neighbor_node.neighbors[level] = neighbor_candidates
-                                .iter()
-                                .take(m_level)
-                                .map(|n| n.doc_key.clone())
-                                .collect();
+                            // The same selection as for a new node's links.
+                            neighbor_node.neighbors[level] = Self::select_neighbors(
+                                &neighbor_candidates,
+                                m_level,
+                                vectors,
+                                metric,
+                            );
                         }
                     }
                 }
@@ -1407,6 +1443,54 @@ mod tests {
         // doc1 should be closest (distance 0)
         assert_eq!(results[0].doc_key, "doc1");
         assert!(results[0].score < 0.1);
+    }
+
+    /// On clustered vectors (100 tight clusters, as embeddings are), the
+    /// HNSW search finds most of the exact ten nearest neighbours of points
+    /// it was not given, and more of them with a larger `ef`. With the nearest
+    /// M as links the graph fell apart by cluster and recall@10 was about 0.5
+    /// whatever `ef` (card #979).
+    #[test]
+    fn hnsw_recall_on_clustered_vectors() {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let dim = 32;
+        let centres: Vec<Vec<f32>> = (0..100)
+            .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+            .collect();
+        let point = |rng: &mut rand::rngs::StdRng| -> Vec<f32> {
+            let c = &centres[rng.gen_range(0..centres.len())];
+            let v: Vec<f32> = c.iter().map(|x| x + rng.gen_range(-0.3..0.3)).collect();
+            let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            v.into_iter().map(|x| x / n).collect()
+        };
+        let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), dim);
+        let index = VectorIndex::new(config).unwrap();
+        let data: Vec<Vec<f32>> = (0..12_000).map(|_| point(&mut rng)).collect();
+        for (i, v) in data.iter().enumerate() {
+            index.insert(&format!("d{i}"), v).unwrap();
+        }
+        let queries: Vec<Vec<f32>> = (0..100).map(|_| point(&mut rng)).collect();
+        let recall = |ef: usize| -> f64 {
+            let mut found = 0;
+            for q in &queries {
+                let mut exact: Vec<(f32, usize)> = data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (cosine_similarity(q, v), i))
+                    .collect();
+                exact.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                let want: Vec<String> = exact[..10].iter().map(|(_, i)| format!("d{i}")).collect();
+                let got = index.search(q, 10, ef).unwrap();
+                found += got.iter().filter(|r| want.contains(&r.doc_key)).count();
+            }
+            found as f64 / (10 * queries.len()) as f64
+        };
+        let low = recall(40);
+        let high = recall(200);
+        assert!(low >= 0.85, "recall@10 at ef 40: {low}");
+        assert!(high >= 0.95, "recall@10 at ef 200: {high}");
+        assert!(high >= low, "ef 200 {high} below ef 40 {low}");
     }
 
     #[test]

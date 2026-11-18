@@ -277,9 +277,16 @@ impl Collection {
     }
 
     /// Nearest-neighbour search with an optional equality metadata filter applied
-    /// to the hydrated documents. HNSW has no filter push-down, so we over-fetch
-    /// `k * overfetch` candidates, hydrate + filter them, and keep the top `k`.
-    /// Returns `(document, score)` pairs, best score first.
+    /// to the hydrated documents. HNSW has no filter push-down: `k * overfetch`
+    /// candidates are fetched, hydrated and filtered, and while fewer than `k`
+    /// of them pass and the index holds more, the search is run again four
+    /// times wider (its `ef` at least that wide), up to the whole index or
+    /// `MAX_FILTERED_CANDIDATES`. A document is read and checked once across
+    /// the rounds. Returns `(document, score)` pairs, best score first.
+    ///
+    /// One fixed round of `4 * k` kept about 4 of the 10 nearest for a filter
+    /// that 10% of the documents pass, whatever `ef` (card #979). pgvector 0.8
+    /// widens the same way (`hnsw.iterative_scan`).
     ///
     /// `filter` is a map of `field_path -> expected JSON value`; a document matches
     /// only if every entry equals the value at that (dotted) path. An empty filter
@@ -293,28 +300,50 @@ impl Collection {
         ef_search: Option<usize>,
         filter: &serde_json::Map<String, Value>,
     ) -> DbResult<Vec<(Value, f32)>> {
+        /// The widest a filtered search goes before it answers with fewer
+        /// than `k` rows.
+        const MAX_FILTERED_CANDIDATES: usize = 10_000;
         if k == 0 {
             return Ok(Vec::new());
         }
+        let held = self.get_vector_index(name)?.len();
         // Over-fetch so a selective filter can still yield up to k rows.
-        let fetch = k.saturating_mul(overfetch.max(1)).max(k);
-        let candidates = self.vector_search(name, query, fetch, ef_search)?;
-
-        // Audit A2: `k` is caller-controlled; never reserve more than exists.
-        let mut out: Vec<(Value, f32)> = Vec::with_capacity(k.min(candidates.len()));
-        for r in candidates {
-            if out.len() >= k {
-                break;
+        let mut fetch = k.saturating_mul(overfetch.max(1)).max(k);
+        // What each document read so far answered: the document when it
+        // passes the filter, `None` when it fails it or is gone.
+        let mut checked: std::collections::HashMap<String, Option<Value>> =
+            std::collections::HashMap::new();
+        loop {
+            let ef = ef_search.map(|e| e.max(fetch)).or(Some(fetch.max(100)));
+            let candidates = self.vector_search(name, query, fetch, ef)?;
+            let got = candidates.len();
+            // Audit A2: `k` is caller-controlled; never reserve more than exists.
+            let mut out: Vec<(Value, f32)> = Vec::with_capacity(k.min(got));
+            for r in candidates {
+                if out.len() >= k {
+                    break;
+                }
+                let kept = checked.entry(r.doc_key.clone()).or_insert_with(|| {
+                    match self.get(&r.doc_key) {
+                        Ok(d) => {
+                            Some(d.to_value()).filter(|doc| Self::doc_matches_filter(doc, filter))
+                        }
+                        Err(_) => None, // doc deleted since indexing
+                    }
+                });
+                if let Some(doc) = kept {
+                    out.push((doc.clone(), r.score));
+                }
             }
-            let doc = match self.get(&r.doc_key) {
-                Ok(d) => d.to_value(),
-                Err(_) => continue, // doc deleted since indexing
-            };
-            if Self::doc_matches_filter(&doc, filter) {
-                out.push((doc, r.score));
+            let exhausted = got < fetch || fetch >= held || fetch >= MAX_FILTERED_CANDIDATES;
+            if out.len() >= k || exhausted || filter.is_empty() {
+                return Ok(out);
             }
+            fetch = fetch
+                .saturating_mul(4)
+                .min(held)
+                .min(MAX_FILTERED_CANDIDATES);
         }
-        Ok(out)
     }
 
     /// True when the document equals `filter` on every field (dotted paths allowed).

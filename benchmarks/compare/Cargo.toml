@@ -33,6 +33,12 @@ path = "src/col/main.rs"
 name = "solidb-ts"
 path = "src/ts/main.rs"
 
+# Vectors: nearest-neighbour searches with recall against the exact answers,
+# against pgvector and LanceDB (vec.sh, card #979).
+[[bin]]
+name = "solidb-vec"
+path = "src/vec/main.rs"
+
 [dependencies]
 solidb-client = { path = "../../clients/rust-client" }
 tokio = { version = "1.35", features = ["full"] }
