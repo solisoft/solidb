@@ -1,3 +1,4 @@
+#![cfg(feature = "engine-rocksdb")]
 //! Startup migration of 1.x collections (one column family each) into the
 //! shared keyspace.
 //!

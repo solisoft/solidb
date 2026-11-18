@@ -100,7 +100,11 @@ pub(super) fn multi_get<'c, 'h: 'c, K: AsRef<[u8]>>(
         .into_iter()
         .map(|(cf, k)| match cf {
             KvCf::Solistore(h) => (h, k),
+            #[cfg(feature = "engine-rocksdb")]
             KvCf::Rocks(_) => super::mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         })
         .collect();
     let Some((first, _)) = keys.first() else {

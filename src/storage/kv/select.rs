@@ -165,11 +165,27 @@ fn open_with(
     // engine's files then always says whose they are. Recorded afterwards,
     // a power loss between the two left a database no start could name.
     // Not for an engine this binary cannot open, which is refused below.
-    if cfg!(feature = "engine-solistore") || kind == EngineKind::Rocksdb {
+    let can_open = match kind {
+        EngineKind::Rocksdb => cfg!(feature = "engine-rocksdb"),
+        EngineKind::Solistore => cfg!(feature = "engine-solistore"),
+    };
+    if can_open {
         record(path, kind)?;
     }
     let kv = match kind {
+        #[cfg(feature = "engine-rocksdb")]
         EngineKind::Rocksdb => rocks()?,
+        #[cfg(not(feature = "engine-rocksdb"))]
+        EngineKind::Rocksdb => {
+            let _ = rocks;
+            return Err(KvError::new(format!(
+                "{} holds a RocksDB database, which SoliDB 3.0 no longer opens. \
+                 Stop the server, run `solidb-migrate-engine {}` from SoliDB 2.15 \
+                 (it converts the directory to solistore in place), then start 3.0",
+                path.display(),
+                path.display()
+            )));
+        }
         #[cfg(feature = "engine-solistore")]
         EngineKind::Solistore => solistore()?,
         #[cfg(not(feature = "engine-solistore"))]
@@ -190,7 +206,12 @@ fn open_with(
 pub fn open(path: &Path, required: &[&str]) -> Result<Kv, KvError> {
     open_with(
         path,
-        || super::rocks::open(path, required),
+        || {
+            #[cfg(feature = "engine-rocksdb")]
+            return super::rocks::open(path, required);
+            #[cfg(not(feature = "engine-rocksdb"))]
+            unreachable!()
+        },
         || {
             #[cfg(feature = "engine-solistore")]
             return super::solistore::open(path, required);
@@ -204,7 +225,12 @@ pub fn open(path: &Path, required: &[&str]) -> Result<Kv, KvError> {
 pub fn open_sync_log(path: &Path) -> Result<Kv, KvError> {
     open_with(
         path,
-        || super::rocks::open_sync_log(path),
+        || {
+            #[cfg(feature = "engine-rocksdb")]
+            return super::rocks::open_sync_log(path);
+            #[cfg(not(feature = "engine-rocksdb"))]
+            unreachable!()
+        },
         || {
             #[cfg(feature = "engine-solistore")]
             return super::solistore::open_sync_log(path);
@@ -218,6 +244,24 @@ pub fn open_sync_log(path: &Path) -> Result<Kv, KvError> {
 mod tests {
     use super::*;
 
+    /// 3.0 (card #992): a RocksDB directory, marked or not, is refused with
+    /// what to do about it, and nothing of it is changed.
+    #[cfg(not(feature = "engine-rocksdb"))]
+    #[test]
+    fn a_rocksdb_directory_is_refused_with_the_way_to_migrate() {
+        for marked in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            if marked {
+                write_engine(dir.path(), "rocksdb");
+            } else {
+                std::fs::write(dir.path().join("OPTIONS-000007"), b"").unwrap();
+            }
+            let err = open(dir.path(), &[]).err().expect("refused");
+            assert!(err.to_string().contains("solidb-migrate-engine"), "{err}");
+            assert!(!dir.path().join("CURRENT").exists());
+        }
+    }
+
     fn write_engine(dir: &Path, name: &str) {
         std::fs::write(dir.join(ENGINE_FILE), format!("{name}\n")).unwrap();
     }
@@ -226,6 +270,7 @@ mod tests {
     /// through 2.14.0) says nothing: an empty directory is a new one, a
     /// RocksDB directory is RocksDB's, and the marker is written again,
     /// whole.
+    #[cfg(feature = "engine-rocksdb")]
     #[test]
     fn an_empty_marker_is_read_as_no_marker_and_written_again() {
         let dir = tempfile::tempdir().unwrap();
@@ -283,6 +328,7 @@ mod tests {
 
     /// The default does not reach a directory that holds a database: one
     /// made by RocksDB before the `ENGINE` file existed stays RocksDB's.
+    #[cfg(feature = "engine-rocksdb")]
     #[test]
     fn a_directory_that_holds_a_rocksdb_database_keeps_it_whatever_the_default() {
         let dir = tempfile::tempdir().unwrap();
@@ -297,6 +343,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "engine-rocksdb")]
     #[test]
     fn a_directory_is_opened_with_the_engine_it_records() {
         let dir = tempfile::tempdir().unwrap();
@@ -339,6 +386,7 @@ mod tests {
         assert!(err.to_string().contains("engine-solistore"), "{err}");
     }
 
+    #[cfg(feature = "engine-rocksdb")]
     #[test]
     fn a_rocksdb_directory_from_before_the_engine_file_is_recognised() {
         let dir = tempfile::tempdir().unwrap();

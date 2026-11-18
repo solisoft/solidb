@@ -86,7 +86,9 @@ regex = "1.10"
 seahash = "4.1"  # Uniform hash distribution for sharding
 
 # Storage
-rust-rocksdb = "0.53"
+# RocksDB, only behind `engine-rocksdb` from 3.0 (card #992): a 2.x RocksDB
+# directory is converted with 2.15's `solidb-migrate-engine`.
+rust-rocksdb = { version = "0.53", optional = true }
 
 # Authentication
 argon2 = "0.5"
@@ -341,6 +343,9 @@ aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 
 [features]
 default = ["engine-solistore", "export-arrow"]
+# RocksDB as an engine, off from 3.0: what opens a 2.x RocksDB directory
+# (and `solidb-migrate-engine`, which converts one).
+engine-rocksdb = ["dep:rust-rocksdb"]
 fuse = ["dep:fuser"]
 # solistore, built in beside RocksDB and the engine of a new data directory
 # (`SOLIDB_ENGINE=rocksdb` picks RocksDB for one). On by default: a binary
@@ -402,7 +407,7 @@ required-features = ["fuse"]
 [[bin]]
 name = "solidb-migrate-engine"
 path = "src/bin/solidb-migrate-engine.rs"
-required-features = ["engine-solistore"]
+required-features = ["engine-solistore", "engine-rocksdb"]
 
 [[bin]]
 name = "solidb-repl"
@@ -419,3 +424,7 @@ tag-name = "v{{version}}"
 pre-release-replacements = []
 publish = false
 
+# Measures RocksDB column-family operations: only with RocksDB.
+[[example]]
+name = "cf_perf_probe"
+required-features = ["engine-rocksdb"]

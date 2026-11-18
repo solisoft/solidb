@@ -13,7 +13,9 @@ use std::ops::Deref;
 use crate::error::DbError;
 
 #[cfg(feature = "engine-solistore")]
+#[cfg(all(feature = "engine-rocksdb", feature = "engine-solistore"))]
 pub mod migrate;
+#[cfg(feature = "engine-rocksdb")]
 pub(crate) mod rocks;
 mod select;
 #[cfg(feature = "engine-solistore")]
@@ -41,6 +43,7 @@ pub enum IterMode<'a> {
 }
 
 impl<'a> IterMode<'a> {
+    #[cfg(feature = "engine-rocksdb")]
     pub(crate) fn to_rocks(self) -> rust_rocksdb::IteratorMode<'a> {
         match self {
             IterMode::Start => rust_rocksdb::IteratorMode::Start,
@@ -92,6 +95,7 @@ impl KvReadOptions {
         self.upper = Some(key);
     }
 
+    #[cfg(feature = "engine-rocksdb")]
     pub(crate) fn to_rocks(&self) -> rust_rocksdb::ReadOptions {
         let mut opts = rust_rocksdb::ReadOptions::default();
         if self.readahead > 0 {
@@ -130,6 +134,7 @@ impl fmt::Display for KvError {
 
 impl std::error::Error for KvError {}
 
+#[cfg(feature = "engine-rocksdb")]
 impl From<rust_rocksdb::Error> for KvError {
     fn from(e: rust_rocksdb::Error) -> Self {
         KvError(e.into_string())
@@ -157,6 +162,13 @@ impl From<KvError> for DbError {
 
 /// A value read without copying it out of the engine's cache.
 pub enum KvPinned<'a> {
+    /// Never built: holds the lifetime that only RocksDB's variant used,
+    /// in a binary without it (card #992).
+    #[cfg(not(feature = "engine-rocksdb"))]
+    #[doc(hidden)]
+    Unused(std::marker::PhantomData<&'a ()>, std::convert::Infallible),
+
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(rust_rocksdb::DBPinnableSlice<'a>),
     #[cfg(feature = "engine-solistore")]
     Solistore(::solistore::Bytes),
@@ -167,9 +179,13 @@ impl Deref for KvPinned<'_> {
 
     fn deref(&self) -> &[u8] {
         match self {
+            #[cfg(feature = "engine-rocksdb")]
             KvPinned::Rocks(slice) => slice,
             #[cfg(feature = "engine-solistore")]
             KvPinned::Solistore(bytes) => bytes,
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 }
@@ -184,6 +200,7 @@ impl AsRef<[u8]> for KvPinned<'_> {
 
 /// RocksDB as SoliDB opens it. Named outside this module only where a
 /// database is opened.
+#[cfg(feature = "engine-rocksdb")]
 pub type RawRocks = rust_rocksdb::DBWithThreadMode<rust_rocksdb::MultiThreaded>;
 
 /// Write options: `sync` makes the write durable before it returns.
@@ -202,6 +219,7 @@ impl KvWriteOptions {
         KvWriteOptions { sync: true }
     }
 
+    #[cfg(feature = "engine-rocksdb")]
     fn to_rocks(self) -> rust_rocksdb::WriteOptions {
         let mut opts = rust_rocksdb::WriteOptions::default();
         opts.set_sync(self.sync);
@@ -240,11 +258,13 @@ pub struct Kv {
 }
 
 enum Engine {
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(RawRocks),
     #[cfg(feature = "engine-solistore")]
     Solistore(::solistore::Db),
 }
 
+#[cfg(feature = "engine-rocksdb")]
 impl From<RawRocks> for Kv {
     fn from(db: RawRocks) -> Self {
         Kv {
@@ -263,7 +283,7 @@ impl From<::solistore::Db> for Kv {
 }
 
 /// A handle of one engine used with another: a bug, not a runtime state.
-#[cfg(feature = "engine-solistore")]
+#[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
 #[cold]
 fn mixed_engines() -> ! {
     panic!("a column family or batch of one storage engine used with another")
@@ -272,16 +292,18 @@ fn mixed_engines() -> ! {
 impl Kv {
     /// The solistore database under this one, for what only it can do
     /// (`Db::ingest`, used by the migration tool).
-    #[cfg(feature = "engine-solistore")]
+    #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
     pub(crate) fn as_solistore(&self) -> Option<&::solistore::Db> {
         match &self.engine {
             Engine::Solistore(db) => Some(db),
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(_) => None,
         }
     }
 
     pub fn engine_kind(&self) -> EngineKind {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(_) => EngineKind::Rocksdb,
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(_) => EngineKind::Solistore,
@@ -290,6 +312,7 @@ impl Kv {
 
     pub fn cf_handle(&self, name: &str) -> Option<KvCf<'_>> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => db.cf_handle(name).map(KvCf::Rocks),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => db.cf_handle(name).map(KvCf::Solistore),
@@ -299,6 +322,7 @@ impl Kv {
     /// The default column family.
     pub fn default_cf(&self) -> KvCf<'_> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => KvCf::Rocks(
                 db.cf_handle(rust_rocksdb::DEFAULT_COLUMN_FAMILY_NAME)
                     .expect("RocksDB is opened with its default column family listed"),
@@ -310,6 +334,7 @@ impl Kv {
 
     pub fn cf_names(&self) -> Vec<String> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => db.cf_names(),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => db.cf_names(),
@@ -324,11 +349,15 @@ impl Kv {
 
     pub fn get_cf<K: AsRef<[u8]>>(&self, cf: &KvCf, key: K) -> Result<Option<Vec<u8>>, KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => Ok(db.get_cf(h, key)?),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvCf::Solistore(h)) => Ok(db.get(h, key)?.map(|v| v.to_vec())),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -338,6 +367,7 @@ impl Kv {
         key: K,
     ) -> Result<Option<KvPinned<'_>>, KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => {
                 Ok(db.get_pinned_cf(h, key)?.map(KvPinned::Rocks))
             }
@@ -345,8 +375,11 @@ impl Kv {
             (Engine::Solistore(db), KvCf::Solistore(h)) => {
                 Ok(db.get(h, key)?.map(KvPinned::Solistore))
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -360,6 +393,7 @@ impl Kv {
         keys: &[K],
     ) -> Vec<Result<Option<KvPinned<'_>>, KvError>> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => db
                 .batched_multi_get_cf(h, keys.iter().map(|k| k.as_ref()), false)
                 .into_iter()
@@ -376,8 +410,11 @@ impl Kv {
                     keys.iter().map(|_| Err(e.clone())).collect()
                 }
             },
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -387,12 +424,14 @@ impl Kv {
         keys: impl IntoIterator<Item = (&'c KvCf<'h>, K)>,
     ) -> Vec<Result<Option<Vec<u8>>, KvError>> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => {
                 let keys: Vec<_> = keys
                     .into_iter()
                     .map(|(cf, k)| match cf {
+                        #[cfg(feature = "engine-rocksdb")]
                         KvCf::Rocks(h) => (h, k),
-                        #[cfg(feature = "engine-solistore")]
+                        #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
                         KvCf::Solistore(_) => mixed_engines(),
                     })
                     .collect();
@@ -429,6 +468,7 @@ impl Kv {
         opts: &KvWriteOptions,
     ) -> Result<(), KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => {
                 Ok(db.put_cf_opt(h, key, value, &opts.to_rocks())?)
             }
@@ -438,8 +478,11 @@ impl Kv {
                 batch.put(h, key, value);
                 Ok(db.write_opt(batch, &opts.to_solistore())?)
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -449,11 +492,15 @@ impl Kv {
 
     pub fn delete_cf<K: AsRef<[u8]>>(&self, cf: &KvCf, key: K) -> Result<(), KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => Ok(db.delete_cf(h, key)?),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvCf::Solistore(h)) => Ok(db.delete(h, key)?),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -465,12 +512,13 @@ impl Kv {
     pub fn write_opt(&self, batch: KvBatch, opts: &KvWriteOptions) -> Result<(), KvError> {
         match (&self.engine, batch) {
             (_, KvBatch::Empty) => Ok(()),
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvBatch::Rocks(b)) => Ok(db.write_opt(&b, &opts.to_rocks())?),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvBatch::Solistore(b)) => {
                 Ok(db.write_opt(b, &opts.to_solistore())?)
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
         }
     }
@@ -498,7 +546,10 @@ impl Kv {
         mode: IterMode,
     ) -> KvIter<'a> {
         match (&self.engine, cf) {
-            (Engine::Rocks(db), KvCf::Rocks(h)) => {
+            #[cfg(feature = "engine-rocksdb")]
+            (Engine::Rocks(db), KvCf::Rocks(h)) =>
+            {
+                #[cfg(feature = "engine-rocksdb")]
                 KvIter::Rocks(db.iterator_cf_opt(h, opts.to_rocks(), mode.to_rocks()))
             }
             #[cfg(feature = "engine-solistore")]
@@ -508,8 +559,11 @@ impl Kv {
                     Err(e) => KvIter::Failed(Some(e.into())),
                 }
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -522,6 +576,7 @@ impl Kv {
     ///
     /// With `snapshot`, the walk reads that point in time (see
     /// [`Self::snapshot`]) instead of the moment it starts.
+    #[cfg_attr(not(feature = "engine-rocksdb"), allow(unused_mut, unused_variables))]
     pub fn for_each_cf_opt(
         &self,
         cf: &KvCf<'_>,
@@ -531,10 +586,12 @@ impl Kv {
         mut f: impl FnMut(&[u8], &[u8]) -> bool,
     ) -> Result<(), KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => {
                 let mut it = match snapshot {
+                    #[cfg(feature = "engine-rocksdb")]
                     Some(KvSnapshot::Rocks(s)) => s.raw_iterator_cf_opt(h, opts.to_rocks()),
-                    #[cfg(feature = "engine-solistore")]
+                    #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
                     Some(KvSnapshot::Solistore(_)) => mixed_engines(),
                     None => db.raw_iterator_cf_opt(h, opts.to_rocks()),
                 };
@@ -552,15 +609,22 @@ impl Kv {
                 let mut read = opts.to_solistore();
                 read.snapshot = match snapshot {
                     Some(KvSnapshot::Solistore(s)) => Some(s.clone()),
+                    #[cfg(feature = "engine-rocksdb")]
                     Some(KvSnapshot::Rocks(_)) => mixed_engines(),
                     None => None,
+                    #[cfg(not(feature = "engine-rocksdb"))]
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("built by no path without RocksDB"),
                 };
                 let mode = ::solistore::IteratorMode::From(start, ::solistore::Direction::Forward);
                 // Borrowed entries: no copy and no allocation per entry.
                 Ok(db.for_each(h, read, mode, f)?)
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -588,6 +652,7 @@ impl Kv {
         end: Option<E>,
     ) {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => db.compact_range_cf(h, start, end),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvCf::Solistore(h)) => {
@@ -599,8 +664,11 @@ impl Kv {
                     tracing::warn!("compact_range on {}: {}", h.name(), e);
                 }
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -608,6 +676,7 @@ impl Kv {
     /// when the engine cannot say.
     pub fn approximate_size_cf(&self, cf: &KvCf, start: &[u8], end: &[u8]) -> u64 {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => db
                 .get_approximate_sizes_cf(h, &[rust_rocksdb::Range::new(start, end)])
                 .ok()
@@ -617,8 +686,11 @@ impl Kv {
             (Engine::Solistore(db), KvCf::Solistore(h)) => {
                 db.approximate_size(h, start, end).unwrap_or(0)
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -627,6 +699,7 @@ impl Kv {
     /// RocksDB. For choosing where to split a scan, not for accounting.
     pub fn approximate_sizes_cf(&self, cf: &KvCf, ranges: &[(Vec<u8>, Vec<u8>)]) -> Vec<u64> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => {
                 let ranges: Vec<rust_rocksdb::Range> = ranges
                     .iter()
@@ -642,8 +715,11 @@ impl Kv {
                 .iter()
                 .map(|(s, e)| db.approximate_size(h, s, e).unwrap_or(0))
                 .collect(),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -654,6 +730,7 @@ impl Kv {
     /// created.
     pub fn supports_snapshot(&self) -> bool {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(_) => true,
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(_) => true,
@@ -667,6 +744,7 @@ impl Kv {
     /// old versions, solistore the memtables and table files of the time).
     pub fn snapshot(&self) -> Option<KvSnapshot<'_>> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => Some(KvSnapshot::Rocks(db.snapshot())),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => Some(KvSnapshot::Solistore(db.snapshot())),
@@ -687,6 +765,7 @@ impl Kv {
         snapshot: Option<&KvSnapshot<'_>>,
     ) -> Option<Vec<Vec<u8>>> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(_), KvCf::Rocks(_)) => {
                 let _ = (lo, hi, n, snapshot);
                 None
@@ -695,13 +774,20 @@ impl Kv {
             (Engine::Solistore(db), KvCf::Solistore(h)) => {
                 let points = match snapshot {
                     Some(KvSnapshot::Solistore(s)) => s.split_points(h, lo, hi, n),
+                    #[cfg(feature = "engine-rocksdb")]
                     Some(KvSnapshot::Rocks(_)) => mixed_engines(),
                     None => db.split_points(h, lo, hi, n),
+                    #[cfg(not(feature = "engine-rocksdb"))]
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("built by no path without RocksDB"),
                 };
                 points.ok()
             }
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -714,12 +800,13 @@ impl Kv {
     pub fn write_unsynced(&self, batch: KvBatch) -> Result<(), KvError> {
         match (&self.engine, batch) {
             (_, KvBatch::Empty) => Ok(()),
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvBatch::Rocks(b)) => {
                 Ok(db.write_opt(&b, &KvWriteOptions::default().to_rocks())?)
             }
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvBatch::Solistore(b)) => Ok(db.write_unsynced(b)?),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
         }
     }
@@ -727,6 +814,7 @@ impl Kv {
     /// Make every write that has returned durable.
     pub fn sync_wal(&self) -> Result<(), KvError> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => db.flush_wal(true).map_err(Into::into),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => db.sync_wal().map_err(Into::into),
@@ -737,6 +825,7 @@ impl Kv {
     /// (solistore with `SOLIDB_DURABILITY=full`).
     pub fn syncs_every_write(&self) -> bool {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(_) => false,
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(_) => solistore::syncs_every_write(),
@@ -745,6 +834,7 @@ impl Kv {
 
     pub fn flush(&self) -> Result<(), KvError> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => Ok(db.flush()?),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => Ok(db.flush()?),
@@ -753,17 +843,22 @@ impl Kv {
 
     pub fn flush_cf(&self, cf: &KvCf) -> Result<(), KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => Ok(db.flush_cf(h)?),
             // One LSM for every column family: a flush covers them all.
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(db), KvCf::Solistore(_)) => Ok(db.flush()?),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
     pub fn drop_cf(&self, name: &str) -> Result<(), KvError> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => Ok(db.drop_cf(name)?),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => Ok(db.drop_cf(name)?),
@@ -774,6 +869,7 @@ impl Kv {
     /// them at run time; this goes with it.
     pub fn create_cf(&self, name: &str) -> Result<(), KvError> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => Ok(db.create_cf(name, &rocks::tuned_cf_options())?),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => db.create_cf(name).map(drop).map_err(Into::into),
@@ -783,6 +879,7 @@ impl Kv {
     /// Drop the table files wholly inside `[from, to)` without compacting.
     /// Used by the 1.x migration to free space as it goes; solistore never
     /// holds a 1.x layout.
+    #[cfg_attr(not(feature = "engine-rocksdb"), allow(unused_mut, unused_variables))]
     pub fn delete_file_in_range_cf(
         &self,
         cf: &KvCf,
@@ -790,31 +887,42 @@ impl Kv {
         to: &[u8],
     ) -> Result<(), KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => Ok(db.delete_file_in_range_cf(h, from, to)?),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(_), KvCf::Solistore(_)) => Ok(()),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
     /// An integer property of one column family (RocksDB's `rocksdb.*`
     /// names); `Ok(None)` when the engine has no such figure. solistore
     /// keeps its figures database-wide: see [`Kv::memory`].
+    #[cfg_attr(not(feature = "engine-rocksdb"), allow(unused_mut, unused_variables))]
     pub fn property_int_value_cf(&self, cf: &KvCf, name: &str) -> Result<Option<u64>, KvError> {
         match (&self.engine, cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (Engine::Rocks(db), KvCf::Rocks(h)) => Ok(db.property_int_value_cf(h, name)?),
             #[cfg(feature = "engine-solistore")]
             (Engine::Solistore(_), KvCf::Solistore(_)) => Ok(None),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
     /// Memory held by the engine. RocksDB's figures are per column family
     /// and summed over `cfs`; its block cache is shared and read once.
+    #[cfg_attr(not(feature = "engine-rocksdb"), allow(unused_mut, unused_variables))]
     pub fn memory(&self, cfs: &[String]) -> KvMemory {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => rocks::memory(db, cfs),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => solistore::memory(db),
@@ -826,6 +934,7 @@ impl Kv {
     /// statistics text, so they are in steps of 0.01 GB.
     pub fn engine_counters(&self) -> Vec<(&'static str, &'static str, u64)> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => rocks::counters(db),
             #[cfg(feature = "engine-solistore")]
             Engine::Solistore(db) => {
@@ -885,6 +994,7 @@ impl Kv {
     /// with the `ENGINE` file that says how to open it.
     pub fn checkpoint(&self, target: &std::path::Path) -> Result<(), KvError> {
         match &self.engine {
+            #[cfg(feature = "engine-rocksdb")]
             Engine::Rocks(db) => {
                 let checkpoint = rust_rocksdb::checkpoint::Checkpoint::new(db)?;
                 checkpoint.create_checkpoint(target)?;
@@ -899,6 +1009,13 @@ impl Kv {
 /// One point in time of a [`Kv`], which several scans (and threads) can read
 /// together: see [`Kv::snapshot`].
 pub enum KvSnapshot<'a> {
+    /// Never built: holds the lifetime that only RocksDB's variant used,
+    /// in a binary without it (card #992).
+    #[cfg(not(feature = "engine-rocksdb"))]
+    #[doc(hidden)]
+    Unused(std::marker::PhantomData<&'a ()>, std::convert::Infallible),
+
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(rust_rocksdb::SnapshotWithThreadMode<'a, RawRocks>),
     /// Holds its own `Arc`s: cheap to clone, and not tied to the `Kv`.
     #[cfg(feature = "engine-solistore")]
@@ -907,6 +1024,13 @@ pub enum KvSnapshot<'a> {
 
 /// A handle on one column family of a [`Kv`].
 pub enum KvCf<'a> {
+    /// Never built: holds the lifetime that only RocksDB's variant used,
+    /// in a binary without it (card #992).
+    #[cfg(not(feature = "engine-rocksdb"))]
+    #[doc(hidden)]
+    Unused(std::marker::PhantomData<&'a ()>, std::convert::Infallible),
+
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(std::sync::Arc<rust_rocksdb::BoundColumnFamily<'a>>),
     #[cfg(feature = "engine-solistore")]
     Solistore(::solistore::ColumnFamily),
@@ -919,6 +1043,7 @@ pub enum KvCf<'a> {
 pub enum KvBatch {
     #[default]
     Empty,
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(rust_rocksdb::WriteBatch),
     #[cfg(feature = "engine-solistore")]
     Solistore(::solistore::WriteBatch),
@@ -940,6 +1065,7 @@ impl KvBatch {
                 mine.append(other);
                 Ok(())
             }
+            #[cfg_attr(not(feature = "engine-rocksdb"), allow(unreachable_patterns))]
             (_, other) => Err(other),
         }
     }
@@ -947,9 +1073,13 @@ impl KvBatch {
     fn for_cf(&mut self, cf: &KvCf) -> &mut Self {
         if let KvBatch::Empty = self {
             *self = match cf {
+                #[cfg(feature = "engine-rocksdb")]
                 KvCf::Rocks(_) => KvBatch::Rocks(rust_rocksdb::WriteBatch::default()),
                 #[cfg(feature = "engine-solistore")]
                 KvCf::Solistore(_) => KvBatch::Solistore(::solistore::WriteBatch::new()),
+                #[cfg(not(feature = "engine-rocksdb"))]
+                #[allow(unreachable_patterns)]
+                _ => unreachable!("built by no path without RocksDB"),
             };
         }
         self
@@ -957,37 +1087,49 @@ impl KvBatch {
 
     pub fn put_cf<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, cf: &KvCf, key: K, value: V) {
         match (self.for_cf(cf), cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (KvBatch::Rocks(b), KvCf::Rocks(h)) => b.put_cf(h, key, value),
             #[cfg(feature = "engine-solistore")]
             (KvBatch::Solistore(b), KvCf::Solistore(h)) => b.put(h, key, value),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
             #[cfg(not(feature = "engine-solistore"))]
             (KvBatch::Empty, _) => unreachable!("typed by for_cf"),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
     pub fn delete_cf<K: AsRef<[u8]>>(&mut self, cf: &KvCf, key: K) {
         match (self.for_cf(cf), cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (KvBatch::Rocks(b), KvCf::Rocks(h)) => b.delete_cf(h, key),
             #[cfg(feature = "engine-solistore")]
             (KvBatch::Solistore(b), KvCf::Solistore(h)) => b.delete(h, key),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
             #[cfg(not(feature = "engine-solistore"))]
             (KvBatch::Empty, _) => unreachable!("typed by for_cf"),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
     pub fn delete_range_cf<K: AsRef<[u8]>>(&mut self, cf: &KvCf, from: K, to: K) {
         match (self.for_cf(cf), cf) {
+            #[cfg(feature = "engine-rocksdb")]
             (KvBatch::Rocks(b), KvCf::Rocks(h)) => b.delete_range_cf(h, from, to),
             #[cfg(feature = "engine-solistore")]
             (KvBatch::Solistore(b), KvCf::Solistore(h)) => b.delete_range(h, from, to),
-            #[cfg(feature = "engine-solistore")]
+            #[cfg(all(feature = "engine-solistore", feature = "engine-rocksdb"))]
             _ => mixed_engines(),
             #[cfg(not(feature = "engine-solistore"))]
             (KvBatch::Empty, _) => unreachable!("typed by for_cf"),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 
@@ -995,6 +1137,7 @@ impl KvBatch {
     pub fn len(&self) -> usize {
         match self {
             KvBatch::Empty => 0,
+            #[cfg(feature = "engine-rocksdb")]
             KvBatch::Rocks(b) => b.len(),
             #[cfg(feature = "engine-solistore")]
             KvBatch::Solistore(b) => b.len() as usize,
@@ -1009,6 +1152,7 @@ impl KvBatch {
     pub fn size_in_bytes(&self) -> usize {
         match self {
             KvBatch::Empty => 0,
+            #[cfg(feature = "engine-rocksdb")]
             KvBatch::Rocks(b) => b.size_in_bytes(),
             #[cfg(feature = "engine-solistore")]
             KvBatch::Solistore(b) => b.size_in_bytes(),
@@ -1017,7 +1161,15 @@ impl KvBatch {
 }
 
 /// An iterator over one column family: physical keys and values.
+#[cfg_attr(not(feature = "engine-rocksdb"), allow(clippy::large_enum_variant))]
 pub enum KvIter<'a> {
+    /// Never built: holds the lifetime that only RocksDB's variant used,
+    /// in a binary without it (card #992).
+    #[cfg(not(feature = "engine-rocksdb"))]
+    #[doc(hidden)]
+    Unused(std::marker::PhantomData<&'a ()>, std::convert::Infallible),
+
+    #[cfg(feature = "engine-rocksdb")]
     Rocks(rust_rocksdb::DBIteratorWithThreadMode<'a, RawRocks>),
     #[cfg(feature = "engine-solistore")]
     Solistore(::solistore::DbIterator),
@@ -1032,6 +1184,7 @@ impl Iterator for KvIter<'_> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
+            #[cfg(feature = "engine-rocksdb")]
             KvIter::Rocks(it) => it.next().map(|r| {
                 r.map(|(k, v)| (bytes::Bytes::from(k), bytes::Bytes::from(v)))
                     .map_err(KvError::from)
@@ -1040,6 +1193,9 @@ impl Iterator for KvIter<'_> {
             KvIter::Solistore(it) => it.next().map(|r| r.map_err(KvError::from)),
             #[cfg(feature = "engine-solistore")]
             KvIter::Failed(e) => e.take().map(Err),
+            #[cfg(not(feature = "engine-rocksdb"))]
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("built by no path without RocksDB"),
         }
     }
 }
