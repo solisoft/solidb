@@ -54,6 +54,58 @@ fn writing(log: Option<&SyncLog>) -> Option<&SyncLog> {
     log.filter(|l| l.is_active())
 }
 
+/// The log, if it takes the writes of the columnar collection `name`: a
+/// branch's are not replicated (card #981), its peers have no branch.
+fn writing_for<'a>(log: Option<&'a SyncLog>, db: &Database, name: &str) -> Option<&'a SyncLog> {
+    let log = writing(log)?;
+    match ColumnarCollection::load(name.to_string(), &db.name, db.db_arc()) {
+        Ok(col) if col.is_branch() => None,
+        _ => Some(log),
+    }
+}
+
+/// Create a branch of the columnar collection `parent`, starting from its
+/// tag `from`, or from a tag taken now for it. Local to this node: not
+/// logged, and its writes are not either.
+pub fn create_branch(
+    db: &Database,
+    parent: &str,
+    branch: &str,
+    from: Option<&str>,
+) -> DbResult<ColumnarCollection> {
+    let source = ColumnarCollection::load(parent.to_string(), &db.name, db.db_arc())?;
+    if source.is_branch() {
+        return Err(DbError::OperationNotSupported(format!(
+            "'{parent}' is a branch: a branch starts from a collection that is not one"
+        )));
+    }
+    if db.get_collection(branch).is_ok() {
+        return Err(DbError::CollectionAlreadyExists(branch.to_string()));
+    }
+    let (tag, implicit) = match from {
+        Some(tag) => (tag.to_string(), false),
+        None => (source.take_branch_tag(branch)?, true),
+    };
+    let made = (|| {
+        let (columns, compression, rows) = source.tag_start(&tag)?;
+        let col = create(db, None, branch, columns, compression)?;
+        col.attach_to(
+            &source,
+            crate::storage::columnar::BranchOf {
+                collection: parent.to_string(),
+                tag: tag.clone(),
+                implicit,
+            },
+            rows,
+        )?;
+        ColumnarCollection::load(branch.to_string(), &db.name, db.db_arc())
+    })();
+    if made.is_err() && implicit {
+        let _ = source.drop_tag(&tag);
+    }
+    made
+}
+
 /// Create a columnar collection on this node and log it for the peers.
 pub fn create(
     db: &Database,
@@ -91,9 +143,28 @@ pub fn create(
     Ok(col)
 }
 
-/// Drop a columnar collection on this node and log it for the peers.
+/// Drop a columnar collection on this node and log it for the peers. A
+/// collection with branches is not dropped; a branch is, and its parent
+/// forgets it.
 pub fn drop(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()> {
+    let loaded = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc()).ok();
+    if let Some(col) = &loaded {
+        let branches = col.branches()?;
+        if !branches.is_empty() {
+            return Err(DbError::ConflictError(format!(
+                "'{name}' has branches ({}): drop them first",
+                branches.join(", ")
+            )));
+        }
+    }
+    let log = match &loaded {
+        Some(col) if col.is_branch() => None,
+        _ => log,
+    };
     db.delete_collection(&backing(name))?;
+    if let Some(col) = &loaded {
+        col.detach_from_parent()?;
+    }
     if let Some(log) = writing(log) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
@@ -114,7 +185,7 @@ pub fn insert(
     rows: Vec<Value>,
 ) -> DbResult<Vec<String>> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
-    let Some(log) = writing(log) else {
+    let Some(log) = writing_for(log, db, name) else {
         let ids = col.insert_rows(rows)?;
         col.refresh_stale_indexes();
         announce(db, name, ChangeType::Insert, ids.len(), &ids);
@@ -175,7 +246,7 @@ fn announce(db: &Database, name: &str, kind: ChangeType, rows: usize, ids: &[Str
 
 /// Log the deletion of these rows, each under its id.
 fn log_deleted(log: Option<&SyncLog>, db: &Database, name: &str, ids: &[String]) {
-    let Some(log) = writing(log) else {
+    let Some(log) = writing_for(log, db, name) else {
         return;
     };
     for chunk in ids.chunks(LOG_BATCH) {
@@ -232,7 +303,7 @@ pub fn delete_where(
 pub fn truncate(db: &Database, log: Option<&SyncLog>, name: &str) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.truncate()?;
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,
@@ -253,7 +324,7 @@ fn log_column(
     column: &str,
     data: Option<Vec<u8>>,
 ) {
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,
@@ -378,7 +449,7 @@ pub fn set_retention(
 ) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.set_retention(seconds)?;
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,
@@ -483,7 +554,7 @@ pub fn create_index(
 ) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.create_index(column, index_type.clone())?;
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,
@@ -509,7 +580,7 @@ pub fn start_index_build(
 ) -> DbResult<std::sync::Arc<crate::storage::columnar::IndexBuild>> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     let build = col.start_index_build(column, index_type.clone(), replace)?;
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,
@@ -541,7 +612,7 @@ pub fn rebuild_index(
 pub fn drop_index(db: &Database, log: Option<&SyncLog>, name: &str, column: &str) -> DbResult<()> {
     let col = ColumnarCollection::load(name.to_string(), &db.name, db.db_arc())?;
     col.drop_index(column)?;
-    if let Some(log) = writing(log) {
+    if let Some(log) = writing_for(log, db, name) {
         log.append(LogEntry::new_op(
             db.name.as_str(),
             name,

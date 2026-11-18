@@ -1493,6 +1493,16 @@ Rules that keep it sound:
   query): a new SDBQL read of a columnar collection opens it there. A
   handle at a tag (`at`) has no tail and no index and is never written.
   Tags are local: a restore is refused while the node replicates.
+  A **branch** (`meta.parent`, `tags::Branch`) reads its parent's tag
+  blocks in place, minus those it marked `col_detached:{block}`: `retire`
+  marks a block of the tag the branch replaces or removes, so the same
+  rule covers it. Its blocks are its own plus the shared ones
+  (`blocks()`, `shared_blocks`). The parent lists it (`col_branch:`),
+  which keeps the parent and that tag from being dropped
+  (`sync::columnar::drop`, `drop_tag`). A branch's writes are not logged
+  (`sync::columnar::writing_for`): a new logged columnar write uses it. A
+  branch has no branch, no tag, and its columns are not renamed or dropped
+  (those rewrite blocks it does not hold).
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.

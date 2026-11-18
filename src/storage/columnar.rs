@@ -41,8 +41,14 @@ const COL_TAG_PREFIX: &str = "col_tag:";
 /// sealed when the tag was taken.
 const COL_KEPT_PREFIX: &str = "col_kept:";
 
+/// `col_branch:{branch}` (in the parent) -> the tag a branch reads.
+const COL_BRANCH_PREFIX: &str = "col_branch:";
+/// `col_detached:{block}` (in a branch): a block of its tag the branch has
+/// written its own version of, or removed.
+const COL_DETACHED_PREFIX: &str = "col_detached:";
+
 mod tags;
-pub use tags::TagInfo; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
+pub use tags::{BranchOf, TagInfo}; // col_idx_blo:{column}:{chunk_id} -> [bloom_filter]
 
 /// The rows one bloom filter of a bloom index answers for.
 const BLOOM_CHUNK_ROWS: u64 = 1000;
@@ -165,6 +171,10 @@ pub struct ColumnarCollectionMeta {
     /// block as stored (`tags.rs`).
     #[serde(default)]
     pub block_epoch: u64,
+    /// Set on a branch (card #981): the collection and the tag whose
+    /// blocks it starts from, read in place until it writes them.
+    #[serde(default)]
+    pub parent: Option<BranchOf>,
 }
 
 /// An index build that was accepted and has not finished.
@@ -643,6 +653,8 @@ pub struct ColumnarCollection {
     /// Set on a handle that reads a tag (`at_tag`): its blocks are the
     /// tag's, it has no tail and no index, and it is never written.
     at: Option<Arc<tags::TagView>>,
+    /// Set on a branch: what it reads of its parent.
+    branch: Option<Arc<tags::Branch>>,
 }
 
 impl Clone for ColumnarCollection {
@@ -654,6 +666,7 @@ impl Clone for ColumnarCollection {
             ks: self.ks.clone(),
             meta: self.meta.clone(),
             at: self.at.clone(),
+            branch: self.branch.clone(),
         }
     }
 }
@@ -701,6 +714,7 @@ impl ColumnarCollection {
             index_builds: Default::default(),
             retention_secs: None,
             block_epoch: 0,
+            parent: None,
         };
 
         // Store metadata (lock-free, RocksDB is thread-safe)
@@ -727,6 +741,7 @@ impl ColumnarCollection {
             ks,
             meta: Arc::new(RwLock::new(meta)),
             at: None,
+            branch: None,
         };
         // Nothing of an earlier collection of that name is kept.
         *created.store().blocks.write() = Some(Vec::new());
@@ -770,10 +785,13 @@ impl ColumnarCollection {
             ks,
             meta: Arc::new(RwLock::new(meta)),
             at: None,
+            branch: None,
         };
         if format < BLOCK_FORMAT {
             loaded.migrate()?;
         }
+        let mut loaded = loaded;
+        loaded.branch = loaded.open_branch()?;
         loaded.resume_index_builds();
         Ok(loaded)
     }
@@ -882,6 +900,17 @@ impl ColumnarCollection {
             return Ok(());
         }
         let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        if self.branch.is_some() {
+            let blocks: Vec<Arc<ColBlock>> = self
+                .blocks(&cf, &compression)?
+                .into_iter()
+                .filter(|block| only.is_none_or(|only| only.contains(&block.key)))
+                .collect();
+            for part in blocks.chunks(at_once.max(1)) {
+                f(part.to_vec())?;
+            }
+            return Ok(());
+        }
         if only.is_none() {
             WINDOWED_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -968,6 +997,12 @@ impl ColumnarCollection {
                     ))
                 })?;
             blocks.push(Arc::new(block));
+        }
+        // A branch's blocks are its own and those of its tag it has not
+        // written.
+        if let Some(branch) = &self.branch {
+            blocks.extend(self.shared_blocks(cf, branch)?);
+            blocks.sort_by(|a, b| a.key.cmp(&b.key));
         }
         *held = Some(blocks.clone());
         drop(held);
@@ -1775,6 +1810,12 @@ impl ColumnarCollection {
 
         let mut new_meta = meta.clone();
         let stored = change(&mut new_meta)?;
+        if stored.is_some() && self.branch.is_some() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{}' is a branch: its columns are added, not renamed or dropped",
+                self.name
+            )));
+        }
         new_meta.last_updated_at = chrono::Utc::now().timestamp();
         let mut batch = KvBatch::default();
         if let Some((column, renamed)) = &stored {
@@ -2373,6 +2414,12 @@ impl ColumnarCollection {
         let pins = self.pinned(&cf)?;
         for key in &pins {
             self.retire(&cf, &mut batch, &pins, meta.block_epoch, key)?;
+        }
+        // A branch no longer reads any block of its tag.
+        if let Some(branch) = &self.branch {
+            for key in branch.blocks() {
+                self.retire(&cf, &mut batch, &pins, meta.block_epoch, key)?;
+            }
         }
         for prefix in [
             COL_DATA_PREFIX,

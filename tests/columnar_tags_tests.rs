@@ -77,6 +77,9 @@ fn answers(engine: &StorageEngine, options: &str) -> Vec<Vec<Value>> {
 
 const AT_T1: &str = "OPTIONS {tag: 't1'}";
 
+/// A write made to the collection between two reads of a tag.
+type Write = Box<dyn Fn(&ColumnarCollection)>;
+
 #[test]
 fn a_tag_reads_what_was_there_after_every_kind_of_write() {
     let (engine, col, _dir) = fixture();
@@ -84,7 +87,7 @@ fn a_tag_reads_what_was_there_after_every_kind_of_write() {
     col.create_tag("t1").unwrap();
     assert_eq!(answers(&engine, AT_T1), then, "right after the tag");
 
-    let steps: Vec<(&str, Box<dyn Fn(&ColumnarCollection)>)> = vec![
+    let steps: Vec<(&str, Write)> = vec![
         (
             "rows inserted",
             Box::new(|c| {
@@ -210,4 +213,131 @@ fn a_query_reads_a_collection_at_one_tag() {
     assert!(col.create_tag("").is_err());
     assert!(col.create_tag("a/b").is_err());
     assert!(col.create_tag("t1").is_err(), "taken twice");
+}
+
+/// A branch starts with its parent's rows at a tag, read in place, and
+/// writes its own: the parent does not see them, and the branch does not see
+/// the parent's.
+#[test]
+fn a_branch_and_its_parent_write_apart() {
+    let (engine, col, _dir) = fixture();
+    let db = engine.get_database("app").unwrap();
+    let start = answers(&engine, "");
+    let branch = columnar::create_branch(&db, "m", "trial", None).unwrap();
+    assert!(branch.is_branch());
+    let on = |name: &str| -> Vec<Vec<Value>> {
+        QUERIES
+            .iter()
+            .map(|q| {
+                let q = q.replace("IN m $o", &format!("IN {name}"));
+                run(&engine, &q).unwrap_or_else(|e| panic!("{q}: {e}"))
+            })
+            .collect()
+    };
+    assert_eq!(on("trial"), start, "a branch starts with the parent's rows");
+
+    // The parent moves on: the branch does not see it.
+    let ids = col.list_row_uuids().unwrap();
+    col.delete_row(&ids[5]).unwrap();
+    col.insert_rows(rows(50_000, 50_010)).unwrap();
+    col.compact().unwrap();
+    assert_eq!(on("trial"), start, "after the parent's writes");
+    let parent_now = on("m");
+
+    // The branch writes: a delete in a shared block, rows, a compaction.
+    let in_branch = branch.list_row_uuids().unwrap();
+    assert_eq!(in_branch.len(), 16_010);
+    branch.delete_row(&in_branch[7_999]).unwrap();
+    branch.delete_rows(&in_branch[100..200]).unwrap();
+    branch.insert_rows(rows(60_000, 60_005)).unwrap();
+    branch.compact().unwrap();
+    assert_eq!(on("m"), parent_now, "the parent after the branch's writes");
+    // What the branch holds is what a copy would hold after the same writes.
+    let copy = columnar::create(
+        &db,
+        None,
+        "copy",
+        vec![
+            column("host", ColumnType::String),
+            column("v", ColumnType::Int64),
+            column("ms", ColumnType::Float64),
+        ],
+        CompressionType::Lz4,
+    )
+    .unwrap();
+    let mut kept = rows(0, 16_010);
+    let gone: std::collections::HashSet<i64> = std::iter::once(7_999).chain(100..200).collect();
+    kept.retain(|r| !gone.contains(&r["v"].as_i64().unwrap()));
+    kept.extend(rows(60_000, 60_005));
+    copy.insert_rows(kept).unwrap();
+    assert_eq!(on("trial"), on("copy"), "the branch against a copy");
+
+    // The same once read again from disk, the decoded blocks gone.
+    let path = _dir.path().join("data");
+    drop((col, branch, copy, db));
+    drop(engine);
+    let engine = StorageEngine::new(path.to_str().unwrap()).unwrap();
+    engine.initialize().unwrap();
+    let on = |name: &str| -> Vec<Vec<Value>> {
+        QUERIES
+            .iter()
+            .map(|q| {
+                let q = q.replace("IN m $o", &format!("IN {name}"));
+                run(&engine, &q).unwrap_or_else(|e| panic!("{q}: {e}"))
+            })
+            .collect()
+    };
+    assert_eq!(
+        on("trial"),
+        on("copy"),
+        "the branch against a copy, reopened"
+    );
+    assert_eq!(on("m"), parent_now, "the parent, reopened");
+    let db = engine.get_database("app").unwrap();
+    let col = ColumnarCollection::load("m".to_string(), "app", db.db_arc()).unwrap();
+    let branch = ColumnarCollection::load("trial".to_string(), "app", db.db_arc()).unwrap();
+
+    // A branch reloaded reads the same.
+    let again = ColumnarCollection::load("trial".to_string(), "app", db.db_arc()).unwrap();
+    assert_eq!(again.count(), 16_010 - 101 + 5);
+
+    // The parent cannot go while the branch is there, nor its tag.
+    assert!(columnar::drop(&db, None, "m").is_err());
+    assert!(col.drop_tag("~trial").is_err());
+    assert!(branch.create_tag("x").is_err(), "a branch is not tagged");
+    assert!(
+        branch.drop_column("ms").is_err(),
+        "nor are its columns dropped"
+    );
+    // Dropped, the branch takes its tag with it.
+    columnar::drop(&db, None, "trial").unwrap();
+    assert!(col.list_tags().unwrap().is_empty());
+    assert!(col.branches().unwrap().is_empty());
+    columnar::drop(&db, None, "m").unwrap();
+}
+
+#[test]
+fn a_branch_from_a_named_tag_keeps_the_tag() {
+    let (engine, col, _dir) = fixture();
+    let db = engine.get_database("app").unwrap();
+    let then = answers(&engine, "");
+    col.create_tag("q3").unwrap();
+    col.insert_rows(rows(70_000, 70_100)).unwrap();
+    columnar::create_branch(&db, "m", "b", Some("q3")).unwrap();
+    let on_b: Vec<Vec<Value>> = QUERIES
+        .iter()
+        .map(|q| run(&engine, &q.replace("IN m $o", "IN b")).unwrap())
+        .collect();
+    assert_eq!(on_b, then);
+    assert!(
+        columnar::create_branch(&db, "b", "c", None).is_err(),
+        "no branch of a branch"
+    );
+    assert!(
+        columnar::create_branch(&db, "m", "b", None).is_err(),
+        "name taken"
+    );
+    columnar::drop(&db, None, "b").unwrap();
+    // The named tag stays.
+    assert_eq!(col.list_tags().unwrap().len(), 1);
 }

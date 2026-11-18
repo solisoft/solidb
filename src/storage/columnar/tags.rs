@@ -16,6 +16,15 @@
 //!
 //! Tags are local to a node: they are not replicated, not in a full sync,
 //! not dumped.
+//!
+//! A *branch* is a columnar collection that starts from a tag of another
+//! one (its parent), read in place: its blocks are its own and those of
+//! the tag it has not written. A write that would replace or remove one of
+//! the tag's blocks in the branch writes the branch's version and marks
+//! the tag's as detached (`col_detached:{block}`, in [`retire`], which
+//! every such write calls). The parent lists its branches
+//! (`col_branch:{branch}`), which keeps their tags and the parent itself
+//! from being dropped. A branch's writes are not replicated.
 
 use super::*;
 
@@ -33,6 +42,9 @@ pub(crate) struct TagMeta {
     pub blocks: Vec<String>,
     /// Whether the tail held rows, sealed under `col_kept:tail:{tag}`.
     pub tail: bool,
+    /// The key of that sealed block (its first row's id).
+    #[serde(default)]
+    pub tail_block: Option<String>,
 }
 
 /// A tag as it is listed.
@@ -58,6 +70,28 @@ impl From<&TagMeta> for TagInfo {
 /// What a handle that reads a tag reads.
 pub(crate) struct TagView {
     pub blocks: Vec<Arc<ColBlock>>,
+}
+
+/// What a branch's meta says of where it starts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BranchOf {
+    pub collection: String,
+    pub tag: String,
+    /// The tag was taken for the branch, and goes with it.
+    pub implicit: bool,
+}
+
+/// What a branch reads of its parent: the tag's blocks, at its epoch.
+pub(crate) struct Branch {
+    parent: ColumnarCollection,
+    tag: TagMeta,
+}
+
+impl Branch {
+    /// The keys of the tag's blocks, its tail's included.
+    pub(crate) fn blocks(&self) -> impl Iterator<Item = &String> {
+        self.tag.blocks.iter().chain(self.tag.tail_block.iter())
+    }
 }
 
 fn tag_key(tag: &str) -> String {
@@ -138,6 +172,12 @@ impl ColumnarCollection {
         epoch: u64,
         block: &str,
     ) -> DbResult<()> {
+        // A branch stops reading its parent's version of the block.
+        if let Some(branch) = &self.branch {
+            if branch.blocks().any(|b| b == block) {
+                batch.put_ks(cf, format!("{COL_DETACHED_PREFIX}{block}").as_bytes(), b"");
+            }
+        }
         if !pins.contains(block) {
             return Ok(());
         }
@@ -199,7 +239,14 @@ impl ColumnarCollection {
     /// Take the tag `tag` of the collection as it is now.
     pub fn create_tag(&self, tag: &str) -> DbResult<TagInfo> {
         check_name(tag)?;
+        self.take_tag(tag)
+    }
+
+    /// [`Self::create_tag`] without the check of the name: a branch's own
+    /// tag is named `~{branch}`, which no client can take.
+    fn take_tag(&self, tag: &str) -> DbResult<TagInfo> {
         self.refuse_on_view()?;
+        self.refuse_on_branch("tagged")?;
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
         let mut meta = self.meta.write().map_err(internal)?;
@@ -226,9 +273,11 @@ impl ColumnarCollection {
             blocks.push(String::from_utf8_lossy(&key[prefix.len()..]).into_owned());
         }
         let tail = self.tail(&cf, &meta.compression)?;
+        let mut tail_block = None;
         if !tail.is_empty() {
             let names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
             let sealed = ColBlock::seal(&names, &tail);
+            tail_block = Some(sealed.key.clone());
             let bytes = sealed
                 .encode(matches!(meta.compression, CompressionType::Lz4))
                 .ok_or_else(|| internal("columnar block: encoding"))?;
@@ -249,6 +298,7 @@ impl ColumnarCollection {
             row_count: meta.row_count,
             blocks,
             tail: !tail.is_empty(),
+            tail_block,
         };
         batch.put_ks(&cf, tag_key(tag).as_bytes(), serde_json::to_vec(&tagged)?);
         self.stage_meta(&cf, &mut batch, &new_meta)?;
@@ -273,6 +323,12 @@ impl ColumnarCollection {
         let tags = self.tags_of(&cf)?;
         if !tags.iter().any(|t| t.tag == tag) {
             return Err(self.no_tag(tag));
+        }
+        if let Some((branch, _)) = self.branches_of(&cf)?.into_iter().find(|(_, t)| t == tag) {
+            return Err(DbError::ConflictError(format!(
+                "Tag '{tag}' of '{}' is read by the branch '{branch}': drop the branch first",
+                self.name
+            )));
         }
         let mut batch = KvBatch::default();
         batch.delete_ks(&cf, tag_key(tag).as_bytes());
@@ -369,6 +425,7 @@ impl ColumnarCollection {
             ks: self.ks.clone(),
             meta: Arc::new(RwLock::new(meta)),
             at: Some(Arc::new(TagView { blocks })),
+            branch: None,
         })
     }
 
@@ -379,6 +436,7 @@ impl ColumnarCollection {
     /// held.
     pub fn restore_tag(&self, tag: &str) -> DbResult<u64> {
         self.refuse_on_view()?;
+        self.refuse_on_branch("restored")?;
         let shared = self.shared_write_lock();
         let _shared_guard = shared.lock();
         let _wrote = self.wrote_on_release();
@@ -459,6 +517,199 @@ impl ColumnarCollection {
             "Columnar collection '{}' has no tag '{tag}'",
             self.name
         ))
+    }
+
+    fn refuse_on_branch(&self, what: &str) -> DbResult<()> {
+        if self.branch.is_some() {
+            return Err(DbError::OperationNotSupported(format!(
+                "'{}' is a branch, which is not {what}",
+                self.name
+            )));
+        }
+        Ok(())
+    }
+
+    /// Take the tag a branch named `branch` starts from, when none is
+    /// given: `~{branch}`, a name no client can take. Returns its name.
+    pub fn take_branch_tag(&self, branch: &str) -> DbResult<String> {
+        let tag = format!("~{branch}");
+        self.take_tag(&tag)?;
+        Ok(tag)
+    }
+
+    /// The columns, compression and rows of the tag `tag`: what a branch
+    /// starting from it is created with.
+    pub fn tag_start(&self, tag: &str) -> DbResult<(Vec<ColumnDef>, CompressionType, u64)> {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        let tagged: TagMeta = match self
+            .db
+            .get_ks(&cf, tag_key(tag).as_bytes())
+            .map_err(internal)?
+        {
+            Some(bytes) => serde_json::from_slice(&bytes)?,
+            None => return Err(self.no_tag(tag)),
+        };
+        Ok((tagged.columns, tagged.compression, tagged.row_count))
+    }
+
+    /// Make this new, empty collection a branch of `parent` at `of.tag`:
+    /// its meta names the parent and counts the tag's rows, and the parent
+    /// lists it.
+    pub fn attach_to(&self, parent: &ColumnarCollection, of: BranchOf, rows: u64) -> DbResult<()> {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        let pcf = parent
+            .ks
+            .handle(&parent.db)
+            .ok_or_else(|| parent.not_found())?;
+        let mut meta = self.meta.write().map_err(internal)?;
+        let mut new_meta = meta.clone();
+        new_meta.parent = Some(of.clone());
+        new_meta.row_count = rows;
+        let mut batch = KvBatch::default();
+        batch.put_ks(
+            &pcf,
+            format!("{COL_BRANCH_PREFIX}{}", self.name).as_bytes(),
+            of.tag.as_bytes(),
+        );
+        self.stage_meta(&cf, &mut batch, &new_meta)?;
+        self.db.write(batch).map_err(internal)?;
+        *meta = new_meta;
+        // Kept as the empty collection it was: read again, with the tag's.
+        *self.store().blocks.write() = None;
+        Ok(())
+    }
+
+    /// After this branch was dropped: its parent no longer lists it, and a
+    /// tag taken for it goes.
+    pub fn detach_from_parent(&self) -> DbResult<()> {
+        let Some(branch) = &self.branch else {
+            return Ok(());
+        };
+        let of = self
+            .meta
+            .read()
+            .map_err(internal)?
+            .parent
+            .clone()
+            .ok_or_else(|| internal("a branch without a parent"))?;
+        let parent = &branch.parent;
+        let pcf = parent
+            .ks
+            .handle(&parent.db)
+            .ok_or_else(|| parent.not_found())?;
+        parent
+            .db
+            .delete_ks(&pcf, format!("{COL_BRANCH_PREFIX}{}", self.name).as_bytes())
+            .map_err(internal)?;
+        if of.implicit {
+            parent.drop_tag(&of.tag)?;
+        }
+        Ok(())
+    }
+
+    /// The branches of this collection and the tag each reads.
+    pub(crate) fn branches_of(&self, cf: &KsCf) -> DbResult<Vec<(String, String)>> {
+        let prefix = COL_BRANCH_PREFIX.as_bytes();
+        let mut found = Vec::new();
+        for (key, bytes) in self.db.prefix_iterator_ks(cf, prefix).flatten() {
+            if !key.starts_with(prefix) {
+                break;
+            }
+            found.push((
+                String::from_utf8_lossy(&key[prefix.len()..]).into_owned(),
+                String::from_utf8_lossy(&bytes).into_owned(),
+            ));
+        }
+        Ok(found)
+    }
+
+    /// The names of this collection's branches.
+    pub fn branches(&self) -> DbResult<Vec<String>> {
+        let cf = self.ks.handle(&self.db).ok_or_else(|| self.not_found())?;
+        Ok(self.branches_of(&cf)?.into_iter().map(|(b, _)| b).collect())
+    }
+
+    /// Whether this collection is a branch.
+    pub fn is_branch(&self) -> bool {
+        self.branch.is_some()
+    }
+
+    /// What a branch reads of its parent, from its meta (`None` for a
+    /// collection that is not one). Called when the collection is loaded.
+    pub(super) fn open_branch(&self) -> DbResult<Option<Arc<Branch>>> {
+        let Some(of) = self.meta.read().map_err(internal)?.parent.clone() else {
+            return Ok(None);
+        };
+        let db_name = self
+            .cf_name
+            .split_once(':')
+            .map_or("", |(db, _)| db)
+            .to_string();
+        let parent = ColumnarCollection::load(of.collection.clone(), &db_name, self.db.clone())?;
+        let found = {
+            let pcf = parent
+                .ks
+                .handle(&parent.db)
+                .ok_or_else(|| parent.not_found())?;
+            parent
+                .db
+                .get_ks(&pcf, tag_key(&of.tag).as_bytes())
+                .map_err(internal)?
+        };
+        let tag: TagMeta = match found {
+            Some(bytes) => serde_json::from_slice(&bytes)?,
+            None => return Err(parent.no_tag(&of.tag)),
+        };
+        Ok(Some(Arc::new(Branch { parent, tag })))
+    }
+
+    /// The tag's blocks a branch still reads in place: those it has not
+    /// detached, as its parent holds them at the tag's epoch.
+    pub(super) fn shared_blocks(&self, cf: &KsCf, branch: &Branch) -> DbResult<Vec<Arc<ColBlock>>> {
+        let parent = &branch.parent;
+        let pcf = parent
+            .ks
+            .handle(&parent.db)
+            .ok_or_else(|| parent.not_found())?;
+        let mut blocks = Vec::new();
+        for block in &branch.tag.blocks {
+            let detached = self
+                .db
+                .get_ks(cf, format!("{COL_DETACHED_PREFIX}{block}").as_bytes())
+                .map_err(internal)?
+                .is_some();
+            if detached {
+                continue;
+            }
+            let bytes = parent
+                .version_of(&pcf, block, branch.tag.epoch)?
+                .ok_or_else(|| {
+                    internal(format!("block '{block}' of '{}' is missing", parent.name))
+                })?;
+            blocks.push(Arc::new(parent.decode_block(
+                &bytes,
+                &branch.tag.compression,
+                block,
+            )?));
+        }
+        if let Some(key) = &branch.tag.tail_block {
+            let tail = format!("{COL_DETACHED_PREFIX}{key}");
+            if self
+                .db
+                .get_ks(cf, tail.as_bytes())
+                .map_err(internal)?
+                .is_none()
+            {
+                let bytes = parent
+                    .db
+                    .get_ks(&pcf, tail_key(&branch.tag.tag).as_bytes())
+                    .map_err(internal)?
+                    .ok_or_else(|| internal("the tail of a branch's tag is missing"))?;
+                let block = parent.decode_block(&bytes, &branch.tag.compression, "tail")?;
+                blocks.push(Arc::new(block));
+            }
+        }
+        Ok(blocks)
     }
 
     /// A handle that reads a tag is never written.

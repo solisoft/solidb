@@ -355,6 +355,7 @@ pub async fn get_columnar_handler(
         "created_at": meta.created_at,
         "last_updated_at": meta.last_updated_at,
         "retention_secs": meta.retention_secs,
+        "branch_of": meta.parent,
         "stats": {
             "compressed_size_bytes": stats.compressed_size_bytes,
             "uncompressed_size_bytes": stats.uncompressed_size_bytes,
@@ -1190,4 +1191,52 @@ pub async fn restore_columnar_tag_handler(
     Ok(Json(
         serde_json::json!({ "status": "restored", "rows": rows }),
     ))
+}
+
+/// `{"branch": "trial", "from": "q3"}`; without `from`, a tag is taken now.
+#[derive(Debug, Deserialize)]
+pub struct BranchRequest {
+    pub branch: String,
+    #[serde(default)]
+    pub from: Option<String>,
+}
+
+/// Create a branch of a columnar collection: a new columnar collection that
+/// starts with the rows of one of its tags, read in place, and writes its
+/// own from then on. Local to this node: neither it nor its writes are
+/// replicated (card #981). Dropped as any columnar collection.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/branches`
+pub async fn create_columnar_branch_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    Json(req): Json<BranchRequest>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let branch = req.branch.clone();
+    let rows = tokio::task::spawn_blocking(move || {
+        crate::sync::columnar::create_branch(&db, &collection, &req.branch, req.from.as_deref())
+            .map(|col| col.count())
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "status": "created", "name": branch, "rows": rows })),
+    ))
+}
+
+/// The branches of a columnar collection.
+///
+/// # Endpoint
+/// `GET /_api/database/{db}/columnar/{collection}/branches`
+pub async fn list_columnar_branches_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+) -> Result<impl IntoResponse, DbError> {
+    let db = state.storage.get_database(&db_name)?;
+    let branches =
+        crate::storage::ColumnarCollection::load(collection, &db.name, db.db_arc())?.branches()?;
+    Ok(Json(serde_json::json!({ "branches": branches })))
 }

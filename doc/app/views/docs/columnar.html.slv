@@ -409,8 +409,24 @@
             </div>
           </div>
 
+          <h3 class="text-xl font-semibold text-white mt-8 mb-4">Branches</h3>
+          <p class="text-gray-300 mb-6">
+            A branch is a columnar collection that starts with the rows of a tag of another one, read in place: nothing is copied. It is read and written like any columnar collection; the rows it inserts, deletes or compacts are its own, its parent does not see them and it does not see its parent's. A block it rewrites becomes its own copy; the others stay shared. Try a transformation on a branch, and drop it, or keep it.
+          </p>
+          <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
+              <code class="text-gray-300">/_api/database/:db/columnar/:collection/branches</code>
+            </div>
+            <p class="text-gray-400 text-sm mb-4">Creates the branch, from the tag <code>from</code>, or from a tag taken now for it (named <code>~branch</code>, dropped with the branch). <code>GET</code> on the same path lists the branches; <code>GET &hellip;/columnar/:branch</code> says what it starts from in <code>branch_of</code>. A branch is dropped with <code>DELETE &hellip;/columnar/:branch</code>.</p>
+            <pre><code class="language-json text-sm">{ "branch": "trial", "from": "q3" }</code></pre>
+            <pre class="mt-4"><code class="language-json text-sm">{ "status": "created", "name": "trial", "rows": 3000000 }</code></pre>
+          </div>
+
           <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
             <li>Tags are local to the node: not replicated, not sent to a joining node, not in <code>solidb-dump</code>.</li>
+            <li>A branch is local too: neither it nor its writes are replicated.</li>
+            <li>A collection with branches is not dropped, nor is a tag a branch starts from. A branch has no branch and no tag of its own, and its columns are added, not renamed or dropped.</li>
             <li>A schema change rewrites every block, so it keeps a copy of every block a tag names: the space a tag takes grows with what is rewritten after it.</li>
             <li>Dropping the collection drops its tags.</li>
           </ul>
