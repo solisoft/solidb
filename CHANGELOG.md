@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **A data directory's `ENGINE` marker survives a power loss.** It was written without an fsync, after the engine had created its files: a power loss soon after a directory was made left it empty, and no start could open the directory (`unknown storage engine ""`). It is now written before the engine opens, to a file of its own that is fsynced and renamed into place, and an empty marker is read as absent. Found by the fault harness's new power-loss runs (`faults/power.sh`, on LazyFS).
+
 - **`libz-sys` 1.1.31 → 1.1.33** (RUSTSEC-2026-0544, a heap buffer overflow in the zlib bindings RocksDB's build links). Whether SoliDB reached the affected path was not established; the upgrade is the advisory's fix.
 
 - **Windows: the transaction log is emptied again.** The log is emptied once its contents are applied, at startup and at a checkpoint. On Windows that was refused (`Failed to truncate transaction WAL: Access is denied`): the file is opened in append mode, which there gives no right to change its length. So it grew without bound and was read whole at every start. It is now emptied through a handle of its own. Not run on Windows since the change: the unit tests and the fault harness pass on Linux.

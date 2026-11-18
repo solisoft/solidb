@@ -44,6 +44,39 @@ pub struct Opts {
     pub max_ms: u64,
     pub tx_isolation: String,
     pub seed: u64,
+    /// A power loss instead of a process kill: after the SIGKILL, everything
+    /// the server wrote and did not fsync is dropped. The data directory is
+    /// on LazyFS; these are its command fifo and its completion fifo.
+    pub power_loss: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// Acknowledged single inserts may be lost (a durability mode that
+    /// acknowledges before its fsync): counted, not a violation. What is
+    /// left must still be a prefix of what was sent.
+    pub singles_may_be_lost: bool,
+    /// The same for transactions (a commit that is not fsynced).
+    pub tx_may_be_lost: bool,
+}
+
+/// Drop what LazyFS holds unsynced, and wait until it says so.
+async fn lose_power(fifo: &std::path::Path, done: &std::path::Path) -> Res<()> {
+    let (fifo, done) = (fifo.to_path_buf(), done.to_path_buf());
+    let cleared = tokio::task::spawn_blocking(move || -> std::io::Result<String> {
+        std::fs::write(&fifo, "lazyfs::clear-cache\n")?;
+        // Opens once LazyFS opens it to answer. One line: LazyFS keeps
+        // the fifo open, so its end never comes.
+        let mut said = String::new();
+        std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(std::fs::File::open(&done)?),
+            &mut said,
+        )?;
+        Ok(said)
+    });
+    let said = tokio::time::timeout(Duration::from_secs(60), cleared)
+        .await
+        .map_err(|_| "LazyFS did not answer the clear-cache within 60 s")???;
+    if !said.contains("finished::clear-cache") {
+        return Err(format!("LazyFS answered {said:?} to the clear-cache").into());
+    }
+    Ok(())
 }
 
 /// What one writer sent, and how each request ended. Writers are
@@ -115,6 +148,9 @@ pub async fn run(server: &mut Server, opts: Opts, out: &mut dyn std::io::Write) 
         tokio::time::sleep(run_for).await;
         killed_at.set(Instant::now()).ok();
         server.kill().await?;
+        if let Some((fifo, done)) = &opts.power_loss {
+            lose_power(fifo, done).await?;
+        }
 
         let mut txw = Vec::new();
         for t in tasks {
@@ -133,7 +169,8 @@ pub async fn run(server: &mut Server, opts: Opts, out: &mut dyn std::io::Write) 
             Err(e) => violations.push(format!("server did not restart: {e}")),
             Ok(took) => {
                 stats["restart_ms"] = json!(took.as_millis());
-                match check(server, &history, cycle, &mut rng, &mut stats).await {
+                let may_be_lost = (opts.tx_may_be_lost, opts.singles_may_be_lost);
+                match check(server, &history, cycle, &mut rng, &mut stats, may_be_lost).await {
                     Ok(v) => violations.extend(v),
                     Err(e) => violations.push(format!("check failed to run: {e}")),
                 }
@@ -416,11 +453,14 @@ async fn check(
     this_cycle: u32,
     rng: &mut Rng,
     stats: &mut Value,
+    (tx_may_be_lost, singles_may_be_lost): (bool, bool),
 ) -> Res<Vec<String>> {
     let mut c = connect(server).await?;
     let mut v = Vec::new();
     let mut singles_present = 0u64;
     let mut tx_present = 0u64;
+    // Acknowledged and absent, where the run allows it (a power loss).
+    let (mut tx_lost, mut singles_lost) = (0u64, 0u64);
 
     for (cycle, (txw, sw)) in history.iter().enumerate() {
         let fresh = cycle as u32 == this_cycle;
@@ -470,12 +510,16 @@ async fn check(
                 ));
             }
             if n < w.acked {
-                v.push(format!(
-                    "{}: {} acknowledged transaction(s) lost (present {n}, acknowledged {})",
-                    w.id,
-                    w.acked - n,
-                    w.acked
-                ));
+                if tx_may_be_lost {
+                    tx_lost += w.acked - n;
+                } else {
+                    v.push(format!(
+                        "{}: {} acknowledged transaction(s) lost (present {n}, acknowledged {})",
+                        w.id,
+                        w.acked - n,
+                        w.acked
+                    ));
+                }
             }
             let sent = w.acked + u64::from(w.unknown.is_some());
             if n > sent {
@@ -522,7 +566,11 @@ async fn check(
             };
             singles_present += n;
             if n < w.acked {
-                v.push(format!("{}: {} acknowledged insert(s) lost after a process kill (present {n}, acknowledged {})", w.id, w.acked - n, w.acked));
+                if singles_may_be_lost {
+                    singles_lost += w.acked - n;
+                } else {
+                    v.push(format!("{}: {} acknowledged insert(s) lost after a process kill (present {n}, acknowledged {})", w.id, w.acked - n, w.acked));
+                }
             }
             let sent = w.acked + u64::from(w.unknown.is_some());
             if n > sent {
@@ -603,5 +651,7 @@ async fn check(
     }
     stats["singles_present"] = json!(singles_present);
     stats["transactions_present"] = json!(tx_present);
+    stats["singles_lost"] = json!(singles_lost);
+    stats["transactions_lost"] = json!(tx_lost);
     Ok(v)
 }

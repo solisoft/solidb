@@ -108,6 +108,12 @@ async fn main() -> Res<()> {
                 max_ms: num("max-ms", 4000),
                 tx_isolation: get("tx-isolation", "read_committed"),
                 seed: num("seed", 1),
+                power_loss: opt.get("lazyfs-fifo").map(|fifo| {
+                    let done = opt.get("lazyfs-done").cloned().unwrap_or_else(|| usage());
+                    (PathBuf::from(fifo), PathBuf::from(done))
+                }),
+                singles_may_be_lost: get("singles-may-be-lost", "0") == "1",
+                tx_may_be_lost: get("tx-may-be-lost", "0") == "1",
             };
             let mut out: Box<dyn std::io::Write> = match opt.get("out") {
                 Some(p) => Box::new(std::fs::File::create(p)?),

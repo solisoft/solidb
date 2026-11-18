@@ -81,6 +81,11 @@ fn named(variable: Option<&str>) -> Result<EngineKind, KvError> {
 /// The engine recorded for `path`, if the directory already holds a database.
 pub(super) fn recorded(path: &Path) -> Result<Option<EngineKind>, KvError> {
     match std::fs::read_to_string(path.join(ENGINE_FILE)) {
+        // An empty file is one that was created and never reached the disk:
+        // through 2.14.0 the marker was written without an fsync, and a
+        // power loss soon after a directory's creation left it there
+        // (card #863). It says nothing, as if it were absent.
+        Ok(name) if name.trim().is_empty() => unmarked(path),
         Ok(name) => EngineKind::parse(&name).map(Some).ok_or_else(|| {
             KvError::new(format!(
                 "{}: unknown storage engine {:?}",
@@ -88,25 +93,7 @@ pub(super) fn recorded(path: &Path) -> Result<Option<EngineKind>, KvError> {
                 name.trim()
             ))
         }),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let rocks_options = std::fs::read_dir(path)
-                .map(|entries| {
-                    entries
-                        .flatten()
-                        .any(|e| e.file_name().to_string_lossy().starts_with("OPTIONS-"))
-                })
-                .unwrap_or(false);
-            if rocks_options {
-                Ok(Some(EngineKind::Rocksdb))
-            } else if path.join("CURRENT").exists() {
-                Err(KvError::new(format!(
-                    "{} holds a database but no {ENGINE_FILE} file naming its engine",
-                    path.display()
-                )))
-            } else {
-                Ok(None)
-            }
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => unmarked(path),
         Err(e) => Err(KvError::new(format!(
             "{}: {e}",
             path.join(ENGINE_FILE).display()
@@ -114,13 +101,55 @@ pub(super) fn recorded(path: &Path) -> Result<Option<EngineKind>, KvError> {
     }
 }
 
+/// What a directory without a marker holds: RocksDB's when its `OPTIONS-*`
+/// files are there, nothing when it holds no database, and otherwise a
+/// database this cannot name.
+fn unmarked(path: &Path) -> Result<Option<EngineKind>, KvError> {
+    let rocks_options = std::fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("OPTIONS-"))
+        })
+        .unwrap_or(false);
+    if rocks_options {
+        Ok(Some(EngineKind::Rocksdb))
+    } else if path.join("CURRENT").exists() {
+        Err(KvError::new(format!(
+            "{} holds a database but no {ENGINE_FILE} file naming its engine",
+            path.display()
+        )))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Write the marker so that it is either absent or whole after a power
+/// loss: to a file of its own, fsynced, renamed into place, and the
+/// directory fsynced.
 pub(super) fn record(path: &Path, kind: EngineKind) -> Result<(), KvError> {
     let file = path.join(ENGINE_FILE);
-    if file.exists() {
+    if std::fs::read_to_string(&file).is_ok_and(|name| !name.trim().is_empty()) {
         return Ok(());
     }
-    std::fs::write(&file, format!("{kind}\n"))
-        .map_err(|e| KvError::new(format!("{}: {e}", file.display())))
+    let io = |at: &Path, e: std::io::Error| KvError::new(format!("{}: {e}", at.display()));
+    std::fs::create_dir_all(path).map_err(|e| io(path, e))?;
+    let tmp = path.join(format!("{ENGINE_FILE}.tmp"));
+    {
+        use std::io::Write;
+        let mut out = std::fs::File::create(&tmp).map_err(|e| io(&tmp, e))?;
+        out.write_all(format!("{kind}\n").as_bytes())
+            .and_then(|()| out.sync_all())
+            .map_err(|e| io(&tmp, e))?;
+    }
+    std::fs::rename(&tmp, &file).map_err(|e| io(&file, e))?;
+    // The new name is in the directory: that has to reach the disk too. A
+    // directory cannot be opened as a file on Windows.
+    #[cfg(unix)]
+    std::fs::File::open(path)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|e| io(path, e))?;
+    Ok(())
 }
 
 fn open_with(
@@ -132,6 +161,13 @@ fn open_with(
         Some(kind) => kind,
         None => configured()?,
     };
+    // Before the engine creates anything: a directory that holds an
+    // engine's files then always says whose they are. Recorded afterwards,
+    // a power loss between the two left a database no start could name.
+    // Not for an engine this binary cannot open, which is refused below.
+    if cfg!(feature = "engine-solistore") || kind == EngineKind::Rocksdb {
+        record(path, kind)?;
+    }
     let kv = match kind {
         EngineKind::Rocksdb => rocks()?,
         #[cfg(feature = "engine-solistore")]
@@ -184,6 +220,48 @@ mod tests {
 
     fn write_engine(dir: &Path, name: &str) {
         std::fs::write(dir.join(ENGINE_FILE), format!("{name}\n")).unwrap();
+    }
+
+    /// The marker a power loss left empty (written without an fsync
+    /// through 2.14.0) says nothing: an empty directory is a new one, a
+    /// RocksDB directory is RocksDB's, and the marker is written again,
+    /// whole.
+    #[test]
+    fn an_empty_marker_is_read_as_no_marker_and_written_again() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(ENGINE_FILE), b"").unwrap();
+        assert_eq!(recorded(dir.path()).unwrap(), None);
+        record(dir.path(), EngineKind::Rocksdb).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(ENGINE_FILE)).unwrap(),
+            "rocksdb\n"
+        );
+        assert!(!dir.path().join("ENGINE.tmp").exists());
+        assert_eq!(recorded(dir.path()).unwrap(), Some(EngineKind::Rocksdb));
+        // A marker in place is left alone.
+        record(dir.path(), EngineKind::Solistore).unwrap();
+        assert_eq!(recorded(dir.path()).unwrap(), Some(EngineKind::Rocksdb));
+
+        let rocks = tempfile::tempdir().unwrap();
+        drop(super::super::rocks::open(rocks.path(), &["x"]).unwrap());
+        std::fs::write(rocks.path().join(ENGINE_FILE), b"").unwrap();
+        assert_eq!(recorded(rocks.path()).unwrap(), Some(EngineKind::Rocksdb));
+    }
+
+    /// The marker is there before the engine has created anything, in a
+    /// directory that does not exist yet too.
+    #[test]
+    fn a_new_directory_is_marked_before_its_engine_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh");
+        let kind = configured().unwrap();
+        let seen = std::cell::Cell::new(None);
+        let look = || {
+            seen.set(Some(recorded(&path).unwrap()));
+            Err(KvError::new("stop here".to_string()))
+        };
+        assert!(open_with(&path, look, look).is_err());
+        assert_eq!(seen.get(), Some(Some(kind)));
     }
 
     #[cfg(feature = "engine-solistore")]

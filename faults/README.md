@@ -210,9 +210,51 @@ write between `begin_transaction` and `rollback`, and `begin_transaction` /
 `commit` on a pool of four connections. Card #793 has what it found on
 2.9.0.
 
-## Not covered yet
+## A power loss: `power.sh`
 
-- **Power loss:** what was written but not fsynced, dropped below the
-  filesystem (LazyFS or dm-log-writes).
+`faults/power.sh <solidb> <lazyfs directory> [<output dir>]` runs `crash`
+with the server's data directory on [LazyFS](https://github.com/dsrhaslab/lazyfs),
+a FUSE filesystem that keeps what is written in a cache of its own until it
+is fsynced. After each SIGKILL the harness has LazyFS drop that cache
+(`lazyfs::clear-cache`): what was not fsynced is gone, as after a machine
+that lost power. A `kill -9` alone leaves the page cache, so it never shows
+what a power loss loses. LazyFS is external code and is not in this
+repository: build it (its README; `cmake` and `libfuse3`) and give the
+directory holding `lazyfs` and the libraries it loads.
+
+Four configurations. Where the mode acknowledges before its fsync, the
+acknowledged writes found missing are counted (`transactions_lost`,
+`singles_lost` in each cycle's stats) instead of being violations; what is
+left must still be a prefix of what was sent, and every other check holds.
+
+| Configuration | Must lose nothing |
+|---|---|
+| solistore, `SOLIDB_DURABILITY=full` | transactions and single inserts |
+| solistore, `eventual` | transactions (their commit is fsynced) |
+| solistore, `eventual`, transactions at `read_uncommitted` | nothing |
+| RocksDB, `eventual` | transactions |
+
+### Results, 2026-11-18
+
+`main` after 2.14.0 with the ENGINE marker fix below, workstation, 20
+cycles, `--seed 7` (card #863):
+
+| Configuration | Cycles | Transactions acknowledged / lost | Inserts acknowledged / lost | Outcome |
+|---|---|---|---|---|
+| solistore `full` | 20 | 207,636 / 0 | 306,291 / 0 | no violation |
+| solistore `eventual` | 20 | 217,425 / 0 | 306,257 / 31 | no violation |
+| solistore `eventual`, `read_uncommitted` | 4 | 48,508 / 2,286 | 59,231 / 2,616 | **did not restart** at cycle 3: `corruption: bad table footer`, then `_admins` read as empty (card #971) |
+| RocksDB `eventual` | 7 | 56,800 / 0 | 87,252 / 6 | **did not restart** at cycle 6: `CURRENT file does not end with newline` (card #972) |
+
+What it found first, in every configuration: the `ENGINE` file that names a
+data directory's engine was written without an fsync, after the engine had
+created its files. A power loss soon after a directory was made left it
+empty, and no start could open the directory. It is now written before the
+engine opens, to a file of its own that is fsynced and renamed into place
+(`storage/kv/select.rs`), and an empty one is read as absent.
+
+Nothing showed half a transaction or an index that disagrees with the
+documents in the cycles that restarted. Lost acknowledged writes are a tail,
+never a hole.
 
 In #792.
