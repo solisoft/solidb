@@ -2957,7 +2957,7 @@ pub(super) fn key_span<'a>(keys: impl Iterator<Item = &'a str>) -> Wrote<'a> {
 
 /// The logical key range of a collection's documents: `doc:` up to `doc;`
 /// (';' follows ':'), which bounds exactly the keys starting with `doc:`.
-fn doc_key_range() -> (Vec<u8>, Vec<u8>) {
+pub(super) fn doc_key_range() -> (Vec<u8>, Vec<u8>) {
     let lower = DOC_PREFIX.as_bytes().to_vec();
     let mut upper = lower.clone();
     *upper.last_mut().expect("non-empty prefix") += 1;

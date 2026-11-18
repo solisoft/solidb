@@ -122,24 +122,41 @@ impl Collection {
         // Build index from existing documents (with auto-embed support).
         // Collect texts first and use batched embedding (1 HTTP call instead of N serial)
         // for efficiency when building on large collections.
-        let all_docs = self.all();
+        //
+        // The documents are read one at a time, and of each only the fields
+        // the index reads: collecting the whole collection first held every
+        // document decoded at once (6.6 GB for a million vectors of 128
+        // dimensions, card #985).
         let mut direct_vectors: Vec<(String, Vec<f32>)> = Vec::new();
         let mut texts_to_embed: Vec<String> = Vec::new();
         let mut keys_for_embed: Vec<String> = Vec::new();
-
-        for doc in &all_docs {
-            let doc_value = doc.to_value();
+        let top = |path: &str| path.split('.').next().unwrap_or(path).to_string();
+        let mut read_fields = vec![top(&config.field)];
+        if let Some(source) = &config.embedding_source {
+            read_fields.push(top(source));
+        }
+        read_fields.sort();
+        read_fields.dedup();
+        let (lower, upper) = super::crud::doc_key_range();
+        self.for_each_doc_in(&lower, &upper, None, |key, bytes| {
+            let Ok(doc_value) =
+                crate::storage::serializer::deserialize_doc_projected(bytes, &read_fields)
+            else {
+                return Ok(true);
+            };
+            let key = || String::from_utf8_lossy(key).into_owned();
             if let Some(v) = self.extract_vector(&doc_value, &config.field, config.dimension) {
-                direct_vectors.push((doc.key.clone(), v));
+                direct_vectors.push((key(), v));
             } else if let Some(ref source_field) = config.embedding_source {
                 if let Some(text) = extract_field_value(&doc_value, source_field).as_str() {
                     if !text.trim().is_empty() {
                         texts_to_embed.push(text.to_string());
-                        keys_for_embed.push(doc.key.clone());
+                        keys_for_embed.push(key());
                     }
                 }
             }
-        }
+            Ok(true)
+        })?;
 
         // Batched embedding generation (chunked to keep requests reasonable size).
         // This avoids the previous N serial per-document calls.

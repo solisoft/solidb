@@ -9,6 +9,7 @@
 # Configurations:
 #   solidb     a SoliDB binary (SOLIDB_BIN), solistore; HNSW index
 #              on the documents' `emb` field, VECTOR_SEARCH over the driver.
+#              SOLIDB_ARGS adds options to the server's command line.
 #   pgvector   PostgreSQL + pgvector in a container on DB_CPUS and DB_MEM;
 #              HNSW (vector_cosine_ops) built after the load.
 #   lancedb    LanceDB embedded, in the client's process (vec_lance.py in
@@ -68,7 +69,7 @@ run_one() {
   case $cfg in
     solidb)
       limited env SOLIDB_ADMIN_PASSWORD=$PASSWORD SOLIDB_ENGINE=solistore \
-        "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua >"$OUT/solidb.server.log" 2>&1 &
+        "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua ${SOLIDB_ARGS:-} >"$OUT/solidb.server.log" 2>&1 &
       local scope=$!
       wait_port 6800
       # $! is sudo's; the server is the process listening on the port.
