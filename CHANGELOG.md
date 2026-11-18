@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **`libz-sys` 1.1.31 → 1.1.33** (RUSTSEC-2026-0544, a heap buffer overflow in the zlib bindings RocksDB's build links). Whether SoliDB reached the affected path was not established; the upgrade is the advisory's fix.
+
 - **Windows: the transaction log is emptied again.** The log is emptied once its contents are applied, at startup and at a checkpoint. On Windows that was refused (`Failed to truncate transaction WAL: Access is denied`): the file is opened in append mode, which there gives no right to change its length. So it grew without bound and was read whole at every start. It is now emptied through a handle of its own. Not run on Windows since the change: the unit tests and the fault harness pass on Linux.
 
 - **`solidb-migrate-engine` raises its open-file limit.** It opens every table of the directory it copies and ran under the shell's limit, commonly 1024: a 38 GB directory (418 tables) failed with `Too many open files` after copying everything, leaving the directory unchanged. It now raises the soft limit to the hard one before it starts, as the server does, and an error of that kind says which limit to raise.

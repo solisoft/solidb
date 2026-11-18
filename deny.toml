@@ -44,6 +44,15 @@ ignore = [
     # is not in the server. Goes away with a uniffi upgrade, which changes
     # the generated bindings and needs its own change.
     "RUSTSEC-2026-0374",
+
+    # chrono and chrono-tz, declared unmaintained (2026-11). Both are
+    # *direct* dependencies used throughout: document timestamps, the SDBQL
+    # date functions, counters that restart by day in a time zone, the sync
+    # log. Unmaintained notices, not vulnerabilities, with no upgrade to
+    # take. Replacing them (jiff or time) touches the stored timestamp
+    # handling and every date function, and needs its own plan: card #970.
+    "RUSTSEC-2026-0543",
+    "RUSTSEC-2026-0555",
 ]
 
 [licenses]
