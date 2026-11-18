@@ -16,6 +16,14 @@ fn main() {
         std::process::exit(2);
     };
     let dir = std::path::Path::new(dir);
+    // Every table of the directory is opened: the common limit of 1024
+    // descriptors ran out on a 38 GB directory (418 tables).
+    if let solidb::fd_limit::FdLimit::Refused { at } = solidb::fd_limit::raise() {
+        eprintln!(
+            "the open-file limit is {at} and could not be raised: a large directory needs \
+             more (`ulimit -n`)"
+        );
+    }
     let started = std::time::Instant::now();
     match solidb::storage::kv::migrate::to_solistore(dir, &|step| {
         eprintln!("[{:>7.1}s] {step}", started.elapsed().as_secs_f64());
@@ -40,6 +48,9 @@ fn main() {
         }
         Err(e) => {
             eprintln!("migration failed, {} unchanged: {e}", dir.display());
+            if e.to_string().contains("Too many open files") {
+                eprintln!("raise the open-file limit and run it again: `ulimit -n 524288`");
+            }
             std::process::exit(1);
         }
     }

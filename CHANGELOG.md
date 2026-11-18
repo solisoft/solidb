@@ -6,6 +6,10 @@
 
 - **A new data directory is created on solistore.** Through 2.13.0 it was created on RocksDB unless `SOLIDB_ENGINE=solistore` said otherwise; now it is solistore unless `SOLIDB_ENGINE=rocksdb` says otherwise. Nothing changes for a directory that holds data: it is opened with the engine recorded in its `ENGINE` file (RocksDB, for one from before that file), and upgrading converts nothing. To move a RocksDB directory, stop the server and run `solidb-migrate-engine <data-dir>`, as before. The server's start-up log now names the engine (`Storage engine initialized: solistore`). Building from source, the `engine-solistore` feature is on by default; `cargo build --no-default-features` gives a binary with RocksDB alone, whose new directories are RocksDB's. See RocksDB & solistore.
 
+### Fixed
+
+- **`solidb-migrate-engine` raises its open-file limit.** It opens every table of the directory it copies and ran under the shell's limit, commonly 1024: a 38 GB directory (418 tables) failed with `Too many open files` after copying everything, leaving the directory unchanged. It now raises the soft limit to the hard one before it starts, as the server does, and an error of that kind says which limit to raise.
+
 ## [2.14.0](https://github.com/solisoft/solidb/compare/v2.13.0...v2.14.0) (2026-11-18)
 
 Field rules (required fields, types, bounds and allowed values checked on the

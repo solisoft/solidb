@@ -108,6 +108,7 @@ cargo build --release --no-default-features</pre>
           <ol class="list-decimal pl-6 space-y-2 text-gray-300 mb-6">
             <li><strong>Stop the server.</strong> The tool opens RocksDB, which takes its lock, so it refuses a directory a server is running on.</li>
             <li><strong>Check free space.</strong> The copy is built next to the data directory, in <code>&lt;dir&gt;.solistore-tmp</code>, and the original is kept, so plan for as much free space again as the directory uses.</li>
+            <li><strong>Open files.</strong> The tool opens every table of the directory. After 2.14.0 it raises its own open-file limit to the hard limit; through 2.14.0, or where the hard limit is low, run <code class="text-amber-300">ulimit -n 524288</code> in the same shell first, or it fails with <code class="text-amber-300">Too many open files</code> and leaves the directory unchanged.</li>
             <li><strong>Run it</strong>, then start the server on the same directory as before.</li>
           </ol>
           <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto mb-6">

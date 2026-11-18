@@ -395,42 +395,19 @@ enum Command {
 /// descriptor, and RocksDB keeps every table file open (`max_open_files`
 /// -1 in the prod profile), so the common 1024 default ran out at 256 driver
 /// connections on a 1M-document database.
-#[cfg(unix)]
 fn raise_fd_limit() {
-    // macOS refuses a soft limit above OPEN_MAX even when the hard limit is
-    // unlimited.
-    #[cfg(target_os = "macos")]
-    const CAP: libc::rlim_t = 10_240;
-    #[cfg(not(target_os = "macos"))]
-    const CAP: libc::rlim_t = 1 << 20;
-    let mut limit = libc::rlimit {
-        rlim_cur: 0,
-        rlim_max: 0,
-    };
-    // SAFETY: getrlimit/setrlimit only read and write the struct passed.
-    unsafe {
-        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
-            return;
+    use solidb::fd_limit::FdLimit;
+    match solidb::fd_limit::raise() {
+        FdLimit::Unchanged => {}
+        FdLimit::Raised { from, to } => {
+            tracing::info!("open-file limit raised from {} to {}", from, to)
         }
-        let target = limit.rlim_max.min(CAP);
-        if limit.rlim_cur >= target {
-            return;
-        }
-        let before = limit.rlim_cur;
-        limit.rlim_cur = target;
-        if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) == 0 {
-            tracing::info!("open-file limit raised from {} to {}", before, target);
-        } else {
-            tracing::warn!(
-                "open-file limit is {} and could not be raised; each connection takes one",
-                before
-            );
-        }
+        FdLimit::Refused { at } => tracing::warn!(
+            "open-file limit is {} and could not be raised; each connection takes one",
+            at
+        ),
     }
 }
-
-#[cfg(not(unix))]
-fn raise_fd_limit() {}
 
 /// After a failed accept: an accept that failed for lack of a resource
 /// (descriptors, buffers, memory) fails again at once, so pause before the
