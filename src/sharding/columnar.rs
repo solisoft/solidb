@@ -305,6 +305,56 @@ pub fn gather(
     Ok(rows)
 }
 
+/// Shard folds computed or asked for since the process started: for
+/// tests, which must know a COLLECT was not gathered.
+pub static SHARD_FOLDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The fold state of shard `shard` of `name` for a COLLECT (card #899):
+/// computed by `local` when this node holds the shard, else asked of a node
+/// that does (`POST …/columnar/{shard}/fold` with `request`: the clauses
+/// over that shard and the bind variables).
+pub fn fold_shard(
+    coord: Option<&ShardCoordinator>,
+    db: &Database,
+    name: &str,
+    shards: &ColumnarShards,
+    shard: u16,
+    request: &Value,
+    local: impl FnOnce(&ColumnarCollection) -> DbResult<Vec<u8>>,
+) -> DbResult<Vec<u8>> {
+    SHARD_FOLDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let peers = Peers { coord };
+    let assignment = shards.assignments.get(&shard).ok_or_else(|| {
+        DbError::InternalError(format!("shard {shard} of '{name}' has no assignment"))
+    })?;
+    let phys = physical(name, shard);
+    let nodes: Vec<&String> = std::iter::once(&assignment.primary_node)
+        .chain(&assignment.replica_nodes)
+        .collect();
+    if nodes.iter().any(|n| peers.is_local(n)) {
+        let here = ColumnarCollection::load(phys, &db.name, db.db_arc())?;
+        return local(&here);
+    }
+    let client = crate::storage::http_client::get_blocking_http_client();
+    let mut last = None;
+    for node in nodes {
+        let url = peers.url(
+            node,
+            &format!("/_api/database/{}/columnar/{phys}/fold", db.name),
+        )?;
+        match peers.send(client.post(url).json(request)).and_then(|r| {
+            r.bytes()
+                .map_err(|e| DbError::InternalError(format!("shard fold: {e}")))
+        }) {
+            Ok(bytes) => return Ok(bytes.to_vec()),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| {
+        DbError::InternalError(format!("shard {shard} of '{name}' answered nothing"))
+    }))
+}
+
 /// Drop the sharded collection `name`: each shard on each of its nodes,
 /// then the collection that stands for them (logged for the peers).
 pub fn drop(

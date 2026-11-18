@@ -102,6 +102,22 @@ fn relifetime<T, U>(mut buf: Vec<T>) -> Vec<U> {
     buf.into_iter().map(|_| unreachable!("emptied")).collect()
 }
 
+/// What a shard sends of its fold (card #899): its groups, each with the
+/// state of its aggregates.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FoldState {
+    groups: Vec<GroupState>,
+    seen: usize,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct GroupState {
+    key: Vec<Value>,
+    first: u64,
+    count: i64,
+    aggregates: Vec<crate::sdbql::executor::aggregation::AccState>,
+}
+
 impl<'c> CollectFold<'c> {
     pub(super) fn new(collect: &'c CollectClause) -> Self {
         Self {
@@ -346,6 +362,62 @@ impl<'c> CollectFold<'c> {
             }
         }
         Ok(gi)
+    }
+
+    /// Whether a shard can compute this COLLECT and send its state
+    /// ([`FoldState`]): no `INTO`, and only aggregates whose state is sent.
+    pub(super) fn sent_by_shards(collect: &CollectClause) -> bool {
+        collect.into_var.is_none()
+            && collect.aggregates.iter().all(|a| {
+                AggKind::resolve(&a.function, a.argument.is_some())
+                    .is_some_and(AggregateAccumulator::sent_by_shards)
+            })
+    }
+
+    /// The state a shard sends of this fold; `None` when an aggregate's
+    /// state is not sent.
+    pub(super) fn to_state(&self) -> Option<FoldState> {
+        let groups = self
+            .groups
+            .iter()
+            .map(|g| {
+                Some(GroupState {
+                    key: g.key.clone(),
+                    first: g.first,
+                    count: g.count,
+                    aggregates: g
+                        .aggregates
+                        .iter()
+                        .map(|a| a.to_state())
+                        .collect::<Option<Vec<_>>>()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(FoldState {
+            groups,
+            seen: self.seen,
+        })
+    }
+
+    /// Fold in a shard's state, its rows numbered after `offset`: as
+    /// [`Self::merge`] folds in another partition.
+    pub(super) fn absorb(&mut self, state: FoldState, offset: u64) {
+        let mut other = CollectFold::new(self.collect);
+        other.seen = state.seen;
+        for g in state.groups {
+            other.groups.push(Group {
+                key: g.key,
+                first: g.first.saturating_add(offset),
+                count: g.count,
+                members: Vec::new(),
+                aggregates: g
+                    .aggregates
+                    .into_iter()
+                    .map(AggregateAccumulator::from_state)
+                    .collect(),
+            });
+        }
+        self.merge(other);
     }
 
     /// Whether two folds of this COLLECT over different rows can be

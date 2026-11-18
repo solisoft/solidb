@@ -376,7 +376,7 @@
           </div>
           <ul class="list-disc pl-6 mt-6 space-y-2 text-gray-400 text-sm">
             <li>The node an insert reaches checks the rows against the schema, gives them their ids, and writes each shard on each of its nodes: a shard's copies hold the same rows under the same ids. The shards are columnar collections named <code>metrics_s0</code>, <code>metrics_s1</code>&hellip;</li>
-            <li>An SDBQL query reads the rows of every shard and answers what it would answer on one collection.</li>
+            <li>An SDBQL query answers what it would answer on one collection. A <code>FOR &hellip; FILTER &hellip; COLLECT &hellip; AGGREGATE</code> whose aggregates are <code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code> or <code>MAX</code> is computed on each shard, where it lives, and only the groups travel; the exact state of each sum is merged, so the result is the one a single collection gives. Any other query reads the rows of every shard.</li>
             <li>Dropping the collection drops its shards on every node.</li>
             <li>Not yet on a sharded collection: deletes, truncate, column changes, indexes, retention, compaction, tags, branches, and the <code>/query</code> and <code>/aggregate</code> endpoints (use SDBQL). They are refused.</li>
           </ul>

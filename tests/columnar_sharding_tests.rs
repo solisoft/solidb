@@ -39,7 +39,8 @@ fn run(engine: &StorageEngine, query: &str) -> Result<Vec<Value>, String> {
 }
 
 const QUERIES: &[&str] = &[
-    "FOR r IN $c COLLECT h = r.host AGGREGATE n = COUNT(1), s = SUM(r.v), a = AVG(r.ms), lo = MIN(r.v), hi = MAX(r.ms) RETURN {h, n, s, a, lo, hi}",
+    "FOR r IN $c COLLECT h = r.host AGGREGATE n = COUNT(r.v), s = SUM(r.v), a = AVG(r.ms), lo = MIN(r.v), hi = MAX(r.ms) RETURN {h, n, s, a, lo, hi}",
+    "FOR r IN $c FILTER r.v >= 1000 COLLECT h = r.host AGGREGATE s = SUM(r.ms) RETURN [h, s]",
     "FOR r IN $c FILTER r.v >= 100 AND r.v < 140 SORT r.v RETURN r",
     "FOR r IN $c FILTER r.host == 'h3' COLLECT WITH COUNT INTO n RETURN n",
     "RETURN LENGTH(FOR r IN $c RETURN 1)",
@@ -90,7 +91,23 @@ fn a_sharded_collection_answers_as_one_collection() {
     .unwrap();
     plain.insert_rows(rows(9_000, 9_050)).unwrap();
 
+    let before = sharded::SHARD_FOLDS.load(std::sync::atomic::Ordering::Relaxed);
     assert_eq!(answers(&engine, "m"), answers(&engine, "plain"));
+    // The groups of the first query were computed on each shard, not
+    // gathered: four shards.
+    assert!(sharded::SHARD_FOLDS.load(std::sync::atomic::Ordering::Relaxed) >= before + 4);
+    // A COLLECT that reads outside its loop, and one with a bind variable.
+    for q in [
+        "LET k = 'h3' FOR r IN $c FILTER r.host != k COLLECT h = r.host AGGREGATE s = SUM(r.v) RETURN [h, s]",
+        "FOR r IN $c FILTER r.v >= 4000 COLLECT AGGREGATE s = SUM(r.ms), n = COUNT(1), lo = MIN(r.host) RETURN [s, n, lo]",
+        "FOR r IN $c COLLECT h = r.host AGGREGATE s = SUM(r.v) SORT s DESC LIMIT 2 RETURN [h, s]",
+    ] {
+        assert_eq!(
+            run(&engine, &q.replace("$c", "m")).unwrap(),
+            run(&engine, &q.replace("$c", "plain")).unwrap(),
+            "{q}"
+        );
+    }
 
     // The rows are in the shards, each host in one of them.
     let mut total = 0;
@@ -150,4 +167,39 @@ fn a_sharded_collection_answers_as_one_collection() {
         );
     }
     assert!(ColumnarCollection::load("m".to_string(), "app", db.db_arc()).is_err());
+}
+
+/// What a shard's node is sent for a fold: the clauses over that shard,
+/// through JSON as over HTTP, answer with a state (card #899).
+#[test]
+fn a_shards_clauses_travel_as_json() {
+    let dir = TempDir::new().unwrap();
+    let engine = StorageEngine::new(dir.path().join("data").to_str().unwrap()).unwrap();
+    engine.initialize().unwrap();
+    engine.create_database("app".to_string()).unwrap();
+    let db = engine.get_database("app").unwrap();
+    sharded::create(
+        None,
+        &db,
+        None,
+        "m",
+        columns(),
+        CompressionType::Lz4,
+        2,
+        "host",
+        1,
+    )
+    .unwrap();
+    sharded::insert(None, &db, "m", rows(0, 500)).unwrap();
+    let query = parse(
+        "FOR r IN m_s0 FILTER r.v >= @lo COLLECT h = r.host AGGREGATE s = SUM(r.v) RETURN [h, s]",
+    )
+    .unwrap();
+    let clauses: Vec<solidb::sdbql::ast::BodyClause> =
+        serde_json::from_value(serde_json::to_value(&query.body_clauses[..3]).unwrap()).unwrap();
+    let binds: HashMap<String, Value> = [("lo".to_string(), json!(10))].into();
+    let state = QueryExecutor::with_database_and_bind_vars(&engine, "app".to_string(), binds)
+        .shard_fold_state(&clauses)
+        .unwrap();
+    assert!(!state.is_empty());
 }

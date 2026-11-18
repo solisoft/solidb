@@ -733,6 +733,10 @@ pub fn create_router(
                 .get(super::columnar_handlers::list_columnar_tags_handler),
         )
         .route(
+            "/_api/database/{db}/columnar/{collection}/fold",
+            post(super::columnar_handlers::shard_fold_handler),
+        )
+        .route(
             "/_api/database/{db}/columnar/{collection}/rows",
             get(super::columnar_handlers::shard_rows_handler)
                 .post(super::columnar_handlers::shard_insert_rows_handler),

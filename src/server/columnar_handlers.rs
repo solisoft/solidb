@@ -1432,3 +1432,53 @@ pub async fn shard_insert_rows_handler(
         serde_json::json!({ "status": "ok", "inserted": written }),
     ))
 }
+
+/// A shard's fold for the node that coordinates a COLLECT over a sharded
+/// collection (card #899): `{"clauses": [FOR over this shard, FILTER/LET…,
+/// COLLECT], "binds": {…}}` → MessagePack of the fold's state. Only with
+/// `X-Shard-Direct`; refused on a collection a row policy binds.
+///
+/// # Endpoint
+/// `POST /_api/database/{db}/columnar/{collection}/fold`
+pub async fn shard_fold_handler(
+    State(state): State<AppState>,
+    Path((db_name, collection)): Path<(String, String)>,
+    headers: axum::http::HeaderMap,
+    claims: Option<axum::Extension<crate::server::auth::Claims>>,
+    Json(req): Json<ShardFoldRequest>,
+) -> Result<axum::response::Response, DbError> {
+    if !shard_direct(&headers) {
+        return Err(DbError::BadRequest(
+            "This endpoint serves the nodes of a cluster (X-Shard-Direct)".to_string(),
+        ));
+    }
+    let db = state.storage.get_database(&db_name)?;
+    db.columnar_policy_lets(&collection, admin(&claims))?;
+    let names_it = matches!(
+        req.clauses.first(),
+        Some(crate::sdbql::ast::BodyClause::For(f)) if f.collection == collection
+    );
+    if !names_it {
+        return Err(DbError::BadRequest(
+            "The clauses read the shard the path names".to_string(),
+        ));
+    }
+    let storage = state.storage.clone();
+    let bytes = tokio::task::spawn_blocking(move || {
+        crate::sdbql::QueryExecutor::with_database_and_bind_vars(&storage, db_name, req.binds)
+            .shard_fold_state(&req.clauses)
+    })
+    .await
+    .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??;
+    axum::response::Response::builder()
+        .header("Content-Type", "application/msgpack")
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| DbError::InternalError(e.to_string()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ShardFoldRequest {
+    pub clauses: Vec<crate::sdbql::ast::BodyClause>,
+    #[serde(default)]
+    pub binds: std::collections::HashMap<String, serde_json::Value>,
+}

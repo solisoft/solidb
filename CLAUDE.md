@@ -1523,6 +1523,15 @@ Rules that keep it sound:
   the empty collection it would silently write nothing that is read. Shard
   requests carry `X-Shard-Direct` and are never logged; a shard's rows
   sent over HTTP are checked against its schema on arrival.
+  A `COLLECT` whose aggregates send their state
+  (`AggregateAccumulator::sent_by_shards`: COUNT, SUM, AVG, MIN, MAX) and
+  that reads nothing outside its loop is computed on each shard
+  (`fold_shards`; a remote shard through `POST …/fold`, which runs
+  `QueryExecutor::shard_fold_state`) and merged as partitions are
+  (`CollectFold::absorb`). The top-k hint of a `SORT … LIMIT` is never
+  used on a shard: a group's total is every shard's. A loop renamed to a
+  shard renames `source_variable` too, or `plan` refuses it. A new
+  aggregate kind sent by shards needs its `AccState`.
 - A large insert builds its columns before taking the write lock and gets
   its row ids under it: ids of one insert must follow those of the one
   before, or every query would have to order blocks and tail together.

@@ -56,8 +56,10 @@ use super::super::index_opt::{expression_references_var, push_conjuncts, IndexHi
 use super::super::types::Context;
 use super::super::QueryExecutor;
 use super::collect::CollectFold;
+use super::collect::FoldState;
 use super::scan_collect::{bind_in_place, plan, Plan, ScanCollectRun};
 use super::scan_threads::Helpers;
+use crate::error::DbError;
 use crate::error::DbResult;
 use crate::sdbql::ast::{BinaryOperator, BodyClause, Expression, UnaryOperator};
 use crate::sdbql::executor::builtins::datetime::WEEK_ORIGIN_MS;
@@ -2186,15 +2188,14 @@ impl QueryExecutor<'_> {
     /// few blocks and its groups, not the collection. The same groups as
     /// the other way; what it gives up is the arrays indexed by an integer
     /// key, which need every block's range first.
-    fn columnar_collect_in_windows(
+    fn columnar_collect_in_windows<'q>(
         &self,
         columnar: &crate::storage::ColumnarCollection,
-        found: &Plan<'_>,
+        found: &Plan<'q>,
         col_plan: &ColPlan,
         known: &[String],
         outer: &Context,
-        name: &str,
-    ) -> DbResult<ScanCollectRun> {
+    ) -> DbResult<Folded<'q>> {
         let wanted = self.scan.wanted(columnar.count() / 8);
         let helpers = Helpers::take(wanted.saturating_sub(1));
         let threads = helpers.count() + 1;
@@ -2285,18 +2286,11 @@ impl QueryExecutor<'_> {
                 .collect();
             one(object, &mut fold)?;
         }
-        let groups = fold.finish(self)?;
-        self.check_budget(groups.len())?;
-        Ok(ScanCollectRun {
-            rows: groups,
-            consumed: found.stages.len() + 2,
+        Ok(Folded {
+            fold,
             scanned,
-            filters: passes,
-            note: format!(
-                "optimizer: COLLECT folded from the blocks of the columnar collection '{}', \
-                 read a few at a time: they are larger than what is kept in memory",
-                name
-            ),
+            passes,
+            windowed: true,
         })
     }
 
@@ -2338,7 +2332,17 @@ impl QueryExecutor<'_> {
         // Before anything is read of it: a transaction that tracks its
         // reads compares the collection's write generation at commit.
         self.note_columnar_read(&database, name)?;
-        let columnar = self.open_columnar(name, db_name, &database)?;
+        // A sharded collection whose COLLECT each shard can compute is not
+        // gathered: its shards send their folds (card #899).
+        let logical =
+            crate::storage::ColumnarCollection::load(name.to_string(), db_name, database.db_arc())?;
+        let sharded = logical
+            .sharding()
+            .filter(|_| outer.is_empty() && CollectFold::sent_by_shards(found.collect));
+        let columnar = match sharded {
+            Some(_) => logical,
+            None => self.open_columnar(name, db_name, &database)?,
+        };
         let known: Vec<String> = columnar
             .metadata()?
             .columns
@@ -2348,11 +2352,155 @@ impl QueryExecutor<'_> {
         let Some(col_plan) = self.columnar_plan(&found, &known, outer) else {
             return Ok(None);
         };
+        let folded = match sharded {
+            // Computed on each shard, their states merged here (card #899).
+            Some(shards) => self.fold_shards(&found, &col_plan, &known, outer, name, &shards)?,
+            None => {
+                let last = i + found.stages.len() + 2 == clauses.len();
+                let top_body = last.then_some(clauses.as_ptr() as usize);
+                self.fold_columnar(&columnar, &found, &col_plan, &known, outer, top_body)?
+            }
+        };
+        let windowed = folded.windowed;
+        let groups = folded.fold.finish(self)?;
+        self.check_budget(groups.len())?;
+        Ok(Some(ScanCollectRun {
+            rows: groups,
+            consumed: found.stages.len() + 2,
+            scanned: folded.scanned,
+            filters: folded.passes,
+            note: if windowed {
+                format!(
+                    "optimizer: COLLECT folded from the blocks of the columnar collection '{}', \
+                     read a few at a time: they are larger than what is kept in memory",
+                    name
+                )
+            } else {
+                format!(
+                    "optimizer: COLLECT folded from the blocks of the columnar collection '{}'",
+                    name
+                )
+            },
+        }))
+    }
+
+    /// The fold of `found` over every shard of the sharded collection
+    /// `name`, each computed where the shard is and sent as its state
+    /// (card #899). Only for a COLLECT whose aggregates send their state
+    /// and that reads nothing from outside its loop.
+    #[allow(clippy::too_many_arguments)]
+    fn fold_shards<'q>(
+        &self,
+        found: &Plan<'q>,
+        col_plan: &ColPlan,
+        known: &[String],
+        outer: &Context,
+        name: &str,
+        shards: &crate::storage::columnar::ColumnarShards,
+    ) -> DbResult<Folded<'q>> {
+        let db_name = self
+            .database
+            .as_ref()
+            .ok_or_else(|| DbError::ExecutionError("no database".to_string()))?;
+        let database = self.storage.get_database(db_name)?;
+        let mut total = CollectFold::new(found.collect);
+        let mut scanned = 0usize;
+        let mut passes = vec![(0usize, 0usize); found.stages.len()];
+        for shard in 0..shards.num_shards {
+            let phys = crate::sharding::columnar::physical(name, shard);
+            // The clauses a shard's node runs: the loop over its shard.
+            let mut for_clause = found.for_clause.clone();
+            // The name is in both places when the loop reads a collection.
+            if for_clause.source_variable.as_deref() == Some(name) {
+                for_clause.source_variable = Some(phys.clone());
+            }
+            for_clause.collection = phys.clone();
+            let mut clauses = vec![BodyClause::For(for_clause)];
+            clauses.extend(found.stages.iter().cloned());
+            clauses.push(BodyClause::Collect(found.collect.clone()));
+            let request = serde_json::json!({ "clauses": clauses, "binds": self.bind_vars });
+            let bytes = crate::sharding::columnar::fold_shard(
+                self.shard_coordinator.as_deref(),
+                &database,
+                name,
+                shards,
+                shard,
+                &request,
+                |local| {
+                    let folded = self.fold_columnar(local, found, col_plan, known, outer, None)?;
+                    for (total, part) in passes.iter_mut().zip(&folded.passes) {
+                        total.0 += part.0;
+                        total.1 += part.1;
+                    }
+                    shard_state(&folded)
+                },
+            )?;
+            let (state, rows): (FoldState, usize) = rmp_serde::from_slice(&bytes)
+                .map_err(|e| DbError::InternalError(format!("shard fold: {e}")))?;
+            total.absorb(state, (u64::from(shard) + 1) << 48);
+            scanned += rows;
+        }
+        Ok(Folded {
+            fold: total,
+            scanned,
+            passes,
+            windowed: false,
+        })
+    }
+
+    /// Run `clauses` (a FOR over one shard, its FILTER and LET clauses, a
+    /// COLLECT) on this node's shard and return its fold's state, as
+    /// [`Self::fold_shards`] reads it: what a shard's node answers.
+    pub fn shard_fold_state(&self, clauses: &[BodyClause]) -> DbResult<Vec<u8>> {
+        let refused = || {
+            DbError::BadRequest(
+                "a shard computes a FOR … COLLECT it can send the state of".to_string(),
+            )
+        };
+        let found = plan(clauses, 0).ok_or_else(refused)?;
+        if found.stages.len() + 2 != clauses.len() || !CollectFold::sent_by_shards(found.collect) {
+            return Err(refused());
+        }
+        let db_name = self
+            .database
+            .as_ref()
+            .ok_or_else(|| DbError::ExecutionError("no database".to_string()))?;
+        let database = self.storage.get_database(db_name)?;
+        let columnar = crate::storage::ColumnarCollection::load(
+            found.for_clause.collection.clone(),
+            db_name,
+            database.db_arc(),
+        )?;
+        let known: Vec<String> = columnar
+            .metadata()?
+            .columns
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        let outer = Context::default();
+        let col_plan = self
+            .columnar_plan(&found, &known, &outer)
+            .ok_or_else(refused)?;
+        let folded = self.fold_columnar(&columnar, &found, &col_plan, &known, &outer, None)?;
+        shard_state(&folded)
+    }
+
+    /// The fold of `found` over `columnar`'s blocks and tail.
+    /// `top_body` is the body the COLLECT ends when it does (the address
+    /// of its clauses), for the top-k hint of a `SORT … LIMIT`.
+    fn fold_columnar<'q>(
+        &self,
+        columnar: &crate::storage::ColumnarCollection,
+        found: &Plan<'q>,
+        col_plan: &ColPlan,
+        known: &[String],
+        outer: &Context,
+        top_body: Option<usize>,
+    ) -> DbResult<Folded<'q>> {
+        let for_clause = found.for_clause;
         // Too large to be kept decoded: a few blocks at a time.
         if columnar.larger_than_kept() {
-            return self
-                .columnar_collect_in_windows(&columnar, &found, &col_plan, &known, outer, name)
-                .map(Some);
+            return self.columnar_collect_in_windows(columnar, found, col_plan, known, outer);
         }
         let set = columnar.row_set()?;
 
@@ -2400,7 +2548,7 @@ impl QueryExecutor<'_> {
             .map(|_| col_plan.made.iter().map(|_| Default::default()).collect())
             .collect();
         let reading = |at: usize| Read {
-            plan: &col_plan,
+            plan: col_plan,
             ev: &ev,
             cells: &cells[at],
             block: &set.blocks[at],
@@ -2601,15 +2749,17 @@ impl QueryExecutor<'_> {
         // When the query sorts by an aggregate and keeps a few rows, and
         // every row was read as arrays, only the groups that can be among
         // those few go on: those at or past the value of the last one.
-        let last = i + found.stages.len() + 2 == clauses.len();
-        let top = self
-            .caches
-            .collect_top
-            .lock()
-            .clone()
-            .filter(|(body, ..)| *body == clauses.as_ptr() as usize)
+        // Never on a shard: a group's total is made of every shard's.
+        let top = top_body
+            .and_then(|at| {
+                self.caches
+                    .collect_top
+                    .lock()
+                    .clone()
+                    .filter(|(body, ..)| *body == at)
+            })
             .map(|(_, var, ascending, k)| (var, ascending, k))
-            .filter(|_| last && left.is_empty() && set.tail.is_empty());
+            .filter(|_| left.is_empty() && set.tail.is_empty());
         // The plain tables become groups: all of them, or, for such a
         // query and when every thread kept its sums plain, only those that
         // can be returned.
@@ -2726,7 +2876,7 @@ impl QueryExecutor<'_> {
         let alone = left.is_empty() && set.tail.is_empty();
         self.push_groups(
             &mut fold,
-            &col_plan,
+            col_plan,
             &mut table.groups,
             kept.as_deref(),
             alone,
@@ -2735,7 +2885,7 @@ impl QueryExecutor<'_> {
         // What the arrays did not answer, as objects: the blocks left, and
         // the tail.
         let var = for_clause.variable.as_str();
-        let fields: &[String] = found.fields.as_deref().unwrap_or(&known);
+        let fields: &[String] = found.fields.as_deref().unwrap_or(known);
         let mut passes = vec![(0usize, 0usize); found.stages.len()];
         let mut scratch = outer.clone();
         let mut one = |row: serde_json::Map<String, Value>, fold: &mut CollectFold<'_>| {
@@ -2769,19 +2919,30 @@ impl QueryExecutor<'_> {
             one(object, &mut fold)?;
         }
 
-        let groups = fold.finish(self)?;
-        self.check_budget(groups.len())?;
-        Ok(Some(ScanCollectRun {
-            rows: groups,
-            consumed: found.stages.len() + 2,
+        Ok(Folded {
+            fold,
             scanned: set.len(),
-            filters: passes,
-            note: format!(
-                "optimizer: COLLECT folded from the blocks of the columnar collection '{}'",
-                name
-            ),
-        }))
+            passes,
+            windowed: false,
+        })
     }
+}
+
+/// A fold of a shard's rows, before its groups are made rows.
+struct Folded<'q> {
+    fold: CollectFold<'q>,
+    scanned: usize,
+    passes: Vec<(usize, usize)>,
+    windowed: bool,
+}
+
+/// What a shard sends: its fold's state and the rows it read.
+fn shard_state(folded: &Folded<'_>) -> DbResult<Vec<u8>> {
+    let state = folded.fold.to_state().ok_or_else(|| {
+        DbError::InternalError("a shard's fold holds an aggregate it cannot send".to_string())
+    })?;
+    rmp_serde::to_vec(&(state, folded.scanned))
+        .map_err(|e| DbError::InternalError(format!("shard fold: {e}")))
 }
 
 #[cfg(test)]

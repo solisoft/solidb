@@ -384,7 +384,61 @@ pub(super) enum AggregateAccumulator {
     },
 }
 
+/// What a shard sends of an accumulator whose state merges exactly
+/// (card #899): the others are not sent, and their query reads the rows.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) enum AccState {
+    CountRows(i64),
+    CountNonNull(i64),
+    Sum(ExactSum),
+    Avg { sum: ExactSum, count: i64 },
+    Min(Option<(Value, u64)>),
+    Max(Option<(Value, u64)>),
+}
+
 impl AggregateAccumulator {
+    /// Whether an aggregate of `kind` can be computed on each shard and
+    /// merged ([`AccState`]).
+    pub(super) fn sent_by_shards(kind: AggKind) -> bool {
+        matches!(
+            kind,
+            AggKind::CountRows
+                | AggKind::CountNonNull
+                | AggKind::Sum
+                | AggKind::Avg
+                | AggKind::Min
+                | AggKind::Max
+        )
+    }
+
+    /// The state a shard sends; `None` for a kind that is not sent.
+    pub(super) fn to_state(&self) -> Option<AccState> {
+        Some(match self {
+            Self::CountRows(n) => AccState::CountRows(*n),
+            Self::CountNonNull(n) => AccState::CountNonNull(*n),
+            Self::Sum(sum) => AccState::Sum(sum.clone()),
+            Self::Avg { sum, count } => AccState::Avg {
+                sum: sum.clone(),
+                count: *count,
+            },
+            Self::Min(best) => AccState::Min(best.clone()),
+            Self::Max(best) => AccState::Max(best.clone()),
+            _ => return None,
+        })
+    }
+
+    /// The accumulator a shard's state stands for.
+    pub(super) fn from_state(state: AccState) -> Self {
+        match state {
+            AccState::CountRows(n) => Self::CountRows(n),
+            AccState::CountNonNull(n) => Self::CountNonNull(n),
+            AccState::Sum(sum) => Self::Sum(sum),
+            AccState::Avg { sum, count } => Self::Avg { sum, count },
+            AccState::Min(best) => Self::Min(best),
+            AccState::Max(best) => Self::Max(best),
+        }
+    }
+
     pub(super) fn new(function: &str, has_argument: bool) -> DbResult<Self> {
         let kind = AggKind::resolve(function, has_argument).ok_or_else(|| {
             DbError::ExecutionError(format!("Unknown aggregate function: {}", function))

@@ -168,7 +168,7 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
     }
 
     // Read-semantics POST/PUT endpoints
-    const READ_SUFFIXES: [&str; 10] = [
+    const READ_SUFFIXES: [&str; 11] = [
         "/cursor",
         "/explain",
         "/nl",
@@ -180,6 +180,8 @@ fn required_action(method: &Method, path: &str) -> PermissionAction {
         "/_verify",
         // Index and foreign key checks: they read everything, write nothing.
         "/check",
+        // A shard's fold for a sharded columnar COLLECT (card #899).
+        "/fold",
     ];
     if READ_SUFFIXES.iter().any(|s| path.ends_with(s)) {
         return PermissionAction::Read;
