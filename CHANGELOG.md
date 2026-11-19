@@ -1,5 +1,39 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Binary quantization of a vector index.** `quantization: "binary"` at creation, or `POST /_api/database/{db}/vector/{collection}/{index}/quantize?type=binary`: the HNSW graph keeps one bit a dimension, packed (32× less vector memory than f32); a code reads as the dimension's mean ± its mean absolute deviation, so the walk computes an asymmetric distance with the query in f32. A search fetches 20 candidates a result from the bits and re-scores them against the vectors stored in the documents, so the scores it reports are exact. Measured on 10,500 clustered vectors at 64, 256 and 768 dimensions: recall@10 0.99 (0.77–0.82 with 10 candidates a result, 0.45–0.50 with 4). Asked for before the index has its graph, it applies when the graph is built.
+
+- **Product quantization of a vector index.** `quantization: "pq"` (or `?type=pq`): each vector is cut into sub-vectors of 4 dimensions, each kept as the byte of its nearest of 256 centroids (16× less vector memory), as LanceDB's IVF_HNSW_PQ. The codebooks are trained by k-means on a sample of the live vectors taken in key order with a fixed seed, so the same documents give the same codebooks on every node. Searches re-score 20 candidates a result: recall@10 0.975–0.995 on clustered data from 64 to 768 dimensions. Training and encoding take 30 ms for 10,500 vectors of 64 dimensions, 0.4 s at 768.
+
+- **Restore a versioned collection to an instant.** `POST …/collection/{name}/restore` with `{"as_of": …}` or `{"tag": "v1"}`, and optionally `{"keys": [...]}`: every document that differs from its version then is written again, every one that did not exist then is removed, every one removed since comes back. These are ordinary writes, versioned and replicated, so a restore is undone by restoring to an instant before it. Answers how many documents were restored and removed.
+
+- **Named instants of a versioned collection.** `POST …/collection/{name}/version-tags {"name": "v1"}` names now (or `"as_of"`), `GET` lists them, `DELETE …/version-tags/v1` removes one. `SYSTEM_TIME AS OF VERSION_TAG("orders", "v1")` and `DOC_AS_OF(…, VERSION_TAG(…))` read the collection as it was then, to the microsecond; an instant may now also be written `{"micros": n}`. The version of each document in effect at a named instant is kept past `SOLIDB_MAX_VERSIONS`. Names are replicated and carried by a full sync.
+
+- **Version history of a sharded collection.** A versioned sharded collection keeps its history in its shards: each node gives the shards it holds the collection's versioning, when it changes and when a shard is created there. `SYSTEM_TIME AS OF` gathers each shard's history; `DOC_AS_OF`, `DOC_HISTORY` and `SNAPSHOT_DIFF` ask every shard, so a document that moved between shards keeps its whole history. A sharded collection that is not versioned refuses a historical read. Restore and named instants are not available on sharded collections yet.
+
+### Changed
+
+- **Enabling versioning records the collection as it stands.** History started at the first write after versioning was turned on, so a document written before and never since was missing from `AS OF` reads, even at the current instant. Enabling it now writes a baseline version of every document, and a tombstone for each one deleted while versioning was off. History starts at that instant: `AS OF` an earlier one finds nothing. On a large collection this work is done by the request that enables it.
+
+- **Truncating a versioned collection keeps its history.** Its history was wiped with its documents; each document now gets a delete tombstone instead, so `AS OF` an instant before the truncate still finds it and a restore brings it back. Unversioned collections truncate as before.
+
+- **Vector indexes are saved in a new format (V6)**, which holds a quantized graph's codes. Indexes saved by 2.15 are read; one quantized before (its codes kept beside an f32 graph) is converted when it is loaded.
+
+### Fixed
+
+- **`SYSTEM_TIME AS OF` no longer answers with today's documents.** The simplest historical query, `FOR d IN c SYSTEM_TIME AS OF @t RETURN d` (with or without `LIMIT`), took a shortcut that ignored the clause on any collection; so did a sharded collection and a columnar one. `VALID_TIME` was ignored the same way on those. A columnar collection, which keeps no history, now refuses `SYSTEM_TIME`.
+
+- **Scalar quantization saves memory, and is applied at creation.** Past the 10,000 vectors at which an index builds its HNSW graph, `quantization: "scalar"` had no effect: the graph searched its f32 vectors, the byte codes were kept beside them for a search that never ran, so memory grew while the statistics reported 4× less; and asking for it at creation only stored the setting. The graph now keeps one byte a dimension and no f32 copy (a quarter of the memory), and searches re-score 4 candidates a result against the documents' vectors, at the same recall as f32. An index created quantized is quantized at creation, so every node builds the same one.
+
+- **Version history is capped on every write path.** A transaction, and `insert_batch` writing a key deleted before, added versions past `SOLIDB_MAX_VERSIONS` without pruning them: one transaction rewriting a document 120 times kept 121 versions.
+
+- **Versioning is replicated.** Turning versioning on or off stayed on the node it was set on: a replica kept no history, or one stamped with its own apply time, so `AS OF` depended on the node that answered. The setting is now replicated and carried by a full sync, and a replica records a replicated write at its origin's time.
+
+- **`FOR d IN c SORT d._key` returns the documents of a sharded collection.** Sorting by `_key` or `_id` without a `LIMIT` read the primary-key index of the local collection, which holds none of a sharded collection's documents: the query returned nothing.
+
 ## [2.15.0](https://github.com/solisoft/solidb/compare/v2.14.0...v2.15.0) (2026-11-18)
 
 Columnar collections take tags (their rows as they were, read and restored),
