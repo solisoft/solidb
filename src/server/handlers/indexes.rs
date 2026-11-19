@@ -639,6 +639,7 @@ pub async fn create_vector_index(
     let quantization = match req.quantization.as_deref() {
         Some("scalar") => VectorQuantization::Scalar,
         Some("binary") => VectorQuantization::Binary,
+        Some("pq") => VectorQuantization::Pq,
         _ => VectorQuantization::None, // default
     };
 
@@ -678,6 +679,7 @@ pub async fn create_vector_index(
         VectorQuantization::None => "none",
         VectorQuantization::Scalar => "scalar",
         VectorQuantization::Binary => "binary",
+        VectorQuantization::Pq => "pq",
     };
 
     Ok(Json(CreateVectorIndexResponse {
@@ -765,7 +767,7 @@ pub struct QuantizeVectorIndexQuery {
 }
 
 /// Quantize an existing vector index for memory compression:
-/// `?type=scalar` (the default) or `?type=binary`.
+/// `?type=scalar` (the default), `?type=binary` or `?type=pq`.
 pub async fn quantize_vector_index(
     State(state): State<AppState>,
     Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
@@ -777,9 +779,10 @@ pub async fn quantize_vector_index(
     let kind = match query.type_.as_deref() {
         None | Some("scalar") => crate::storage::index::VectorQuantization::Scalar,
         Some("binary") => crate::storage::index::VectorQuantization::Binary,
+        Some("pq") => crate::storage::index::VectorQuantization::Pq,
         Some(other) => {
             return Err(DbError::BadRequest(format!(
-                "unknown quantization '{other}': scalar or binary"
+                "unknown quantization '{other}': scalar, binary or pq"
             )))
         }
     };

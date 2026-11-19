@@ -1097,3 +1097,48 @@ fn test_binary_index_rescored_from_documents() {
     let recall = hits as f64 / (10 * queries.len()) as f64;
     assert!(recall >= 0.9, "recall@10: {recall}");
 }
+
+/// Product quantization (card #1000): created with `quantization: pq`, the
+/// graph keeps a byte a sub-vector of 4 dimensions; searches re-scored
+/// from the documents report exact scores and find each vector first.
+#[test]
+fn test_pq_index_rescored_from_documents() {
+    use rand::{Rng, SeedableRng};
+    use solidb::storage::VectorQuantization;
+
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("pq".to_string(), None).unwrap();
+    let collection = engine.get_collection("pq").unwrap();
+    let dim = 64;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(9);
+    let vectors: Vec<Vec<f32>> = (0..10_500)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0)).collect())
+        .collect();
+    let docs: Vec<serde_json::Value> = vectors
+        .iter()
+        .enumerate()
+        .map(|(i, v)| json!({"_key": format!("d{i}"), "embedding": v}))
+        .collect();
+    collection.insert_batch(docs).unwrap();
+    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), dim)
+        .with_quantization(VectorQuantization::Pq);
+    let stats = collection.create_vector_index(config).unwrap();
+    assert_eq!(stats.quantization, VectorQuantization::Pq);
+    assert!((stats.compression_ratio - 16.0).abs() < 1e-6, "{stats:?}");
+    let cosine = |a: &[f32], b: &[f32]| -> f32 {
+        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        dot / (na * nb)
+    };
+    for i in [0usize, 1_234, 9_876] {
+        let found = collection
+            .vector_search("idx", &vectors[i], 5, None)
+            .unwrap();
+        assert_eq!(found[0].doc_key, format!("d{i}"));
+        for r in &found {
+            let j: usize = r.doc_key[1..].parse().unwrap();
+            assert!((r.score - cosine(&vectors[i], &vectors[j])).abs() < 1e-5);
+        }
+    }
+}

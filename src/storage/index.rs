@@ -137,6 +137,9 @@ pub enum VectorQuantization {
     /// Binary Quantization - 1 bit per dimension, 32x compression; searches
     /// are re-scored against the exact vectors (card #999)
     Binary,
+    /// Product Quantization - a byte per sub-vector of 4 dimensions (16x),
+    /// codebooks learned by k-means; searches are re-scored (card #1000)
+    Pq,
 }
 
 impl VectorQuantization {
@@ -147,6 +150,7 @@ impl VectorQuantization {
             VectorQuantization::None => None,
             VectorQuantization::Scalar => Some(8),
             VectorQuantization::Binary => Some(1),
+            VectorQuantization::Pq => None,
         }
     }
 }

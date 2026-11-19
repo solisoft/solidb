@@ -708,7 +708,11 @@ Binary quantization (card #999) is the same store at one bit a
 dimension (`Sq8::bits == 1`, packed): a code reads as `mean ± s` (`s` the
 dimension's mean absolute deviation), so distances, decoding and
 re-scoring are shared; without a graph it waits for one
-(`VectorIndex::target`, saved in the index's config). `dequantize` decodes the codes back into an arena, with their error:
+(`VectorIndex::target`, saved in the index's config). Product quantization (card #1000, `hnsw::Pq`) cuts a vector into
+sub-vectors of 4 dimensions (`pq_sub_for`) and keeps for each the byte of
+its nearest of 256 centroids, trained by k-means on a sample of the live
+vectors taken in key order (same documents, same codebooks on every node);
+the walk sums over the code's centroids. `dequantize` decodes the codes back into an arena, with their error:
 recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
 codes and bounds); V5 is still read.
 

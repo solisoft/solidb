@@ -327,10 +327,12 @@ impl VectorIndex {
             .quantized_vectors
             .write()
             .unwrap_or_else(|e| e.into_inner());
-        let target = *self.target.read().unwrap_or_else(|e| e.into_inner());
-        let bits = target.bits().or(quantized.as_ref().map(|_| 8));
-        if let Some(bits) = bits {
-            graph.quantize(bits);
+        let mut target = *self.target.read().unwrap_or_else(|e| e.into_inner());
+        if target == VectorQuantization::None && quantized.is_some() {
+            target = VectorQuantization::Scalar;
+        }
+        if target != VectorQuantization::None {
+            Self::quantize_graph(&mut graph, target);
             *quantized = None;
         }
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
@@ -752,6 +754,7 @@ impl VectorIndex {
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
 
         let sq = hnsw.as_ref().and_then(|g| g.sq());
+        let pq = hnsw.as_ref().and_then(|g| g.pq());
         // The config saved says the quantization asked for, so an index
         // asked for binary before its graph exists still is after a load.
         let mut config = self.config.clone();
@@ -766,6 +769,10 @@ impl VectorIndex {
             sq_step: sq.map_or(&[][..], |q| &q.step),
             sq_codes: sq.map_or(&[][..], |q| &q.codes),
             sq_bits: sq.map_or(8, |q| q.bits),
+            pq_sub: pq.map_or(0, |p| p.sub as u32),
+            pq_k: pq.map_or(0, |p| p.k as u32),
+            pq_centroids: pq.map_or(&[][..], |p| &p.centroids),
+            pq_codes: pq.map_or(&[][..], |p| &p.codes),
         };
         out.write_all(FORMAT_V6)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
@@ -799,7 +806,14 @@ impl VectorIndex {
         let mut quantized = data.quantized_vectors;
         if let Some(g) = graph.as_mut() {
             // A quantized graph saves its bounds even with no node.
-            let restored = if data.sq_min.is_empty() {
+            let restored = if data.pq_sub > 0 {
+                g.restore_pq(crate::storage::hnsw::Pq {
+                    sub: data.pq_sub as usize,
+                    k: data.pq_k as usize,
+                    centroids: data.pq_centroids,
+                    codes: data.pq_codes,
+                })
+            } else if data.sq_min.is_empty() {
                 g.restore_arena(data.arena)
             } else {
                 g.restore_sq(crate::storage::hnsw::Sq8 {
@@ -935,6 +949,9 @@ impl VectorIndex {
         quantized: Option<&QuantizedVectors>,
         graph: Option<&Graph>,
     ) -> VectorQuantization {
+        if graph.and_then(|g| g.pq()).is_some() {
+            return VectorQuantization::Pq;
+        }
         match graph.and_then(|g| g.sq()) {
             Some(sq) if sq.bits == 1 => VectorQuantization::Binary,
             Some(_) => VectorQuantization::Scalar,
@@ -993,6 +1010,9 @@ impl VectorIndex {
     /// Get the current quantization type
     pub fn quantization_type(&self) -> VectorQuantization {
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        if hnsw.as_ref().and_then(|g| g.pq()).is_some() {
+            return VectorQuantization::Pq;
+        }
         match hnsw.as_ref().and_then(|g| g.sq()) {
             Some(sq) if sq.bits == 1 => VectorQuantization::Binary,
             Some(_) => VectorQuantization::Scalar,
@@ -1012,10 +1032,11 @@ impl VectorIndex {
     /// for re-scoring. Measured on 10,500 vectors (card #999): scalar codes
     /// rank as f32 does (same recall@10 at every factor), so 4; one bit a
     /// dimension needs 20 for recall@10 ≈ 0.99 on clustered data (0.77–0.82
-    /// at 10, 0.45–0.50 at 4), whatever the dimension from 64 to 768.
+    /// at 10, 0.45–0.50 at 4), whatever the dimension from 64 to 768; PQ
+    /// (sub-vectors of 4) too (card #1000: 0.975–0.995 at 20, 0.87 at 10).
     pub fn rescore_factor(&self) -> usize {
         match self.quantization_type() {
-            VectorQuantization::Binary => 20,
+            VectorQuantization::Binary | VectorQuantization::Pq => 20,
             _ => 4,
         }
     }
@@ -1037,10 +1058,10 @@ impl VectorIndex {
     /// binary waits for the graph (a brute-force search over bits would
     /// only be re-scored whole). Returns the number of vectors quantized.
     pub fn quantize_as(&self, kind: VectorQuantization) -> DbResult<usize> {
-        let Some(bits) = kind.bits() else {
+        if kind == VectorQuantization::None {
             self.dequantize();
             return Ok(0);
-        };
+        }
         *self.target.write().unwrap_or_else(|e| e.into_inner()) = kind;
         let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let mut quantized_lock = self
@@ -1049,12 +1070,13 @@ impl VectorIndex {
             .unwrap_or_else(|e| e.into_inner());
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         if let Some(graph) = hnsw.as_mut() {
-            graph.quantize(bits);
+            Self::quantize_graph(graph, kind);
             *quantized_lock = None;
             return Ok(graph.len());
         }
         drop(hnsw);
-        if bits == 1 {
+        if kind != VectorQuantization::Scalar {
+            // Binary and PQ codes wait for the graph.
             *quantized_lock = None;
             return Ok(0);
         }
@@ -1072,6 +1094,18 @@ impl VectorIndex {
         // Codes for the brute-force search.
         *quantized_lock = Some(QuantizedVectors::from_pairs(&pairs, self.config.dimension));
         Ok(count)
+    }
+
+    /// Quantize `graph` as `kind` (not `None`).
+    fn quantize_graph(graph: &mut Graph, kind: VectorQuantization) {
+        match kind {
+            VectorQuantization::Binary => graph.quantize(1),
+            VectorQuantization::Pq => {
+                let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+                graph.quantize_pq(threads)
+            }
+            _ => graph.quantize(8),
+        }
     }
 
     /// Remove quantization (revert to full-precision search). A quantized
@@ -1101,7 +1135,11 @@ impl VectorIndex {
         let (count, bytes_per_vector) = match (quantized.as_ref(), hnsw.as_ref()) {
             (_, Some(g)) if g.is_quantized() => (
                 Some(g.len()),
-                g.sq().map_or(dim, |sq| sq.bytes_per_node(dim)),
+                match (g.sq(), g.pq()) {
+                    (Some(sq), _) => sq.bytes_per_node(dim),
+                    (_, Some(pq)) => dim / pq.sub,
+                    _ => dim,
+                },
             ),
             (Some(q), _) => (Some(q.len()), dim),
             _ => (None, dim),
@@ -1211,6 +1249,10 @@ struct VectorIndexDataV6Ref<'a> {
     sq_step: &'a [f32],
     sq_codes: &'a [u8],
     sq_bits: u8,
+    pq_sub: u32,
+    pq_k: u32,
+    pq_centroids: &'a [f32],
+    pq_codes: &'a [u8],
 }
 
 /// V6 (card #996): V5 and a quantized graph's vectors as codes (`sq_*`,
@@ -1227,6 +1269,11 @@ struct VectorIndexDataV6 {
     sq_codes: Vec<u8>,
     /// 8 (scalar) or 1 (binary).
     sq_bits: u8,
+    /// Product quantization (card #1000): 0 when the graph has none.
+    pq_sub: u32,
+    pq_k: u32,
+    pq_centroids: Vec<f32>,
+    pq_codes: Vec<u8>,
 }
 
 impl From<VectorIndexDataV5> for VectorIndexDataV6 {
@@ -1241,6 +1288,10 @@ impl From<VectorIndexDataV5> for VectorIndexDataV6 {
             sq_step: Vec::new(),
             sq_codes: Vec::new(),
             sq_bits: 8,
+            pq_sub: 0,
+            pq_k: 0,
+            pq_centroids: Vec::new(),
+            pq_codes: Vec::new(),
         }
     }
 }
@@ -1636,6 +1687,82 @@ mod tests {
         assert_eq!(restored.quantization_type(), VectorQuantization::Scalar);
         restored.dequantize();
         assert_eq!(restored.quantization_type(), VectorQuantization::None);
+    }
+
+    /// Product quantization (card #1000): a byte a sub-vector of 4
+    /// dimensions, codebooks the same for the same data, re-scored recall,
+    /// a save, and vectors inserted after it.
+    #[test]
+    fn a_pq_graph_keeps_a_byte_a_sub_vector() {
+        let dim = 32;
+        let (data, queries, want) = clustered(12_000, 50, dim);
+        let build = || {
+            let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), dim);
+            let index = VectorIndex::new(config).unwrap();
+            index.insert_many(
+                data.iter()
+                    .enumerate()
+                    .map(|(i, v)| (format!("d{i}"), v.clone()))
+                    .collect(),
+            );
+            assert_eq!(index.quantize_as(VectorQuantization::Pq).unwrap(), 12_000);
+            index
+        };
+        let index = build();
+        assert_eq!(index.quantization_type(), VectorQuantization::Pq);
+        assert_eq!(index.rescore_factor(), 20);
+        let book = {
+            let graph = index.hnsw_graph.read().unwrap();
+            let pq = graph.as_ref().unwrap().pq().unwrap().clone();
+            assert!(graph.as_ref().unwrap().arena().is_empty());
+            assert_eq!((pq.sub, pq.k), (4, 256));
+            assert_eq!(pq.codes.len(), 12_000 * dim / 4);
+            assert_eq!(pq.centroids.len(), (dim / 4) * 256 * 4);
+            pq
+        };
+        let stats = index.quantization_stats().unwrap();
+        assert_eq!(stats.memory_bytes, 12_000 * dim / 4);
+        assert!((stats.compression_ratio - 16.0).abs() < 1e-6);
+        // Trained again on the same data: the same codebooks (the codes
+        // follow node numbers, which follow arrival order).
+        let again = build();
+        let graph = again.hnsw_graph.read().unwrap();
+        assert_eq!(
+            graph.as_ref().unwrap().pq().unwrap().centroids,
+            book.centroids
+        );
+        drop(graph);
+
+        let rescored_recall = |index: &VectorIndex| -> f64 {
+            let mut found = 0;
+            for (q, want) in queries.iter().zip(&want) {
+                let mut got: Vec<(f32, String)> = index
+                    .search(q, 200, 400)
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| {
+                        let i: usize = r.doc_key[1..].parse().unwrap();
+                        (cosine_similarity(q, &data[i]), r.doc_key)
+                    })
+                    .collect();
+                got.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                found += got[..10].iter().filter(|(_, k)| want.contains(k)).count();
+            }
+            found as f64 / (10 * queries.len()) as f64
+        };
+        let recall = rescored_recall(&index);
+        assert!(recall >= 0.9, "re-scored recall@10 from PQ codes: {recall}");
+
+        let restored = VectorIndex::deserialize(&index.serialize().unwrap()).unwrap();
+        assert_eq!(restored.quantization_type(), VectorQuantization::Pq);
+        assert_eq!(rescored_recall(&restored), recall);
+        // Inserted after quantization: among the candidates a search
+        // re-scores (raw PQ scores are approximate, above 1 for cosine).
+        restored.insert("new", &data[9]).unwrap();
+        let top = restored.search(&data[9], 40, 80).unwrap();
+        assert!(top.iter().any(|r| r.doc_key == "new"), "{top:?}");
+        restored.quantize_as(VectorQuantization::Scalar).unwrap();
+        assert_eq!(restored.quantization_type(), VectorQuantization::Scalar);
     }
 
     /// An index quantized before 2.16 saved its codes beside an f32 graph

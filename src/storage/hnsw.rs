@@ -322,6 +322,203 @@ impl Sq8 {
     }
 }
 
+/// A graph's vectors by product quantization (card #1000): each vector is
+/// cut into `dim / sub` sub-vectors of `sub` dimensions, and each of those
+/// is kept as the number (one byte) of its nearest of `k <= 256` centroids,
+/// learned by k-means over the sub-vectors of a sample of the vectors when
+/// the graph is quantized. A node takes `dim / sub` bytes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Pq {
+    /// Dimensions a sub-vector.
+    pub sub: usize,
+    /// Centroids a sub-space.
+    pub k: usize,
+    /// Sub-space by sub-space, centroid by centroid: `sub` floats each.
+    pub centroids: Vec<f32>,
+    /// `dim / sub` codes a node, in node order (removed nodes included).
+    pub codes: Vec<u8>,
+}
+
+/// The sub-vector length product quantization uses for `dim` dimensions:
+/// the largest of 4, 2, 1 that divides it.
+pub fn pq_sub_for(dim: usize) -> usize {
+    [4usize, 2, 1]
+        .into_iter()
+        .find(|s| dim.is_multiple_of(*s))
+        .unwrap_or(1)
+}
+
+/// The rows of a sample k-means trains on, at most.
+const PQ_SAMPLE: usize = 10_000;
+/// Lloyd iterations of the training.
+const PQ_ITERATIONS: usize = 12;
+
+fn squared_l2_of(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum()
+}
+
+impl Pq {
+    fn m(&self, dim: usize) -> usize {
+        dim / self.sub
+    }
+
+    /// Codebooks trained over `rows` (`dim` floats each), no codes yet.
+    /// Deterministic: the same rows give the same codebooks.
+    fn train(rows: &[f32], dim: usize, sub: usize, threads: usize) -> Self {
+        use rand::{seq::SliceRandom, SeedableRng};
+        let n = rows.len() / dim.max(1);
+        let m = dim / sub;
+        let k = n.clamp(1, 256);
+        // An even sample, in row order.
+        let stride = n.div_ceil(PQ_SAMPLE).max(1);
+        let sample: Vec<usize> = (0..n).step_by(stride).collect();
+        let train_one = |j: usize| -> Vec<f32> {
+            let points: Vec<&[f32]> = sample
+                .iter()
+                .map(|&r| &rows[r * dim + j * sub..r * dim + (j + 1) * sub])
+                .collect();
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0x5eed_0000 + j as u64);
+            let mut order: Vec<usize> = (0..points.len()).collect();
+            order.shuffle(&mut rng);
+            let mut centroids: Vec<f32> = (0..k)
+                .flat_map(|c| points[order[c % order.len()]].iter().copied())
+                .collect();
+            let mut assign = vec![0usize; points.len()];
+            for _ in 0..PQ_ITERATIONS {
+                for (p, point) in points.iter().enumerate() {
+                    let mut best = (f32::MAX, 0);
+                    for c in 0..k {
+                        let d = squared_l2_of(point, &centroids[c * sub..(c + 1) * sub]);
+                        if d < best.0 {
+                            best = (d, c);
+                        }
+                    }
+                    assign[p] = best.1;
+                }
+                let mut sums = vec![0.0f32; k * sub];
+                let mut counts = vec![0usize; k];
+                for (p, point) in points.iter().enumerate() {
+                    let c = assign[p];
+                    counts[c] += 1;
+                    for (s, v) in sums[c * sub..(c + 1) * sub].iter_mut().zip(point.iter()) {
+                        *s += v;
+                    }
+                }
+                for c in 0..k {
+                    if counts[c] == 0 {
+                        // An empty cluster takes a point again.
+                        let p = order[(c * 7919) % order.len()];
+                        centroids[c * sub..(c + 1) * sub].copy_from_slice(points[p]);
+                        continue;
+                    }
+                    for d in 0..sub {
+                        centroids[c * sub + d] = sums[c * sub + d] / counts[c] as f32;
+                    }
+                }
+            }
+            centroids
+        };
+        let mut books: Vec<Vec<f32>> = vec![Vec::new(); m];
+        let next = AtomicUsize::new(0);
+        let done = parking_lot::Mutex::new(&mut books);
+        std::thread::scope(|scope| {
+            for _ in 0..threads.clamp(1, m.max(1)) {
+                scope.spawn(|| loop {
+                    let j = next.fetch_add(1, AtomicOrdering::Relaxed);
+                    if j >= m {
+                        break;
+                    }
+                    let book = train_one(j);
+                    done.lock()[j] = book;
+                });
+            }
+        });
+        Pq {
+            sub,
+            k,
+            centroids: books.concat(),
+            codes: Vec::new(),
+        }
+    }
+
+    /// The codes of `v`: for each sub-vector, its nearest centroid.
+    fn encode(&self, v: &[f32], out: &mut Vec<u8>) {
+        let (sub, k) = (self.sub, self.k);
+        for (j, part) in v.chunks_exact(sub).enumerate() {
+            let book = &self.centroids[j * k * sub..(j + 1) * k * sub];
+            let mut best = (f32::MAX, 0usize);
+            for c in 0..k {
+                let d = squared_l2_of(part, &book[c * sub..(c + 1) * sub]);
+                if d < best.0 {
+                    best = (d, c);
+                }
+            }
+            out.push(best.1 as u8);
+        }
+    }
+
+    fn push(&mut self, v: &[f32]) {
+        let mut codes = std::mem::take(&mut self.codes);
+        self.encode(v, &mut codes);
+        self.codes = codes;
+    }
+
+    /// Codes for every row of `rows`, on `threads` threads, in row order.
+    fn encode_all(&mut self, rows: &[f32], dim: usize, threads: usize) {
+        let n = rows.len() / dim.max(1);
+        let chunk = n.div_ceil(threads.max(1)).max(1);
+        let parts: Vec<Vec<u8>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = rows
+                .chunks(chunk * dim)
+                .map(|block| {
+                    let me = &*self;
+                    scope.spawn(move || {
+                        let mut out = Vec::with_capacity(block.len() / me.sub);
+                        for row in block.chunks_exact(dim) {
+                            me.encode(row, &mut out);
+                        }
+                        out
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_default())
+                .collect()
+        });
+        self.codes = parts.concat();
+    }
+
+    /// Node `id`'s values: its centroids, sub-vector after sub-vector.
+    fn values(&self, id: u32, dim: usize) -> impl Iterator<Item = f32> + '_ {
+        let m = self.m(dim);
+        let (sub, k) = (self.sub, self.k);
+        let codes = &self.codes[id as usize * m..(id as usize + 1) * m];
+        codes.iter().enumerate().flat_map(move |(j, &c)| {
+            let at = (j * k + c as usize) * sub;
+            self.centroids[at..at + sub].iter().copied()
+        })
+    }
+
+    fn decode(&self, id: u32, dim: usize) -> Vec<f32> {
+        self.values(id, dim).collect()
+    }
+
+    fn distance(&self, q: &[f32], id: u32, dim: usize, metric: VectorMetric) -> f32 {
+        let values = self.values(id, dim);
+        match metric {
+            VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+            VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+            VectorMetric::Euclidean => q
+                .iter()
+                .zip(values)
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum::<f32>()
+                .sqrt(),
+        }
+    }
+}
+
 /// The graph as 2.14.0 and earlier stored it, kept to read those indexes:
 /// the field order is the old `HnswGraph`'s, which bincode depends on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -367,6 +564,9 @@ pub struct Graph {
     /// The vectors at one byte a dimension, when the graph is quantized.
     #[serde(skip)]
     sq: Option<Sq8>,
+    /// The vectors by product quantization, when the graph is quantized so.
+    #[serde(skip)]
+    pq: Option<Pq>,
     #[serde(skip)]
     live: usize,
 }
@@ -389,6 +589,7 @@ impl Graph {
             ids: HashMap::new(),
             arena: Vec::new(),
             sq: None,
+            pq: None,
             live: 0,
         }
     }
@@ -432,7 +633,41 @@ impl Graph {
     }
 
     pub fn is_quantized(&self) -> bool {
-        self.sq.is_some()
+        self.sq.is_some() || self.pq.is_some()
+    }
+
+    /// The vectors by product quantization, when the graph is quantized so.
+    pub fn pq(&self) -> Option<&Pq> {
+        self.pq.as_ref()
+    }
+
+    /// Keep the vectors by product quantization (card #1000) and drop the
+    /// f32 arena: `dim / sub` bytes a node. The codebooks are trained on
+    /// the live nodes, on `threads` threads. A graph quantized otherwise
+    /// is decoded first.
+    pub fn quantize_pq(&mut self, threads: usize) {
+        if self.pq.is_some() {
+            return;
+        }
+        self.dequantize();
+        let dim = self.dim;
+        // In key order, not node order: node numbers follow the order the
+        // vectors came in, so two nodes holding the same documents train
+        // the same codebooks only from their keys.
+        let mut ids: Vec<usize> = (0..self.keys.len())
+            .filter(|&id| !self.removed[id])
+            .collect();
+        ids.sort_by(|a, b| self.keys[*a].cmp(&self.keys[*b]));
+        let live: Vec<f32> = ids
+            .iter()
+            .flat_map(|&id| self.arena[id * dim..(id + 1) * dim].iter().copied())
+            .collect();
+        drop(ids);
+        let mut pq = Pq::train(&live, dim, pq_sub_for(dim), threads);
+        drop(live);
+        pq.encode_all(&self.arena, dim, threads);
+        self.pq = Some(pq);
+        self.arena = Vec::new();
     }
 
     /// Keep the vectors as codes of `bits` a dimension (8 or 1) and drop
@@ -441,6 +676,9 @@ impl Graph {
     /// bits is decoded first.
     pub fn quantize(&mut self, bits: u8) {
         let bits = if bits == 1 { 1 } else { 8 };
+        if self.pq.is_some() {
+            self.dequantize();
+        }
         match &self.sq {
             Some(sq) if sq.bits == bits => return,
             Some(_) => self.dequantize(),
@@ -465,12 +703,17 @@ impl Graph {
     /// Back to f32 vectors, decoded from the codes: they keep the
     /// quantization's error until the index is rebuilt from its documents.
     pub fn dequantize(&mut self) {
-        let Some(sq) = self.sq.take() else {
-            return;
-        };
         let mut arena = Vec::with_capacity(self.keys.len() * self.dim);
-        for id in 0..self.keys.len() as u32 {
-            arena.extend(sq.decode(id, self.dim));
+        if let Some(sq) = self.sq.take() {
+            for id in 0..self.keys.len() as u32 {
+                arena.extend(sq.decode(id, self.dim));
+            }
+        } else if let Some(pq) = self.pq.take() {
+            for id in 0..self.keys.len() as u32 {
+                arena.extend(pq.decode(id, self.dim));
+            }
+        } else {
+            return;
         }
         self.arena = arena;
     }
@@ -484,6 +727,28 @@ impl Graph {
         self.live = 0;
         self.arena = arena;
         self.sq = None;
+        self.pq = None;
+        self.renumber();
+        true
+    }
+
+    /// After a load: the vectors as [`Self::pq`] gave them. `false` when
+    /// they do not match the nodes (nothing is restored).
+    pub fn restore_pq(&mut self, pq: Pq) -> bool {
+        let dim = self.dim;
+        if pq.sub == 0
+            || !dim.is_multiple_of(pq.sub)
+            || pq.k == 0
+            || pq.k > 256
+            || pq.centroids.len() != (dim / pq.sub) * pq.k * pq.sub
+            || pq.codes.len() != self.keys.len() * (dim / pq.sub)
+            || self.removed.len() != self.keys.len()
+        {
+            return false;
+        }
+        self.arena = Vec::new();
+        self.sq = None;
+        self.pq = Some(pq);
         self.renumber();
         true
     }
@@ -500,6 +765,7 @@ impl Graph {
             return false;
         }
         self.arena = Vec::new();
+        self.pq = None;
         self.sq = Some(sq);
         self.renumber();
         true
@@ -520,6 +786,9 @@ impl Graph {
     /// Node `id`'s vector: borrowed from the arena, or decoded from its
     /// codes when the graph is quantized.
     fn vector(&self, id: u32) -> Cow<'_, [f32]> {
+        if let Some(pq) = &self.pq {
+            return Cow::Owned(pq.decode(id, self.dim));
+        }
         match &self.sq {
             Some(sq) => Cow::Owned(sq.decode(id, self.dim)),
             None => {
@@ -530,6 +799,9 @@ impl Graph {
     }
 
     fn dist_to(&self, q: &[f32], id: u32) -> f32 {
+        if let Some(pq) = &self.pq {
+            return pq.distance(q, id, self.dim, self.metric);
+        }
         match &self.sq {
             Some(sq) => sq.distance(q, id, self.dim, self.metric),
             None => {
@@ -633,9 +905,13 @@ impl Graph {
         self.links.push(vec![Vec::new(); level + 1]);
         self.removed.push(false);
         let v = prepared(vector, self.metric);
-        match self.sq.as_mut() {
-            Some(sq) => sq.push(&v),
-            None => self.arena.extend_from_slice(&v),
+        if let Some(pq) = self.pq.as_mut() {
+            pq.push(&v);
+        } else {
+            match self.sq.as_mut() {
+                Some(sq) => sq.push(&v),
+                None => self.arena.extend_from_slice(&v),
+            }
         }
         self.ids.insert(key.to_string(), id);
         self.live += 1;
@@ -996,6 +1272,7 @@ impl Graph {
     pub fn restore(&mut self, vectors: &HashMap<String, Vec<f32>>) {
         self.ids.clear();
         self.sq = None;
+        self.pq = None;
         self.arena = Vec::with_capacity(self.keys.len() * self.dim);
         self.live = 0;
         for (id, key) in self.keys.iter().enumerate() {
