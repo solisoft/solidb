@@ -171,6 +171,7 @@ pub async fn copy_shard_from_source(
         Ok(c) => c,
         Err(_) => {
             db.create_collection(physical_coll.to_string(), None)?;
+            super::versioning::follow_logical(&db, physical_coll);
             db.get_collection(physical_coll)?
         }
     };

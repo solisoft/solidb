@@ -87,6 +87,9 @@ pub async fn update_collection_properties(
             &coll_name,
             versioning,
         )?;
+        if let Ok(db) = state.storage.get_database(&db_name) {
+            crate::sharding::versioning::sync_shard_versioning(&db, &coll_name);
+        }
         tracing::info!(
             "Set document versioning for {}/{} to {}",
             db_name,

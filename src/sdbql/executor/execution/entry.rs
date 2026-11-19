@@ -398,10 +398,16 @@ impl<'a> QueryExecutor<'a> {
                 && query.post_limit_lets.is_empty()
             {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
-                    // Same row-policy exclusion as the SORT + LIMIT path.
+                    // Same row-policy exclusion as the SORT + LIMIT path; and
+                    // like it, never for a time clause or a sharded collection,
+                    // which this index read of the local collection answered
+                    // with nothing (`FOR d IN sharded SORT d._key` was empty).
                     if sort.fields.len() == 1
                         && !self.row_policy_applies(&for_clause.collection)
                         && !self.tx_wrote(&for_clause.collection)
+                        && for_clause.system_time.is_none()
+                        && for_clause.valid_time.is_none()
+                        && !self.is_sharded(&for_clause.collection)
                     {
                         let (sort_expr, sort_asc) = &sort.fields[0];
 
@@ -906,6 +912,15 @@ pub(in crate::sdbql::executor) fn has_window_functions(query: &Query) -> bool {
 }
 
 impl QueryExecutor<'_> {
+    /// Whether `name` is a sharded collection: its documents are in its
+    /// shards, not in the collection an index read would see.
+    fn is_sharded(&self, name: &str) -> bool {
+        self.get_collection(name)
+            .ok()
+            .and_then(|c| c.get_shard_config())
+            .is_some_and(|c| c.num_shards > 0)
+    }
+
     /// The index [`Self::execute_pipeline`] reads a bare `FOR v IN c [LET …]
     /// SORT v.f [LIMIT …]` from in sorted order (`"primary key"` for `_key`
     /// and `_id`), or `None` when that query takes another path. EXPLAIN
@@ -944,6 +959,9 @@ impl QueryExecutor<'_> {
         if !shape
             || self.row_policy_applies(&for_clause.collection)
             || self.tx_wrote(&for_clause.collection)
+            || for_clause.system_time.is_some()
+            || for_clause.valid_time.is_some()
+            || self.is_sharded(&for_clause.collection)
         {
             return None;
         }

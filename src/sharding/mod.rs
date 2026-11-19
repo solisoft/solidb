@@ -17,6 +17,7 @@ pub mod rebalance;
 pub mod repro_issue;
 pub mod router;
 pub mod scan;
+pub mod versioning;
 
 pub use blob_rebalance::{BlobRebalanceWorker, RebalanceConfig};
 pub use coordinator::{CollectionShardConfig, ShardAssignment, ShardCoordinator, ShardTable};

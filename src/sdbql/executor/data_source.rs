@@ -474,13 +474,17 @@ impl<'a> QueryExecutor<'a> {
                         for_clause.collection,
                         shard_config.num_shards
                     );
-                    // Shard collections keep no version history: gathering
-                    // them would answer AS OF with today's documents (#994).
-                    if for_clause.system_time.is_some() {
-                        return Err(Self::no_history_error(
-                            &for_clause.collection,
-                            "a sharded collection",
-                        ));
+                    // AS OF reads each shard's history (card #1002).
+                    if let Some(ts_expr) = &for_clause.system_time {
+                        let ts_val = self.evaluate_expr_with_context(ts_expr, ctx)?;
+                        let micros = super::evaluate::as_of_micros(&ts_val)?;
+                        let docs = self.collection_as_of(&source_coll, micros)?;
+                        let docs = self.apply_valid_time(for_clause, docs, ctx)?;
+                        let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
+                        if let Some(n) = limit {
+                            docs.truncate(n);
+                        }
+                        return Ok(docs);
                     }
                     // Audit H2: the gathered rows are filtered like a local
                     // scan. A LIMIT is applied after the filters, not pushed
@@ -969,10 +973,23 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // A shard stores its documents under the physical name (`c_s1/key`);
-        // callers know the collection as `c`.
+        Self::logical_ids(collection_name, db_name, &mut all_docs);
+
+        tracing::info!(
+            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} shards",
+            collection_name,
+            all_docs.len(),
+            table.num_shards
+        );
+
+        Ok(all_docs)
+    }
+
+    /// A shard stores its documents under the physical name (`c_s1/key`);
+    /// callers know the collection as `c`.
+    fn logical_ids(collection_name: &str, db_name: &str, all_docs: &mut [Value]) {
         let physical_prefix = format!("{}_s", collection_name);
-        for doc in &mut all_docs {
+        for doc in all_docs.iter_mut() {
             let Some(id) = doc.get("_id").and_then(|v| v.as_str()) else {
                 continue;
             };
@@ -981,7 +998,7 @@ impl<'a> QueryExecutor<'a> {
             };
             // The stored name may carry the database (`db:c_s1`).
             let coll_part = coll_part
-                .strip_prefix(db_name.as_str())
+                .strip_prefix(db_name)
                 .and_then(|r| r.strip_prefix(':'))
                 .unwrap_or(coll_part);
             let is_shard_of_this = coll_part
@@ -992,14 +1009,196 @@ impl<'a> QueryExecutor<'a> {
                 doc["_id"] = Value::String(logical);
             }
         }
+    }
 
-        tracing::info!(
-            "[SCATTER-GATHER] Collection {}: gathered {} unique docs from {} shards",
+    /// Every shard of the sharded `collection_name` (card #1002): `local` on
+    /// a shard this node holds, else the SDBQL `remote(physical)` on the
+    /// first node holding it that answers. Their results, shard by shard.
+    pub(super) fn on_every_shard(
+        &self,
+        collection_name: &str,
+        coordinator: &crate::sharding::ShardCoordinator,
+        local: &dyn Fn(&crate::storage::Collection) -> DbResult<Vec<Value>>,
+        remote: &dyn Fn(&str) -> String,
+    ) -> DbResult<Vec<Value>> {
+        self.refuse_untracked_read("a sharded collection")?;
+        let db_name = self.database.as_ref().ok_or_else(|| {
+            DbError::ExecutionError("No database context for scatter-gather".to_string())
+        })?;
+        let table = coordinator
+            .get_shard_table(db_name, collection_name)
+            .ok_or_else(|| {
+                DbError::ExecutionError(format!("no shard table for '{collection_name}'"))
+            })?;
+        let me = coordinator.my_node_id();
+        let secret = coordinator.cluster_secret();
+        let scheme = crate::cluster::http::cluster_scheme().to_string();
+        let mut out = Vec::new();
+        for shard_id in 0..table.num_shards {
+            let physical = format!("{}_s{}", collection_name, shard_id);
+            let Some(assignment) = table.assignments.get(&shard_id) else {
+                continue;
+            };
+            let held = assignment.primary_node == me
+                || assignment.primary_node == "local"
+                || assignment.replica_nodes.contains(&me);
+            if held {
+                if let Ok(coll) = self
+                    .storage
+                    .get_database(db_name)
+                    .and_then(|db| db.get_collection(&physical))
+                {
+                    out.extend(local(&coll)?);
+                }
+                continue;
+            }
+            let query = remote(&physical);
+            let client = get_blocking_http_client();
+            let mut reached = false;
+            for node in std::iter::once(&assignment.primary_node).chain(&assignment.replica_nodes) {
+                let Some(addr) = coordinator.get_node_api_address(node) else {
+                    continue;
+                };
+                let url = format!("{scheme}://{addr}/_api/database/{db_name}/cursor");
+                let answer = client
+                    .post(&url)
+                    .header("X-Scatter-Gather", "true")
+                    .header("X-Cluster-Secret", secret.clone())
+                    .json(&serde_json::json!({ "query": query }))
+                    .send()
+                    .ok()
+                    .and_then(|r| r.json::<Value>().ok());
+                if let Some(rows) = answer
+                    .as_ref()
+                    .and_then(|b| b.get("result"))
+                    .and_then(Value::as_array)
+                {
+                    out.extend(rows.iter().cloned());
+                    reached = true;
+                    break;
+                }
+            }
+            if !reached {
+                return Err(DbError::ExecutionError(format!(
+                    "shard {shard_id} of '{collection_name}' answered from no node"
+                )));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The documents of `collection_name` as of `micros`, sharded or not
+    /// (card #1002): a sharded one gathers each shard's history. A key two
+    /// shards answer for (a document caught moving between them, the same
+    /// content on both) is kept once. Fails when the collection keeps no
+    /// history.
+    pub(super) fn collection_as_of(
+        &self,
+        collection_name: &str,
+        micros: u64,
+    ) -> DbResult<Vec<Value>> {
+        let collection = self.get_collection(collection_name)?;
+        let sharded = collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0);
+        let Some(coordinator) = self.shard_coordinator.as_ref().filter(|_| sharded) else {
+            if sharded {
+                return Err(Self::no_history_error(
+                    collection_name,
+                    "a sharded collection read without its coordinator",
+                ));
+            }
+            return collection.scan_as_of(micros);
+        };
+        if !collection.is_versioned() {
+            return Err(Self::no_history_error(
+                collection_name,
+                "a sharded collection that is not versioned",
+            ));
+        }
+        let rows = self.on_every_shard(
             collection_name,
-            all_docs.len(),
-            table.num_shards
-        );
+            coordinator,
+            &|shard| shard.scan_as_of(micros),
+            &|physical| {
+                format!("FOR doc IN `{physical}` SYSTEM_TIME AS OF {{micros: {micros}}} RETURN doc")
+            },
+        )?;
+        let mut seen = HashSet::new();
+        let mut docs: Vec<Value> = rows
+            .into_iter()
+            .filter(|d| {
+                d.get("_key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|k| seen.insert(k.to_string()))
+            })
+            .collect();
+        let db_name = self.database.clone().unwrap_or_default();
+        Self::logical_ids(collection_name, &db_name, &mut docs);
+        Ok(docs)
+    }
 
-        Ok(all_docs)
+    /// The sharded collection's coordinator, when `collection` is sharded
+    /// and this executor has one.
+    fn sharded_via(
+        &self,
+        collection: &crate::storage::Collection,
+    ) -> Option<&crate::sharding::ShardCoordinator> {
+        let sharded = collection
+            .get_shard_config()
+            .is_some_and(|c| c.num_shards > 0);
+        self.shard_coordinator.as_deref().filter(|_| sharded)
+    }
+
+    /// `DOC_AS_OF` on any collection (card #1002): a sharded one asks every
+    /// shard, since a shard key other than `_key` does not say which one
+    /// holds the document, and one that moved left history on two.
+    pub(super) fn doc_as_of_any(
+        &self,
+        collection_name: &str,
+        key: &str,
+        micros: u64,
+    ) -> DbResult<Option<Value>> {
+        let collection = self.get_collection(collection_name)?;
+        let Some(coordinator) = self.sharded_via(&collection) else {
+            return collection.get_as_of(key, micros);
+        };
+        let quoted = serde_json::to_string(key).unwrap_or_default();
+        let found = self.on_every_shard(
+            collection_name,
+            coordinator,
+            &|shard| Ok(shard.get_as_of(key, micros)?.into_iter().collect()),
+            &|physical| format!("RETURN DOC_AS_OF(\"{physical}\", {quoted}, {{micros: {micros}}})"),
+        )?;
+        let mut docs: Vec<Value> = found.into_iter().filter(|d| !d.is_null()).take(1).collect();
+        let db_name = self.database.clone().unwrap_or_default();
+        Self::logical_ids(collection_name, &db_name, &mut docs);
+        Ok(docs.pop())
+    }
+
+    /// `DOC_HISTORY` on any collection (card #1002): a sharded one merges
+    /// what every shard holds of the key, newest first.
+    pub(super) fn doc_history_any(&self, collection_name: &str, key: &str) -> DbResult<Vec<Value>> {
+        let collection = self.get_collection(collection_name)?;
+        let Some(coordinator) = self.sharded_via(&collection) else {
+            return Ok(collection.doc_history(key));
+        };
+        let quoted = serde_json::to_string(key).unwrap_or_default();
+        let found = self.on_every_shard(
+            collection_name,
+            coordinator,
+            &|shard| Ok(shard.doc_history(key)),
+            &|physical| format!("FOR v IN DOC_HISTORY(\"{physical}\", {quoted}) RETURN v"),
+        )?;
+        let db_name = self.database.clone().unwrap_or_default();
+        let mut history: Vec<Value> = found;
+        for entry in history.iter_mut() {
+            if let Some(value) = entry.get_mut("value").filter(|v| v.is_object()) {
+                Self::logical_ids(collection_name, &db_name, std::slice::from_mut(value));
+            }
+        }
+        let micros = |e: &Value| e.get("ts_micros").and_then(Value::as_u64).unwrap_or(0);
+        history.sort_by_key(|e| std::cmp::Reverse(micros(e)));
+        Ok(history)
     }
 }

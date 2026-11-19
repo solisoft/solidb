@@ -324,6 +324,7 @@ pub async fn upsert_batch_to_shards(
                 Err(_) => {
                     // Create shard if missing
                     db.create_collection(physical_coll.clone(), None)?;
+                    super::versioning::follow_logical(&db, &physical_coll);
                     db.get_collection(&physical_coll)?
                 }
             };

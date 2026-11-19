@@ -614,7 +614,7 @@ An instant is epoch milliseconds, an RFC3339 string, or `{"micros": n}` for an e
 
 Scope: `AS OF` answers primary-key reads and history listing. Secondary indexes are current-version only, so a historical read is never index-accelerated.
 
-`SYSTEM_TIME AS OF` is refused (`OperationNotSupported`) on a sharded collection and on a columnar collection: neither keeps version history, and the scan used to answer with today's rows. `VALID_TIME` filters document fields and works on both.
+`SYSTEM_TIME AS OF` on a sharded collection reads the history its shards keep (they follow the collection's versioning on every node); `DOC_AS_OF`, `DOC_HISTORY` and `SNAPSHOT_DIFF` ask every shard too, so a document that moved between shards keeps its whole history. It is refused (`OperationNotSupported`) on a sharded collection that is not versioned and on a columnar collection, which keeps no history. `VALID_TIME` filters document fields and works on both. Restore and version tags are not available on sharded collections yet.
 
 ### Semantic Response Cache
 
@@ -711,7 +711,7 @@ FOR t IN trades
 
 Binds a single right document (or `null`), not an array. Strategy: `BACKWARD` (default), `FORWARD`, `NEAREST`.
 
-**Historical scan:** `FOR o IN orders SYSTEM_TIME AS OF @ts` walks `docv:` history (opt-in versioning; no index). Every write path records a version — single writes, batches (`insert_batch`, `upsert_batch`, SDBQL bulk writes), transactions, TTL expiry — and each key keeps its newest `SOLIDB_MAX_VERSIONS` (default 100). Enabling versioning records the collection as it stands as a baseline (also catching up with writes made while it was off), so history starts at that instant: `AS OF` an earlier instant finds nothing. Turning versioning on or off is replicated (`SetVersioning` in the sync log, and in a full sync), and a replica records a replicated write at its origin's time (HLC), so `AS OF` answers the same on every node; a node that joins by full sync starts its history at its baseline. Not versioned: sharded and columnar collections (`SYSTEM_TIME` is refused there).
+**Historical scan:** `FOR o IN orders SYSTEM_TIME AS OF @ts` walks `docv:` history (opt-in versioning; no index). Every write path records a version — single writes, batches (`insert_batch`, `upsert_batch`, SDBQL bulk writes), transactions, TTL expiry — and each key keeps its newest `SOLIDB_MAX_VERSIONS` (default 100). Enabling versioning records the collection as it stands as a baseline (also catching up with writes made while it was off), so history starts at that instant: `AS OF` an earlier instant finds nothing. Turning versioning on or off is replicated (`SetVersioning` in the sync log, and in a full sync), and a replica records a replicated write at its origin's time (HLC), so `AS OF` answers the same on every node; a node that joins by full sync starts its history at its baseline. Not versioned: columnar collections (`SYSTEM_TIME` is refused there).
 
 ### Control Flow & Misc
 

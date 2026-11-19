@@ -761,6 +761,12 @@ impl ClusterManager {
                                     e
                                 );
                             }
+                            if entry.operation == Operation::SetVersioning {
+                                crate::sharding::versioning::sync_shard_versioning(
+                                    &db,
+                                    &entry.collection,
+                                );
+                            }
                         }
                     }
                 }

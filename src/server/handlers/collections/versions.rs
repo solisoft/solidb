@@ -43,8 +43,10 @@ fn versioned(state: &AppState, db: &str, name: &str) -> Result<Collection, DbErr
         .get_shard_config()
         .is_some_and(|c| c.num_shards > 0)
     {
+        // Its history is read across its shards (card #1002), but a restore
+        // or a name would have to be made on each of them.
         return Err(DbError::OperationNotSupported(format!(
-            "'{name}' is sharded: its shards keep no version history"
+            "'{name}' is sharded: restore and version tags are not supported there yet"
         )));
     }
     Ok(collection)

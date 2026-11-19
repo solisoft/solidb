@@ -3398,6 +3398,7 @@ impl ShardCoordinator {
                                 tracing::error!("{}", msg);
                                 // Continue to next target
                             } else {
+                                super::versioning::follow_logical(&db, &phys_name);
                                 // Log it
                                 if let Some(log) = &self.replication_log {
                                     let entry = LogEntry {
@@ -3431,9 +3432,17 @@ impl ShardCoordinator {
                                 url,
                                 collection_type
                             );
+                            // The shard keeps history when its collection
+                            // does (card #1002).
+                            let versioning = self
+                                .storage
+                                .get_database(database)
+                                .and_then(|db| db.get_collection(collection))
+                                .is_ok_and(|c| c.is_versioned());
                             let body = serde_json::json!({
                                 "name": phys_name,
-                                "type": collection_type
+                                "type": collection_type,
+                                "versioning": versioning
                             });
 
                             match client

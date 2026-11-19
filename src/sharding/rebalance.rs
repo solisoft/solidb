@@ -500,6 +500,8 @@ async fn create_shards(
                         {
                             let msg = format!("Failed to create local shard {}: {}", phys_name, e);
                             tracing::error!("{}", msg);
+                        } else {
+                            super::versioning::follow_logical(&db, &phys_name);
                         }
                     }
                 }

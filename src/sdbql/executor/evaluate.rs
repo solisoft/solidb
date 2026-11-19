@@ -1228,9 +1228,8 @@ impl<'a> QueryExecutor<'a> {
                     DbError::ExecutionError("DOC_AS_OF: key must be a string".to_string())
                 })?;
                 let as_of = parse_as_of_micros(&evaluated_args[2])?;
-                let collection = self.get_collection(coll_name)?;
-                Ok(collection
-                    .get_as_of(key, as_of)?
+                Ok(self
+                    .doc_as_of_any(coll_name, key, as_of)?
                     .filter(|doc| self.row_policy_permits(coll_name, doc, ctx))
                     .unwrap_or(Value::Null))
             }
@@ -1274,8 +1273,7 @@ impl<'a> QueryExecutor<'a> {
                 let key = evaluated_args[1].as_str().ok_or_else(|| {
                     DbError::ExecutionError("DOC_HISTORY: key must be a string".to_string())
                 })?;
-                let collection = self.get_collection(coll_name)?;
-                let history = collection.doc_history(key);
+                let history = self.doc_history_any(coll_name, key)?;
                 Ok(Value::Array(match self.row_policy_gate(coll_name) {
                     // A version is shown only if the policy admits its value;
                     // tombstones only once some version of the key is visible.
@@ -1313,9 +1311,10 @@ impl<'a> QueryExecutor<'a> {
                 })?;
                 let t1 = parse_as_of_micros(&evaluated_args[1])?;
                 let t2 = parse_as_of_micros(&evaluated_args[2])?;
-                let collection = self.get_collection(coll_name)?;
-                let a = self.apply_row_policy(coll_name, collection.scan_as_of(t1)?, ctx);
-                let b = self.apply_row_policy(coll_name, collection.scan_as_of(t2)?, ctx);
+                let a =
+                    self.apply_row_policy(coll_name, self.collection_as_of(coll_name, t1)?, ctx);
+                let b =
+                    self.apply_row_policy(coll_name, self.collection_as_of(coll_name, t2)?, ctx);
                 let key_of = |d: &Value| {
                     d.get("_key")
                         .and_then(Value::as_str)
