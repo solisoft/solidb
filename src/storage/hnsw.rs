@@ -785,29 +785,46 @@ impl Graph {
 
     /// Node `id`'s vector: borrowed from the arena, or decoded from its
     /// codes when the graph is quantized.
+    /// Node `id`'s vector: borrowed from the arena, or decoded from its
+    /// codes when the graph is quantized (its arena is then empty).
+    #[inline]
     fn vector(&self, id: u32) -> Cow<'_, [f32]> {
-        if let Some(pq) = &self.pq {
-            return Cow::Owned(pq.decode(id, self.dim));
+        if !self.arena.is_empty() {
+            let at = id as usize * self.dim;
+            return Cow::Borrowed(&self.arena[at..at + self.dim]);
         }
-        match &self.sq {
-            Some(sq) => Cow::Owned(sq.decode(id, self.dim)),
-            None => {
-                let at = id as usize * self.dim;
-                Cow::Borrowed(&self.arena[at..at + self.dim])
-            }
+        Cow::Owned(self.decoded(id))
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn decoded(&self, id: u32) -> Vec<f32> {
+        match (&self.pq, &self.sq) {
+            (Some(pq), _) => pq.decode(id, self.dim),
+            (_, Some(sq)) => sq.decode(id, self.dim),
+            _ => vec![0.0; self.dim],
         }
     }
 
+    /// The distance from `q` to node `id`. An f32 graph is the one with an
+    /// arena: one test, then the arena slice, so this stays small enough to
+    /// be inlined into the walk as it was before quantization (card #1006,
+    /// a test of `pq` then `sq` on every distance cost 6-8% of a search).
+    #[inline(always)]
     fn dist_to(&self, q: &[f32], id: u32) -> f32 {
-        if let Some(pq) = &self.pq {
-            return pq.distance(q, id, self.dim, self.metric);
+        if !self.arena.is_empty() {
+            let at = id as usize * self.dim;
+            return distance(q, &self.arena[at..at + self.dim], self.metric);
         }
-        match &self.sq {
-            Some(sq) => sq.distance(q, id, self.dim, self.metric),
-            None => {
-                let at = id as usize * self.dim;
-                distance(q, &self.arena[at..at + self.dim], self.metric)
-            }
+        self.dist_to_codes(q, id)
+    }
+
+    #[inline(never)]
+    fn dist_to_codes(&self, q: &[f32], id: u32) -> f32 {
+        match (&self.pq, &self.sq) {
+            (Some(pq), _) => pq.distance(q, id, self.dim, self.metric),
+            (_, Some(sq)) => sq.distance(q, id, self.dim, self.metric),
+            _ => f32::MAX,
         }
     }
 
