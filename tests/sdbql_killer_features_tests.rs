@@ -769,6 +769,48 @@ fn valid_time_filters_docs() {
     assert!(!keys.contains(&"old"));
 }
 
+/// `FOR d IN c SYSTEM_TIME AS OF @t RETURN d` is the plain-scan shape the
+/// executor short-cuts past `get_for_source_docs`; the shortcut read today's
+/// documents and ignored the clause (card #994). Same for VALID_TIME.
+#[test]
+fn time_clauses_hold_on_the_plain_scan_shape() {
+    let (e, _t) = engine();
+    e.create_collection("histp".to_string(), None).unwrap();
+    let coll = e.get_collection("histp").unwrap();
+    coll.enable_versioning().unwrap();
+    coll.insert(json!({"_key": "a", "v": 1})).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    let t1_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    coll.update("a", json!({"_key": "a", "v": 2})).unwrap();
+    coll.insert(json!({"_key": "later", "v": 1})).unwrap();
+
+    for q in [
+        format!("FOR d IN histp SYSTEM_TIME AS OF {t1_ms} RETURN d"),
+        format!("FOR d IN histp SYSTEM_TIME AS OF {t1_ms} LIMIT 10 RETURN d"),
+    ] {
+        let past = QueryExecutor::new(&e).execute(&parse(&q).unwrap()).unwrap();
+        assert_eq!(past.len(), 1, "{q}: {past:?}");
+        assert_eq!(past[0]["_key"], json!("a"), "{q}");
+        assert_eq!(past[0]["v"], json!(1), "{q}: the version as of t1");
+    }
+
+    e.create_collection("vtp".to_string(), None).unwrap();
+    let vt = e.get_collection("vtp").unwrap();
+    vt.insert(json!({"_key": "old", "valid_from": 0, "valid_to": 10}))
+        .unwrap();
+    vt.insert(json!({"_key": "cur", "valid_from": 20, "valid_to": 100}))
+        .unwrap();
+    let rows = QueryExecutor::new(&e)
+        .execute(&parse("FOR d IN vtp VALID_TIME AS OF 25 RETURN d").unwrap())
+        .unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["_key"], json!("cur"));
+}
+
 #[test]
 fn insert_batch_is_versioned() {
     let (e, _t) = engine();

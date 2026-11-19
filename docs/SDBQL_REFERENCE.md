@@ -606,6 +606,8 @@ Enable versioning per collection (`Collection::enable_versioning`, or `SOLIDB_MA
 
 Scope: `AS OF` answers primary-key reads and history listing. Secondary indexes are current-version only, so a historical read is never index-accelerated.
 
+`SYSTEM_TIME AS OF` is refused (`OperationNotSupported`) on a sharded collection and on a columnar collection: neither keeps version history, and the scan used to answer with today's rows. `VALID_TIME` filters document fields and works on both.
+
 ### Semantic Response Cache
 
 Opt-in via `SEMANTIC_CACHE_ENABLED=1`. The `/ai/generate` endpoint embeds each prompt and returns a cached response when a previous prompt is cosine-similar (`SEMANTIC_CACHE_THRESHOLD`, default `0.95`) within `SEMANTIC_CACHE_TTL` seconds — skipping the LLM call. In-memory only (lost on restart); best-effort (never fails the request). `SEMANTIC_CACHE_PROVIDER` overrides the embedding provider (default OpenAI).

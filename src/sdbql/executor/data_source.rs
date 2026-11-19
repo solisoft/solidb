@@ -429,7 +429,28 @@ impl<'a> QueryExecutor<'a> {
         // collection was only reachable from SDBQL through one hard-coded
         // shape (`FOR x IN c COLLECT AGGREGATE ...`); adding a FILTER, SORT or
         // LIMIT made the same collection appear not to exist.
-        if let Some(rows) = self.columnar_source_rows(&for_clause.collection, limit)? {
+        // Neither layout below keeps version history (`docv:` lives in a
+        // document collection's own keyspace), so a historical scan of one
+        // must fail, not answer with today's rows (card #994).
+        if for_clause.system_time.is_some()
+            && self.columnar_source(&for_clause.collection)?.is_some()
+        {
+            return Err(Self::no_history_error(
+                &for_clause.collection,
+                "a columnar collection",
+            ));
+        }
+        // VALID_TIME filters the rows, so the LIMIT waits for it.
+        let columnar_limit = if for_clause.valid_time.is_some() {
+            None
+        } else {
+            limit
+        };
+        if let Some(rows) = self.columnar_source_rows(&for_clause.collection, columnar_limit)? {
+            let mut rows = self.apply_valid_time(for_clause, rows, ctx)?;
+            if let Some(n) = limit {
+                rows.truncate(n);
+            }
             return Ok(rows);
         }
 
@@ -453,13 +474,25 @@ impl<'a> QueryExecutor<'a> {
                         for_clause.collection,
                         shard_config.num_shards
                     );
+                    // Shard collections keep no version history: gathering
+                    // them would answer AS OF with today's documents (#994).
+                    if for_clause.system_time.is_some() {
+                        return Err(Self::no_history_error(
+                            &for_clause.collection,
+                            "a sharded collection",
+                        ));
+                    }
                     // Audit H2: the gathered rows are filtered like a local
-                    // scan. A LIMIT is applied after the policy, not pushed
-                    // to the shards, or the policy would under-fill it.
-                    if !self.row_policy_applies(&for_clause.collection) {
+                    // scan. A LIMIT is applied after the filters, not pushed
+                    // to the shards, or VALID_TIME and the row policy would
+                    // under-fill it.
+                    if !self.row_policy_applies(&for_clause.collection)
+                        && for_clause.valid_time.is_none()
+                    {
                         return self.scatter_gather_docs(&source_coll, coordinator, limit);
                     }
                     let docs = self.scatter_gather_docs(&source_coll, coordinator, None)?;
+                    let docs = self.apply_valid_time(for_clause, docs, ctx)?;
                     let mut docs = self.apply_row_policy(&for_clause.collection, docs, ctx);
                     if let Some(n) = limit {
                         docs.truncate(n);
@@ -536,6 +569,14 @@ impl<'a> QueryExecutor<'a> {
             docs.truncate(n);
         }
         Ok(docs)
+    }
+
+    /// `SYSTEM_TIME AS OF` on a collection whose layout keeps no version
+    /// history.
+    fn no_history_error(collection: &str, layout: &str) -> DbError {
+        DbError::OperationNotSupported(format!(
+            "SYSTEM_TIME AS OF is not supported on '{collection}': {layout} keeps no version history"
+        ))
     }
 
     fn apply_valid_time(

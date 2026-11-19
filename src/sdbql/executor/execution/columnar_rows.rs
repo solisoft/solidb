@@ -42,6 +42,11 @@ impl QueryExecutor<'_> {
         limit: Option<usize>,
     ) -> DbResult<Option<Vec<Value>>> {
         let name = for_clause.collection.as_str();
+        // A time clause goes through `get_for_source_docs`, which refuses
+        // SYSTEM_TIME and applies VALID_TIME (card #994).
+        if for_clause.system_time.is_some() || for_clause.valid_time.is_some() {
+            return Ok(None);
+        }
         let Some(columnar) = self.columnar_source(name)? else {
             return Ok(None);
         };
@@ -223,7 +228,11 @@ impl QueryExecutor<'_> {
         let name = for_clause.collection.as_str();
         // A LET-bound array of that name is iterated, not the collection;
         // under a row policy the rows are read, for the policy to see.
-        if ctx.contains_key(name) || self.row_policy_applies(name) {
+        if ctx.contains_key(name)
+            || self.row_policy_applies(name)
+            || for_clause.system_time.is_some()
+            || for_clause.valid_time.is_some()
+        {
             return Ok(None);
         }
         let Some(columnar) = self.columnar_source(name)? else {

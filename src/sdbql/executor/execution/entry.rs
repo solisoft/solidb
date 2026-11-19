@@ -472,10 +472,15 @@ impl<'a> QueryExecutor<'a> {
                                     .unwrap_or(&for_clause.collection);
 
                                 // A row-policy scan must go through
-                                // `get_for_source_docs`, which filters it.
+                                // `get_for_source_docs`, which filters it;
+                                // so must a SYSTEM_TIME / VALID_TIME scan,
+                                // which this shortcut read as today's rows
+                                // (card #994).
                                 if !initial_bindings.contains_key(source_name)
                                     && !self.row_policy_applies(&for_clause.collection)
                                     && !self.tx_wrote(&for_clause.collection)
+                                    && for_clause.system_time.is_none()
+                                    && for_clause.valid_time.is_none()
                                 {
                                     let scan_limit = query
                                         .limit_clause

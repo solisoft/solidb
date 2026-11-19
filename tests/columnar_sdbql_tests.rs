@@ -333,3 +333,27 @@ fn sdbql_writes_a_columnar_collection_does_not_take_are_refused() {
     }
     assert_eq!(total(&storage), before);
 }
+
+/// A columnar collection keeps no version history: SYSTEM_TIME AS OF is
+/// refused instead of answering with today's rows (card #994). VALID_TIME
+/// filters the rows (none of these carry valid_from/valid_to, so all are
+/// open-ended and kept) and the LIMIT applies after it.
+#[test]
+fn time_clauses_on_a_columnar_collection() {
+    let (storage, _d) = fixture();
+    let err = try_run(&storage, "FOR m IN metrics SYSTEM_TIME AS OF 1 RETURN m")
+        .expect_err("a historical scan of a columnar collection must fail");
+    assert!(err.contains("SYSTEM_TIME AS OF is not supported"), "{err}");
+    assert!(err.contains("columnar"), "{err}");
+
+    let rows = run(
+        &storage,
+        "FOR m IN metrics VALID_TIME AS OF 5 RETURN m.value",
+    );
+    assert_eq!(rows.len(), 3);
+    let rows = run(
+        &storage,
+        "FOR m IN metrics VALID_TIME AS OF 5 LIMIT 2 RETURN m.value",
+    );
+    assert_eq!(rows.len(), 2);
+}
