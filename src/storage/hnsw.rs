@@ -174,21 +174,61 @@ fn distance(a: &[f32], b: &[f32], metric: VectorMetric) -> f32 {
     }
 }
 
-/// A graph's vectors at one byte a dimension: `value = min + code * step`,
-/// per dimension, over the prepared vectors (normalised for cosine). The
-/// bounds are those of the vectors when the graph was quantized; a later
-/// vector outside them is clamped to them.
+/// A graph's vectors as codes: `value = min + code * step`, per dimension,
+/// over the prepared vectors (normalised for cosine).
+///
+/// - `bits == 8` (scalar, card #996): a byte a dimension, `min`/`step`
+///   spanning the dimension's range; a later vector outside it is clamped.
+/// - `bits == 1` (binary, card #999): a bit a dimension, packed eight to a
+///   byte; `min = mean - s`, `step = 2s` with `s` the dimension's mean
+///   absolute deviation, so a code reads as `mean ± s`.
+///
+/// The bounds are taken when the graph is quantized and then kept.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sq8 {
     pub min: Vec<f32>,
     pub step: Vec<f32>,
-    /// `dim` codes a node, in node order (removed nodes included).
+    /// [`Self::bytes_per_node`] bytes a node, in node order (removed nodes
+    /// included).
     pub codes: Vec<u8>,
+    /// Bits a dimension: 8 or 1.
+    pub bits: u8,
 }
 
 impl Sq8 {
-    /// Bounds over `rows` (`dim` floats each), with no codes yet.
-    fn bounds_of(rows: &[f32], dim: usize) -> Self {
+    /// Bytes of codes a node takes.
+    pub fn bytes_per_node(&self, dim: usize) -> usize {
+        if self.bits == 1 {
+            dim.div_ceil(8)
+        } else {
+            dim
+        }
+    }
+
+    /// Bounds over `rows` (`dim` floats each) for `bits` a dimension, with
+    /// no codes yet.
+    fn bounds_of(rows: &[f32], dim: usize, bits: u8) -> Self {
+        if bits == 1 {
+            let n = (rows.len() / dim.max(1)).max(1) as f32;
+            let mut mean = vec![0.0f32; dim];
+            for row in rows.chunks_exact(dim) {
+                for (i, &v) in row.iter().enumerate() {
+                    mean[i] += v / n;
+                }
+            }
+            let mut dev = vec![0.0f32; dim];
+            for row in rows.chunks_exact(dim) {
+                for (i, &v) in row.iter().enumerate() {
+                    dev[i] += (v - mean[i]).abs() / n;
+                }
+            }
+            return Sq8 {
+                min: mean.iter().zip(&dev).map(|(m, s)| m - s).collect(),
+                step: dev.iter().map(|s| 2.0 * s).collect(),
+                codes: Vec::new(),
+                bits: 1,
+            };
+        }
         let mut min = vec![f32::MAX; dim];
         let mut max = vec![f32::MIN; dim];
         for row in rows.chunks_exact(dim) {
@@ -210,10 +250,28 @@ impl Sq8 {
             min,
             step,
             codes: Vec::new(),
+            bits: 8,
         }
     }
 
     fn push(&mut self, v: &[f32]) {
+        if self.bits == 1 {
+            // Above the dimension's mean (`min + step / 2`) reads as 1.
+            let mut byte = 0u8;
+            for (i, &x) in v.iter().enumerate() {
+                if x >= self.min[i] + self.step[i] / 2.0 {
+                    byte |= 1 << (i % 8);
+                }
+                if i % 8 == 7 {
+                    self.codes.push(byte);
+                    byte = 0;
+                }
+            }
+            if !v.len().is_multiple_of(8) {
+                self.codes.push(byte);
+            }
+            return;
+        }
         for (i, &x) in v.iter().enumerate() {
             let code = if self.step[i] > 0.0 {
                 ((x - self.min[i]) / self.step[i]).round().clamp(0.0, 255.0) as u8
@@ -225,25 +283,32 @@ impl Sq8 {
     }
 
     fn codes_of(&self, id: u32, dim: usize) -> &[u8] {
-        let at = id as usize * dim;
-        &self.codes[at..at + dim]
+        let per = self.bytes_per_node(dim);
+        let at = id as usize * per;
+        &self.codes[at..at + per]
+    }
+
+    /// Node `id`'s values, dimension by dimension.
+    fn values(&self, id: u32, dim: usize) -> impl Iterator<Item = f32> + '_ {
+        let codes = self.codes_of(id, dim);
+        let bits = self.bits;
+        (0..dim).map(move |i| {
+            let code = if bits == 1 {
+                (codes[i / 8] >> (i % 8)) & 1
+            } else {
+                codes[i]
+            };
+            self.min[i] + code as f32 * self.step[i]
+        })
     }
 
     fn decode(&self, id: u32, dim: usize) -> Vec<f32> {
-        self.codes_of(id, dim)
-            .iter()
-            .zip(self.min.iter().zip(&self.step))
-            .map(|(&c, (lo, st))| lo + c as f32 * st)
-            .collect()
+        self.values(id, dim).collect()
     }
 
     /// `distance(q, decode(id))` without decoding into a buffer.
     fn distance(&self, q: &[f32], id: u32, dim: usize, metric: VectorMetric) -> f32 {
-        let codes = self.codes_of(id, dim);
-        let values = codes
-            .iter()
-            .zip(self.min.iter().zip(&self.step))
-            .map(|(&c, (lo, st))| lo + c as f32 * st);
+        let values = self.values(id, dim);
         match metric {
             VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
             VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
@@ -370,20 +435,26 @@ impl Graph {
         self.sq.is_some()
     }
 
-    /// Keep the vectors at one byte a dimension and drop the f32 arena: a
-    /// quarter of the memory. Bounds are taken over the live nodes.
-    pub fn quantize(&mut self) {
-        if self.sq.is_some() {
-            return;
+    /// Keep the vectors as codes of `bits` a dimension (8 or 1) and drop
+    /// the f32 arena: a quarter of the memory at 8, a thirty-second at 1.
+    /// Bounds are taken over the live nodes. A graph quantized with other
+    /// bits is decoded first.
+    pub fn quantize(&mut self, bits: u8) {
+        let bits = if bits == 1 { 1 } else { 8 };
+        match &self.sq {
+            Some(sq) if sq.bits == bits => return,
+            Some(_) => self.dequantize(),
+            None => {}
         }
         let dim = self.dim;
         let live: Vec<f32> = (0..self.keys.len())
             .filter(|&id| !self.removed[id])
             .flat_map(|id| self.arena[id * dim..(id + 1) * dim].iter().copied())
             .collect();
-        let mut sq = Sq8::bounds_of(&live, dim);
+        let mut sq = Sq8::bounds_of(&live, dim, bits);
         drop(live);
-        sq.codes.reserve_exact(self.arena.len());
+        sq.codes
+            .reserve_exact(self.keys.len() * sq.bytes_per_node(dim));
         for row in self.arena.chunks_exact(dim) {
             sq.push(row);
         }
@@ -420,7 +491,8 @@ impl Graph {
     /// After a load: the vectors as [`Self::sq`] gave them. `false` when
     /// they do not match the nodes (nothing is restored).
     pub fn restore_sq(&mut self, sq: Sq8) -> bool {
-        if sq.codes.len() != self.keys.len() * self.dim
+        if !matches!(sq.bits, 1 | 8)
+            || sq.codes.len() != self.keys.len() * sq.bytes_per_node(self.dim)
             || sq.min.len() != self.dim
             || sq.step.len() != self.dim
             || self.removed.len() != self.keys.len()

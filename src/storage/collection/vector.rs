@@ -20,11 +20,6 @@ pub struct QuantizationStats {
     pub compressed_size: usize,
     pub compression_ratio: f32,
 }
-
-/// How many candidates per result a quantized graph's search fetches, to
-/// re-score against the exact vectors (card #996).
-const RESCORE_FACTOR: usize = 4;
-
 impl Collection {
     // ==================== Vector Index Operations ====================
 
@@ -234,8 +229,8 @@ impl Collection {
         // Quantized from the config, at creation (card #996): every node
         // that creates the index builds the same one, where a later
         // quantize call reached only the node it was sent to.
-        if config.quantization == VectorQuantization::Scalar {
-            index.quantize()?;
+        if config.quantization != VectorQuantization::None {
+            index.quantize_as(config.quantization)?;
         }
 
         // Persist populated index
@@ -326,8 +321,10 @@ impl Collection {
         // A quantized graph ranks by its codes: a wider set is fetched and
         // re-scored against the exact vectors (card #996).
         if index.graph_is_quantized() {
-            let fetch = k.saturating_mul(RESCORE_FACTOR).max(k);
-            let found = index.search(query, fetch, ef.max(fetch))?;
+            let fetch = k.saturating_mul(index.rescore_factor()).max(k);
+            // The walk on codes is coarser: it is given room beyond the
+            // candidates it returns.
+            let found = index.search(query, fetch, ef.max(fetch.saturating_mul(2)))?;
             return Ok(self.rescored(&index, query, found, k));
         }
         index.search(query, k, ef)
@@ -521,12 +518,18 @@ impl Collection {
         // A quantized graph: a wider set that passes, re-scored (#996).
         let quantized = index.graph_is_quantized();
         let fetch = if quantized {
-            k.saturating_mul(RESCORE_FACTOR).max(k)
+            k.saturating_mul(index.rescore_factor()).max(k)
         } else {
             k
         };
-        let Some(found) =
-            index.search_filtered(query, fetch, ef.max(fetch), max_checks, &mut passes)?
+        // The walk on codes is coarser: room beyond what it returns. An
+        // index in f32 walks exactly as it did.
+        let walk_ef = if quantized {
+            ef.max(fetch.saturating_mul(2))
+        } else {
+            ef
+        };
+        let Some(found) = index.search_filtered(query, fetch, walk_ef, max_checks, &mut passes)?
         else {
             return Ok(None);
         };
@@ -569,14 +572,14 @@ impl Collection {
     ) -> DbResult<QuantizationStats> {
         let index = self.get_vector_index(name)?;
 
-        // Only scalar quantization exists; `None` would be a no-op that
-        // reported success.
-        if quantization != VectorQuantization::Scalar {
+        // `None` would be a no-op that reported success.
+        if quantization == VectorQuantization::None {
             return Err(DbError::InvalidDocument(
-                "quantization must be 'scalar'; use dequantize to remove it".to_string(),
+                "quantization must be 'scalar' or 'binary'; use dequantize to remove it"
+                    .to_string(),
             ));
         }
-        index.quantize()?;
+        index.quantize_as(quantization)?;
         self.set_vector_index_quantization(name, quantization)?;
         self.persist_vector_indexes()?;
 

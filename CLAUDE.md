@@ -701,9 +701,14 @@ quantized before 2.16 had both, the graph never reading its codes). An
 index whose config says `scalar` quantizes at creation and when its graph
 is built, so every node builds the same one. What a quantized graph finds
 is re-scored against the vectors read from the documents
-(`Collection::rescored`, `RESCORE_FACTOR` candidates a result) in
+(`Collection::rescored`, `VectorIndex::rescore_factor` candidates a
+result: 4 scalar, 20 binary, measured in its doc comment) in
 `vector_search` and `filtered_walk`, so a search reports exact scores.
-`dequantize` decodes the codes back into an arena, with their error:
+Binary quantization (card #999) is the same store at one bit a
+dimension (`Sq8::bits == 1`, packed): a code reads as `mean ± s` (`s` the
+dimension's mean absolute deviation), so distances, decoding and
+re-scoring are shared; without a graph it waits for one
+(`VectorIndex::target`, saved in the index's config). `dequantize` decodes the codes back into an arena, with their error:
 recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
 codes and bounds); V5 is still read.
 

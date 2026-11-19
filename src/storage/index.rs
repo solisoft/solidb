@@ -134,6 +134,21 @@ pub enum VectorQuantization {
     None,
     /// Scalar Quantization - u8 per dimension (1 byte/dim), 4x compression
     Scalar,
+    /// Binary Quantization - 1 bit per dimension, 32x compression; searches
+    /// are re-scored against the exact vectors (card #999)
+    Binary,
+}
+
+impl VectorQuantization {
+    /// Bits a dimension the graph keeps: 8 (scalar), 1 (binary), or `None`
+    /// for full precision.
+    pub fn bits(self) -> Option<u8> {
+        match self {
+            VectorQuantization::None => None,
+            VectorQuantization::Scalar => Some(8),
+            VectorQuantization::Binary => Some(1),
+        }
+    }
 }
 
 /// Configuration for vector index

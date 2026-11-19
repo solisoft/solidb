@@ -8,7 +8,7 @@ use crate::{
     sync::{log::LogEntry, protocol::Operation},
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
 };
@@ -638,6 +638,7 @@ pub async fn create_vector_index(
     // Parse quantization
     let quantization = match req.quantization.as_deref() {
         Some("scalar") => VectorQuantization::Scalar,
+        Some("binary") => VectorQuantization::Binary,
         _ => VectorQuantization::None, // default
     };
 
@@ -676,6 +677,7 @@ pub async fn create_vector_index(
     let quantization_str = match stats.quantization {
         VectorQuantization::None => "none",
         VectorQuantization::Scalar => "scalar",
+        VectorQuantization::Binary => "binary",
     };
 
     Ok(Json(CreateVectorIndexResponse {
@@ -755,26 +757,37 @@ pub struct QuantizeVectorIndexResponse {
     pub status: String,
 }
 
-/// Quantize an existing vector index for memory compression
+/// `?type=` of the quantize endpoint.
+#[derive(Debug, Deserialize)]
+pub struct QuantizeVectorIndexQuery {
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+}
+
+/// Quantize an existing vector index for memory compression:
+/// `?type=scalar` (the default) or `?type=binary`.
 pub async fn quantize_vector_index(
     State(state): State<AppState>,
     Path((db_name, coll_name, index_name)): Path<(String, String, String)>,
+    Query(query): Query<QuantizeVectorIndexQuery>,
 ) -> Result<Json<QuantizeVectorIndexResponse>, DbError> {
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    // Get the index and quantize it
-    // Default to Scalar quantization for this endpoint
+    let kind = match query.type_.as_deref() {
+        None | Some("scalar") => crate::storage::index::VectorQuantization::Scalar,
+        Some("binary") => crate::storage::index::VectorQuantization::Binary,
+        Some(other) => {
+            return Err(DbError::BadRequest(format!(
+                "unknown quantization '{other}': scalar or binary"
+            )))
+        }
+    };
     let stats = {
         let index_name = index_name.clone();
-        tokio::task::spawn_blocking(move || {
-            collection.quantize_vector_index(
-                &index_name,
-                crate::storage::index::VectorQuantization::Scalar,
-            )
-        })
-        .await
-        .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
+        tokio::task::spawn_blocking(move || collection.quantize_vector_index(&index_name, kind))
+            .await
+            .map_err(|e| DbError::InternalError(format!("Task join error: {}", e)))??
     };
 
     Ok(Json(QuantizeVectorIndexResponse {
