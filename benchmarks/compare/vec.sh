@@ -10,6 +10,8 @@
 #   solidb     a SoliDB binary (SOLIDB_BIN), solistore; HNSW index
 #              on the documents' `emb` field, VECTOR_SEARCH over the driver.
 #              SOLIDB_ARGS adds options to the server's command line.
+#              QUANT=scalar|binary|pq quantizes the index; the results are
+#              then solidb-$QUANT.* instead of solidb.*.
 #   pgvector   PostgreSQL + pgvector in a container on DB_CPUS and DB_MEM;
 #              HNSW (vector_cosine_ops) built after the load.
 #   lancedb    LanceDB embedded, in the client's process (vec_lance.py in
@@ -68,16 +70,18 @@ run_one() {
   mkdir -p "$data"
   case $cfg in
     solidb)
+      local tag=solidb${QUANT:+-$QUANT} quant=()
+      [ -n "${QUANT:-}" ] && quant=(--quantization "$QUANT")
       limited env SOLIDB_ADMIN_PASSWORD=$PASSWORD SOLIDB_ENGINE=solistore \
-        "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua ${SOLIDB_ARGS:-} >"$OUT/solidb.server.log" 2>&1 &
+        "$SOLIDB_BIN" --host 127.0.0.1 --port 6800 --data-dir "$data" --no-lua ${SOLIDB_ARGS:-} >"$OUT/$tag.server.log" 2>&1 &
       local scope=$!
       wait_port 6800
       # $! is sudo's; the server is the process listening on the port.
       local server
       server=$(ss -Hltnp 'sport = :6800' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
       taskset -c "$CLIENT_CPUS" "$BIN" --engine solidb --addr 127.0.0.1:6800 --password $PASSWORD \
-        "${ARGS[@]}" --out "$OUT/solidb.json" 2>&1 | tee "$OUT/solidb.log" || status=$?
-      echo "rss_kb $(ps -o rss= -p "$server")" >"$OUT/solidb.memory"
+        "${ARGS[@]}" "${quant[@]}" --out "$OUT/$tag.json" 2>&1 | tee "$OUT/$tag.log" || status=$?
+      echo "rss_kb $(ps -o rss= -p "$server")" >"$OUT/$tag.memory"
       kill "$server"
       wait $scope 2>/dev/null || true
       ;;

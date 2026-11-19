@@ -108,6 +108,7 @@ fn parse_args() -> Args {
             password: "bench".into(),
             m: 16,
             ef_construction: 200,
+            quantization: None,
         },
         n: 100_000,
         dim: 128,
@@ -141,6 +142,7 @@ fn parse_args() -> Args {
             "--ef-construction" => {
                 a.settings.ef_construction = value().parse().expect("--ef-construction")
             }
+            "--quantization" => a.settings.quantization = Some(value()),
             "--concurrency" => a.concurrency = list(value()),
             "--warm" => a.warm = value().parse().expect("--warm"),
             "--secs" => a.secs = value().parse().expect("--secs"),
@@ -411,6 +413,7 @@ async fn run<E: Engine>(a: Args) -> Res<()> {
         "engine": a.engine, "server_version": version,
         "n": a.n, "dim": a.dim, "queries": a.queries, "k": a.k,
         "m": a.settings.m, "ef_construction": a.settings.ef_construction,
+        "quantization": a.settings.quantization,
         "load_secs": load_secs, "index_secs": index_secs,
         "queries_text": E::queries(),
         "series_results": series,

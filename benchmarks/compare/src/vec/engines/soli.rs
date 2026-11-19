@@ -100,13 +100,12 @@ impl Engine for Soli {
     }
 
     async fn build_index(&self) -> Res<()> {
-        let said = http(
-            &self.s,
-            "/vector/items",
-            json!({"name": "emb_idx", "field": "emb", "dimension": dimension(&self.s).await?,
-                   "metric": "cosine", "m": self.s.m, "ef_construction": self.s.ef_construction}),
-        )
-        .await?;
+        let mut body = json!({"name": "emb_idx", "field": "emb", "dimension": dimension(&self.s).await?,
+                   "metric": "cosine", "m": self.s.m, "ef_construction": self.s.ef_construction});
+        if let Some(q) = &self.s.quantization {
+            body["quantization"] = json!(q);
+        }
+        let said = http(&self.s, "/vector/items", body).await?;
         eprintln!("[vec] solidb index: {said}");
         Ok(())
     }

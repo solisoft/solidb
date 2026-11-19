@@ -12,6 +12,8 @@ pub struct Settings {
     /// HNSW: neighbours per node, and the candidate list while building.
     pub m: usize,
     pub ef_construction: usize,
+    /// SoliDB only: `scalar`, `binary` or `pq` (cards #996, #999, #1000).
+    pub quantization: Option<String>,
 }
 
 pub trait Engine: Sized + Send + Sync + 'static {
