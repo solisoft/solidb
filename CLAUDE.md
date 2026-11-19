@@ -683,12 +683,29 @@ Once an index has a graph, the graph's arena is the only store of its
 vectors (`VectorIndex::vectors` is then empty; `get_with` reads either):
 a cosine index gives its vectors back normalised, which changes no cosine
 score. Locks are taken `vectors`, `quantized_vectors`, `hnsw_graph`, in
-that order. An index is saved as `FORMAT_V5` (the arena beside the graph)
+that order. An index is saved as `FORMAT_V6` (the arena, or a quantized graph's codes, beside the graph)
 in pieces of 16 MB (`vec_chunk:<len>:<name>:<generation>:<n>`), then the
 header `vec_data:<name>` that names the generation, then the older pieces
 are deleted, so that a crash leaves the header on a whole generation; it
 is read piece by piece (`VectorIndex::deserialize_from`). A value of
 `vec_data:` without the header is an index saved whole (2.14.x).
+
+Scalar quantization (card #996) lives in the graph: `Graph::quantize`
+replaces the f32 arena with one byte a dimension (`hnsw::Sq8`, per-dimension
+`min` and `step` over the prepared vectors, frozen; a later vector is
+clamped), and the walk computes its distances on the codes
+(`Sq8::distance`, no decode buffer). The index then keeps no f32 copy:
+`QuantizedVectors` only serves the brute-force search below the graph
+threshold, and is dropped when the graph is built or loaded (an index
+quantized before 2.16 had both, the graph never reading its codes). An
+index whose config says `scalar` quantizes at creation and when its graph
+is built, so every node builds the same one. What a quantized graph finds
+is re-scored against the vectors read from the documents
+(`Collection::rescored`, `RESCORE_FACTOR` candidates a result) in
+`vector_search` and `filtered_walk`, so a search reports exact scores.
+`dequantize` decodes the codes back into an arena, with their error:
+recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
+codes and bounds); V5 is still read.
 
 A filtered search (`VECTOR_SEARCH(…, {filter})`, the driver's) follows the
 filter in the walk at level 0 (`Graph::search_filtered`, called through

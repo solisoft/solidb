@@ -957,3 +957,77 @@ fn a_filtered_search_over_a_graph_sees_writes() {
     got.sort();
     assert_eq!(got, vec!["p4983", "p4993", "p5001"]);
 }
+
+// ============================================================================
+// Quantized graph (card #996)
+// ============================================================================
+
+/// An index created with `quantization: scalar` quantizes at creation and,
+/// past the graph threshold, searches the graph's codes; what a search
+/// returns is re-scored against the vectors in the documents, so the
+/// scores are exact. The filtered walk is re-scored the same way.
+#[test]
+fn test_quantized_index_rescored_from_documents() {
+    use rand::{Rng, SeedableRng};
+    use solidb::storage::VectorQuantization;
+
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("emb".to_string(), None).unwrap();
+    let collection = engine.get_collection("emb").unwrap();
+
+    let dim = 16;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(11);
+    let vectors: Vec<Vec<f32>> = (0..10_500)
+        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0)).collect())
+        .collect();
+    let docs: Vec<serde_json::Value> = vectors
+        .iter()
+        .enumerate()
+        .map(|(i, v)| json!({"_key": format!("d{i}"), "embedding": v, "group": i % 2}))
+        .collect();
+    collection.insert_batch(docs).unwrap();
+
+    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), dim)
+        .with_quantization(VectorQuantization::Scalar);
+    let stats = collection.create_vector_index(config).unwrap();
+    assert_eq!(stats.quantization, VectorQuantization::Scalar);
+    assert_eq!(stats.indexed_vectors, 10_500);
+    assert!((stats.compression_ratio - 4.0).abs() < 1e-6, "{stats:?}");
+
+    let cosine = |a: &[f32], b: &[f32]| -> f32 {
+        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        dot / (na * nb)
+    };
+    for i in [0usize, 17, 4_242, 10_499] {
+        let found = collection
+            .vector_search("idx", &vectors[i], 5, None)
+            .unwrap();
+        assert_eq!(found.len(), 5);
+        assert_eq!(
+            found[0].doc_key,
+            format!("d{i}"),
+            "a vector finds itself first"
+        );
+        for r in &found {
+            let j: usize = r.doc_key[1..].parse().unwrap();
+            let exact = cosine(&vectors[i], &vectors[j]);
+            assert!((r.score - exact).abs() < 1e-5, "{} vs {exact}", r.score);
+        }
+        assert!(found.windows(2).all(|w| w[0].score >= w[1].score));
+    }
+
+    let mut filter = serde_json::Map::new();
+    filter.insert("group".to_string(), json!(1));
+    let found = collection
+        .vector_search_filtered("idx", &vectors[17], 5, 4, None, &filter)
+        .unwrap();
+    assert_eq!(found.len(), 5);
+    assert_eq!(found[0].0["_key"], json!("d17"));
+    for (doc, score) in &found {
+        assert_eq!(doc["group"], json!(1));
+        let j: usize = doc["_key"].as_str().unwrap()[1..].parse().unwrap();
+        assert!((score - cosine(&vectors[17], &vectors[j])).abs() < 1e-5);
+    }
+}

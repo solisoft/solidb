@@ -21,6 +21,10 @@ pub struct QuantizationStats {
     pub compression_ratio: f32,
 }
 
+/// How many candidates per result a quantized graph's search fetches, to
+/// re-score against the exact vectors (card #996).
+const RESCORE_FACTOR: usize = 4;
+
 impl Collection {
     // ==================== Vector Index Operations ====================
 
@@ -227,6 +231,12 @@ impl Collection {
             }
         }
         index.insert_many(batch);
+        // Quantized from the config, at creation (card #996): every node
+        // that creates the index builds the same one, where a later
+        // quantize call reached only the node it was sent to.
+        if config.quantization == VectorQuantization::Scalar {
+            index.quantize()?;
+        }
 
         // Persist populated index
         self.persist_vector_indexes()?;
@@ -312,9 +322,52 @@ impl Collection {
         self.note_range_read();
         let index = self.get_vector_index(name)?;
 
-        // Use provided ef_search or default from config (if available via accessor, or just pass None/default)
-        // Assuming index.search supports ef_search
-        index.search(query, k, ef_search.unwrap_or(100))
+        let ef = ef_search.unwrap_or(100);
+        // A quantized graph ranks by its codes: a wider set is fetched and
+        // re-scored against the exact vectors (card #996).
+        if index.graph_is_quantized() {
+            let fetch = k.saturating_mul(RESCORE_FACTOR).max(k);
+            let found = index.search(query, fetch, ef.max(fetch))?;
+            return Ok(self.rescored(&index, query, found, k));
+        }
+        index.search(query, k, ef)
+    }
+
+    /// `found` re-scored against the vectors stored in the documents,
+    /// best first, the best `k` kept: a quantized graph's distances are
+    /// approximate. A candidate deleted since it was indexed is dropped;
+    /// one whose vector cannot be read keeps the graph's score.
+    fn rescored(
+        &self,
+        index: &VectorIndex,
+        query: &[f32],
+        found: Vec<VectorSearchResult>,
+        k: usize,
+    ) -> Vec<VectorSearchResult> {
+        let config = index.config();
+        let top = config
+            .field
+            .split('.')
+            .next()
+            .unwrap_or(&config.field)
+            .to_string();
+        let fields = [top];
+        let mut out: Vec<VectorSearchResult> = found
+            .into_iter()
+            .filter_map(|r| {
+                let doc = self.get_value_projected(&r.doc_key, &fields).ok()?;
+                let score = self
+                    .extract_vector(&doc, &config.field, config.dimension)
+                    .map_or(r.score, |v| index.exact_score(query, &v));
+                Some(VectorSearchResult {
+                    doc_key: r.doc_key,
+                    score,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| index.better(a.score, b.score));
+        out.truncate(k);
+        out
     }
 
     /// Nearest-neighbour search with an optional equality metadata filter.
@@ -465,8 +518,22 @@ impl Collection {
             }
             ok
         };
-        let Some(found) = index.search_filtered(query, k, ef, max_checks, &mut passes)? else {
+        // A quantized graph: a wider set that passes, re-scored (#996).
+        let quantized = index.graph_is_quantized();
+        let fetch = if quantized {
+            k.saturating_mul(RESCORE_FACTOR).max(k)
+        } else {
+            k
+        };
+        let Some(found) =
+            index.search_filtered(query, fetch, ef.max(fetch), max_checks, &mut passes)?
+        else {
             return Ok(None);
+        };
+        let found = if quantized {
+            self.rescored(&index, query, found, k)
+        } else {
+            found
         };
         Ok(Some(
             found

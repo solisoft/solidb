@@ -315,7 +315,17 @@ impl VectorIndex {
             threads,
         );
 
-        // Store the graph; it holds the vectors from now on.
+        // Store the graph; it holds the vectors from now on. A quantized
+        // index keeps them as codes in the graph (card #996), not beside it.
+        let mut graph = graph;
+        let mut quantized = self
+            .quantized_vectors
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        if quantized.is_some() || self.config.quantization == VectorQuantization::Scalar {
+            graph.quantize();
+            *quantized = None;
+        }
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         *hnsw = Some(graph);
         *vectors = HashMap::new();
@@ -484,7 +494,7 @@ impl VectorIndex {
             return Some(f(v));
         }
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
-        hnsw.as_ref()?.vector_of(doc_key).map(f)
+        hnsw.as_ref()?.vector_of(doc_key).map(|v| f(&v))
     }
 
     /// Search for similar vectors
@@ -734,60 +744,92 @@ impl VectorIndex {
             .unwrap_or_else(|e| e.into_inner());
         let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
 
-        let data = VectorIndexDataV5Ref {
+        let sq = hnsw.as_ref().and_then(|g| g.sq());
+        let data = VectorIndexDataV6Ref {
             config: &self.config,
             vectors: &vectors,
             quantized_vectors: &quantized,
             hnsw_graph: &hnsw,
             arena: hnsw.as_ref().map_or(&[][..], |g| g.arena()),
+            sq_min: sq.map_or(&[][..], |q| &q.min),
+            sq_step: sq.map_or(&[][..], |q| &q.step),
+            sq_codes: sq.map_or(&[][..], |q| &q.codes),
         };
-        out.write_all(FORMAT_V5)
+        out.write_all(FORMAT_V6)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
         bincode::serialize_into(&mut out, &data)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))
     }
 
-    /// An index [`Self::serialize_into`] wrote, read as it comes (V5 only).
+    /// An index [`Self::serialize_into`] wrote, read as it comes (V6, or
+    /// V5 as 2.15 wrote it).
     pub fn deserialize_from(mut input: impl std::io::Read) -> DbResult<Self> {
         let mut marker = [0u8; 8];
         input
             .read_exact(&mut marker)
             .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
-        if marker[..] != *FORMAT_V5 {
-            return Err(DbError::InternalError(
-                "Deserialization error: not a V5 vector index".to_string(),
-            ));
+        let err =
+            |e: bincode::Error| DbError::InternalError(format!("Deserialization error: {}", e));
+        if marker[..] == *FORMAT_V6 {
+            return Self::from_v6(bincode::deserialize_from(input).map_err(err)?);
         }
-        let data: VectorIndexDataV5 = bincode::deserialize_from(input)
-            .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
-        Self::from_v5(data)
+        if marker[..] == *FORMAT_V5 {
+            let data: VectorIndexDataV5 = bincode::deserialize_from(input).map_err(err)?;
+            return Self::from_v6(data.into());
+        }
+        Err(DbError::InternalError(
+            "Deserialization error: not a V5 or V6 vector index".to_string(),
+        ))
     }
 
-    fn from_v5(data: VectorIndexDataV5) -> DbResult<Self> {
+    fn from_v6(data: VectorIndexDataV6) -> DbResult<Self> {
         let mut graph = data.hnsw_graph;
+        let mut quantized = data.quantized_vectors;
         if let Some(g) = graph.as_mut() {
-            if !g.restore_arena(data.arena) {
+            // A quantized graph saves its bounds even with no node.
+            let restored = if data.sq_min.is_empty() {
+                g.restore_arena(data.arena)
+            } else {
+                g.restore_sq(crate::storage::hnsw::Sq8 {
+                    min: data.sq_min,
+                    step: data.sq_step,
+                    codes: data.sq_codes,
+                })
+            };
+            if !restored {
                 return Err(DbError::InternalError(
                     "Deserialization error: the graph's vectors do not match its nodes".to_string(),
                 ));
+            }
+            // An index quantized before 2.16 kept its codes beside an f32
+            // graph that searches never left: the graph takes them now.
+            if quantized.is_some() {
+                g.quantize();
+                quantized = None;
             }
         }
         Ok(Self {
             config: data.config,
             vectors: RwLock::new(data.vectors),
-            quantized_vectors: RwLock::new(data.quantized_vectors),
+            quantized_vectors: RwLock::new(quantized),
             hnsw_graph: RwLock::new(graph),
         })
     }
 
     /// Deserialize a vector index from bytes
     pub fn deserialize(bytes: &[u8]) -> DbResult<Self> {
+        // V6 (card #996): V5 and a quantized graph's codes.
+        if let Some(rest) = bytes.strip_prefix(FORMAT_V6) {
+            let data: VectorIndexDataV6 = bincode::deserialize(rest)
+                .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
+            return Self::from_v6(data);
+        }
         // V5 (card #986): the graph's vectors saved as its arena, the map
         // only for an index without a graph.
         if let Some(rest) = bytes.strip_prefix(FORMAT_V5) {
             let data: VectorIndexDataV5 = bincode::deserialize(rest)
                 .map_err(|e| DbError::InternalError(format!("Deserialization error: {}", e)))?;
-            return Self::from_v5(data);
+            return Self::from_v6(data.into());
         }
         // V4 (numbered graph, card #983): behind its marker.
         if let Some(rest) = bytes.strip_prefix(FORMAT_V4) {
@@ -853,6 +895,12 @@ impl VectorIndex {
         } else {
             vectors
         };
+        let mut graph = graph;
+        let mut quantized = quantized;
+        if let (Some(g), Some(_)) = (graph.as_mut(), quantized.as_ref()) {
+            g.quantize();
+            quantized = None;
+        }
         Self {
             config,
             vectors: RwLock::new(vectors),
@@ -869,22 +917,47 @@ impl VectorIndex {
             .is_some()
     }
 
-    /// Check if scalar quantization is active
+    /// Check if scalar quantization is active: codes for the brute-force
+    /// search, or a quantized graph.
     pub fn is_quantized(&self) -> bool {
         self.quantized_vectors
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .is_some()
+            || self.graph_is_quantized()
+    }
+
+    /// The graph searches codes: what it finds is re-scored against the
+    /// exact vectors by the caller, which reads them from the documents.
+    pub fn graph_is_quantized(&self) -> bool {
+        self.hnsw_graph
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|g| g.is_quantized())
+    }
+
+    /// The score a search reports for `vector`, exact: what re-scoring
+    /// compares.
+    pub fn exact_score(&self, query: &[f32], vector: &[f32]) -> f32 {
+        match self.config.metric {
+            VectorMetric::Cosine => cosine_similarity(query, vector),
+            VectorMetric::Euclidean => euclidean_distance(query, vector),
+            VectorMetric::DotProduct => dot_product(query, vector),
+        }
+    }
+
+    /// Whether score `a` ranks before score `b` for this index's metric.
+    pub fn better(&self, a: f32, b: f32) -> Ordering {
+        match self.config.metric {
+            VectorMetric::Euclidean => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+            _ => b.partial_cmp(&a).unwrap_or(Ordering::Equal),
+        }
     }
 
     /// Get the current quantization type
     pub fn quantization_type(&self) -> VectorQuantization {
-        if self
-            .quantized_vectors
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some()
-        {
+        if self.is_quantized() {
             VectorQuantization::Scalar
         } else {
             VectorQuantization::None
@@ -900,42 +973,49 @@ impl VectorIndex {
     /// Returns the number of vectors quantized.
     pub fn quantize(&self) -> DbResult<usize> {
         let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
-        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
-        let pairs: Vec<(&str, &[f32])> = match hnsw.as_ref() {
-            Some(graph) => graph.live_vectors().collect(),
-            None => vectors
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_slice()))
-                .collect(),
-        };
-        let count = pairs.len();
-        if count == 0 {
-            return Ok(0);
-        }
-
-        // Build quantized storage from full-precision vectors
-        let quantized = QuantizedVectors::from_pairs(&pairs, self.config.dimension);
-        drop(pairs);
-        drop(hnsw);
-
-        // Store the quantized vectors
         let mut quantized_lock = self
             .quantized_vectors
             .write()
             .unwrap_or_else(|e| e.into_inner());
-        *quantized_lock = Some(quantized);
-        drop(vectors);
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
+        // With a graph, the graph keeps the codes and drops its f32 vectors
+        // (card #996): codes beside an f32 graph saved nothing, and the
+        // graph's search never read them.
+        if let Some(graph) = hnsw.as_mut() {
+            graph.quantize();
+            *quantized_lock = None;
+            return Ok(graph.len());
+        }
+        drop(hnsw);
 
+        let pairs: Vec<(&str, &[f32])> = vectors
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_slice()))
+            .collect();
+        let count = pairs.len();
+        if count == 0 {
+            // No vector to take bounds from. An index created quantized
+            // quantizes its graph when it builds it (`build_hnsw_graph`).
+            return Ok(0);
+        }
+        // Codes for the brute-force search.
+        *quantized_lock = Some(QuantizedVectors::from_pairs(&pairs, self.config.dimension));
         Ok(count)
     }
 
-    /// Remove quantization (revert to full-precision search)
+    /// Remove quantization (revert to full-precision search). A quantized
+    /// graph's vectors come back decoded from their codes, with their
+    /// error: rebuild the index from its documents for exact ones.
     pub fn dequantize(&self) {
         let mut quantized = self
             .quantized_vectors
             .write()
             .unwrap_or_else(|e| e.into_inner());
         *quantized = None;
+        let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(graph) = hnsw.as_mut() {
+            graph.dequantize();
+        }
     }
 
     /// Get quantization statistics
@@ -944,8 +1024,13 @@ impl VectorIndex {
             .quantized_vectors
             .read()
             .unwrap_or_else(|e| e.into_inner());
-        quantized.as_ref().map(|q| {
-            let vector_count = q.len();
+        let hnsw = self.hnsw_graph.read().unwrap_or_else(|e| e.into_inner());
+        let count = match (quantized.as_ref(), hnsw.as_ref()) {
+            (_, Some(g)) if g.is_quantized() => Some(g.len()),
+            (Some(q), _) => Some(q.len()),
+            _ => None,
+        };
+        count.map(|vector_count| {
             let memory_bytes = vector_count * self.config.dimension; // u8 per dim
             let full_memory_bytes =
                 vector_count * self.config.dimension * std::mem::size_of::<f32>();
@@ -1037,15 +1122,47 @@ struct VectorIndexDataV4Ref<'a> {
     hnsw_graph: &'a Option<Graph>,
 }
 
-/// V5 (card #986): the V4 fields, then the graph's arena; `vectors` is empty
-/// when there is a graph. Field order and types as `VectorIndexDataV5`.
+/// V6 as the index writes it, borrowed from its guarded data. Field order
+/// and types as `VectorIndexDataV6`, which bincode depends on.
 #[derive(Serialize)]
-struct VectorIndexDataV5Ref<'a> {
+struct VectorIndexDataV6Ref<'a> {
     config: &'a VectorIndexConfig,
     vectors: &'a HashMap<String, Vec<f32>>,
     quantized_vectors: &'a Option<QuantizedVectors>,
     hnsw_graph: &'a Option<Graph>,
     arena: &'a [f32],
+    sq_min: &'a [f32],
+    sq_step: &'a [f32],
+    sq_codes: &'a [u8],
+}
+
+/// V6 (card #996): V5 and a quantized graph's vectors as codes (`sq_*`,
+/// empty when the graph is not quantized; `arena` is empty when it is).
+#[derive(Deserialize)]
+struct VectorIndexDataV6 {
+    config: VectorIndexConfig,
+    vectors: HashMap<String, Vec<f32>>,
+    quantized_vectors: Option<QuantizedVectors>,
+    hnsw_graph: Option<Graph>,
+    arena: Vec<f32>,
+    sq_min: Vec<f32>,
+    sq_step: Vec<f32>,
+    sq_codes: Vec<u8>,
+}
+
+impl From<VectorIndexDataV5> for VectorIndexDataV6 {
+    fn from(v5: VectorIndexDataV5) -> Self {
+        VectorIndexDataV6 {
+            config: v5.config,
+            vectors: v5.vectors,
+            quantized_vectors: v5.quantized_vectors,
+            hnsw_graph: v5.hnsw_graph,
+            arena: v5.arena,
+            sq_min: Vec::new(),
+            sq_step: Vec::new(),
+            sq_codes: Vec::new(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -1072,6 +1189,8 @@ struct VectorIndexDataV4 {
 const FORMAT_V4: &[u8] = b"\xffSVIDX4\x00";
 /// What a V5 index's bytes start with.
 const FORMAT_V5: &[u8] = b"\xffSVIDX5\x00";
+/// What a V6 index's bytes start with.
+const FORMAT_V6: &[u8] = b"\xffSVIDX6\x00";
 
 /// Calculate cosine similarity between two vectors
 ///
@@ -1279,6 +1398,154 @@ mod tests {
         assert!(high >= low, "ef 200 {high} below ef 40 {low}");
     }
 
+    /// Data vectors, query vectors, and each query's exact top-10 keys.
+    type Clustered = (Vec<Vec<f32>>, Vec<Vec<f32>>, Vec<Vec<String>>);
+
+    /// Clustered unit vectors as `hnsw_recall_on_clustered_vectors` makes
+    /// them, and the keys of each query's exact top 10.
+    fn clustered(n: usize, queries: usize, dim: usize) -> Clustered {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+        let centres: Vec<Vec<f32>> = (0..100)
+            .map(|_| (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect())
+            .collect();
+        let point = |rng: &mut rand::rngs::StdRng| -> Vec<f32> {
+            let c = &centres[rng.gen_range(0..centres.len())];
+            let v: Vec<f32> = c.iter().map(|x| x + rng.gen_range(-0.3..0.3)).collect();
+            let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            v.into_iter().map(|x| x / n).collect()
+        };
+        let data: Vec<Vec<f32>> = (0..n).map(|_| point(&mut rng)).collect();
+        let qs: Vec<Vec<f32>> = (0..queries).map(|_| point(&mut rng)).collect();
+        let want = qs
+            .iter()
+            .map(|q| {
+                let mut exact: Vec<(f32, usize)> = data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (cosine_similarity(q, v), i))
+                    .collect();
+                exact.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                exact[..10].iter().map(|(_, i)| format!("d{i}")).collect()
+            })
+            .collect();
+        (data, qs, want)
+    }
+
+    /// A quantized graph keeps one byte a dimension and no f32 vector
+    /// (card #996): its own walk, on the codes, still finds the nearest;
+    /// it survives a save, takes new vectors and comes back from
+    /// `dequantize`.
+    #[test]
+    fn a_quantized_graph_searches_its_codes() {
+        let dim = 32;
+        let (data, queries, want) = clustered(12_000, 50, dim);
+        let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), dim);
+        let index = VectorIndex::new(config).unwrap();
+        index.insert_many(
+            data.iter()
+                .enumerate()
+                .map(|(i, v)| (format!("d{i}"), v.clone()))
+                .collect(),
+        );
+        assert!(index.is_hnsw_active());
+        assert_eq!(index.quantize().unwrap(), 12_000);
+        assert!(index.graph_is_quantized());
+        assert!(index.is_quantized());
+        {
+            let graph = index.hnsw_graph.read().unwrap();
+            let graph = graph.as_ref().unwrap();
+            assert!(graph.arena().is_empty(), "no f32 copy is kept");
+            assert_eq!(graph.sq().unwrap().codes.len(), 12_000 * dim);
+        }
+        assert!(index.quantized_vectors.read().unwrap().is_none());
+        let stats = index.quantization_stats().unwrap();
+        assert_eq!(stats.vector_count, 12_000);
+        assert_eq!(stats.memory_bytes, 12_000 * dim);
+
+        let recall = |index: &VectorIndex, ef: usize| -> f64 {
+            let mut found = 0;
+            for (q, want) in queries.iter().zip(&want) {
+                let got = index.search(q, 10, ef).unwrap();
+                found += got.iter().filter(|r| want.contains(&r.doc_key)).count();
+            }
+            found as f64 / (10 * queries.len()) as f64
+        };
+        // The codes alone, before any re-scoring.
+        let raw = recall(&index, 200);
+        assert!(raw >= 0.85, "recall@10 on codes at ef 200: {raw}");
+
+        // V6 round trip keeps the codes.
+        let restored = VectorIndex::deserialize(&index.serialize().unwrap()).unwrap();
+        assert!(restored.graph_is_quantized());
+        assert_eq!(restored.len(), 12_000);
+        assert_eq!(recall(&restored, 200), raw);
+
+        // A vector inserted after quantization is coded and found.
+        restored.insert("new", &data[3]).unwrap();
+        let top = restored.search(&data[3], 2, 64).unwrap();
+        assert!(top.iter().any(|r| r.doc_key == "new"), "{top:?}");
+
+        // Back to f32 (decoded from the codes).
+        restored.dequantize();
+        assert!(!restored.is_quantized());
+        assert!(recall(&restored, 200) >= 0.85);
+    }
+
+    /// An index quantized before 2.16 saved its codes beside an f32 graph
+    /// (V5): loading it moves the codes into the graph.
+    #[test]
+    fn a_v5_quantized_index_is_upgraded_on_load() {
+        #[derive(Serialize)]
+        struct V5Out<'a> {
+            config: &'a VectorIndexConfig,
+            vectors: &'a HashMap<String, Vec<f32>>,
+            quantized_vectors: &'a Option<QuantizedVectors>,
+            hnsw_graph: &'a Option<Graph>,
+            arena: &'a [f32],
+        }
+        let dim = 16;
+        let (data, _, _) = clustered(10_500, 0, dim);
+        let config = VectorIndexConfig::new("idx".to_string(), "emb".to_string(), dim);
+        let index = VectorIndex::new(config.clone()).unwrap();
+        index.insert_many(
+            data.iter()
+                .enumerate()
+                .map(|(i, v)| (format!("d{i}"), v.clone()))
+                .collect(),
+        );
+        let graph = index.hnsw_graph.read().unwrap();
+        let pairs: Vec<(String, Vec<f32>)> = graph
+            .as_ref()
+            .unwrap()
+            .live_vectors()
+            .map(|(k, v)| (k.to_string(), v.to_vec()))
+            .collect();
+        let refs: Vec<(&str, &[f32])> = pairs.iter().map(|(k, v)| (k.as_str(), &v[..])).collect();
+        let old_codes = Some(QuantizedVectors::from_pairs(&refs, dim));
+        let mut bytes = FORMAT_V5.to_vec();
+        bincode::serialize_into(
+            &mut bytes,
+            &V5Out {
+                config: &config,
+                vectors: &HashMap::new(),
+                quantized_vectors: &old_codes,
+                hnsw_graph: &graph,
+                arena: graph.as_ref().unwrap().arena(),
+            },
+        )
+        .unwrap();
+        drop(graph);
+
+        let loaded = VectorIndex::deserialize(&bytes).unwrap();
+        assert!(loaded.graph_is_quantized());
+        assert!(loaded.quantized_vectors.read().unwrap().is_none());
+        assert_eq!(loaded.search(&data[42], 1, 64).unwrap()[0].doc_key, "d42");
+        // The streaming reader takes it too.
+        let streamed = VectorIndex::deserialize_from(&bytes[..]).unwrap();
+        assert!(streamed.graph_is_quantized());
+    }
+
     #[test]
     fn test_vector_index_similarity() {
         let config = VectorIndexConfig::new("test_idx".to_string(), "embedding".to_string(), 3);
@@ -1305,11 +1572,12 @@ mod tests {
         // Serialize
         let bytes = index.serialize().unwrap();
 
-        // The borrowed serializer writes the V5 encoding behind its marker.
-        let rest = bytes.strip_prefix(FORMAT_V5).expect("the V5 marker");
-        let v5: VectorIndexDataV5 = bincode::deserialize(rest).unwrap();
-        assert_eq!(v5.vectors.len(), 2);
-        assert!(v5.arena.is_empty());
+        // The borrowed serializer writes the V6 encoding behind its marker.
+        let rest = bytes.strip_prefix(FORMAT_V6).expect("the V6 marker");
+        let v6: VectorIndexDataV6 = bincode::deserialize(rest).unwrap();
+        assert_eq!(v6.vectors.len(), 2);
+        assert!(v6.arena.is_empty());
+        assert!(v6.sq_codes.is_empty());
 
         // Deserialize
         let restored = VectorIndex::deserialize(&bytes).unwrap();
@@ -1402,15 +1670,7 @@ mod tests {
         index.insert("new", &[0.5; 8]).unwrap();
         assert_eq!(index.len(), 10_050);
         assert!(index.vectors.read().unwrap().is_empty());
-        assert_eq!(index.quantize().unwrap(), 10_050);
-
-        // V5 round trip.
-        let restored = VectorIndex::deserialize(&index.serialize().unwrap()).unwrap();
-        assert_eq!(restored.len(), 10_050);
-        assert!(!restored.contains("d78"));
-        assert_eq!(restored.get("new"), index.get("new"));
         let first = |i: &VectorIndex| i.search(&kept["d500"], 1, 64).unwrap()[0].doc_key.clone();
-        assert_eq!(first(&restored), "d500");
 
         // An index saved by 2.14.x: the map beside the graph.
         let graph = index.hnsw_graph.read().unwrap();
@@ -1437,6 +1697,14 @@ mod tests {
         // Normalised again on the way in: equal to the last bit or so.
         let (a, b) = (old.get("new").unwrap(), index.get("new").unwrap());
         assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-6));
+
+        // Quantized, then a V6 round trip: the codes come back as they were.
+        assert_eq!(index.quantize().unwrap(), 10_050);
+        let restored = VectorIndex::deserialize(&index.serialize().unwrap()).unwrap();
+        assert_eq!(restored.len(), 10_050);
+        assert!(!restored.contains("d78"));
+        assert_eq!(restored.get("new"), index.get("new"));
+        assert_eq!(first(&restored), "d500");
     }
 
     /// A graph built past the threshold, saved and loaded, answers as before.

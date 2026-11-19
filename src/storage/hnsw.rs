@@ -15,10 +15,15 @@
 //!
 //! A whole index is built on several threads (`Graph::build`): each node's
 //! links behind a lock of their own, as hnswlib does.
+//!
+//! A quantized graph (card #996) keeps one byte a dimension instead of the
+//! f32 arena ([`Sq8`]): the walk computes its distances on the codes, and
+//! the caller re-scores what it keeps against the exact vectors.
 
 use crate::storage::index::VectorMetric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
@@ -169,6 +174,89 @@ fn distance(a: &[f32], b: &[f32], metric: VectorMetric) -> f32 {
     }
 }
 
+/// A graph's vectors at one byte a dimension: `value = min + code * step`,
+/// per dimension, over the prepared vectors (normalised for cosine). The
+/// bounds are those of the vectors when the graph was quantized; a later
+/// vector outside them is clamped to them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sq8 {
+    pub min: Vec<f32>,
+    pub step: Vec<f32>,
+    /// `dim` codes a node, in node order (removed nodes included).
+    pub codes: Vec<u8>,
+}
+
+impl Sq8 {
+    /// Bounds over `rows` (`dim` floats each), with no codes yet.
+    fn bounds_of(rows: &[f32], dim: usize) -> Self {
+        let mut min = vec![f32::MAX; dim];
+        let mut max = vec![f32::MIN; dim];
+        for row in rows.chunks_exact(dim) {
+            for (i, &v) in row.iter().enumerate() {
+                min[i] = min[i].min(v);
+                max[i] = max[i].max(v);
+            }
+        }
+        if rows.is_empty() {
+            min = vec![0.0; dim];
+            max = vec![0.0; dim];
+        }
+        let step = min
+            .iter()
+            .zip(&max)
+            .map(|(lo, hi)| ((hi - lo) / 255.0).max(0.0))
+            .collect();
+        Sq8 {
+            min,
+            step,
+            codes: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, v: &[f32]) {
+        for (i, &x) in v.iter().enumerate() {
+            let code = if self.step[i] > 0.0 {
+                ((x - self.min[i]) / self.step[i]).round().clamp(0.0, 255.0) as u8
+            } else {
+                0
+            };
+            self.codes.push(code);
+        }
+    }
+
+    fn codes_of(&self, id: u32, dim: usize) -> &[u8] {
+        let at = id as usize * dim;
+        &self.codes[at..at + dim]
+    }
+
+    fn decode(&self, id: u32, dim: usize) -> Vec<f32> {
+        self.codes_of(id, dim)
+            .iter()
+            .zip(self.min.iter().zip(&self.step))
+            .map(|(&c, (lo, st))| lo + c as f32 * st)
+            .collect()
+    }
+
+    /// `distance(q, decode(id))` without decoding into a buffer.
+    fn distance(&self, q: &[f32], id: u32, dim: usize, metric: VectorMetric) -> f32 {
+        let codes = self.codes_of(id, dim);
+        let values = codes
+            .iter()
+            .zip(self.min.iter().zip(&self.step))
+            .map(|(&c, (lo, st))| lo + c as f32 * st);
+        match metric {
+            VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+            VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+            VectorMetric::Euclidean => q
+                .iter()
+                .zip(values)
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum::<f32>()
+                .sqrt(),
+        }
+    }
+}
+
 /// The graph as 2.14.0 and earlier stored it, kept to read those indexes:
 /// the field order is the old `HnswGraph`'s, which bincode depends on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,8 +296,12 @@ pub struct Graph {
     #[serde(skip)]
     ids: HashMap<String, u32>,
     /// Node -> prepared vector, `dim` floats each. Rebuilt by `restore`.
+    /// Empty once the graph is quantized: `sq` holds the vectors then.
     #[serde(skip)]
     arena: Vec<f32>,
+    /// The vectors at one byte a dimension, when the graph is quantized.
+    #[serde(skip)]
+    sq: Option<Sq8>,
     #[serde(skip)]
     live: usize,
 }
@@ -231,6 +323,7 @@ impl Graph {
             max_level: 0,
             ids: HashMap::new(),
             arena: Vec::new(),
+            sq: None,
             live: 0,
         }
     }
@@ -244,9 +337,9 @@ impl Graph {
         self.live == 0
     }
 
-    /// The vector kept for `key` (normalised for cosine), if it is in the
-    /// graph.
-    pub fn vector_of(&self, key: &str) -> Option<&[f32]> {
+    /// The vector kept for `key` (normalised for cosine; approximate once
+    /// the graph is quantized), if it is in the graph.
+    pub fn vector_of(&self, key: &str) -> Option<Cow<'_, [f32]>> {
         self.ids.get(key).map(|&id| self.vector(id))
     }
 
@@ -255,18 +348,61 @@ impl Graph {
     }
 
     /// Every node's key and vector, removed ones apart.
-    pub fn live_vectors(&self) -> impl Iterator<Item = (&str, &[f32])> + '_ {
+    pub fn live_vectors(&self) -> impl Iterator<Item = (&str, Cow<'_, [f32]>)> + '_ {
         self.ids
             .iter()
             .map(|(key, &id)| (key.as_str(), self.vector(id)))
     }
 
     /// The vectors, `dim` floats a node in node order (removed ones
-    /// included), as an index saves them.
+    /// included), as an index saves them. Empty when the graph is
+    /// quantized: [`Self::sq`] holds them.
     pub fn arena(&self) -> &[f32] {
         &self.arena
     }
 
+    /// The vectors at one byte a dimension, when the graph is quantized.
+    pub fn sq(&self) -> Option<&Sq8> {
+        self.sq.as_ref()
+    }
+
+    pub fn is_quantized(&self) -> bool {
+        self.sq.is_some()
+    }
+
+    /// Keep the vectors at one byte a dimension and drop the f32 arena: a
+    /// quarter of the memory. Bounds are taken over the live nodes.
+    pub fn quantize(&mut self) {
+        if self.sq.is_some() {
+            return;
+        }
+        let dim = self.dim;
+        let live: Vec<f32> = (0..self.keys.len())
+            .filter(|&id| !self.removed[id])
+            .flat_map(|id| self.arena[id * dim..(id + 1) * dim].iter().copied())
+            .collect();
+        let mut sq = Sq8::bounds_of(&live, dim);
+        drop(live);
+        sq.codes.reserve_exact(self.arena.len());
+        for row in self.arena.chunks_exact(dim) {
+            sq.push(row);
+        }
+        self.sq = Some(sq);
+        self.arena = Vec::new();
+    }
+
+    /// Back to f32 vectors, decoded from the codes: they keep the
+    /// quantization's error until the index is rebuilt from its documents.
+    pub fn dequantize(&mut self) {
+        let Some(sq) = self.sq.take() else {
+            return;
+        };
+        let mut arena = Vec::with_capacity(self.keys.len() * self.dim);
+        for id in 0..self.keys.len() as u32 {
+            arena.extend(sq.decode(id, self.dim));
+        }
+        self.arena = arena;
+    }
     /// After a load: the vectors as [`Self::arena`] gave them. `false`
     /// when the arena does not match the nodes (nothing is restored).
     pub fn restore_arena(&mut self, arena: Vec<f32>) -> bool {
@@ -276,22 +412,59 @@ impl Graph {
         self.ids.clear();
         self.live = 0;
         self.arena = arena;
+        self.sq = None;
+        self.renumber();
+        true
+    }
+
+    /// After a load: the vectors as [`Self::sq`] gave them. `false` when
+    /// they do not match the nodes (nothing is restored).
+    pub fn restore_sq(&mut self, sq: Sq8) -> bool {
+        if sq.codes.len() != self.keys.len() * self.dim
+            || sq.min.len() != self.dim
+            || sq.step.len() != self.dim
+            || self.removed.len() != self.keys.len()
+        {
+            return false;
+        }
+        self.arena = Vec::new();
+        self.sq = Some(sq);
+        self.renumber();
+        true
+    }
+
+    /// The keys' numbers and the live count, from `keys` and `removed`.
+    fn renumber(&mut self) {
+        self.ids.clear();
+        self.live = 0;
         for (id, key) in self.keys.iter().enumerate() {
             if !self.removed[id] {
                 self.ids.insert(key.clone(), id as u32);
                 self.live += 1;
             }
         }
-        true
     }
 
-    fn vector(&self, id: u32) -> &[f32] {
-        let at = id as usize * self.dim;
-        &self.arena[at..at + self.dim]
+    /// Node `id`'s vector: borrowed from the arena, or decoded from its
+    /// codes when the graph is quantized.
+    fn vector(&self, id: u32) -> Cow<'_, [f32]> {
+        match &self.sq {
+            Some(sq) => Cow::Owned(sq.decode(id, self.dim)),
+            None => {
+                let at = id as usize * self.dim;
+                Cow::Borrowed(&self.arena[at..at + self.dim])
+            }
+        }
     }
 
     fn dist_to(&self, q: &[f32], id: u32) -> f32 {
-        distance(q, self.vector(id), self.metric)
+        match &self.sq {
+            Some(sq) => sq.distance(q, id, self.dim, self.metric),
+            None => {
+                let at = id as usize * self.dim;
+                distance(q, &self.arena[at..at + self.dim], self.metric)
+            }
+        }
     }
 
     fn random_level(&self) -> usize {
@@ -364,10 +537,7 @@ impl Graph {
                 break;
             }
             let v = self.vector(c.id);
-            if selected
-                .iter()
-                .all(|s| distance(v, self.vector(s.id), self.metric) > c.d)
-            {
+            if selected.iter().all(|s| self.dist_to(&v, s.id) > c.d) {
                 selected.push(*c);
             } else {
                 passed_over.push(c.id);
@@ -390,7 +560,11 @@ impl Graph {
         self.keys.push(key.to_string());
         self.links.push(vec![Vec::new(); level + 1]);
         self.removed.push(false);
-        self.arena.extend_from_slice(&prepared(vector, self.metric));
+        let v = prepared(vector, self.metric);
+        match self.sq.as_mut() {
+            Some(sq) => sq.push(&v),
+            None => self.arena.extend_from_slice(&v),
+        }
         self.ids.insert(key.to_string(), id);
         self.live += 1;
         (id, level)
@@ -410,7 +584,8 @@ impl Graph {
             self.max_level = level;
             return;
         };
-        let q = self.vector(id).to_vec();
+        // The exact vector, not its codes: the links are chosen from it.
+        let q = prepared(vector, self.metric);
         let links = std::mem::take(&mut self.links);
         let read = |n: u32, l: usize, out: &mut Vec<u32>| {
             out.clear();
@@ -463,7 +638,7 @@ impl Graph {
                 .iter()
                 .filter(|&&c| !self.removed[c as usize])
                 .map(|&c| Near {
-                    d: distance(base, self.vector(c), self.metric),
+                    d: self.dist_to(&base, c),
                     id: c,
                 })
                 .collect();
@@ -686,6 +861,7 @@ impl Graph {
                     let (id, level) = levels[i];
                     let (ep0, top) = *entry.lock();
                     let q = shared.vector(id);
+                    let q = &q[..];
                     let mut ep = vec![ep0];
                     for l in (level + 1..=top).rev() {
                         if let Some(best) = shared.search_layer(q, &ep, 1, l, &read).first() {
@@ -711,7 +887,7 @@ impl Graph {
                                 let mut cands: Vec<Near> = at
                                     .iter()
                                     .map(|&c| Near {
-                                        d: distance(base, shared.vector(c), shared.metric),
+                                        d: shared.dist_to(&base, c),
                                         id: c,
                                     })
                                     .collect();
@@ -747,6 +923,7 @@ impl Graph {
     /// vectors (a removed node gets zeros).
     pub fn restore(&mut self, vectors: &HashMap<String, Vec<f32>>) {
         self.ids.clear();
+        self.sq = None;
         self.arena = Vec::with_capacity(self.keys.len() * self.dim);
         self.live = 0;
         for (id, key) in self.keys.iter().enumerate() {
