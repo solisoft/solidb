@@ -755,6 +755,7 @@ impl VectorIndex {
 
         let sq = hnsw.as_ref().and_then(|g| g.sq());
         let pq = hnsw.as_ref().and_then(|g| g.pq());
+        let coarse = hnsw.as_ref().and_then(|g| g.coarse());
         // The config saved says the quantization asked for, so an index
         // asked for binary before its graph exists still is after a load.
         let mut config = self.config.clone();
@@ -773,6 +774,9 @@ impl VectorIndex {
             pq_k: pq.map_or(0, |p| p.k as u32),
             pq_centroids: pq.map_or(&[][..], |p| &p.centroids),
             pq_codes: pq.map_or(&[][..], |p| &p.codes),
+            coarse_k: coarse.map_or(0, |c| c.k as u32),
+            coarse_centroids: coarse.map_or(&[][..], |c| &c.centroids),
+            coarse_ids: coarse.map_or(&[][..], |c| &c.ids),
         };
         out.write_all(FORMAT_V6)
             .map_err(|e| DbError::InternalError(format!("Serialization error: {}", e)))?;
@@ -823,6 +827,13 @@ impl VectorIndex {
                     bits: data.sq_bits,
                 })
             };
+            let restored = restored
+                && (data.coarse_k == 0
+                    || g.restore_coarse(crate::storage::hnsw::Coarse {
+                        k: data.coarse_k as usize,
+                        centroids: data.coarse_centroids,
+                        ids: data.coarse_ids,
+                    }));
             if !restored {
                 return Err(DbError::InternalError(
                     "Deserialization error: the graph's vectors do not match its nodes".to_string(),
@@ -1253,6 +1264,9 @@ struct VectorIndexDataV6Ref<'a> {
     pq_k: u32,
     pq_centroids: &'a [f32],
     pq_codes: &'a [u8],
+    coarse_k: u32,
+    coarse_centroids: &'a [f32],
+    coarse_ids: &'a [u16],
 }
 
 /// V6 (card #996): V5 and a quantized graph's vectors as codes (`sq_*`,
@@ -1274,6 +1288,10 @@ struct VectorIndexDataV6 {
     pq_k: u32,
     pq_centroids: Vec<f32>,
     pq_codes: Vec<u8>,
+    /// Coarse centroids of residual codes (card #1008): 0 when none.
+    coarse_k: u32,
+    coarse_centroids: Vec<f32>,
+    coarse_ids: Vec<u16>,
 }
 
 impl From<VectorIndexDataV5> for VectorIndexDataV6 {
@@ -1292,6 +1310,9 @@ impl From<VectorIndexDataV5> for VectorIndexDataV6 {
             pq_k: 0,
             pq_centroids: Vec::new(),
             pq_codes: Vec::new(),
+            coarse_k: 0,
+            coarse_centroids: Vec::new(),
+            coarse_ids: Vec::new(),
         }
     }
 }
@@ -1763,6 +1784,104 @@ mod tests {
         assert!(top.iter().any(|r| r.doc_key == "new"), "{top:?}");
         restored.quantize_as(VectorQuantization::Scalar).unwrap();
         assert_eq!(restored.quantization_type(), VectorQuantization::Scalar);
+    }
+
+    /// The benchmark's data (benchmarks/compare vec): 100 cluster centres
+    /// drawn N(0,1) per dimension, a point is its centre plus 0.6·N(0,1),
+    /// normalised.
+    fn bench_like(n: usize, queries: usize, dim: usize) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let normal = |rng: &mut rand::rngs::StdRng| -> f32 {
+            let (u1, u2): (f32, f32) = (rng.gen_range(1e-7..1.0), rng.gen());
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+        };
+        let centres: Vec<Vec<f32>> = (0..100)
+            .map(|_| (0..dim).map(|_| normal(&mut rng)).collect())
+            .collect();
+        let point = |rng: &mut rand::rngs::StdRng| -> Vec<f32> {
+            let c = &centres[rng.gen_range(0..100)];
+            let v: Vec<f32> = c.iter().map(|x| x + 0.6 * normal(rng)).collect();
+            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            v.into_iter().map(|x| x / norm).collect()
+        };
+        let data = (0..n).map(|_| point(&mut rng)).collect();
+        let qs = (0..queries).map(|_| point(&mut rng)).collect();
+        (data, qs)
+    }
+
+    /// Recall@10 after re-scoring, every mode, on the benchmark's data at
+    /// 100,000 vectors (card #1008): where whole-vector codes lost their
+    /// recall (binary 0.77, PQ 0.91 at 20 candidates a result) long before
+    /// a 1M benchmark run. `ZZ_N` and `ZZ_DIM` change the size; run with
+    /// `--ignored --nocapture` on the test binary (rbuild forwards no env).
+    #[test]
+    #[ignore]
+    fn measure_quantized_recall_at_scale() {
+        let n: usize = std::env::var("ZZ_N")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100_000);
+        let dim: usize = std::env::var("ZZ_DIM")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(128);
+        let (data, qs) = bench_like(n, 100, dim);
+        let want: Vec<Vec<usize>> = qs
+            .iter()
+            .map(|q| {
+                let mut exact: Vec<(f32, usize)> = data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (cosine_similarity(q, v), i))
+                    .collect();
+                exact.select_nth_unstable_by(10, |a, b| b.0.partial_cmp(&a.0).unwrap());
+                exact[..10].iter().map(|x| x.1).collect()
+            })
+            .collect();
+        for kind in [
+            VectorQuantization::None,
+            VectorQuantization::Scalar,
+            VectorQuantization::Binary,
+            VectorQuantization::Pq,
+        ] {
+            let config = VectorIndexConfig::new("i".into(), "e".into(), dim);
+            let index = VectorIndex::new(config).unwrap();
+            index.insert_many(
+                data.iter()
+                    .enumerate()
+                    .map(|(i, v)| (format!("d{i}"), v.clone()))
+                    .collect(),
+            );
+            if kind != VectorQuantization::None {
+                index.quantize_as(kind).unwrap();
+            }
+            for factor in [4usize, 20, 50] {
+                let fetch = 10 * factor;
+                let mut found = 0;
+                for (q, want) in qs.iter().zip(&want) {
+                    let mut got: Vec<(f32, usize)> = index
+                        .search(q, fetch, (fetch * 2).max(100))
+                        .unwrap()
+                        .into_iter()
+                        .map(|r| {
+                            let i: usize = r.doc_key[1..].parse().unwrap();
+                            (cosine_similarity(q, &data[i]), i)
+                        })
+                        .collect();
+                    got.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                    found += got
+                        .iter()
+                        .take(10)
+                        .filter(|(_, i)| want.contains(i))
+                        .count();
+                }
+                eprintln!(
+                    "SCALE n={n} {kind:?} factor={factor} recall@10={:.3}",
+                    found as f64 / 1000.0
+                );
+            }
+        }
     }
 
     /// An index quantized before 2.16 saved its codes beside an f32 graph

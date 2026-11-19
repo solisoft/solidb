@@ -306,20 +306,210 @@ impl Sq8 {
         self.values(id, dim).collect()
     }
 
-    /// `distance(q, decode(id))` without decoding into a buffer.
-    fn distance(&self, q: &[f32], id: u32, dim: usize, metric: VectorMetric) -> f32 {
-        let values = self.values(id, dim);
-        match metric {
-            VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
-            VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
-            VectorMetric::Euclidean => q
-                .iter()
-                .zip(values)
-                .map(|(a, b)| (a - b) * (a - b))
-                .sum::<f32>()
-                .sqrt(),
+    /// `distance(q, base + decode(id))` without decoding into a buffer;
+    /// `base` is the node's coarse centroid when the codes are of residuals.
+    fn distance(
+        &self,
+        q: &[f32],
+        id: u32,
+        dim: usize,
+        metric: VectorMetric,
+        base: Option<&[f32]>,
+    ) -> f32 {
+        coded_distance(q, self.values(id, dim), base, metric)
+    }
+}
+
+/// The distance from `q` to a coded vector given dimension by dimension,
+/// plus `base` when the codes are of the residual from a coarse centroid.
+fn coded_distance(
+    q: &[f32],
+    values: impl Iterator<Item = f32>,
+    base: Option<&[f32]>,
+    metric: VectorMetric,
+) -> f32 {
+    match base {
+        Some(b) => metric_of(q, values.zip(b).map(|(v, c)| v + c), metric),
+        None => metric_of(q, values, metric),
+    }
+}
+
+fn metric_of(q: &[f32], values: impl Iterator<Item = f32>, metric: VectorMetric) -> f32 {
+    match metric {
+        VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+        VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
+        VectorMetric::Euclidean => q
+            .iter()
+            .zip(values)
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum::<f32>()
+            .sqrt(),
+    }
+}
+
+/// Coarse centroids for residual codes (card #1008): `k <= 256` centroids
+/// of the whole vectors, learned by k-means, and each node's nearest. Binary
+/// and product codes encode `vector - centroid`. On clustered vectors (what
+/// embeddings are) the codes then describe where a vector sits inside its
+/// cluster, where codes of the whole vector mostly spent their bits on the
+/// cluster and could not tell its members apart: at 1M vectors recall@10
+/// fell to 0.385 (binary) and 0.598 (PQ).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Coarse {
+    pub k: usize,
+    /// `k` centroids of `dim` floats.
+    pub centroids: Vec<f32>,
+    /// Node -> its centroid, in node order (removed nodes included).
+    pub ids: Vec<u16>,
+}
+
+/// Coarse centroids at most, and the rows their k-means trains on.
+const COARSE_K: usize = 256;
+const COARSE_SAMPLE: usize = 25_000;
+const COARSE_ITERATIONS: usize = 10;
+
+impl Coarse {
+    fn centroid(&self, c: u16, dim: usize) -> &[f32] {
+        let at = c as usize * dim;
+        &self.centroids[at..at + dim]
+    }
+
+    fn of_node(&self, id: u32, dim: usize) -> &[f32] {
+        self.centroid(self.ids[id as usize], dim)
+    }
+
+    fn nearest(&self, v: &[f32], dim: usize) -> u16 {
+        let mut best = (f32::MAX, 0usize);
+        for c in 0..self.k {
+            let d = squared_l2_of(v, &self.centroids[c * dim..(c + 1) * dim]);
+            if d < best.0 {
+                best = (d, c);
+            }
+        }
+        best.1 as u16
+    }
+
+    /// Centroids trained on `rows` (live vectors in key order), no ids yet.
+    fn train(rows: &[f32], dim: usize, threads: usize) -> Self {
+        let n = rows.len() / dim.max(1);
+        let k = n.clamp(1, COARSE_K);
+        let stride = n.div_ceil(COARSE_SAMPLE).max(1);
+        let sample: Vec<&[f32]> = (0..n)
+            .step_by(stride)
+            .map(|r| &rows[r * dim..(r + 1) * dim])
+            .collect();
+        Coarse {
+            k,
+            centroids: kmeans(&sample, dim, k, COARSE_ITERATIONS, 0x00C0_A25E, threads),
+            ids: Vec::new(),
         }
     }
+
+    /// Each row's nearest centroid, on `threads` threads, in row order.
+    fn assign_all(&mut self, rows: &[f32], dim: usize, threads: usize) {
+        let n = rows.len() / dim.max(1);
+        let chunk = n.div_ceil(threads.max(1)).max(1);
+        let me = &*self;
+        let parts: Vec<Vec<u16>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = rows
+                .chunks(chunk * dim)
+                .map(|block| {
+                    scope.spawn(move || {
+                        block
+                            .chunks_exact(dim)
+                            .map(|row| me.nearest(row, dim))
+                            .collect::<Vec<u16>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_default())
+                .collect()
+        });
+        self.ids = parts.concat();
+    }
+
+    /// `rows` minus each one's centroid (by `ids`).
+    fn residuals(&self, rows: &[f32], dim: usize) -> Vec<f32> {
+        let mut out = Vec::with_capacity(rows.len());
+        for (id, row) in rows.chunks_exact(dim).enumerate() {
+            let c = self.of_node(id as u32, dim);
+            out.extend(row.iter().zip(c).map(|(x, m)| x - m));
+        }
+        out
+    }
+}
+
+/// `k` centroids of `points` (`dim` floats each) by Lloyd's k-means, the
+/// assignment step on `threads` threads; deterministic for a seed.
+fn kmeans(
+    points: &[&[f32]],
+    dim: usize,
+    k: usize,
+    iterations: usize,
+    seed: u64,
+    threads: usize,
+) -> Vec<f32> {
+    use rand::{seq::SliceRandom, SeedableRng};
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+    let mut order: Vec<usize> = (0..points.len()).collect();
+    order.shuffle(&mut rng);
+    let mut centroids: Vec<f32> = (0..k)
+        .flat_map(|c| points[order[c % order.len()]].iter().copied())
+        .collect();
+    let chunk = points.len().div_ceil(threads.max(1)).max(1);
+    for _ in 0..iterations {
+        let assign: Vec<usize> = {
+            let centroids = &centroids;
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = points
+                    .chunks(chunk)
+                    .map(|block| {
+                        scope.spawn(move || {
+                            block
+                                .iter()
+                                .map(|p| {
+                                    let mut best = (f32::MAX, 0usize);
+                                    for c in 0..k {
+                                        let d =
+                                            squared_l2_of(p, &centroids[c * dim..(c + 1) * dim]);
+                                        if d < best.0 {
+                                            best = (d, c);
+                                        }
+                                    }
+                                    best.1
+                                })
+                                .collect::<Vec<usize>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().unwrap_or_default())
+                    .collect()
+            })
+        };
+        let mut sums = vec![0.0f32; k * dim];
+        let mut counts = vec![0usize; k];
+        for (p, &c) in points.iter().zip(&assign) {
+            counts[c] += 1;
+            for (s, v) in sums[c * dim..(c + 1) * dim].iter_mut().zip(p.iter()) {
+                *s += v;
+            }
+        }
+        for c in 0..k {
+            if counts[c] == 0 {
+                let p = order[(c * 7919) % order.len()];
+                centroids[c * dim..(c + 1) * dim].copy_from_slice(points[p]);
+                continue;
+            }
+            for d in 0..dim {
+                centroids[c * dim + d] = sums[c * dim + d] / counts[c] as f32;
+            }
+        }
+    }
+    centroids
 }
 
 /// A graph's vectors by product quantization (card #1000): each vector is
@@ -504,18 +694,15 @@ impl Pq {
         self.values(id, dim).collect()
     }
 
-    fn distance(&self, q: &[f32], id: u32, dim: usize, metric: VectorMetric) -> f32 {
-        let values = self.values(id, dim);
-        match metric {
-            VectorMetric::Cosine => 1.0 - q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
-            VectorMetric::DotProduct => -q.iter().zip(values).map(|(a, b)| a * b).sum::<f32>(),
-            VectorMetric::Euclidean => q
-                .iter()
-                .zip(values)
-                .map(|(a, b)| (a - b) * (a - b))
-                .sum::<f32>()
-                .sqrt(),
-        }
+    fn distance(
+        &self,
+        q: &[f32],
+        id: u32,
+        dim: usize,
+        metric: VectorMetric,
+        base: Option<&[f32]>,
+    ) -> f32 {
+        coded_distance(q, self.values(id, dim), base, metric)
     }
 }
 
@@ -567,6 +754,9 @@ pub struct Graph {
     /// The vectors by product quantization, when the graph is quantized so.
     #[serde(skip)]
     pq: Option<Pq>,
+    /// Coarse centroids of residual codes (binary and PQ, card #1008).
+    #[serde(skip)]
+    coarse: Option<Coarse>,
     #[serde(skip)]
     live: usize,
 }
@@ -590,6 +780,7 @@ impl Graph {
             arena: Vec::new(),
             sq: None,
             pq: None,
+            coarse: None,
             live: 0,
         }
     }
@@ -641,6 +832,34 @@ impl Graph {
         self.pq.as_ref()
     }
 
+    /// The coarse centroids binary and product codes are residuals of.
+    pub fn coarse(&self) -> Option<&Coarse> {
+        self.coarse.as_ref()
+    }
+
+    /// The live nodes' rows of `rows` (`dim` floats a node, node order), in
+    /// key order: two nodes holding the same documents train the same
+    /// centroids and codebooks only from their keys, since node numbers
+    /// follow the order the vectors came in.
+    fn live_rows_by_key(&self, rows: &[f32]) -> Vec<f32> {
+        let dim = self.dim;
+        let mut ids: Vec<usize> = (0..self.keys.len())
+            .filter(|&id| !self.removed[id])
+            .collect();
+        ids.sort_by(|a, b| self.keys[*a].cmp(&self.keys[*b]));
+        ids.iter()
+            .flat_map(|&id| rows[id * dim..(id + 1) * dim].iter().copied())
+            .collect()
+    }
+
+    /// Coarse centroids over the arena, and the arena's residuals.
+    fn residual_arena(&self, threads: usize) -> (Coarse, Vec<f32>) {
+        let mut coarse = Coarse::train(&self.live_rows_by_key(&self.arena), self.dim, threads);
+        coarse.assign_all(&self.arena, self.dim, threads);
+        let residuals = coarse.residuals(&self.arena, self.dim);
+        (coarse, residuals)
+    }
+
     /// Keep the vectors by product quantization (card #1000) and drop the
     /// f32 arena: `dim / sub` bytes a node. The codebooks are trained on
     /// the live nodes, on `threads` threads. A graph quantized otherwise
@@ -651,22 +870,16 @@ impl Graph {
         }
         self.dequantize();
         let dim = self.dim;
-        // In key order, not node order: node numbers follow the order the
-        // vectors came in, so two nodes holding the same documents train
-        // the same codebooks only from their keys.
-        let mut ids: Vec<usize> = (0..self.keys.len())
-            .filter(|&id| !self.removed[id])
-            .collect();
-        ids.sort_by(|a, b| self.keys[*a].cmp(&self.keys[*b]));
-        let live: Vec<f32> = ids
-            .iter()
-            .flat_map(|&id| self.arena[id * dim..(id + 1) * dim].iter().copied())
-            .collect();
-        drop(ids);
-        let mut pq = Pq::train(&live, dim, pq_sub_for(dim), threads);
-        drop(live);
-        pq.encode_all(&self.arena, dim, threads);
+        let (coarse, residuals) = self.residual_arena(threads);
+        let mut pq = Pq::train(
+            &self.live_rows_by_key(&residuals),
+            dim,
+            pq_sub_for(dim),
+            threads,
+        );
+        pq.encode_all(&residuals, dim, threads);
         self.pq = Some(pq);
+        self.coarse = Some(coarse);
         self.arena = Vec::new();
     }
 
@@ -685,37 +898,55 @@ impl Graph {
             None => {}
         }
         let dim = self.dim;
-        let live: Vec<f32> = (0..self.keys.len())
-            .filter(|&id| !self.removed[id])
-            .flat_map(|id| self.arena[id * dim..(id + 1) * dim].iter().copied())
-            .collect();
-        let mut sq = Sq8::bounds_of(&live, dim, bits);
-        drop(live);
+        // One bit a dimension encodes the residual from a coarse centroid;
+        // a byte is precise enough over the whole vector.
+        let (coarse, rows) = if bits == 1 {
+            let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+            let (coarse, residuals) = self.residual_arena(threads);
+            (Some(coarse), residuals)
+        } else {
+            (None, std::mem::take(&mut self.arena))
+        };
+        let mut sq = Sq8::bounds_of(&self.live_rows_by_key(&rows), dim, bits);
         sq.codes
             .reserve_exact(self.keys.len() * sq.bytes_per_node(dim));
-        for row in self.arena.chunks_exact(dim) {
+        for row in rows.chunks_exact(dim) {
             sq.push(row);
         }
         self.sq = Some(sq);
+        self.coarse = coarse;
         self.arena = Vec::new();
     }
 
     /// Back to f32 vectors, decoded from the codes: they keep the
     /// quantization's error until the index is rebuilt from its documents.
     pub fn dequantize(&mut self) {
-        let mut arena = Vec::with_capacity(self.keys.len() * self.dim);
-        if let Some(sq) = self.sq.take() {
-            for id in 0..self.keys.len() as u32 {
-                arena.extend(sq.decode(id, self.dim));
-            }
-        } else if let Some(pq) = self.pq.take() {
-            for id in 0..self.keys.len() as u32 {
-                arena.extend(pq.decode(id, self.dim));
-            }
-        } else {
+        if !self.is_quantized() {
             return;
         }
+        let mut arena = Vec::with_capacity(self.keys.len() * self.dim);
+        for id in 0..self.keys.len() as u32 {
+            arena.extend(self.decoded(id));
+        }
+        self.sq = None;
+        self.pq = None;
+        self.coarse = None;
         self.arena = arena;
+    }
+
+    /// After a load: the coarse centroids of residual codes. `false` when
+    /// they do not match the nodes (nothing is restored).
+    pub fn restore_coarse(&mut self, coarse: Coarse) -> bool {
+        if coarse.k == 0
+            || coarse.k > COARSE_K
+            || coarse.centroids.len() != coarse.k * self.dim
+            || coarse.ids.len() != self.keys.len()
+            || coarse.ids.iter().any(|&c| c as usize >= coarse.k)
+        {
+            return false;
+        }
+        self.coarse = Some(coarse);
+        true
     }
     /// After a load: the vectors as [`Self::arena`] gave them. `false`
     /// when the arena does not match the nodes (nothing is restored).
@@ -728,6 +959,7 @@ impl Graph {
         self.arena = arena;
         self.sq = None;
         self.pq = None;
+        self.coarse = None;
         self.renumber();
         true
     }
@@ -748,6 +980,7 @@ impl Graph {
         }
         self.arena = Vec::new();
         self.sq = None;
+        self.coarse = None;
         self.pq = Some(pq);
         self.renumber();
         true
@@ -766,6 +999,7 @@ impl Graph {
         }
         self.arena = Vec::new();
         self.pq = None;
+        self.coarse = None;
         self.sq = Some(sq);
         self.renumber();
         true
@@ -799,11 +1033,17 @@ impl Graph {
     #[inline(never)]
     #[cold]
     fn decoded(&self, id: u32) -> Vec<f32> {
-        match (&self.pq, &self.sq) {
+        let mut v = match (&self.pq, &self.sq) {
             (Some(pq), _) => pq.decode(id, self.dim),
             (_, Some(sq)) => sq.decode(id, self.dim),
             _ => vec![0.0; self.dim],
+        };
+        if let Some(coarse) = &self.coarse {
+            for (x, c) in v.iter_mut().zip(coarse.of_node(id, self.dim)) {
+                *x += c;
+            }
         }
+        v
     }
 
     /// The distance from `q` to node `id`. An f32 graph is the one with an
@@ -821,9 +1061,10 @@ impl Graph {
 
     #[inline(never)]
     fn dist_to_codes(&self, q: &[f32], id: u32) -> f32 {
+        let base = self.coarse.as_ref().map(|c| c.of_node(id, self.dim));
         match (&self.pq, &self.sq) {
-            (Some(pq), _) => pq.distance(q, id, self.dim, self.metric),
-            (_, Some(sq)) => sq.distance(q, id, self.dim, self.metric),
+            (Some(pq), _) => pq.distance(q, id, self.dim, self.metric, base),
+            (_, Some(sq)) => sq.distance(q, id, self.dim, self.metric, base),
             _ => f32::MAX,
         }
     }
@@ -921,7 +1162,15 @@ impl Graph {
         self.keys.push(key.to_string());
         self.links.push(vec![Vec::new(); level + 1]);
         self.removed.push(false);
-        let v = prepared(vector, self.metric);
+        let mut v = prepared(vector, self.metric);
+        // Residual codes: the node's coarse centroid, and what is left.
+        if let Some(coarse) = self.coarse.as_mut() {
+            let c = coarse.nearest(&v, self.dim);
+            coarse.ids.push(c);
+            for (x, m) in v.iter_mut().zip(coarse.centroid(c, self.dim)) {
+                *x -= m;
+            }
+        }
         if let Some(pq) = self.pq.as_mut() {
             pq.push(&v);
         } else {
@@ -1290,6 +1539,7 @@ impl Graph {
         self.ids.clear();
         self.sq = None;
         self.pq = None;
+        self.coarse = None;
         self.arena = Vec::with_capacity(self.keys.len() * self.dim);
         self.live = 0;
         for (id, key) in self.keys.iter().enumerate() {

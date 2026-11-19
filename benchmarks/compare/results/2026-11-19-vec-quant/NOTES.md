@@ -11,6 +11,7 @@
   `scalar/`, `binary/`, `pq/`: the same build, `QUANT=scalar|binary|pq`
   (the index created with `quantization`).
 - `fix1006/`: `baseline` and the build with #1006, run back to back later.
+- `residual/`: PQ and binary with residual codes (#1008), the same settings.
 
 | mode | RSS | search ef 100, 1 client | ef 200, 1 client | filtered ef 40, 1 client |
 |---|---|---|---|---|
@@ -33,3 +34,24 @@ Readings:
 - Binary and PQ do not hold recall at this scale (0.385 and 0.598 whatever
   `ef`; 0.99 and 0.975+ on 10,500 vectors in the unit tests): #1008. Not to
   be published or shipped as they are.
+
+## Residual codes (#1008)
+
+Codes of the whole vector spent their bits on the cluster a vector belongs
+to and could not tell its members apart. Binary and PQ now encode the
+residual from the vector's nearest of 256 coarse centroids (k-means):
+
+| mode | recall@10 plain | filtered | search ef 100, 1 client | RSS |
+|---|---|---|---|---|
+| pq, whole vector | 0.598 | 0.889 | 506/s | 3.53 GB |
+| pq, residual | **0.916** | **0.993** | 431/s (≈490 at ef 40/200) | 3.54 GB |
+| binary, whole vector | 0.385 | 0.753 | 494/s | 3.50 GB |
+| binary, residual | 0.542 | 0.850 | 478/s | 3.44 GB |
+
+- PQ holds recall at 1M now (f32: 0.901 at ef 100, 0.962 at ef 200), and
+  stays slow: recall and speed hardly move with `ef`, since the walk's
+  width is set by the 200 candidates re-scored from the documents (#1007).
+- Binary does not, even on residuals, nor at 768 dimensions on 100k
+  vectors (0.854 at 20 candidates a result): withdrawn, refused by the API.
+- The same effect reproduces in minutes at 100k vectors:
+  `measure_quantized_recall_at_scale` (ignored test in `storage::vector`).

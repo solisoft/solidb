@@ -1032,70 +1032,50 @@ fn test_quantized_index_rescored_from_documents() {
     }
 }
 
-/// Binary quantization (card #999): a bit a dimension, candidates
-/// re-scored from the documents — exact scores, and the exact top 10
-/// found almost always.
+/// Binary quantization is withdrawn (card #1008): it lost too many of the
+/// nearest neighbours on a large collection. Creating an index with it, or
+/// quantizing one as it, is refused and says what to use instead.
 #[test]
-fn test_binary_index_rescored_from_documents() {
-    use rand::{Rng, SeedableRng};
+fn test_binary_quantization_is_refused() {
     use solidb::storage::VectorQuantization;
 
     let (engine, _tmp) = create_test_engine();
     engine.create_collection("bin".to_string(), None).unwrap();
     let collection = engine.get_collection("bin").unwrap();
-    let dim = 256;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(5);
-    let centres: Vec<Vec<f32>> = (0..50)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0)).collect())
-        .collect();
-    let vectors: Vec<Vec<f32>> = (0..10_500)
-        .map(|_| {
-            let c = &centres[rng.gen_range(0..centres.len())];
-            c.iter().map(|x| x + rng.gen_range(-0.4f32..0.4)).collect()
-        })
-        .collect();
-    let docs: Vec<serde_json::Value> = vectors
-        .iter()
-        .enumerate()
-        .map(|(i, v)| json!({"_key": format!("d{i}"), "embedding": v}))
-        .collect();
-    collection.insert_batch(docs).unwrap();
-    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), dim)
+    collection
+        .insert(json!({"_key": "a", "embedding": [1.0, 0.0, 0.0]}))
+        .unwrap();
+    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), 3)
         .with_quantization(VectorQuantization::Binary);
-    let stats = collection.create_vector_index(config).unwrap();
-    assert_eq!(stats.quantization, VectorQuantization::Binary);
-    assert!((stats.compression_ratio - 32.0).abs() < 1e-6, "{stats:?}");
+    let err = collection
+        .create_vector_index(config)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("binary quantization is not available"),
+        "{err}"
+    );
+    assert!(err.contains("'pq'"), "{err}");
+    assert!(
+        collection.get_vector_index("idx").is_err(),
+        "nothing was created"
+    );
 
-    let cosine = |a: &[f32], b: &[f32]| -> f32 {
-        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-        dot / (na * nb)
-    };
-    let mut hits = 0;
-    let queries = [
-        3usize, 99, 1_000, 2_718, 5_555, 7_001, 8_888, 9_999, 10_123, 10_499,
-    ];
-    for &i in &queries {
-        let found = collection
-            .vector_search("idx", &vectors[i], 10, None)
-            .unwrap();
-        assert_eq!(found[0].doc_key, format!("d{i}"));
-        for r in &found {
-            let j: usize = r.doc_key[1..].parse().unwrap();
-            assert!((r.score - cosine(&vectors[i], &vectors[j])).abs() < 1e-5);
-        }
-        let mut exact: Vec<(f32, usize)> = vectors
-            .iter()
-            .enumerate()
-            .map(|(j, v)| (cosine(&vectors[i], v), j))
-            .collect();
-        exact.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-        let want: Vec<String> = exact[..10].iter().map(|(_, j)| format!("d{j}")).collect();
-        hits += found.iter().filter(|r| want.contains(&r.doc_key)).count();
-    }
-    let recall = hits as f64 / (10 * queries.len()) as f64;
-    assert!(recall >= 0.9, "recall@10: {recall}");
+    collection
+        .create_vector_index(VectorIndexConfig::new(
+            "plain".to_string(),
+            "embedding".to_string(),
+            3,
+        ))
+        .unwrap();
+    let err = collection
+        .quantize_vector_index("plain", VectorQuantization::Binary)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("binary quantization is not available"),
+        "{err}"
+    );
 }
 
 /// Product quantization (card #1000): created with `quantization: pq`, the

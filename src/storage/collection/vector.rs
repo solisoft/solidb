@@ -110,6 +110,7 @@ impl Collection {
 
     /// Create a vector index
     pub fn create_vector_index(&self, config: VectorIndexConfig) -> DbResult<VectorIndexStats> {
+        refuse_withdrawn_quantization(config.quantization)?;
         let name = config.name.clone();
         if self.get_vector_index(&name).is_ok() {
             return Err(DbError::InvalidDocument(format!(
@@ -575,10 +576,10 @@ impl Collection {
         // `None` would be a no-op that reported success.
         if quantization == VectorQuantization::None {
             return Err(DbError::InvalidDocument(
-                "quantization must be 'scalar' or 'binary'; use dequantize to remove it"
-                    .to_string(),
+                "quantization must be 'scalar' or 'pq'; use dequantize to remove it".to_string(),
             ));
         }
+        refuse_withdrawn_quantization(quantization)?;
         index.quantize_as(quantization)?;
         self.set_vector_index_quantization(name, quantization)?;
         self.persist_vector_indexes()?;
@@ -1017,6 +1018,23 @@ impl<F: FnMut() -> std::io::Result<Option<Vec<u8>>>> std::io::Read for ChunkRead
         self.at += n;
         Ok(n)
     }
+}
+
+/// Binary quantization is withdrawn (card #1008): one bit a dimension does
+/// not hold recall on a large collection, even on residuals from coarse
+/// centroids. Measured on clustered data, recall@10 with 20 candidates a
+/// result: 0.385 at 1M vectors (128 dims) before residuals, 0.85-0.87 at
+/// 100k after (128 and 768 dims), where PQ gives 0.99. The code stays,
+/// unreachable through the API, for a later version.
+fn refuse_withdrawn_quantization(quantization: VectorQuantization) -> DbResult<()> {
+    if quantization == VectorQuantization::Binary {
+        return Err(DbError::BadRequest(
+            "binary quantization is not available: it loses too many of the nearest \
+             neighbours on large collections; use 'pq' (16x less memory) or 'scalar' (4x)"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Query texts already embedded (card #1003): (database, provider, model,

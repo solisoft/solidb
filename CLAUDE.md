@@ -702,19 +702,24 @@ index whose config says `scalar` quantizes at creation and when its graph
 is built, so every node builds the same one. What a quantized graph finds
 is re-scored against the vectors read from the documents
 (`Collection::rescored`, `VectorIndex::rescore_factor` candidates a
-result: 4 scalar, 20 binary, measured in its doc comment) in
+result: 4 scalar, 20 PQ, measured in its doc comment) in
 `vector_search` and `filtered_walk`, so a search reports exact scores.
-Binary quantization (card #999) is the same store at one bit a
-dimension (`Sq8::bits == 1`, packed): a code reads as `mean ± s` (`s` the
-dimension's mean absolute deviation), so distances, decoding and
-re-scoring are shared; without a graph it waits for one
-(`VectorIndex::target`, saved in the index's config). Product quantization (card #1000, `hnsw::Pq`) cuts a vector into
+Product quantization (card #1000, `hnsw::Pq`) cuts a vector into
 sub-vectors of 4 dimensions (`pq_sub_for`) and keeps for each the byte of
 its nearest of 256 centroids, trained by k-means on a sample of the live
 vectors taken in key order (same documents, same codebooks on every node);
-the walk sums over the code's centroids. `dequantize` decodes the codes back into an arena, with their error:
+the walk sums over the code's centroids. It encodes the **residual** from
+the node's nearest of 256 coarse centroids (`hnsw::Coarse`, card #1008):
+codes of the whole vector spent their bytes on the cluster and could not
+tell its members apart, recall@10 0.598 at 1M vectors; residual codes give
+0.916 (f32 0.901 at ef 100). Without a graph PQ waits for one
+(`VectorIndex::target`, saved in the index's config). Binary quantization
+(`Sq8::bits == 1`, card #999) is withdrawn: `create_vector_index` and
+`quantize_vector_index` refuse it (`refuse_withdrawn_quantization`), since
+even on residuals it kept 0.54 at 1M; its code stays, reachable only from
+`VectorIndex::quantize_as`, for a later version. `dequantize` decodes the codes back into an arena, with their error:
 recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
-codes and bounds); V5 is still read.
+codes, bounds and coarse centroids); V5 is still read.
 
 A filtered search (`VECTOR_SEARCH(…, {filter})`, the driver's) follows the
 filter in the walk at level 0 (`Graph::search_filtered`, called through
