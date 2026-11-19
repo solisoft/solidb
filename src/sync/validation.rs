@@ -1,6 +1,6 @@
 //! What a collection asks of its documents, set on this node and logged
 //! for the others: its field rules (`storage::field_rules`) and its JSON
-//! schema. Every transport sets them through here, so that none forgets
+//! schema; and whether it keeps document history (`set_versioning`). Every transport sets them through here, so that none forgets
 //! the log. A peer applies them with `Collection::apply_field_rules` and
 //! `Collection::apply_schema`.
 
@@ -74,5 +74,30 @@ pub fn set_schema(
         None => collection.remove_json_schema()?,
     }
     append(log, database, name, Operation::SetSchema, logged);
+    Ok(())
+}
+
+/// Turn `collection`'s document versioning on or off, and log it for the
+/// other nodes (card #998): a replica that kept no history answered
+/// `AS OF` differently from the node that did.
+pub fn set_versioning(
+    collection: &Collection,
+    log: Option<&SyncLog>,
+    database: &str,
+    name: &str,
+    enabled: bool,
+) -> DbResult<()> {
+    if enabled {
+        collection.enable_versioning()?;
+    } else {
+        collection.disable_versioning()?;
+    }
+    append(
+        log,
+        database,
+        name,
+        Operation::SetVersioning,
+        serde_json::to_vec(&serde_json::json!({ "enabled": enabled })).ok(),
+    );
     Ok(())
 }

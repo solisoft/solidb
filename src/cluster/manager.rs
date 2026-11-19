@@ -410,6 +410,8 @@ impl ClusterManager {
                 (String, String),
                 Vec<(String, serde_json::Value)>,
             > = HashMap::new();
+            // Versions stamped at the origin's time (card #998).
+            let mut stamps: HashMap<String, u64> = HashMap::new();
             let mut other_entries = Vec::new();
 
             for entry in &valid_entries {
@@ -419,6 +421,13 @@ impl ClusterManager {
                             if let Ok(doc_value) = serde_json::from_slice::<serde_json::Value>(data)
                             {
                                 let key = (entry.database.clone(), entry.collection.clone());
+                                stamps.insert(
+                                    entry.document_key.clone(),
+                                    crate::storage::collection::versioning::origin_micros(
+                                        entry.hlc_ts,
+                                        entry.hlc_count,
+                                    ),
+                                );
                                 insert_update_groups
                                     .entry(key)
                                     .or_default()
@@ -489,7 +498,13 @@ impl ClusterManager {
                                 }
 
                                 let doc_count = docs_to_apply.len();
-                                let _ = crate::storage::foreign_keys::unchecked(|| collection.upsert_replicated(docs_to_apply));
+                                let group_stamps = docs_to_apply
+                                    .iter()
+                                    .filter_map(|(k, _)| stamps.get(k).map(|ts| (k.clone(), *ts)))
+                                    .collect();
+                                let _ = crate::storage::collection::versioning::at_origin(group_stamps, || {
+                                    crate::storage::foreign_keys::unchecked(|| collection.upsert_replicated(docs_to_apply))
+                                });
                                 tracing::debug!("Batch upserted {} docs to {}/{}", doc_count, db_name, coll_name);
                             }
                         }
@@ -586,8 +601,17 @@ impl ClusterManager {
                     let collection = db.get_collection(&entry.collection)?;
                     if let Some(data) = &entry.document_data {
                         let doc_value: serde_json::Value = serde_json::from_slice(data)?;
-                        crate::storage::foreign_keys::unchecked(|| {
-                            collection.insert_or_replace(doc_value)
+                        let stamp = std::collections::HashMap::from([(
+                            entry.document_key.clone(),
+                            crate::storage::collection::versioning::origin_micros(
+                                entry.hlc_ts,
+                                entry.hlc_count,
+                            ),
+                        )]);
+                        crate::storage::collection::versioning::at_origin(stamp, || {
+                            crate::storage::foreign_keys::unchecked(|| {
+                                collection.insert_or_replace(doc_value)
+                            })
                         })?;
                     }
                 }
@@ -595,8 +619,17 @@ impl ClusterManager {
                     let db = storage.get_database(&entry.database)?;
                     let collection = db.get_collection(&entry.collection)?;
                     // Ignore error if doc doesn't exist (idempotency)
-                    let _ = crate::storage::foreign_keys::unchecked(|| {
-                        collection.delete(&entry.document_key)
+                    let stamp = std::collections::HashMap::from([(
+                        entry.document_key.clone(),
+                        crate::storage::collection::versioning::origin_micros(
+                            entry.hlc_ts,
+                            entry.hlc_count,
+                        ),
+                    )]);
+                    let _ = crate::storage::collection::versioning::at_origin(stamp, || {
+                        crate::storage::foreign_keys::unchecked(|| {
+                            collection.delete(&entry.document_key)
+                        })
                     });
                 }
                 Operation::DeleteCollection => {
@@ -701,15 +734,17 @@ impl ClusterManager {
                         }
                     }
                 }
-                Operation::SetFieldRules | Operation::SetSchema => {
+                Operation::SetFieldRules | Operation::SetSchema | Operation::SetVersioning => {
                     if let Ok(db) = storage.get_database(&entry.database) {
                         if let Ok(coll) = db.get_collection(&entry.collection) {
-                            let applied = if entry.operation == Operation::SetFieldRules {
-                                coll.apply_field_rules(
+                            let applied = match entry.operation {
+                                Operation::SetFieldRules => coll.apply_field_rules(
                                     entry.document_data.as_deref().unwrap_or(b"[]"),
-                                )
-                            } else {
-                                coll.apply_schema(entry.document_data.as_deref())
+                                ),
+                                Operation::SetSchema => {
+                                    coll.apply_schema(entry.document_data.as_deref())
+                                }
+                                _ => coll.apply_versioning(entry.document_data.as_deref()),
                             };
                             if let Err(e) = applied {
                                 tracing::warn!(

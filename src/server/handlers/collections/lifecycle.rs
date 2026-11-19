@@ -182,6 +182,15 @@ pub async fn create_collection(
         let _ = log.append(entry);
         // After the creation: a peer applies it to a collection it has.
         crate::sync::validation::log_schema(&collection, Some(log), &db_name, &req.name);
+        if collection.is_versioned() {
+            let _ = log.append(crate::sync::log::LogEntry::new_op(
+                &db_name,
+                &req.name,
+                Operation::SetVersioning,
+                "",
+                serde_json::to_vec(&serde_json::json!({ "enabled": true })).ok(),
+            ));
+        }
     }
 
     Ok(Json(CreateCollectionResponse {

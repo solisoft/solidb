@@ -80,11 +80,13 @@ pub async fn update_collection_properties(
 
     // Enable/disable document versioning if specified
     if let Some(versioning) = payload.versioning {
-        if versioning {
-            collection.enable_versioning()?;
-        } else {
-            collection.disable_versioning()?;
-        }
+        crate::sync::validation::set_versioning(
+            &collection,
+            state.replication_log.as_deref(),
+            &db_name,
+            &coll_name,
+            versioning,
+        )?;
         tracing::info!(
             "Set document versioning for {}/{} to {}",
             db_name,

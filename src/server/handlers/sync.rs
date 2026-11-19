@@ -1155,6 +1155,7 @@ mod tests {
             Operation::ColumnarRenameColumn,
             Operation::SetFieldRules,
             Operation::SetSchema,
+            Operation::SetVersioning,
         ] {
             assert!(log_entry_to_sync_change(&entry(op)).is_none(), "{op:?}");
         }

@@ -80,6 +80,11 @@ pub enum Operation {
     /// applied stands.
     SetFieldRules,
     SetSchema,
+    /// Document versioning turned on or off for a collection (card #998):
+    /// the payload is `{"enabled": bool}`. The last one applied stands; a
+    /// node turning it on records its documents as a baseline, as the
+    /// origin did.
+    SetVersioning,
 }
 
 /// A single entry in the sync log
@@ -434,6 +439,13 @@ pub enum SyncMessage {
         collection: String,
         rules: Vec<u8>,
         schema: Option<Vec<u8>>,
+    },
+    /// Full sync: the collection keeps document history (card #998), sent
+    /// before its documents. The history itself is not sent: the node
+    /// records the documents it receives from then on.
+    FullSyncVersioning {
+        database: String,
+        collection: String,
     },
 }
 

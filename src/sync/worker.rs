@@ -777,6 +777,8 @@ impl SyncWorker {
                 if let Ok(db) = self.storage.get_database(database) {
                     if let Ok(coll) = db.system_collection(collection) {
                         let mut batch_data = Vec::with_capacity(entries.len());
+                        // Versions stamped at the origin's time (card #998).
+                        let mut stamps = std::collections::HashMap::new();
 
                         for entry in entries {
                             // Check for duplicate
@@ -795,6 +797,13 @@ impl SyncWorker {
                                             e
                                         ))
                                     })?;
+                                stamps.insert(
+                                    entry.document_key.clone(),
+                                    crate::storage::collection::versioning::origin_micros(
+                                        entry.hlc_ts,
+                                        entry.hlc_count,
+                                    ),
+                                );
                                 batch_data.push((entry.document_key.clone(), doc));
                             }
                         }
@@ -810,9 +819,13 @@ impl SyncWorker {
                                     Vec::new()
                                 };
 
-                            if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
-                                coll.upsert_replicated(batch_data)
-                            }) {
+                            if let Err(e) =
+                                crate::storage::collection::versioning::at_origin(stamps, || {
+                                    crate::storage::foreign_keys::unchecked(|| {
+                                        coll.upsert_replicated(batch_data)
+                                    })
+                                })
+                            {
                                 warn!(
                                     "apply_batch: upsert failed for {}.{}: {}",
                                     database, collection, e
@@ -830,6 +843,7 @@ impl SyncWorker {
                 if let Ok(db) = self.storage.get_database(database) {
                     if let Ok(coll) = db.system_collection(collection) {
                         let mut keys_to_delete = Vec::with_capacity(entries.len());
+                        let mut stamps = std::collections::HashMap::new();
 
                         for entry in entries {
                             // Check for duplicate
@@ -839,6 +853,13 @@ impl SyncWorker {
                             {
                                 continue;
                             }
+                            stamps.insert(
+                                entry.document_key.clone(),
+                                crate::storage::collection::versioning::origin_micros(
+                                    entry.hlc_ts,
+                                    entry.hlc_count,
+                                ),
+                            );
                             keys_to_delete.push(entry.document_key.clone());
                         }
 
@@ -850,9 +871,12 @@ impl SyncWorker {
                                     crate::server::auth::note_replicated_api_key_delete(key);
                                 }
                             }
-                            let _ = crate::storage::foreign_keys::unchecked(|| {
-                                coll.delete_batch(keys_to_delete)
-                            });
+                            let _ =
+                                crate::storage::collection::versioning::at_origin(stamps, || {
+                                    crate::storage::foreign_keys::unchecked(|| {
+                                        coll.delete_batch(keys_to_delete)
+                                    })
+                                });
                         }
                     }
                 }
@@ -876,6 +900,14 @@ impl SyncWorker {
     }
 
     /// Apply a sync entry to local storage
+    /// The version timestamp of `entry`'s document: its origin's time.
+    fn origin_stamp(entry: &SyncEntry) -> std::collections::HashMap<String, u64> {
+        std::collections::HashMap::from([(
+            entry.document_key.clone(),
+            crate::storage::collection::versioning::origin_micros(entry.hlc_ts, entry.hlc_count),
+        )])
+    }
+
     async fn apply_entry(&self, entry: &SyncEntry) -> Result<(), TransportError> {
         // Check for duplicate
         if self
@@ -951,9 +983,17 @@ impl SyncWorker {
                                     None
                                 };
 
-                            if let Err(e) = crate::storage::foreign_keys::unchecked(|| {
-                                coll.upsert_replicated(vec![(entry.document_key.clone(), doc)])
-                            }) {
+                            if let Err(e) = crate::storage::collection::versioning::at_origin(
+                                Self::origin_stamp(entry),
+                                || {
+                                    crate::storage::foreign_keys::unchecked(|| {
+                                        coll.upsert_replicated(vec![(
+                                            entry.document_key.clone(),
+                                            doc,
+                                        )])
+                                    })
+                                },
+                            ) {
                                 warn!(
                                     "apply_entry: upsert failed for {}: {}",
                                     entry.document_key, e
@@ -968,9 +1008,14 @@ impl SyncWorker {
             Operation::Delete => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
-                        let _ = crate::storage::foreign_keys::unchecked(|| {
-                            coll.delete(&entry.document_key)
-                        });
+                        let _ = crate::storage::collection::versioning::at_origin(
+                            Self::origin_stamp(entry),
+                            || {
+                                crate::storage::foreign_keys::unchecked(|| {
+                                    coll.delete(&entry.document_key)
+                                })
+                            },
+                        );
                     }
                 }
                 // Evict replicated _api_keys deletes from the in-memory auth
@@ -1139,13 +1184,16 @@ impl SyncWorker {
                     }
                 }
             }
-            Operation::SetFieldRules | Operation::SetSchema => {
+            Operation::SetFieldRules | Operation::SetSchema | Operation::SetVersioning => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
-                        let applied = if entry.operation == Operation::SetFieldRules {
-                            coll.apply_field_rules(entry.document_data.as_deref().unwrap_or(b"[]"))
-                        } else {
-                            coll.apply_schema(entry.document_data.as_deref())
+                        let applied = match entry.operation {
+                            Operation::SetFieldRules => coll
+                                .apply_field_rules(entry.document_data.as_deref().unwrap_or(b"[]")),
+                            Operation::SetSchema => {
+                                coll.apply_schema(entry.document_data.as_deref())
+                            }
+                            _ => coll.apply_versioning(entry.document_data.as_deref()),
                         };
                         if let Err(e) = applied {
                             warn!(
@@ -1469,6 +1517,23 @@ impl SyncWorker {
                         if let Err(e) = coll.apply_schema(Some(&schema)) {
                             warn!(
                                 "Full sync: schema of {}.{} not set: {}",
+                                database, collection, e
+                            );
+                        }
+                    }
+                }
+                SyncMessage::FullSyncVersioning {
+                    database,
+                    collection,
+                } => {
+                    if let Ok(coll) = self
+                        .storage
+                        .get_database(&database)
+                        .and_then(|db| db.system_collection(&collection))
+                    {
+                        if let Err(e) = coll.enable_versioning() {
+                            warn!(
+                                "Full sync: versioning of {}.{} not enabled: {}",
                                 database, collection, e
                             );
                         }
@@ -1850,6 +1915,13 @@ impl SyncWorker {
                             rules: serde_json::to_vec(rules.as_ref())
                                 .unwrap_or_else(|_| b"[]".to_vec()),
                             schema,
+                        };
+                        ConnectionPool::write_message(stream, &message).await?;
+                    }
+                    if coll.is_versioned() {
+                        let message = SyncMessage::FullSyncVersioning {
+                            database: db_name.clone(),
+                            collection: coll_name.clone(),
                         };
                         ConnectionPool::write_message(stream, &message).await?;
                     }
@@ -2363,6 +2435,7 @@ fn in_full_sync(operation: Operation) -> bool {
             | Operation::DropForeignKey
             | Operation::SetFieldRules
             | Operation::SetSchema
+            | Operation::SetVersioning
     )
 }
 
@@ -2414,6 +2487,7 @@ mod tests {
             Operation::DropForeignKey,
             Operation::SetFieldRules,
             Operation::SetSchema,
+            Operation::SetVersioning,
         ] {
             assert!(in_full_sync(skipped), "{skipped:?}");
         }

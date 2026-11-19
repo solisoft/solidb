@@ -43,6 +43,38 @@ pub struct VersionRecord {
     pub value: Option<Value>,
 }
 
+thread_local! {
+    /// Version timestamps a replicated write takes from its origin
+    /// ([`at_origin`]): document key -> epoch microseconds.
+    static ORIGIN_STAMPS: std::cell::RefCell<Option<std::collections::HashMap<String, u64>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with the versions it writes stamped with their origin's time
+/// (card #998): a replica applying a peer's writes records them at the
+/// instant the origin made them, not when they arrived, so `AS OF` answers
+/// the same on every node. `stamps` maps a document key to epoch
+/// microseconds; a key it does not name takes this node's clock.
+pub fn at_origin<T>(stamps: std::collections::HashMap<String, u64>, f: impl FnOnce() -> T) -> T {
+    let previous = ORIGIN_STAMPS.with(|s| s.borrow_mut().replace(stamps));
+    let out = f();
+    ORIGIN_STAMPS.with(|s| *s.borrow_mut() = previous);
+    out
+}
+
+/// The version timestamp of a replicated write: its HLC physical time
+/// (milliseconds) as microseconds, the logical counter in the sub-
+/// millisecond digits so writes of one millisecond keep their order.
+pub fn origin_micros(hlc_ms: u64, hlc_count: u32) -> u64 {
+    hlc_ms.saturating_mul(1000) + u64::from(hlc_count.min(999))
+}
+
+fn version_micros_for(key: &str) -> u64 {
+    ORIGIN_STAMPS
+        .with(|s| s.borrow().as_ref().and_then(|m| m.get(key).copied()))
+        .unwrap_or_else(next_version_micros)
+}
+
 // Monotonic microsecond clock: rapid writes to the same key still get distinct,
 // correctly-ordered version timestamps (real wall-clock micros, bumped by +1 on
 // ties so two versions never share a key).
@@ -267,6 +299,20 @@ impl Collection {
         Ok(())
     }
 
+    /// Versioning as another node set it (`Operation::SetVersioning`):
+    /// the payload is `{"enabled": bool}`.
+    pub fn apply_versioning(&self, payload: Option<&[u8]>) -> DbResult<()> {
+        let enabled = payload
+            .and_then(|b| serde_json::from_slice::<Value>(b).ok())
+            .and_then(|v| v.get("enabled").and_then(Value::as_bool))
+            .ok_or_else(|| DbError::BadRequest("SetVersioning: no `enabled`".to_string()))?;
+        if enabled {
+            self.enable_versioning()
+        } else {
+            self.disable_versioning()
+        }
+    }
+
     /// Disable versioning (existing history is retained until pruned/dropped).
     pub fn disable_versioning(&self) -> DbResult<()> {
         if let Some(cf) = self.ks.handle(&self.db) {
@@ -285,7 +331,7 @@ impl Collection {
         key: &str,
         value: Option<&Value>,
     ) {
-        let ts = next_version_micros();
+        let ts = version_micros_for(key);
         let record = VersionRecord {
             ts,
             deleted: value.is_none(),
