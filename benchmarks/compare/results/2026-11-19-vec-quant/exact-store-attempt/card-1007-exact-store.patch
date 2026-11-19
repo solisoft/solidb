@@ -1,0 +1,328 @@
+diff --git i/src/storage/collection/crud.rs w/src/storage/collection/crud.rs
+index 7e90f054..8f97329a 100644
+--- i/src/storage/collection/crud.rs
++++ w/src/storage/collection/crud.rs
+@@ -2655,7 +2655,7 @@ impl Collection {
+         // shard config all survive the truncate. `doc:` additionally covers the
+         // legacy nested `doc:ttl_exp:` expiry-index entries; `ttl_exp;` sorts
+         // before `ttl_meta:`, so TTL index definitions survive too.
+-        let data_ranges: [(&[u8], &[u8]); 12] = [
++        let data_ranges: [(&[u8], &[u8]); 13] = [
+             (b"doc:", b"doc;"),         // documents + legacy TTL expiry entries
+             (b"ttl_exp:", b"ttl_exp;"), // TTL expiry entries
+             (b"idx:", b"idx;"),         // persistent / hash index entries
+@@ -2672,6 +2672,8 @@ impl Collection {
+             (b"docv:", b"docv;"),
+             // Markers for documents that are gone can never complete.
+             (b"embed_pending:", b"embed_pending;"),
++            // Exact vectors of quantized indexes (card #1007).
++            (b"vexact:", b"vexact;"),
+         ];
+ 
+         // The pending-embed gauge is process-wide; the markers are about to be
+diff --git i/src/storage/collection/vector.rs w/src/storage/collection/vector.rs
+index 35b4501b..81a424e3 100644
+--- i/src/storage/collection/vector.rs
++++ w/src/storage/collection/vector.rs
+@@ -232,6 +232,7 @@ impl Collection {
+         // quantize call reached only the node it was sent to.
+         if config.quantization != VectorQuantization::None {
+             index.quantize_as(config.quantization)?;
++            self.store_exact_vectors(&config)?;
+         }
+ 
+         // Persist populated index
+@@ -261,6 +262,7 @@ impl Collection {
+ 
+         // Remove from memory
+         self.vector_indexes.remove(name);
++        let _ = self.clear_exact_vectors(name);
+ 
+         // Remove from disk
+         let deleted = db
+@@ -335,6 +337,73 @@ impl Collection {
+     /// best first, the best `k` kept: a quantized graph's distances are
+     /// approximate. A candidate deleted since it was indexed is dropped;
+     /// one whose vector cannot be read keeps the graph's score.
++    /// Keep `vector` as the exact vector of `doc_key` for index `name`.
++    fn put_exact_vector(&self, name: &str, doc_key: &str, vector: &[f32]) {
++        if let Some(cf) = self.ks.handle(&self.db) {
++            let _ = self.db.put_ks(
++                &cf,
++                exact_key(name, doc_key).as_bytes(),
++                exact_bytes(vector),
++            );
++        }
++    }
++
++    /// The exact vectors of every document for a quantized index, written
++    /// by batches of 1,000 from a streaming scan of the field it reads.
++    fn store_exact_vectors(&self, config: &VectorIndexConfig) -> DbResult<()> {
++        let cf = self.ks.live(&self.db, &self.name)?;
++        let top = config
++            .field
++            .split('.')
++            .next()
++            .unwrap_or(&config.field)
++            .to_string();
++        let mut batch = crate::storage::kv::KvBatch::default();
++        let mut staged = 0usize;
++        self.for_each_value(Some(&[top, "_key".to_string()]), |doc| {
++            let key = doc.get("_key").and_then(Value::as_str);
++            let vector = self.extract_vector(&doc, &config.field, config.dimension);
++            if let (Some(key), Some(vector)) = (key, vector) {
++                batch.put_ks(
++                    &cf,
++                    exact_key(&config.name, key).as_bytes(),
++                    exact_bytes(&vector),
++                );
++                staged += 1;
++                if staged == 1_000 {
++                    self.db
++                        .write(std::mem::take(&mut batch))
++                        .map_err(|e| DbError::InternalError(format!("exact vectors: {e}")))?;
++                    staged = 0;
++                }
++            }
++            Ok(())
++        })?;
++        if staged > 0 {
++            self.db
++                .write(batch)
++                .map_err(|e| DbError::InternalError(format!("exact vectors: {e}")))?;
++        }
++        Ok(())
++    }
++
++    /// Drop index `name`'s exact vectors.
++    fn clear_exact_vectors(&self, name: &str) -> DbResult<()> {
++        let Some(cf) = self.ks.handle(&self.db) else {
++            return Ok(());
++        };
++        let from = exact_prefix(name).into_bytes();
++        let mut to = from.clone();
++        if let Some(last) = to.last_mut() {
++            *last += 1; // ':' -> ';', the end of the prefix's range
++        }
++        let mut batch = crate::storage::kv::KvBatch::default();
++        batch.delete_range_ks(&cf, from, to);
++        self.db
++            .write(batch)
++            .map_err(|e| DbError::InternalError(format!("exact vectors: {e}")))
++    }
++
+     fn rescored(
+         &self,
+         index: &VectorIndex,
+@@ -350,13 +419,28 @@ impl Collection {
+             .unwrap_or(&config.field)
+             .to_string();
+         let fields = [top];
++        let cf = self.ks.handle(&self.db);
+         let mut out: Vec<VectorSearchResult> = found
+             .into_iter()
+             .filter_map(|r| {
+-                let doc = self.get_value_projected(&r.doc_key, &fields).ok()?;
+-                let score = self
+-                    .extract_vector(&doc, &config.field, config.dimension)
+-                    .map_or(r.score, |v| index.exact_score(query, &v));
++                // The exact vector kept on disk, as raw floats; the
++                // document's field when it is not there (an index
++                // quantized before the store existed).
++                let stored = cf.as_ref().and_then(|cf| {
++                    self.db
++                        .get_ks(cf, exact_key(&config.name, &r.doc_key).as_bytes())
++                        .ok()
++                        .flatten()
++                        .and_then(|b| exact_vector(&b, config.dimension))
++                });
++                let score = match stored {
++                    Some(v) => index.exact_score(query, &v),
++                    None => {
++                        let doc = self.get_value_projected(&r.doc_key, &fields).ok()?;
++                        self.extract_vector(&doc, &config.field, config.dimension)
++                            .map_or(r.score, |v| index.exact_score(query, &v))
++                    }
++                };
+                 Some(VectorSearchResult {
+                     doc_key: r.doc_key,
+                     score,
+@@ -581,6 +665,7 @@ impl Collection {
+         }
+         refuse_withdrawn_quantization(quantization)?;
+         index.quantize_as(quantization)?;
++        self.store_exact_vectors(index.config())?;
+         self.set_vector_index_quantization(name, quantization)?;
+         self.persist_vector_indexes()?;
+ 
+@@ -607,6 +692,7 @@ impl Collection {
+     pub fn dequantize_vector_index(&self, name: &str) -> DbResult<()> {
+         let index = self.get_vector_index(name)?;
+         index.dequantize();
++        self.clear_exact_vectors(name)?;
+         self.set_vector_index_quantization(name, VectorQuantization::None)?;
+         self.persist_vector_indexes()
+     }
+@@ -723,6 +809,9 @@ impl Collection {
+                     self.extract_vector(doc_value, &config.field, config.dimension)
+                 {
+                     let _ = index.insert(doc_key, &vector);
++                    if index.keeps_exact_vectors() {
++                        self.put_exact_vector(&config.name, doc_key, &vector);
++                    }
+                     // Mark for (throttled) persistence; the actual disk write is
+                     // deferred so a bulk load doesn't re-serialize the whole
+                     // index per batch.
+@@ -760,6 +849,16 @@ impl Collection {
+ 
+     pub(crate) fn update_vector_indexes_on_delete(&self, doc_key: &str) {
+         let mut changed = false;
++        // Exact vectors of quantized indexes (card #1007).
++        if let Some(cf) = self.ks.handle(&self.db) {
++            for entry in self.vector_indexes.iter() {
++                if entry.keeps_exact_vectors() {
++                    let _ = self
++                        .db
++                        .delete_ks(&cf, exact_key(entry.key(), doc_key).as_bytes());
++                }
++            }
++        }
+         for entry in self.vector_indexes.iter() {
+             if let Ok(true) = entry.remove(doc_key) {
+                 changed = true;
+@@ -1037,6 +1136,36 @@ fn refuse_withdrawn_quantization(quantization: VectorQuantization) -> DbResult<(
+     Ok(())
+ }
+ 
++/// Exact vectors of a quantized index, on disk (card #1007):
++/// `vexact:<len>:<index>:<document key>` -> the vector as little-endian f32.
++/// Re-scoring read each candidate's document and decoded it to take its
++/// vector: about 45% of a PQ search. The index name carries its length so
++/// that one index's range never covers another's.
++pub(crate) const VEXACT_PREFIX: &str = "vexact:";
++
++fn exact_prefix(index: &str) -> String {
++    format!("{VEXACT_PREFIX}{}:{index}:", index.len())
++}
++
++fn exact_key(index: &str, doc_key: &str) -> String {
++    format!("{}{doc_key}", exact_prefix(index))
++}
++
++fn exact_bytes(vector: &[f32]) -> Vec<u8> {
++    vector.iter().flat_map(|x| x.to_le_bytes()).collect()
++}
++
++fn exact_vector(bytes: &[u8], dim: usize) -> Option<Vec<f32>> {
++    (bytes.len() == dim * 4).then(|| {
++        bytes
++            .as_chunks::<4>()
++            .0
++            .iter()
++            .map(|b| f32::from_le_bytes(*b))
++            .collect()
++    })
++}
++
+ /// Query texts already embedded (card #1003): (database, provider, model,
+ /// dimension, text) -> vector. A search typed again does not pay the
+ /// provider again. Bounded: emptied when it reaches its size.
+@@ -1106,6 +1235,71 @@ mod truncate_tests {
+     use crate::storage::StorageEngine;
+     use serde_json::json;
+ 
++    /// Card #1007: a quantized index keeps its exact vectors on disk for
++    /// re-scoring, in step with every write, and only while quantized.
++    #[test]
++    fn a_quantized_index_keeps_its_exact_vectors() {
++        use super::{exact_key, exact_vector};
++        use crate::storage::index::VectorQuantization;
++        use crate::storage::keyspace::KsDbExt;
++        use crate::storage::VectorIndexConfig;
++        let tmp = tempfile::TempDir::new().unwrap();
++        let engine = StorageEngine::new(tmp.path().to_str().unwrap()).unwrap();
++        engine.create_database("d".to_string()).unwrap();
++        let db = engine.get_database("d").unwrap();
++        db.create_collection("c".to_string(), None).unwrap();
++        let coll = db.get_collection("c").unwrap();
++        let docs: Vec<serde_json::Value> = (0..10_200)
++            .map(|i| {
++                let x = i as f64 / 10_200.0;
++                json!({"_key": format!("k{i}"), "emb": [x, 1.0 - x, 0.5, 0.25]})
++            })
++            .collect();
++        coll.insert_batch(docs).unwrap();
++        let stored = |key: &str| -> Option<Vec<f32>> {
++            let cf = coll.ks.handle(&coll.db).unwrap();
++            coll.db
++                .get_ks(&cf, exact_key("idx", key).as_bytes())
++                .unwrap()
++                .and_then(|b| exact_vector(&b, 4))
++        };
++        coll.create_vector_index(
++            VectorIndexConfig::new("idx".to_string(), "emb".to_string(), 4)
++                .with_quantization(VectorQuantization::Pq),
++        )
++        .unwrap();
++        assert!(coll.get_vector_index("idx").unwrap().graph_is_quantized());
++        assert_eq!(stored("k0"), Some(vec![0.0, 1.0, 0.5, 0.25]));
++        assert!(stored("k10199").is_some());
++
++        // A write and a delete follow.
++        coll.update("k0", json!({"emb": [0.5, 0.5, 0.5, 0.5]}))
++            .unwrap();
++        assert_eq!(stored("k0"), Some(vec![0.5, 0.5, 0.5, 0.5]));
++        coll.delete("k1").unwrap();
++        assert_eq!(stored("k1"), None);
++        // Searches re-score from them: every score is the exact cosine of
++        // the stored vector (which candidates come back is the codes' call,
++        // and four dimensions make one coarse sub-vector).
++        let q = [0.3f32, 0.7, 0.5, 0.25];
++        let found = coll.vector_search("idx", &q, 5, None).unwrap();
++        assert_eq!(found.len(), 5);
++        for r in &found {
++            let v = stored(&r.doc_key).unwrap();
++            let exact = crate::storage::vector::cosine_similarity(&q, &v);
++            assert!((r.score - exact).abs() < 1e-6, "{r:?} vs {exact}");
++        }
++
++        // Gone with the quantization, and with the documents.
++        coll.dequantize_vector_index("idx").unwrap();
++        assert_eq!(stored("k2"), None);
++        coll.quantize_vector_index("idx", VectorQuantization::Scalar)
++            .unwrap();
++        assert!(stored("k2").is_some());
++        coll.truncate().unwrap();
++        assert_eq!(stored("k2"), None);
++    }
++
+     #[test]
+     fn truncate_removes_pending_embed_markers() {
+         let tmp = tempfile::TempDir::new().unwrap();
+diff --git i/src/storage/vector.rs w/src/storage/vector.rs
+index 6389ec58..aa977b31 100644
+--- i/src/storage/vector.rs
++++ w/src/storage/vector.rs
+@@ -990,6 +990,13 @@ impl VectorIndex {
+             || self.graph_is_quantized()
+     }
+ 
++    /// Whether the collection keeps this index's exact vectors on disk for
++    /// re-scoring (card #1007): the graph keeps codes, or will once built.
++    pub fn keeps_exact_vectors(&self) -> bool {
++        *self.target.read().unwrap_or_else(|e| e.into_inner()) != VectorQuantization::None
++            || self.graph_is_quantized()
++    }
++
+     /// The graph searches codes: what it finds is re-scored against the
+     /// exact vectors by the caller, which reads them from the documents.
+     pub fn graph_is_quantized(&self) -> bool {
+@@ -1856,7 +1863,7 @@ mod tests {
+             if kind != VectorQuantization::None {
+                 index.quantize_as(kind).unwrap();
+             }
+-            for factor in [4usize, 20, 50] {
++            for factor in [1usize, 4, 20, 50] {
+                 let fetch = 10 * factor;
+                 let mut found = 0;
+                 for (q, want) in qs.iter().zip(&want) {

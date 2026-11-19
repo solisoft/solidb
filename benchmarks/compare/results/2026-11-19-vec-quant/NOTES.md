@@ -55,3 +55,26 @@ residual from the vector's nearest of 256 coarse centroids (k-means):
   vectors (0.854 at 20 candidates a result): withdrawn, refused by the API.
 - The same effect reproduces in minutes at 100k vectors:
   `measure_quantized_recall_at_scale` (ignored test in `storage::vector`).
+
+## Re-scoring from an on-disk copy of the exact vectors (#1007, not kept)
+
+A profile of a PQ search (`perf`, 200k vectors) put ~45% of the server's
+time in decoding the 200 candidate documents to take their vectors, 18% in
+the walk on codes. `exact-store-attempt/`: the exact vectors kept on disk
+as raw f32 (`vexact:` keys, in step with every write) and re-scoring read
+from there (`card-1007-exact-store.patch`, on top of 278371a0):
+
+| 1M x 128 | search ef 100, 1 client | filtered ef 40, 1 client | RSS |
+|---|---|---|---|
+| pq, documents | ~490/s | 134/s | 3.54 GB |
+| pq, exact store | 688/s | 146/s | 4.35 GB |
+| scalar, documents | 1,391/s | 356/s | 3.70 GB |
+| scalar, exact store | 1,119/s | 217/s | 4.11 GB |
+
+PQ gains 40%, scalar loses 20-39%, and memory goes up past f32's 3.97 GB:
+the copy lands in the storage cache beside the documents. Not kept.
+
+Without re-scoring, scalar keeps 0.954 of the true top 10 at 100k vectors
+(f32 0.998; 0.999 with 4 candidates a result): the codes alone do not hold
+recall, so the re-scoring is needed, and at 128 dimensions the memory
+quantization saves (0.27-0.45 GB of ~4) does not pay for it.
