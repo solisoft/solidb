@@ -438,6 +438,19 @@ pub fn create_router(
             "/_api/database/{db}/collection/{name}/properties",
             put(update_collection_properties),
         )
+        // A versioned collection's history (card #1001).
+        .route(
+            "/_api/database/{db}/collection/{name}/restore",
+            post(restore_collection),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/version-tags",
+            get(list_version_tags).post(create_version_tag),
+        )
+        .route(
+            "/_api/database/{db}/collection/{name}/version-tags/{tag}",
+            delete(delete_version_tag),
+        )
         .route(
             "/_api/database/{db}/collection/{name}/export",
             get(export_collection),

@@ -1235,6 +1235,32 @@ impl<'a> QueryExecutor<'a> {
                     .unwrap_or(Value::Null))
             }
 
+            // VERSION_TAG(collection, name) - a named instant (card #1001),
+            // as `{"micros": …, "tag": name}`, which `SYSTEM_TIME AS OF` and
+            // `DOC_AS_OF` read to the microsecond.
+            "VERSION_TAG" => {
+                if evaluated_args.len() != 2 {
+                    return Err(DbError::ExecutionError(
+                        "VERSION_TAG requires 2 arguments: collection, name".to_string(),
+                    ));
+                }
+                let coll_name = evaluated_args[0].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("VERSION_TAG: collection must be a string".to_string())
+                })?;
+                let name = evaluated_args[1].as_str().ok_or_else(|| {
+                    DbError::ExecutionError("VERSION_TAG: name must be a string".to_string())
+                })?;
+                let micros = self
+                    .get_collection(coll_name)?
+                    .version_tag(name)
+                    .ok_or_else(|| {
+                        DbError::ExecutionError(format!(
+                            "VERSION_TAG: '{coll_name}' has no version tag '{name}'"
+                        ))
+                    })?;
+                Ok(serde_json::json!({ "micros": micros, "tag": name }))
+            }
+
             // DOC_HISTORY(collection, key) - version history, newest first.
             "DOC_HISTORY" => {
                 if evaluated_args.len() != 2 {
@@ -1704,6 +1730,10 @@ pub(crate) fn as_of_micros(v: &Value) -> DbResult<u64> {
 }
 
 fn parse_as_of_micros(v: &Value) -> DbResult<u64> {
+    // An exact instant (`VERSION_TAG`, or a `ts_micros` from DOC_HISTORY).
+    if let Some(micros) = v.get("micros").and_then(Value::as_u64) {
+        return Ok(micros);
+    }
     let millis: u64 = if let Some(n) = v.as_u64() {
         n
     } else if let Some(f) = v.as_f64() {

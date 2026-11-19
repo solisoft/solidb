@@ -734,7 +734,10 @@ impl ClusterManager {
                         }
                     }
                 }
-                Operation::SetFieldRules | Operation::SetSchema | Operation::SetVersioning => {
+                Operation::SetFieldRules
+                | Operation::SetSchema
+                | Operation::SetVersioning
+                | Operation::SetVersionTag => {
                     if let Ok(db) = storage.get_database(&entry.database) {
                         if let Ok(coll) = db.get_collection(&entry.collection) {
                             let applied = match entry.operation {
@@ -743,6 +746,9 @@ impl ClusterManager {
                                 ),
                                 Operation::SetSchema => {
                                     coll.apply_schema(entry.document_data.as_deref())
+                                }
+                                Operation::SetVersionTag => {
+                                    coll.apply_version_tag(entry.document_data.as_deref())
                                 }
                                 _ => coll.apply_versioning(entry.document_data.as_deref()),
                             };

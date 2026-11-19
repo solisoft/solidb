@@ -452,6 +452,7 @@ pub const CONTEXT: &[&str] = &[
     "RERANK",
     "RAG_PIPELINE",
     "DOC_AS_OF",
+    "VERSION_TAG",
     "DOC_HISTORY",
     "SNAPSHOT_DIFF",
     "CURRENT_USER",

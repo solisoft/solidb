@@ -603,6 +603,14 @@ Enable versioning per collection (`Collection::enable_versioning`, or `SOLIDB_MA
 | :--- | :--- | :--- |
 | `DOC_AS_OF(coll, key, ts)` | The document as of `ts` (epoch millis or RFC3339), or `null` if it did not exist. | `DOC_AS_OF("orders", "o1", "2026-07-01T00:00:00Z")` |
 | `DOC_HISTORY(coll, key)` | Full version history, newest first: `[{ ts, deleted, value }, ...]`. | `DOC_HISTORY("orders", "o1")` |
+| `VERSION_TAG(coll, name)` | A named instant of a versioned collection, as `{micros, tag}`; `SYSTEM_TIME AS OF` and `DOC_AS_OF` read it to the microsecond. | `FOR o IN orders SYSTEM_TIME AS OF VERSION_TAG("orders", "v1") RETURN o` |
+
+An instant is epoch milliseconds, an RFC3339 string, or `{"micros": n}` for an exact microsecond (what `VERSION_TAG` returns, or a `ts_micros` of `DOC_HISTORY`).
+
+**Restore and named instants** (HTTP, versioned collections, not sharded):
+- `POST /_api/database/{db}/collection/{name}/restore` with `{"as_of": …}` or `{"tag": "v1"}`, and optionally `{"keys": [...]}`: every document that differs from its version then is written again, every one that did not exist then is removed, every one removed since comes back. These are ordinary writes, versioned and replicated, so a restore is undone by restoring to an instant before it. Answers `{restored, removed}`.
+- `GET|POST /_api/database/{db}/collection/{name}/version-tags` (`{"name", "as_of"?}`, now when absent) and `DELETE …/version-tags/{tag}`. A named instant keeps, past `SOLIDB_MAX_VERSIONS`, the version of each document in effect then. Names are replicated.
+- Truncating a versioned collection keeps its history: each document gets a delete tombstone, so `AS OF` an earlier instant still finds it and a restore brings it back.
 
 Scope: `AS OF` answers primary-key reads and history listing. Secondary indexes are current-version only, so a historical read is never index-accelerated.
 

@@ -1156,6 +1156,7 @@ mod tests {
             Operation::SetFieldRules,
             Operation::SetSchema,
             Operation::SetVersioning,
+            Operation::SetVersionTag,
         ] {
             assert!(log_entry_to_sync_change(&entry(op)).is_none(), "{op:?}");
         }

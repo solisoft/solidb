@@ -1184,7 +1184,10 @@ impl SyncWorker {
                     }
                 }
             }
-            Operation::SetFieldRules | Operation::SetSchema | Operation::SetVersioning => {
+            Operation::SetFieldRules
+            | Operation::SetSchema
+            | Operation::SetVersioning
+            | Operation::SetVersionTag => {
                 if let Ok(db) = self.storage.get_database(&entry.database) {
                     if let Ok(coll) = db.system_collection(&entry.collection) {
                         let applied = match entry.operation {
@@ -1192,6 +1195,9 @@ impl SyncWorker {
                                 .apply_field_rules(entry.document_data.as_deref().unwrap_or(b"[]")),
                             Operation::SetSchema => {
                                 coll.apply_schema(entry.document_data.as_deref())
+                            }
+                            Operation::SetVersionTag => {
+                                coll.apply_version_tag(entry.document_data.as_deref())
                             }
                             _ => coll.apply_versioning(entry.document_data.as_deref()),
                         };
@@ -1525,6 +1531,7 @@ impl SyncWorker {
                 SyncMessage::FullSyncVersioning {
                     database,
                     collection,
+                    tags,
                 } => {
                     if let Ok(coll) = self
                         .storage
@@ -1536,6 +1543,9 @@ impl SyncWorker {
                                 "Full sync: versioning of {}.{} not enabled: {}",
                                 database, collection, e
                             );
+                        }
+                        for (name, micros) in tags {
+                            let _ = coll.create_version_tag(&name, Some(micros));
                         }
                     }
                 }
@@ -1922,6 +1932,7 @@ impl SyncWorker {
                         let message = SyncMessage::FullSyncVersioning {
                             database: db_name.clone(),
                             collection: coll_name.clone(),
+                            tags: coll.version_tags(),
                         };
                         ConnectionPool::write_message(stream, &message).await?;
                     }
@@ -2436,6 +2447,7 @@ fn in_full_sync(operation: Operation) -> bool {
             | Operation::SetFieldRules
             | Operation::SetSchema
             | Operation::SetVersioning
+            | Operation::SetVersionTag
     )
 }
 
@@ -2488,6 +2500,7 @@ mod tests {
             Operation::SetFieldRules,
             Operation::SetSchema,
             Operation::SetVersioning,
+            Operation::SetVersionTag,
         ] {
             assert!(in_full_sync(skipped), "{skipped:?}");
         }

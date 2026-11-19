@@ -31,6 +31,8 @@ pub mod types;
 pub mod utils;
 mod window;
 
+/// How `AS OF` reads an instant: epoch millis, RFC3339, or `{"micros": n}`.
+pub(crate) use evaluate::as_of_micros;
 pub(crate) use execution::update_guard;
 pub use execution::SmallRaw;
 pub use helpers::{

@@ -101,3 +101,47 @@ pub fn set_versioning(
     );
     Ok(())
 }
+
+/// Name an instant of `collection` (now when `micros` is `None`) and log
+/// it for the other nodes (card #1001). Returns the instant, in epoch
+/// microseconds.
+pub fn set_version_tag(
+    collection: &Collection,
+    log: Option<&SyncLog>,
+    database: &str,
+    name: &str,
+    tag: &str,
+    micros: Option<u64>,
+) -> DbResult<u64> {
+    let ts = collection.create_version_tag(tag, micros)?;
+    append(
+        log,
+        database,
+        name,
+        Operation::SetVersionTag,
+        serde_json::to_vec(&serde_json::json!({ "name": tag.trim(), "micros": ts })).ok(),
+    );
+    Ok(ts)
+}
+
+/// Remove a named instant of `collection`, and log it. `false` when there
+/// was none (nothing is logged).
+pub fn delete_version_tag(
+    collection: &Collection,
+    log: Option<&SyncLog>,
+    database: &str,
+    name: &str,
+    tag: &str,
+) -> DbResult<bool> {
+    let removed = collection.delete_version_tag(tag)?;
+    if removed {
+        append(
+            log,
+            database,
+            name,
+            Operation::SetVersionTag,
+            serde_json::to_vec(&serde_json::json!({ "name": tag, "deleted": true })).ok(),
+        );
+    }
+    Ok(removed)
+}

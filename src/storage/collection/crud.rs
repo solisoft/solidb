@@ -2667,7 +2667,8 @@ impl Collection {
             (b"blo_idx:", b"blo_idx;"), // blob bloom-filter index
             (b"cfo_idx:", b"cfo_idx;"), // cuckoo-filter index
             // History of documents that no longer exist has no subject, and
-            // would let an `AS OF` read resurrect them.
+            // would let an `AS OF` read resurrect them. Kept when the
+            // collection is versioned, with a tombstone for each document.
             (b"docv:", b"docv;"),
             // Markers for documents that are gone can never complete.
             (b"embed_pending:", b"embed_pending;"),
@@ -2698,8 +2699,34 @@ impl Collection {
             .is_some()
         });
         if holds_data {
+            // A versioned collection keeps its history through a truncate
+            // (card #1001): every document gets a delete tombstone, so `AS OF`
+            // an earlier instant still finds it and a restore can bring it
+            // back; only the documents themselves go.
+            let versioned = self.is_versioned();
+            if versioned {
+                let mut keys = Vec::new();
+                self.for_each_value(Some(&["_key".to_string()]), |doc| {
+                    if let Some(k) = doc.get("_key").and_then(Value::as_str) {
+                        keys.push(k.to_string());
+                    }
+                    Ok(())
+                })?;
+                for chunk in keys.chunks(1_000) {
+                    let mut batch = KvBatch::default();
+                    for key in chunk {
+                        self.append_version_to_batch(&mut batch, &cf, key, None);
+                    }
+                    db.write(batch).map_err(|e| {
+                        DbError::InternalError(format!("Failed to truncate: {}", e))
+                    })?;
+                }
+            }
             let mut batch = KvBatch::default();
             for (start, end) in data_ranges {
+                if versioned && start == b"docv:" {
+                    continue;
+                }
                 batch.delete_range_ks(&cf, start, end);
             }
             db.write(batch)

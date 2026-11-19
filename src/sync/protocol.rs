@@ -85,6 +85,9 @@ pub enum Operation {
     /// node turning it on records its documents as a baseline, as the
     /// origin did.
     SetVersioning,
+    /// A named instant of a versioned collection set or removed (card
+    /// #1001): `{"name", "micros"}` or `{"name", "deleted": true}`.
+    SetVersionTag,
 }
 
 /// A single entry in the sync log
@@ -446,6 +449,8 @@ pub enum SyncMessage {
     FullSyncVersioning {
         database: String,
         collection: String,
+        /// Its named instants: name, epoch microseconds.
+        tags: Vec<(String, u64)>,
     },
 }
 

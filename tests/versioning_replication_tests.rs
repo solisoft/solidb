@@ -170,3 +170,193 @@ fn a_replica_versions_writes_at_the_origin_time() {
         .unwrap();
     assert!(local > removed);
 }
+
+async fn call_json(
+    app: &axum::Router,
+    token: &str,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(match body {
+            Some(b) => Body::from(b.to_string()),
+            None => Body::empty(),
+        })
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+/// Restore and named instants over HTTP (card #1001): what a restore wrote
+/// and removed, and each name set or removed, is in the log, and a peer
+/// that applies the log ends up with the same documents and names.
+#[tokio::test]
+async fn restore_and_tags_over_http_reach_a_peer() {
+    let tmp = TempDir::new().unwrap();
+    let origin = StorageEngine::new(tmp.path().join("a").to_str().unwrap()).unwrap();
+    origin.initialize().unwrap();
+    let log = Arc::new(
+        SyncLog::new(
+            "n1".to_string(),
+            tmp.path().join("log").to_str().unwrap(),
+            64,
+        )
+        .unwrap(),
+    );
+    let app = create_router(
+        origin.clone(),
+        None,
+        Some(log.clone()),
+        None,
+        None,
+        Arc::new(ScriptStats::default()),
+        None,
+        None,
+        0,
+    );
+    let token = common::seed_user_token(&origin, "restore_admin", &["admin"]);
+    let base = "/_api/database/_system/collection";
+    assert!(call(
+        &app,
+        &token,
+        "POST",
+        base,
+        json!({"name": "notes", "versioning": true})
+    )
+    .await
+    .is_success());
+    let notes = origin
+        .get_database("_system")
+        .unwrap()
+        .get_collection("notes")
+        .unwrap();
+    notes.insert(json!({"_key": "a", "n": 1})).unwrap();
+    notes.insert(json!({"_key": "b", "n": 1})).unwrap();
+
+    // A name for now, read back.
+    let (status, tag) = call_json(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/notes/version-tags"),
+        Some(json!({"name": "v1"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{tag}");
+    let (_, listed) = call_json(
+        &app,
+        &token,
+        "GET",
+        &format!("{base}/notes/version-tags"),
+        None,
+    )
+    .await;
+    assert_eq!(listed["tags"][0]["name"], json!("v1"));
+    assert_eq!(listed["tags"][0]["micros"], tag["micros"]);
+
+    notes.update("a", json!({"_key": "a", "n": 2})).unwrap();
+    notes.delete("b").unwrap();
+    notes.insert(json!({"_key": "c", "n": 1})).unwrap();
+    let mark = log.get_entries_after(0, 1000).last().unwrap().sequence;
+
+    let (status, out) = call_json(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/notes/restore"),
+        Some(json!({"tag": "v1"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["restored"], json!(2));
+    assert_eq!(out["removed"], json!(1));
+    let logged: Vec<(Operation, String)> = log
+        .get_entries_after(mark, 1000)
+        .into_iter()
+        .map(|e| (e.operation, e.key))
+        .collect();
+    assert!(
+        logged.contains(&(Operation::Update, "a".to_string())),
+        "{logged:?}"
+    );
+    assert!(
+        logged.contains(&(Operation::Update, "b".to_string())),
+        "{logged:?}"
+    );
+    assert!(
+        logged.contains(&(Operation::Delete, "c".to_string())),
+        "{logged:?}"
+    );
+
+    // Errors: no instant, an unknown tag, a missing tag to delete.
+    let (status, _) = call_json(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/notes/restore"),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call_json(
+        &app,
+        &token,
+        "POST",
+        &format!("{base}/notes/restore"),
+        Some(json!({"tag": "nope"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call_json(
+        &app,
+        &token,
+        "DELETE",
+        &format!("{base}/notes/version-tags/v1"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call_json(
+        &app,
+        &token,
+        "DELETE",
+        &format!("{base}/notes/version-tags/v1"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A peer applies the names from the log.
+    let peer = StorageEngine::new(tmp.path().join("b").to_str().unwrap()).unwrap();
+    peer.initialize().unwrap();
+    let db = peer.get_database("_system").unwrap();
+    db.create_collection("notes".to_string(), None).unwrap();
+    let copy = db.get_collection("notes").unwrap();
+    let mut names = Vec::new();
+    for entry in log.get_entries_after(0, 1000) {
+        if entry.collection != "notes" {
+            continue;
+        }
+        match entry.operation {
+            Operation::SetVersioning => copy.apply_versioning(entry.data.as_deref()).unwrap(),
+            Operation::SetVersionTag => {
+                copy.apply_version_tag(entry.data.as_deref()).unwrap();
+                names.push(copy.version_tags().len());
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(names, [1, 0], "set, then removed");
+}

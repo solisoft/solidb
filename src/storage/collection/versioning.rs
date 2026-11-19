@@ -30,6 +30,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_MAX_VERSIONS: usize = 100;
 
+/// Named instants of a versioned collection: `docv_tag:<name>` -> epoch
+/// microseconds, as decimal text (card #1001). Not under `docv:`, which
+/// holds document versions only.
+const VERSION_TAG_PREFIX: &str = "docv_tag:";
+
+/// What [`Collection::restore_as_of`] wrote: the documents put back, as now
+/// stored, and the keys removed.
+#[derive(Debug, Default)]
+pub struct Restored {
+    pub written: Vec<Value>,
+    pub removed: Vec<String>,
+}
+
 /// One historical version of a document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionRecord {
@@ -480,7 +493,11 @@ impl Collection {
             None,
             Some(&upper),
         );
+        // A named instant (card #1001) keeps the version in effect then: the
+        // newest one at or before it.
+        let tags: Vec<u64> = self.version_tags().into_iter().map(|(_, ts)| ts).collect();
         let mut own = 0usize;
+        let mut newer_ts = u64::MAX;
         for item in iter {
             let Ok((k, _)) = item else {
                 break;
@@ -491,14 +508,226 @@ impl Collection {
             if !Self::is_own_version(&k, prefix.as_bytes()) {
                 continue; // another document's history: never ours to prune
             }
-            if own >= max {
+            let ts = std::str::from_utf8(&k[prefix.len()..])
+                .ok()
+                .and_then(|hex| u64::from_str_radix(hex, 16).ok())
+                .map_or(0, |inverted| u64::MAX - inverted);
+            let tagged = tags.iter().any(|&t| ts <= t && t < newer_ts);
+            if own >= max && !tagged {
                 to_delete.push(k); // newest-first, so these are the oldest
             }
             own += 1;
+            newer_ts = ts;
         }
         for k in to_delete {
             let _ = self.db.delete_ks(&cf, k);
         }
+    }
+
+    // --- Named instants (card #1001) -----------------------------------
+
+    fn tag_key(name: &str) -> String {
+        format!("{VERSION_TAG_PREFIX}{name}")
+    }
+
+    /// Name an instant of a versioned collection: `micros` (epoch
+    /// microseconds), or now. `SYSTEM_TIME AS OF VERSION_TAG(…)` reads the
+    /// collection as it was then, and pruning keeps the versions it needs.
+    /// Returns the instant named.
+    pub fn create_version_tag(&self, name: &str, micros: Option<u64>) -> DbResult<u64> {
+        if !self.is_versioned() {
+            return Err(DbError::BadRequest(format!(
+                "'{}' keeps no history: enable versioning first",
+                self.name
+            )));
+        }
+        let name = name.trim();
+        if name.is_empty() || name.len() > 128 {
+            return Err(DbError::BadRequest(
+                "a version tag needs a name of 1 to 128 characters".to_string(),
+            ));
+        }
+        let ts = micros.unwrap_or_else(next_version_micros);
+        self.put_version_tag(name, ts)?;
+        Ok(ts)
+    }
+
+    fn put_version_tag(&self, name: &str, ts: u64) -> DbResult<()> {
+        let cf = self
+            .ks
+            .handle(&self.db)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        self.db
+            .put_ks(
+                &cf,
+                Self::tag_key(name).as_bytes(),
+                ts.to_string().as_bytes(),
+            )
+            .map_err(|e| DbError::InternalError(format!("version tag: {e}")))?;
+        // A cached `AS OF VERSION_TAG(…)` result read the old instant.
+        self.invalidate_cached_queries();
+        Ok(())
+    }
+
+    /// Remove a named instant; `false` when there was none.
+    pub fn delete_version_tag(&self, name: &str) -> DbResult<bool> {
+        if self.version_tag(name).is_none() {
+            return Ok(false);
+        }
+        let cf = self
+            .ks
+            .handle(&self.db)
+            .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        self.db
+            .delete_ks(&cf, Self::tag_key(name).as_bytes())
+            .map_err(|e| DbError::InternalError(format!("version tag: {e}")))?;
+        self.invalidate_cached_queries();
+        Ok(true)
+    }
+
+    /// The instant `name` names, in epoch microseconds.
+    pub fn version_tag(&self, name: &str) -> Option<u64> {
+        let cf = self.ks.handle(&self.db)?;
+        self.db
+            .get_ks(&cf, Self::tag_key(name).as_bytes())
+            .ok()
+            .flatten()
+            .and_then(|b| String::from_utf8(b).ok())
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// Every named instant, by name.
+    pub fn version_tags(&self) -> Vec<(String, u64)> {
+        let Some(cf) = self.ks.handle(&self.db) else {
+            return Vec::new();
+        };
+        let prefix = VERSION_TAG_PREFIX.as_bytes();
+        let mut out = Vec::new();
+        for item in self.db.prefix_iterator_ks(&cf, prefix) {
+            let Ok((k, v)) = item else {
+                break;
+            };
+            if !k.starts_with(prefix) {
+                break;
+            }
+            let name = String::from_utf8_lossy(&k[prefix.len()..]).to_string();
+            if let Some(ts) = std::str::from_utf8(&v).ok().and_then(|s| s.parse().ok()) {
+                out.push((name, ts));
+            }
+        }
+        out
+    }
+
+    /// A named instant another node set or removed
+    /// (`Operation::SetVersionTag`): `{"name", "micros"}`, or `{"name",
+    /// "deleted": true}`.
+    pub fn apply_version_tag(&self, payload: Option<&[u8]>) -> DbResult<()> {
+        let v: Value = payload
+            .and_then(|b| serde_json::from_slice(b).ok())
+            .ok_or_else(|| DbError::BadRequest("SetVersionTag: no payload".to_string()))?;
+        let name = v
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| DbError::BadRequest("SetVersionTag: no `name`".to_string()))?;
+        if v.get("deleted").and_then(Value::as_bool) == Some(true) {
+            self.delete_version_tag(name)?;
+            return Ok(());
+        }
+        let ts = v
+            .get("micros")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| DbError::BadRequest("SetVersionTag: no `micros`".to_string()))?;
+        self.put_version_tag(name, ts)
+    }
+
+    // --- Restore (card #1001) -------------------------------------------
+
+    /// Every document key with a live document or a history.
+    fn keys_with_history_or_live(&self) -> DbResult<Vec<String>> {
+        let mut keys = std::collections::BTreeSet::new();
+        self.for_each_value(Some(&["_key".to_string()]), |doc| {
+            if let Some(k) = doc.get("_key").and_then(Value::as_str) {
+                keys.insert(k.to_string());
+            }
+            Ok(())
+        })?;
+        if let Some(cf) = self.ks.handle(&self.db) {
+            let prefix = DOCV_PREFIX.as_bytes();
+            for item in self.db.prefix_iterator_ks(&cf, prefix) {
+                let Ok((k, _)) = item else {
+                    break;
+                };
+                if !k.starts_with(prefix) {
+                    break;
+                }
+                let full = String::from_utf8_lossy(&k[prefix.len()..]).to_string();
+                if let Some((doc_key, hex)) = full.rsplit_once(':') {
+                    if hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        keys.insert(doc_key.to_string());
+                    }
+                }
+            }
+        }
+        Ok(keys.into_iter().collect())
+    }
+
+    /// Put the collection back as it was at `as_of_micros` (card #1001):
+    /// every document that differs from its version then is written again
+    /// with that version, every one that did not exist then is removed, and
+    /// every one removed since comes back. Only `keys` when given. These are
+    /// ordinary writes, versioned like any other, so a restore is itself in
+    /// the history and can be undone by restoring to an instant before it.
+    /// Fields `_rev` and `_updated_at` are not compared and get new values.
+    pub fn restore_as_of(&self, as_of_micros: u64, keys: Option<&[String]>) -> DbResult<Restored> {
+        if !self.is_versioned() {
+            return Err(DbError::BadRequest(format!(
+                "'{}' keeps no history: there is nothing to restore from",
+                self.name
+            )));
+        }
+        let keys: Vec<String> = match keys {
+            Some(keys) => keys.to_vec(),
+            None => self.keys_with_history_or_live()?,
+        };
+        let content = |v: &Value| -> Value {
+            let mut v = v.clone();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("_rev");
+                o.remove("_updated_at");
+            }
+            v
+        };
+        let mut puts: Vec<(String, Value)> = Vec::new();
+        let mut removes: Vec<String> = Vec::new();
+        for key in keys {
+            let then = self.get_as_of(&key, as_of_micros)?;
+            let now = self.get(&key).ok().map(|d| d.to_value());
+            match (then, now) {
+                (None, Some(_)) => removes.push(key),
+                (Some(then), now) => {
+                    let then = content(&then);
+                    if now.as_ref().map(content).as_ref() != Some(&then) {
+                        puts.push((key, then));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        const CHUNK: usize = 1_000;
+        for chunk in puts.chunks(CHUNK) {
+            self.upsert_batch(chunk.to_vec())?;
+        }
+        for chunk in removes.chunks(CHUNK) {
+            self.delete_batch(chunk.to_vec())?;
+        }
+        let written = puts
+            .iter()
+            .filter_map(|(k, _)| self.get(k).ok().map(|d| d.to_value()))
+            .collect();
+        Ok(Restored {
+            written,
+            removed: removes,
+        })
     }
 
     pub fn set_row_policy(&self, expr: Option<&str>) -> DbResult<()> {
