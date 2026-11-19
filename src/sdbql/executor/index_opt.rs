@@ -2376,6 +2376,30 @@ impl<'a> QueryExecutor<'a> {
     }
 
     /// Extract a vector (array of f32) from a JSON value
+    /// The query of a vector search: an array of numbers, or a text
+    /// embedded with the index's own provider and model (card #1003).
+    pub(super) fn query_vector_of(
+        &self,
+        value: &Value,
+        collection: &str,
+        index: &str,
+        context: &str,
+    ) -> DbResult<Vec<f32>> {
+        let Some(text) = value.as_str() else {
+            return Self::extract_vector_arg(value, context);
+        };
+        let config = self
+            .get_collection(collection)?
+            .get_all_vector_index_configs()
+            .into_iter()
+            .find(|c| c.name == index)
+            .ok_or_else(|| {
+                DbError::ExecutionError(format!("{context}: no vector index '{index}'"))
+            })?;
+        let db = self.database.as_deref().unwrap_or("_system");
+        crate::storage::collection::vector::embed_query_text(self.storage, db, &config, text)
+    }
+
     pub(super) fn extract_vector_arg(value: &Value, context: &str) -> DbResult<Vec<f32>> {
         match value {
             Value::Array(arr) => arr

@@ -597,7 +597,12 @@ pub struct ListVectorIndexesResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct VectorSearchRequest {
+    /// The query vector; or `text` instead (card #1003).
+    #[serde(default)]
     pub vector: Vec<f32>,
+    /// A text embedded with the index's provider and model.
+    #[serde(default)]
+    pub text: Option<String>,
     pub limit: usize,
     /// Optional ef_search parameter for HNSW (higher = better recall, slower)
     #[serde(default)]
@@ -725,7 +730,23 @@ pub async fn vector_search(
     let database = state.storage.get_database(&db_name)?;
     let collection = database.get_collection(&coll_name)?;
 
-    let results = collection.vector_search(&index_name, &req.vector, req.limit, req.ef_search)?;
+    let vector = match req.text.as_deref() {
+        Some(text) => {
+            let config = collection
+                .get_all_vector_index_configs()
+                .into_iter()
+                .find(|c| c.name == index_name)
+                .ok_or_else(|| DbError::BadRequest(format!("no vector index '{index_name}'")))?;
+            let (storage, db, text) = (state.storage.clone(), db_name.clone(), text.to_string());
+            tokio::task::spawn_blocking(move || {
+                crate::storage::collection::vector::embed_query_text(&storage, &db, &config, &text)
+            })
+            .await
+            .map_err(|e| DbError::InternalError(format!("Task join error: {e}")))??
+        }
+        None => req.vector.clone(),
+    };
+    let results = collection.vector_search(&index_name, &vector, req.limit, req.ef_search)?;
 
     // Fetch documents for each result
     let search_results: Vec<VectorSearchResult> = results

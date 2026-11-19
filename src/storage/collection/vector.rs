@@ -1019,6 +1019,70 @@ impl<F: FnMut() -> std::io::Result<Option<Vec<u8>>>> std::io::Read for ChunkRead
     }
 }
 
+/// Query texts already embedded (card #1003): (database, provider, model,
+/// dimension, text) -> vector. A search typed again does not pay the
+/// provider again. Bounded: emptied when it reaches its size.
+fn query_embeddings() -> &'static parking_lot::Mutex<std::collections::HashMap<String, Vec<f32>>> {
+    static CACHE: std::sync::OnceLock<
+        parking_lot::Mutex<std::collections::HashMap<String, Vec<f32>>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()))
+}
+const QUERY_EMBEDDINGS_MAX: usize = 1_024;
+
+/// The vector of a search by text (card #1003): `text` embedded with the
+/// provider and model that embed the index's documents (`embedding_provider`,
+/// OpenAI when unset; `embedding_model`), so the two are comparable. An
+/// index that embeds nothing (no `embedding_source` nor provider) refuses:
+/// its vectors come from elsewhere and a text cannot be put beside them.
+pub fn embed_query_text(
+    storage: &crate::storage::StorageEngine,
+    db_name: &str,
+    config: &VectorIndexConfig,
+    text: &str,
+) -> DbResult<Vec<f32>> {
+    if config.embedding_source.is_none() && config.embedding_provider.is_none() {
+        return Err(DbError::BadRequest(format!(
+            "vector index '{}' has no embedding source: search it with a vector, \
+             or create it with embedding_source so a text can be embedded",
+            config.name
+        )));
+    }
+    let provider = config
+        .embedding_provider
+        .clone()
+        .unwrap_or_else(|| "openai".to_string());
+    let key = format!(
+        "{db_name}\u{0}{provider}\u{0}{}\u{0}{}\u{0}{text}",
+        config.embedding_model.as_deref().unwrap_or(""),
+        config.dimension
+    );
+    if let Some(v) = query_embeddings().lock().get(&key) {
+        return Ok(v.clone());
+    }
+    let client = LLMClient::from_storage(
+        storage,
+        db_name,
+        Some(&provider),
+        config.embedding_model.clone(),
+    )?;
+    let vector = client.embed_blocking(text)?;
+    if vector.len() != config.dimension {
+        return Err(DbError::BadRequest(format!(
+            "the embedding of the query has {} dimensions, vector index '{}' has {}",
+            vector.len(),
+            config.name,
+            config.dimension
+        )));
+    }
+    let mut cache = query_embeddings().lock();
+    if cache.len() >= QUERY_EMBEDDINGS_MAX {
+        cache.clear();
+    }
+    cache.insert(key, vector.clone());
+    Ok(vector)
+}
+
 #[cfg(test)]
 mod truncate_tests {
     use crate::storage::StorageEngine;

@@ -1035,13 +1035,24 @@ impl<'a> QueryExecutor<'a> {
                         "HYBRID_SEARCH: fulltext_field must be a string".to_string(),
                     )
                 })?;
-                let query_vector =
-                    Self::extract_vector_arg(&evaluated_args[3], "HYBRID_SEARCH: query_vector")?;
                 let text_query = evaluated_args[4].as_str().ok_or_else(|| {
                     DbError::ExecutionError(
                         "HYBRID_SEARCH: text_query must be a string".to_string(),
                     )
                 })?;
+                // A text, or `null` for the text query itself, is embedded
+                // with the index's provider (card #1003).
+                let query_vector = if evaluated_args[3].is_null() {
+                    Value::String(text_query.to_string())
+                } else {
+                    evaluated_args[3].clone()
+                };
+                let query_vector = self.query_vector_of(
+                    &query_vector,
+                    collection_name,
+                    vector_index,
+                    "HYBRID_SEARCH: query_vector",
+                )?;
 
                 // Parse options (defaults)
                 let mut vector_weight: f32 = 0.5;
@@ -1133,8 +1144,12 @@ impl<'a> QueryExecutor<'a> {
                 let index_name = evaluated_args[1].as_str().ok_or_else(|| {
                     DbError::ExecutionError("VECTOR_SEARCH: index must be a string".to_string())
                 })?;
-                let query_vector =
-                    Self::extract_vector_arg(&evaluated_args[2], "VECTOR_SEARCH: query_vector")?;
+                let query_vector = self.query_vector_of(
+                    &evaluated_args[2],
+                    collection_name,
+                    index_name,
+                    "VECTOR_SEARCH: query_vector",
+                )?;
                 let k = evaluated_args[3].as_u64().ok_or_else(|| {
                     DbError::ExecutionError(
                         "VECTOR_SEARCH: k must be a non-negative integer".to_string(),
