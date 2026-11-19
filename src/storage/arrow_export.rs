@@ -29,6 +29,10 @@ use std::sync::Arc;
 /// Rows per record batch (and per Parquet row group at most).
 const BATCH: usize = 8_192;
 
+/// Field metadata of a column that holds JSON text (values of several
+/// kinds, or objects): `"true"`.
+pub const JSON_FIELD: &str = "solidb:json";
+
 /// How a collection is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -167,7 +171,19 @@ impl Columns {
         let schema = Arc::new(Schema::new(
             columns
                 .iter()
-                .map(|(name, kind)| Field::new(name, kind.data_type(), true))
+                .map(|(name, kind)| {
+                    let field = Field::new(name, kind.data_type(), true);
+                    // A column of JSON text says so, for an import to read
+                    // the values back rather than their text (card #1004).
+                    if *kind == Kind::Json {
+                        field.with_metadata(std::collections::HashMap::from([(
+                            JSON_FIELD.to_string(),
+                            "true".to_string(),
+                        )]))
+                    } else {
+                        field
+                    }
+                })
                 .collect::<Vec<_>>(),
         ));
         let (names, kinds) = columns.into_iter().unzip();

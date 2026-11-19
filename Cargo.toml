@@ -128,10 +128,12 @@ fuser = { version = "0.16", optional = true }
 solistore = { version = "0.4.2", optional = true }
 # Collections exported as Parquet and Arrow IPC streams (card #980), for
 # the tools that read training data that way. Large: behind `export-arrow`.
-arrow-array = { version = "60.1.0", optional = true }
+arrow-array = { version = "60.1.0", optional = true, features = ["chrono-tz"] }
 arrow-schema = { version = "60.1.0", optional = true }
 arrow-ipc = { version = "60.1.0", optional = true, default-features = false }
 parquet = { version = "60.1.0", optional = true, default-features = false, features = ["arrow", "zstd"] }
+# Reading them back (card #1004): Arrow rows as JSON documents.
+arrow-json = { version = "60.1.0", optional = true }
 
 # Daemon mode (Unix only)
 # daemonize crate removed - using custom implementation in src/daemon.rs
@@ -348,7 +350,7 @@ fuse = ["dep:fuser"]
 # only, and refuses a solistore one by name.
 engine-solistore = ["dep:solistore"]
 # `?format=parquet|arrow` on the collection and columnar exports.
-export-arrow = ["dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc", "dep:parquet"]
+export-arrow = ["dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc", "dep:parquet", "dep:arrow-json"]
 # The six files in tests/ that are benchmarks rather than tests. Off by
 # default, so `cargo test` does not build them — see the [[test]] blocks below.
 bench-tests = []

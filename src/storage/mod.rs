@@ -4,6 +4,8 @@ pub type RocksDb = kv::Kv;
 
 #[cfg(feature = "export-arrow")]
 pub mod arrow_export;
+#[cfg(feature = "export-arrow")]
+pub mod arrow_import;
 pub mod blocks;
 pub mod cf_ops;
 pub mod codec;

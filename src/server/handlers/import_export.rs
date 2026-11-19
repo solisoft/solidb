@@ -27,6 +27,10 @@ pub struct ImportQuery {
     /// orphans (`orphans`). Nothing is taken back. Admin of the database.
     #[serde(default)]
     pub foreign_keys: Option<String>,
+    /// `parquet` or `arrow` (card #1004); when absent, the file's first
+    /// bytes say (`PAR1`, an Arrow IPC stream or file), else JSON lines.
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 /// Apply a batch of documents using insert or upsert semantics.
@@ -388,6 +392,57 @@ pub async fn import_collection(
                 .find(|&&b| !b.is_ascii_whitespace())
                 .copied()
                 .unwrap_or(b' ');
+
+            // Parquet or Arrow (card #1004): kept in a temporary file, which
+            // Parquet needs to reach its footer, then read batch by batch.
+            match typed_import_format(query.format.as_deref(), &buffer)? {
+                #[cfg(feature = "export-arrow")]
+                Some(format) => {
+                    use std::io::Write as _;
+                    let mut spill = tempfile::NamedTempFile::new()
+                        .map_err(|e| DbError::InternalError(format!("import: {e}")))?;
+                    spill
+                        .write_all(&buffer)
+                        .map_err(|e| DbError::InternalError(format!("import: {e}")))?;
+                    while let Some(chunk) = stream.next().await {
+                        let chunk = chunk.map_err(|e| DbError::BadRequest(e.to_string()))?;
+                        spill
+                            .write_all(&chunk)
+                            .map_err(|e| DbError::InternalError(format!("import: {e}")))?;
+                    }
+                    let path = spill.into_temp_path();
+                    let target = collection.clone();
+                    let (imported, failed, error) = tokio::task::spawn_blocking(move || {
+                        let mut imported = 0usize;
+                        let mut failed = 0usize;
+                        let mut error: Option<String> = None;
+                        crate::storage::arrow_import::read_file(&path, format, |docs| {
+                            for chunk in docs.chunks(1000) {
+                                match import_doc_batch(&target, chunk.to_vec(), how) {
+                                    Ok(n) => imported += n,
+                                    Err(e) => {
+                                        failed += chunk.len();
+                                        error.get_or_insert_with(|| e.to_string());
+                                    }
+                                }
+                            }
+                            Ok(())
+                        })?;
+                        Ok::<_, DbError>((imported, failed, error))
+                    })
+                    .await
+                    .map_err(|e| DbError::InternalError(format!("Task join error: {e}")))??;
+                    imported_count += imported;
+                    failed_count += failed;
+                    if let Some(e) = error {
+                        first_error.get_or_insert(e);
+                    }
+                    continue;
+                }
+                #[cfg(not(feature = "export-arrow"))]
+                Some(()) => {}
+                None => {}
+            }
 
             if first_char == b'{' {
                 // Streaming Mode (JSONL / Mixed Binary)
@@ -790,5 +845,36 @@ impl std::io::Write for ChannelWriter {
 impl Drop for ChannelWriter {
     fn drop(&mut self) {
         let _ = self.send();
+    }
+}
+
+/// The typed format of an imported file: `?format=` when given (`jsonl`
+/// and `json` mean none), else what its first bytes say.
+#[cfg(feature = "export-arrow")]
+fn typed_import_format(
+    asked: Option<&str>,
+    head: &[u8],
+) -> Result<Option<crate::storage::arrow_import::ImportFormat>, DbError> {
+    use crate::storage::arrow_import::ImportFormat;
+    match asked {
+        None => Ok(ImportFormat::sniff(head)),
+        Some(f) if f.eq_ignore_ascii_case("jsonl") || f.eq_ignore_ascii_case("json") => Ok(None),
+        Some(f) => ImportFormat::parse(f).map(Some).ok_or_else(|| {
+            DbError::BadRequest(format!(
+                "unknown import format '{f}': jsonl, parquet or arrow"
+            ))
+        }),
+    }
+}
+
+/// Without the `export-arrow` feature: JSON lines only.
+#[cfg(not(feature = "export-arrow"))]
+fn typed_import_format(asked: Option<&str>, _head: &[u8]) -> Result<Option<()>, DbError> {
+    match asked {
+        None => Ok(None),
+        Some(f) if f.eq_ignore_ascii_case("jsonl") || f.eq_ignore_ascii_case("json") => Ok(None),
+        Some(f) => Err(DbError::BadRequest(format!(
+            "import format '{f}' needs a build with the export-arrow feature"
+        ))),
     }
 }
