@@ -8,7 +8,9 @@
 //! a single forward seek to the first version with `ts <= T`.
 //!
 //! Scope: single-document `insert`/`update`/`delete`, `insert_batch` /
-//! `upsert_batch`, and transactional write batches record history.
+//! `upsert_batch`, and transactional write batches record history. Enabling
+//! versioning records the collection as it stands as a baseline version, so
+//! history starts at that instant: an `AS OF` before it finds nothing.
 //! Secondary indexes are current-version only — `AS OF` answers
 //! primary-key reads (`DOC_AS_OF`) and history listing (`DOC_HISTORY`), not
 //! index-accelerated historical queries. History is capped per document
@@ -145,16 +147,123 @@ impl Collection {
         enabled
     }
 
-    /// Enable versioning. Subsequent single-document writes record history.
+    /// Enable versioning. Subsequent writes record history, and the
+    /// collection as it stands is recorded as a baseline (card #997): a
+    /// document written before and never since used to be missing from
+    /// `AS OF` reads, even at the current instant. Enabling an already
+    /// versioned collection does nothing.
     pub fn enable_versioning(&self) -> DbResult<()> {
+        if self.is_versioned() {
+            return Ok(());
+        }
         let cf = self
             .ks
             .handle(&self.db)
             .ok_or_else(|| DbError::CollectionNotFound(self.name.clone()))?;
+        // Stamped before the flag goes on: a write that races the baseline
+        // is versioned after it, so its own version is the newer one.
+        let baseline_ts = next_version_micros();
         self.db
             .put_ks(&cf, VERSIONING_META_KEY.as_bytes(), b"1")
             .map_err(|e| DbError::InternalError(format!("enable_versioning: {}", e)))?;
         versioned_cache().insert(self.version_cache_key(), true);
+        self.write_baseline(&cf, baseline_ts)
+    }
+
+    /// The collection's state at `ts` as history: a version of every live
+    /// document, and a tombstone for every key whose history still shows
+    /// it alive although it is gone (deleted while versioning was off).
+    /// Written in chunks, so enabling a large collection holds neither the
+    /// collection nor one huge batch in memory.
+    fn write_baseline(&self, cf: &KsCf, ts: u64) -> DbResult<()> {
+        const CHUNK: usize = 1_000;
+        let write = |batch: KvBatch| {
+            self.db
+                .write(batch)
+                .map_err(|e| DbError::InternalError(format!("versioning baseline: {e}")))
+        };
+        let put = |batch: &mut KvBatch, key: &str, value: Option<Value>| {
+            let record = VersionRecord {
+                ts,
+                deleted: value.is_none(),
+                value,
+            };
+            if let Ok(bytes) = serde_json::to_vec(&record) {
+                batch.put_ks(cf, Self::version_key(key, ts), bytes);
+            }
+        };
+
+        let mut batch = KvBatch::default();
+        let mut staged = 0usize;
+        self.for_each_value(None, |doc| {
+            let Some(key) = doc.get("_key").and_then(Value::as_str).map(str::to_string) else {
+                return Ok(());
+            };
+            put(&mut batch, &key, Some(doc));
+            staged += 1;
+            if staged == CHUNK {
+                write(std::mem::take(&mut batch))?;
+                staged = 0;
+            }
+            Ok(())
+        })?;
+
+        // Keys with history but no live document: the newest version at or
+        // before `ts` decides. Versions sort newest first within a key, so
+        // the first one at or before `ts` met for a key is it. A set, not
+        // "the key before": the history of `a` and of `a:b` interleave.
+        let prefix = DOCV_PREFIX.as_bytes();
+        let mut decided: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut gone = Vec::new();
+        for item in self.db.prefix_iterator_ks(cf, prefix) {
+            let Ok((k, v)) = item else {
+                break;
+            };
+            if !k.starts_with(prefix) {
+                break;
+            }
+            let key_str = String::from_utf8_lossy(&k);
+            let rest = key_str.strip_prefix(DOCV_PREFIX).unwrap_or(&key_str);
+            let Some((doc_key, ts_hex)) = rest.rsplit_once(':') else {
+                continue;
+            };
+            if ts_hex.len() != 16 || !ts_hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            if decided.contains(doc_key) {
+                continue;
+            }
+            let Ok(record) = serde_json::from_slice::<VersionRecord>(&v) else {
+                continue;
+            };
+            if record.ts > ts {
+                continue; // written after the baseline: not this pass's to judge
+            }
+            decided.insert(doc_key.to_string());
+            if record.deleted {
+                continue;
+            }
+            let live = self
+                .db
+                .get_ks(cf, Self::doc_key(doc_key))
+                .ok()
+                .flatten()
+                .is_some();
+            if !live {
+                gone.push(doc_key.to_string());
+            }
+        }
+        for key in gone {
+            put(&mut batch, &key, None);
+            staged += 1;
+            if staged == CHUNK {
+                write(std::mem::take(&mut batch))?;
+                staged = 0;
+            }
+        }
+        if staged > 0 {
+            write(batch)?;
+        }
         Ok(())
     }
 
