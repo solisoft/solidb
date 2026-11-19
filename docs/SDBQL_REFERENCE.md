@@ -703,7 +703,7 @@ FOR t IN trades
 
 Binds a single right document (or `null`), not an array. Strategy: `BACKWARD` (default), `FORWARD`, `NEAREST`.
 
-**Historical scan:** `FOR o IN orders SYSTEM_TIME AS OF @ts` walks `docv:` history (opt-in versioning; no index; batch/txn writes are not versioned).
+**Historical scan:** `FOR o IN orders SYSTEM_TIME AS OF @ts` walks `docv:` history (opt-in versioning; no index). Every write path records a version — single writes, batches (`insert_batch`, `upsert_batch`, SDBQL bulk writes), transactions, TTL expiry — and each key keeps its newest `SOLIDB_MAX_VERSIONS` (default 100). Not versioned: sharded and columnar collections (`SYSTEM_TIME` is refused there), and replicas, which do not receive the versioning flag yet.
 
 ### Control Flow & Misc
 

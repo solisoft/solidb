@@ -2032,6 +2032,13 @@ impl Collection {
         for (doc, doc_value) in inserted_docs.iter().zip(&doc_values) {
             self.update_vector_indexes_on_upsert(&doc.key, doc_value);
         }
+        // A key deleted and inserted again keeps its old history: cap it
+        // like a single insert does (card #995).
+        if versioned {
+            for doc in &inserted_docs {
+                self.prune_versions(&doc.key);
+            }
+        }
         // Persist vector indexes after batch, outside the stripes.
         drop(_unique_guard);
         drop(_key_guard);

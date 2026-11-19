@@ -443,7 +443,10 @@ impl Collection {
         // checked against disk, which does not yet hold this transaction's
         // earlier writes, so two inserts of one value both passed.
         let mut unique_claims = UniqueClaims::default();
-        let mut staged = StagedTransaction::default();
+        let mut staged = StagedTransaction {
+            versioned,
+            ..StagedTransaction::default()
+        };
 
         for op in operations {
             match op {
@@ -607,6 +610,19 @@ impl Collection {
                     self.decrement_count();
                 }
                 ChangeType::Truncate => {}
+            }
+        }
+
+        // The history each key gained is capped like a single write's
+        // (card #995): a document rewritten by transactions kept every
+        // version. After the commit, as everywhere: pruning is not part of
+        // the atomic batch.
+        if staged.versioned {
+            let mut pruned = std::collections::HashSet::new();
+            for event in &staged.events {
+                if event.type_ != ChangeType::Truncate && pruned.insert(event.key.as_str()) {
+                    self.prune_versions(&event.key);
+                }
             }
         }
 
@@ -834,6 +850,9 @@ impl Collection {
 #[derive(Default)]
 pub(crate) struct StagedTransaction {
     events: Vec<ChangeEvent>,
+    /// The collection keeps version history: its written keys are pruned
+    /// to the retention cap once the batch is on disk.
+    versioned: bool,
 }
 
 #[cfg(test)]

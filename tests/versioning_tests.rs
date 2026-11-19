@@ -103,6 +103,29 @@ fn test_version_retention_cap() {
     assert_eq!(hist[0]["value"]["n"], json!(120)); // newest retained
 }
 
+/// insert_batch caps the history of a key it writes again after a delete,
+/// like a single insert does (card #995).
+#[test]
+fn test_insert_batch_respects_the_retention_cap() {
+    let (engine, _tmp) = create_test_engine();
+    engine.create_collection("docs".to_string(), None).unwrap();
+    let coll = engine.get_collection("docs").unwrap();
+    coll.enable_versioning().unwrap();
+
+    for i in 0..60 {
+        coll.insert_batch(vec![json!({"_key": "a", "n": i})])
+            .unwrap();
+        coll.delete("a").unwrap();
+    }
+    coll.insert_batch(vec![json!({"_key": "a", "n": 60})])
+        .unwrap();
+
+    // 121 versions written (60 inserts, 60 tombstones, the last insert).
+    let hist = coll.doc_history("a");
+    assert_eq!(hist.len(), 100);
+    assert_eq!(hist[0]["value"]["n"], json!(60)); // newest retained
+}
+
 #[test]
 fn test_insert_and_upsert_batch_record_history() {
     let (engine, _tmp) = create_test_engine();

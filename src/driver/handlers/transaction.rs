@@ -817,6 +817,35 @@ mod tests {
         assert_eq!(history[1]["value"]["v"], json!(1));
     }
 
+    /// A commit caps the history it added like a single write does (card
+    /// #995): 121 versions of one key in one transaction keep the newest 100
+    /// (SOLIDB_MAX_VERSIONS unset in CI).
+    #[tokio::test]
+    async fn a_commit_prunes_the_history_it_added() {
+        let (_t, mut h) = handler();
+        h.get_collection("d", "c")
+            .unwrap()
+            .enable_versioning()
+            .unwrap();
+        let tx = begin(&mut h);
+        handle_transaction_command(&mut h, tx.clone(), insert("k4")).await;
+        for v in 1..=120 {
+            let upd = Box::new(Command::Update {
+                database: "d".to_string(),
+                collection: "c".to_string(),
+                key: "k4".to_string(),
+                document: json!({"v": v}),
+                merge: true,
+            });
+            handle_transaction_command(&mut h, tx.clone(), upd).await;
+        }
+        handle_commit_transaction(&mut h, tx);
+
+        let history = h.get_collection("d", "c").unwrap().doc_history("k4");
+        assert_eq!(history.len(), 100);
+        assert_eq!(history[0]["value"]["v"], json!(120), "the newest is kept");
+    }
+
     fn query(sdbql: &str, binds: serde_json::Value) -> Box<Command> {
         Box::new(Command::Query {
             database: "d".to_string(),
