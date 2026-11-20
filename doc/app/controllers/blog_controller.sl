@@ -81,7 +81,7 @@ class BlogController < Controller
         + "fell apart on clustered data. It now answers three to four times as fast as pgvector at "
         + "the same recall; what changed, and where pgvector and LanceDB are still ahead.",
         "tags": ["Vector search", "Performance", "Benchmarks"],
-        "read_minutes": 9
+        "read_minutes": 12
       },
       {
         "slug": "solidb-against-clickhouse-on-a-columnar-table",

@@ -17,6 +17,7 @@
     <li><a href="#before">Where 2.14.0 stood</a></li>
     <li><a href="#changed">What changed</a></li>
     <li><a href="#limits">Where the others are ahead, and what this does not show</a></li>
+    <li><a href="#since">Since then: what LanceDB had, and compressed vectors</a></li>
     <li><a href="#run">Running it</a></li>
   </ol>
 </nav>
@@ -109,10 +110,35 @@
 <li><strong>Memory</strong>: SoliDB's process held 5.3 GB at the end of the run, pgvector's container 1.6 GB. Two changes made since, measured the same way: the vectors are kept once rather than twice, and the index is saved in pieces rather than as one 800 MB value; SoliDB then held 4.3 GB, at the same speed. Most of the rest is a storage cache sized from the memory the server may use: with that cache at 64 MB, 1.8 GB. Building the index also peaked at 6.6 GB, because every document was decoded at once; it now peaks at 1.7 GB.</li>
 <li><strong>LanceDB through Python.</strong> Its searches at eight threads hardly go faster than at one: they measure the Python client holding its interpreter lock as much as the engine. The Rust library would be faster, and a Rust harness would be the fairer test.</li>
 <li><strong>Generated data.</strong> The vectors are clustered Gaussians, not the embeddings of a real model. Recall at a given width depends on the data, and a public set with its ground truth (SIFT, GloVe, or a text embedding set) would make the figures comparable to others'.</li>
-<li><strong>Two questions.</strong> No inserts while searching, no deletes, no updates of vectors, no other metric, no dimension above 128, no quantization in SoliDB or pgvector. Each would move these numbers.</li>
+<li><strong>Two questions.</strong> No inserts while searching, no deletes, no updates of vectors, no other metric, no dimension above 128 and no quantization in pgvector or LanceDB. Each would move these numbers. SoliDB alone was measured since at 768 dimensions and with quantization: <a href="#since">below</a>.</li>
 <li><strong>Not a container for SoliDB.</strong> The same limits as pgvector's container, set by systemd rather than by an image. The other posts ran every database in a container; this one does not for two of the three.</li>
 <li><strong>This is a build of <code>main</code>.</strong> When it is released, the published image will be measured again and the figures put beside these.</li>
 </ul>
+</section>
+
+<section id="since"><h2>Since then: what LanceDB had, and compressed vectors</h2>
+<p>The figures above have not moved. The same harness on November 19, after everything in this section, gave SoliDB 2,769 searches a second at <code>ef</code> 100 and one client, against 2,675 here, at the same recall: the difference between two runs.</p>
+<p>LanceDB did several things SoliDB did not. They are now in <code>main</code>:</p>
+<ul>
+<li><strong>Search with a text.</strong> <code>VECTOR_SEARCH("docs", "idx", "cheap flights", 10)</code> embeds the text with the provider and model that embed the index's documents, so the query and the documents are comparable, and the application no longer calls the provider itself. A text searched again is not sent again.</li>
+<li><strong>Parquet and Arrow import.</strong> What pandas, Polars, DuckDB or LanceDB write loads into a collection as it is, one document a row, a list column as a vector. A collection exported as Parquet comes back as the same documents.</li>
+<li><strong>Several vectors a document.</strong> ColBERT gives a text one vector a token, ColPali a page one a patch of its image. An index created with <code>"multivector": true</code> takes such a list, and a search with the query's vectors scores documents by MaxSim: for each query vector its best match in the document, summed. On a test corpus of 1,500 documents and 17,800 vectors, it finds at least 95% of the true top ten of an exhaustive MaxSim.</li>
+<li><strong>Versions.</strong> SoliDB already answered <code>SYSTEM_TIME AS OF</code>. A collection can now be restored to an instant, instants can be named as LanceDB tags its versions, and the history is replicated and kept on sharded collections.</li>
+</ul>
+<p><strong>Compressed vectors.</strong> LanceDB's index keeps quantized vectors under its graph. SoliDB had a <code>scalar</code> option, one byte a dimension instead of four, that turned out to do nothing once an index had its graph. It now does: the graph walks on the bytes, and the best candidates are scored again against the exact vectors, read from the documents, so the scores are exact and the recall is f32's. Measured with this harness, a million vectors, one client unless said:</p>
+<table>
+  <thead><tr><th>SoliDB</th><th>f32</th><th>scalar</th></tr></thead>
+  <tbody>
+    <tr><td>128 dims, memory</td><td>3.97 GiB</td><td>3.70 GiB</td></tr>
+    <tr><td>128 dims, <code>ef</code> 100</td><td>2,769 (0.90)</td><td>1,391 (0.90)</td></tr>
+    <tr><td>768 dims, memory</td><td>10.95 GiB</td><td>8.38 GiB</td></tr>
+    <tr><td>768 dims, <code>ef</code> 100</td><td>860 (0.785)</td><td>385 (0.791)</td></tr>
+    <tr><td>768 dims, <code>ef</code> 100, 8 clients</td><td>3,350</td><td>2,081</td></tr>
+  </tbody>
+</table>
+<p>One byte for four saves much less than a quarter of the memory, because each document keeps its own copy of its vector: 23% of the server's memory at 768 dimensions, for half the searches a second at one client. That is a trade for a server short of memory, not a default. Reading the candidates' documents is the price: 45% of the time of the product-quantized search below, which reads the most of them. Keeping a second, compact copy of the exact vectors to read instead made memory go up, not down.</p>
+<p>Two other codes were tried and are refused by this version. One bit a dimension found 54% of the true neighbours at a million vectors, even after encoding each vector's difference from the nearest of 256 centres, as LanceDB's IVF_PQ does. Product quantization, a byte for every four dimensions, recovered its recall with that difference encoded (0.92 at 768 dimensions), but held 8.10 GiB where scalar holds 8.38, at a third of scalar's speed. The first run at 768 dimensions also found a bug: building a compressed index copied every vector to train on a sample of a few thousand, and ran out of 16 GB where f32 needs 11. It copies only the sample now.</p>
+<p>All of this is in <code>main</code> after 2.15.0, not in a release yet; the results and notes are in <code>benchmarks/compare/results/2026-11-19-vec-quant</code> and <code>2026-11-20-vec-d768</code>.</p>
 </section>
 
 <section id="run"><h2>Running it</h2>
