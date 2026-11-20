@@ -576,7 +576,7 @@ impl Collection {
         // `None` would be a no-op that reported success.
         if quantization == VectorQuantization::None {
             return Err(DbError::InvalidDocument(
-                "quantization must be 'scalar' or 'pq'; use dequantize to remove it".to_string(),
+                "quantization must be 'scalar'; use dequantize to remove it".to_string(),
             ));
         }
         refuse_withdrawn_quantization(quantization)?;
@@ -1027,14 +1027,23 @@ impl<F: FnMut() -> std::io::Result<Option<Vec<u8>>>> std::io::Read for ChunkRead
 /// 100k after (128 and 768 dims), where PQ gives 0.99. The code stays,
 /// unreachable through the API, for a later version.
 fn refuse_withdrawn_quantization(quantization: VectorQuantization) -> DbResult<()> {
-    if quantization == VectorQuantization::Binary {
-        return Err(DbError::BadRequest(
+    let why = match quantization {
+        VectorQuantization::Binary => {
             "binary quantization is not available: it loses too many of the nearest \
-             neighbours on large collections; use 'pq' (16x less memory) or 'scalar' (4x)"
-                .to_string(),
-        ));
-    }
-    Ok(())
+             neighbours on large collections"
+        }
+        // Card #1007: at 1M x 768 the server held 8.10 GiB against 8.38 for
+        // scalar (the documents keep their own copy of each vector) and
+        // answered a third of scalar's searches.
+        VectorQuantization::Pq => {
+            "product quantization is not available: it saves little more memory than \
+             scalar, since the documents keep their own vectors, at a third of its speed"
+        }
+        _ => return Ok(()),
+    };
+    Err(DbError::BadRequest(format!(
+        "{why}; use 'scalar' (4x less vector memory)"
+    )))
 }
 
 /// Query texts already embedded (card #1003): (database, provider, model,

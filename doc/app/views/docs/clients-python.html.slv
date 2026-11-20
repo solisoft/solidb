@@ -863,7 +863,7 @@ similar = client.vector.search_by_document(
 )
 
 # Quantize index (reduce memory usage)
-client.vector.quantize("products", "product_embeddings", "binary")
+client.vector.quantize("products", "product_embeddings", "scalar")
 
 # Dequantize (restore full precision)
 client.vector.dequantize("products", "product_embeddings")

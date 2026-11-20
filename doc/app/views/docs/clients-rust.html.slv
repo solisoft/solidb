@@ -848,7 +848,7 @@ let similar = client.vector().search_by_document(
 ).await?;
 
 // Quantize index (reduce memory usage)
-client.vector().quantize("products", "product_embeddings", "binary").await?;
+client.vector().quantize("products", "product_embeddings", "scalar").await?;
 
 // Dequantize (restore full precision)
 client.vector().dequantize("products", "product_embeddings").await?;

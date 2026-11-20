@@ -702,7 +702,7 @@ index whose config says `scalar` quantizes at creation and when its graph
 is built, so every node builds the same one. What a quantized graph finds
 is re-scored against the vectors read from the documents
 (`Collection::rescored`, `VectorIndex::rescore_factor` candidates a
-result: 4 scalar, 20 PQ, measured in its doc comment) in
+result: 4 scalar, 20 PQ and binary, measured in its doc comment) in
 `vector_search` and `filtered_walk`, so a search reports exact scores.
 Product quantization (card #1000, `hnsw::Pq`) cuts a vector into
 sub-vectors of 4 dimensions (`pq_sub_for`) and keeps for each the byte of
@@ -713,11 +713,16 @@ the node's nearest of 256 coarse centroids (`hnsw::Coarse`, card #1008):
 codes of the whole vector spent their bytes on the cluster and could not
 tell its members apart, recall@10 0.598 at 1M vectors; residual codes give
 0.916 (f32 0.901 at ef 100). Without a graph PQ waits for one
-(`VectorIndex::target`, saved in the index's config). Binary quantization
-(`Sq8::bits == 1`, card #999) is withdrawn: `create_vector_index` and
-`quantize_vector_index` refuse it (`refuse_withdrawn_quantization`), since
-even on residuals it kept 0.54 at 1M; its code stays, reachable only from
-`VectorIndex::quantize_as`, for a later version. `dequantize` decodes the codes back into an arena, with their error:
+(`VectorIndex::target`, saved in the index's config). **PQ and binary are
+withdrawn**: `create_vector_index` and `quantize_vector_index` refuse them
+(`refuse_withdrawn_quantization`). Binary (`Sq8::bits == 1`, card #999)
+kept 0.54 at 1M even on residuals; PQ (card #1007) held 8.10 GiB at 1M x
+768 against 8.38 for scalar and 10.95 for f32 (the documents keep their
+own copy of each vector) at a third of scalar's speed. Their code stays,
+reachable only from `VectorIndex::quantize_as`, for a later version.
+Quantizing copies only the training sample (`Graph::live_sample_by_key`)
+and computes residuals in place: copies of every vector ran a 1M x 768
+index out of memory. `dequantize` decodes the codes back into an arena, with their error:
 recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
 codes, bounds and coarse centroids); V5 is still read.
 

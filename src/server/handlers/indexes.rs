@@ -788,7 +788,7 @@ pub struct QuantizeVectorIndexQuery {
 }
 
 /// Quantize an existing vector index for memory compression:
-/// `?type=scalar` (the default), `?type=binary` or `?type=pq`.
+/// `?type=scalar` (the default). `binary` and `pq` are refused.
 pub async fn quantize_vector_index(
     State(state): State<AppState>,
     Path((db_name, coll_name, index_name)): Path<(String, String, String)>,

@@ -1032,35 +1032,21 @@ fn test_quantized_index_rescored_from_documents() {
     }
 }
 
-/// Binary quantization is withdrawn (card #1008): it lost too many of the
-/// nearest neighbours on a large collection. Creating an index with it, or
-/// quantizing one as it, is refused and says what to use instead.
+/// Binary (card #1008) and product (card #1007) quantization are
+/// withdrawn: binary lost too many of the nearest neighbours on a large
+/// collection, PQ saved little more memory than scalar at a third of its
+/// speed. Creating an index with either, or quantizing one as either, is
+/// refused and says what to use instead.
 #[test]
-fn test_binary_quantization_is_refused() {
+fn test_binary_and_pq_quantization_are_refused() {
     use solidb::storage::VectorQuantization;
 
     let (engine, _tmp) = create_test_engine();
-    engine.create_collection("bin".to_string(), None).unwrap();
-    let collection = engine.get_collection("bin").unwrap();
+    engine.create_collection("q".to_string(), None).unwrap();
+    let collection = engine.get_collection("q").unwrap();
     collection
         .insert(json!({"_key": "a", "embedding": [1.0, 0.0, 0.0]}))
         .unwrap();
-    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), 3)
-        .with_quantization(VectorQuantization::Binary);
-    let err = collection
-        .create_vector_index(config)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("binary quantization is not available"),
-        "{err}"
-    );
-    assert!(err.contains("'pq'"), "{err}");
-    assert!(
-        collection.get_vector_index("idx").is_err(),
-        "nothing was created"
-    );
-
     collection
         .create_vector_index(VectorIndexConfig::new(
             "plain".to_string(),
@@ -1068,57 +1054,36 @@ fn test_binary_quantization_is_refused() {
             3,
         ))
         .unwrap();
-    let err = collection
-        .quantize_vector_index("plain", VectorQuantization::Binary)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("binary quantization is not available"),
-        "{err}"
-    );
-}
-
-/// Product quantization (card #1000): created with `quantization: pq`, the
-/// graph keeps a byte a sub-vector of 4 dimensions; searches re-scored
-/// from the documents report exact scores and find each vector first.
-#[test]
-fn test_pq_index_rescored_from_documents() {
-    use rand::{Rng, SeedableRng};
-    use solidb::storage::VectorQuantization;
-
-    let (engine, _tmp) = create_test_engine();
-    engine.create_collection("pq".to_string(), None).unwrap();
-    let collection = engine.get_collection("pq").unwrap();
-    let dim = 64;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(9);
-    let vectors: Vec<Vec<f32>> = (0..10_500)
-        .map(|_| (0..dim).map(|_| rng.gen_range(-1.0f32..1.0)).collect())
-        .collect();
-    let docs: Vec<serde_json::Value> = vectors
-        .iter()
-        .enumerate()
-        .map(|(i, v)| json!({"_key": format!("d{i}"), "embedding": v}))
-        .collect();
-    collection.insert_batch(docs).unwrap();
-    let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), dim)
-        .with_quantization(VectorQuantization::Pq);
-    let stats = collection.create_vector_index(config).unwrap();
-    assert_eq!(stats.quantization, VectorQuantization::Pq);
-    assert!((stats.compression_ratio - 16.0).abs() < 1e-6, "{stats:?}");
-    let cosine = |a: &[f32], b: &[f32]| -> f32 {
-        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-        dot / (na * nb)
-    };
-    for i in [0usize, 1_234, 9_876] {
-        let found = collection
-            .vector_search("idx", &vectors[i], 5, None)
-            .unwrap();
-        assert_eq!(found[0].doc_key, format!("d{i}"));
-        for r in &found {
-            let j: usize = r.doc_key[1..].parse().unwrap();
-            assert!((r.score - cosine(&vectors[i], &vectors[j])).abs() < 1e-5);
-        }
+    for (kind, name) in [
+        (VectorQuantization::Binary, "binary"),
+        (VectorQuantization::Pq, "product"),
+    ] {
+        let config = VectorIndexConfig::new("idx".to_string(), "embedding".to_string(), 3)
+            .with_quantization(kind);
+        let err = collection
+            .create_vector_index(config)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("{name} quantization is not available")),
+            "{err}"
+        );
+        assert!(err.contains("'scalar'"), "{err}");
+        assert!(
+            collection.get_vector_index("idx").is_err(),
+            "nothing was created"
+        );
+        let err = collection
+            .quantize_vector_index("plain", kind)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("{name} quantization is not available")),
+            "{err}"
+        );
     }
+    // Scalar is still there.
+    collection
+        .quantize_vector_index("plain", VectorQuantization::Scalar)
+        .unwrap();
 }

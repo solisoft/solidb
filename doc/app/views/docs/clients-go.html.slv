@@ -880,7 +880,7 @@ similar, _ := client.Vector().SearchByDocument(
 )
 
 // Quantize index (reduce memory usage)
-client.Vector().Quantize("products", "product_embeddings", "binary")
+client.Vector().Quantize("products", "product_embeddings", "scalar")
 
 // Dequantize (restore full precision)
 client.Vector().Dequantize("products", "product_embeddings")

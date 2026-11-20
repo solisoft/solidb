@@ -840,7 +840,7 @@ end)
 )
 
 # Quantize index (reduce memory usage)
-:ok = SoliDB.Vector.quantize(client, "products", "product_embeddings", "binary")
+:ok = SoliDB.Vector.quantize(client, "products", "product_embeddings", "scalar")
 
 # Dequantize (restore full precision)
 :ok = SoliDB.Vector.dequantize(client, "products", "product_embeddings")
