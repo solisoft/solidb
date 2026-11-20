@@ -322,6 +322,9 @@ impl VectorIndex {
 
         // Store the graph; it holds the vectors from now on. A quantized
         // index keeps them as codes in the graph (card #996), not beside it.
+        // The vectors by key go before quantizing, which needs room of its
+        // own (3 GB a million at 768 dimensions, card #1007).
+        *vectors = HashMap::new();
         let mut graph = graph;
         let mut quantized = self
             .quantized_vectors
@@ -337,7 +340,6 @@ impl VectorIndex {
         }
         let mut hnsw = self.hnsw_graph.write().unwrap_or_else(|e| e.into_inner());
         *hnsw = Some(graph);
-        *vectors = HashMap::new();
     }
 
     /// Get the index configuration

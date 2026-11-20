@@ -1,0 +1,17 @@
+f32      load  32.1s  index  463.1s  rss 10.95 GB
+scalar   load  38.2s  index  451.0s  rss 8.38 GB
+pq       load  36.2s  index  476.5s  rss 8.10 GB
+
+scenario ef conc                       f32              scalar                  pq
+filtered 40 c1                342/s r0.921        152/s r0.973         67/s r0.993
+filtered 40 c8               1548/s r0.921        848/s r0.973        375/s r0.993
+filtered 100 c1               210/s r0.978        138/s r0.980         67/s r0.993
+filtered 100 c8              1011/s r0.978        772/s r0.980        376/s r0.993
+filtered 200 c1               150/s r0.991        106/s r0.994         67/s r0.993
+filtered 200 c8               756/s r0.991        604/s r0.994        375/s r0.993
+search 40 c1                 1416/s r0.587        434/s r0.745        140/s r0.924
+search 40 c8                 6406/s r0.587       2262/s r0.745        734/s r0.924
+search 100 c1                 860/s r0.785        385/s r0.791        137/s r0.924
+search 100 c8                3350/s r0.785       2081/s r0.791        725/s r0.924
+search 200 c1                 604/s r0.899        290/s r0.897        137/s r0.924
+search 200 c8                2316/s r0.899       1588/s r0.897        726/s r0.924

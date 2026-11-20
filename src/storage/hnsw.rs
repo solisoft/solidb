@@ -207,17 +207,20 @@ impl Sq8 {
 
     /// Bounds over `rows` (`dim` floats each) for `bits` a dimension, with
     /// no codes yet.
-    fn bounds_of(rows: &[f32], dim: usize, bits: u8) -> Self {
+    fn bounds_of<'a, I>(rows: I, dim: usize, bits: u8) -> Self
+    where
+        I: Iterator<Item = &'a [f32]> + Clone,
+    {
         if bits == 1 {
-            let n = (rows.len() / dim.max(1)).max(1) as f32;
+            let n = rows.clone().count().max(1) as f32;
             let mut mean = vec![0.0f32; dim];
-            for row in rows.chunks_exact(dim) {
+            for row in rows.clone() {
                 for (i, &v) in row.iter().enumerate() {
                     mean[i] += v / n;
                 }
             }
             let mut dev = vec![0.0f32; dim];
-            for row in rows.chunks_exact(dim) {
+            for row in rows {
                 for (i, &v) in row.iter().enumerate() {
                     dev[i] += (v - mean[i]).abs() / n;
                 }
@@ -231,13 +234,15 @@ impl Sq8 {
         }
         let mut min = vec![f32::MAX; dim];
         let mut max = vec![f32::MIN; dim];
-        for row in rows.chunks_exact(dim) {
+        let mut empty = true;
+        for row in rows {
+            empty = false;
             for (i, &v) in row.iter().enumerate() {
                 min[i] = min[i].min(v);
                 max[i] = max[i].max(v);
             }
         }
-        if rows.is_empty() {
+        if empty {
             min = vec![0.0; dim];
             max = vec![0.0; dim];
         }
@@ -430,14 +435,12 @@ impl Coarse {
         self.ids = parts.concat();
     }
 
-    /// `rows` minus each one's centroid (by `ids`).
-    fn residuals(&self, rows: &[f32], dim: usize) -> Vec<f32> {
-        let mut out = Vec::with_capacity(rows.len());
-        for (id, row) in rows.chunks_exact(dim).enumerate() {
+    /// Each of `rows` minus its centroid (by `ids`), in place.
+    fn subtract(&self, rows: &mut [f32], dim: usize) {
+        for (id, row) in rows.chunks_exact_mut(dim).enumerate() {
             let c = self.of_node(id as u32, dim);
-            out.extend(row.iter().zip(c).map(|(x, m)| x - m));
+            row.iter_mut().zip(c).for_each(|(x, m)| *x -= m);
         }
-        out
     }
 }
 
@@ -841,23 +844,40 @@ impl Graph {
     /// key order: two nodes holding the same documents train the same
     /// centroids and codebooks only from their keys, since node numbers
     /// follow the order the vectors came in.
-    fn live_rows_by_key(&self, rows: &[f32]) -> Vec<f32> {
+    ///
+    /// Only an even sample of at most `max` rows is copied, the one the
+    /// trainers take: at 768 dimensions a copy of every row is 3 GB a
+    /// million vectors, and a 1M index ran out of memory quantizing.
+    fn live_sample_by_key(&self, rows: &[f32], max: usize) -> Vec<f32> {
         let dim = self.dim;
-        let mut ids: Vec<usize> = (0..self.keys.len())
-            .filter(|&id| !self.removed[id])
-            .collect();
-        ids.sort_by(|a, b| self.keys[*a].cmp(&self.keys[*b]));
+        let ids = self.live_ids_by_key();
+        let stride = ids.len().div_ceil(max).max(1);
         ids.iter()
+            .step_by(stride)
             .flat_map(|&id| rows[id * dim..(id + 1) * dim].iter().copied())
             .collect()
     }
 
-    /// Coarse centroids over the arena, and the arena's residuals.
-    fn residual_arena(&self, threads: usize) -> (Coarse, Vec<f32>) {
-        let mut coarse = Coarse::train(&self.live_rows_by_key(&self.arena), self.dim, threads);
-        coarse.assign_all(&self.arena, self.dim, threads);
-        let residuals = coarse.residuals(&self.arena, self.dim);
-        (coarse, residuals)
+    /// The live nodes, in key order.
+    fn live_ids_by_key(&self) -> Vec<usize> {
+        let mut ids: Vec<usize> = (0..self.keys.len())
+            .filter(|&id| !self.removed[id])
+            .collect();
+        ids.sort_by(|a, b| self.keys[*a].cmp(&self.keys[*b]));
+        ids
+    }
+
+    /// Coarse centroids over the arena, which becomes the residuals: taken
+    /// out of the graph and changed in place, so no second copy is held.
+    fn residual_arena(&mut self, threads: usize) -> (Coarse, Vec<f32>) {
+        let dim = self.dim;
+        let sample = self.live_sample_by_key(&self.arena, COARSE_SAMPLE);
+        let mut coarse = Coarse::train(&sample, dim, threads);
+        drop(sample);
+        let mut rows = std::mem::take(&mut self.arena);
+        coarse.assign_all(&rows, dim, threads);
+        coarse.subtract(&mut rows, dim);
+        (coarse, rows)
     }
 
     /// Keep the vectors by product quantization (card #1000) and drop the
@@ -872,7 +892,7 @@ impl Graph {
         let dim = self.dim;
         let (coarse, residuals) = self.residual_arena(threads);
         let mut pq = Pq::train(
-            &self.live_rows_by_key(&residuals),
+            &self.live_sample_by_key(&residuals, PQ_SAMPLE),
             dim,
             pq_sub_for(dim),
             threads,
@@ -907,7 +927,15 @@ impl Graph {
         } else {
             (None, std::mem::take(&mut self.arena))
         };
-        let mut sq = Sq8::bounds_of(&self.live_rows_by_key(&rows), dim, bits);
+        // Bounds over the live rows, in key order (the mean of binary
+        // codes sums in that order), with no copy of them.
+        let live = self.live_ids_by_key();
+        let mut sq = Sq8::bounds_of(
+            live.iter().map(|&id| &rows[id * dim..(id + 1) * dim]),
+            dim,
+            bits,
+        );
+        drop(live);
         sq.codes
             .reserve_exact(self.keys.len() * sq.bytes_per_node(dim));
         for row in rows.chunks_exact(dim) {
