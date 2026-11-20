@@ -726,6 +726,20 @@ index out of memory. `dequantize` decodes the codes back into an arena, with the
 recreate the index for exact vectors. Saved as `FORMAT_V6` (V5 plus the
 codes, bounds and coarse centroids); V5 is still read.
 
+A **multivector** index (card #1005, `VectorIndexConfig::multivector`)
+reads a field holding a list of vectors; vector `i` of document `k` is the
+graph node `k\u{1f}i` (`node_key`, `doc_of_node` takes the last
+separator). A document's nodes are numbered from 0 with no gap and
+replaced whole on every write (`remove_doc_nodes` counts until one is
+missing). `vector_search` sends a multivector index to
+`multivector_search`: the query is the query vectors end to end, each
+fetches `MULTIVECTOR_CANDIDATES` x k nodes, and the documents they belong
+to are scored by exact MaxSim from the documents' vectors. A filtered
+search skips `filtered_walk` (nodes are not documents) and filters the
+documents. `VectorIndexConfig` is bincode-encoded inside the index, so the
+formats before V6 decode `LegacyVectorIndexConfig` (the 2.15 fields): a
+field added to the config goes in V6 only.
+
 A filtered search (`VECTOR_SEARCH(…, {filter})`, the driver's) follows the
 filter in the walk at level 0 (`Graph::search_filtered`, called through
 `Collection::filtered_walk`): every node is walked through, only one that

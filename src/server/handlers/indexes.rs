@@ -573,6 +573,9 @@ pub struct CreateVectorIndexRequest {
     /// Optional embedding model name.
     #[serde(default)]
     pub embedding_model: Option<String>,
+    /// The field holds a list of vectors, searched by MaxSim (card #1005).
+    #[serde(default)]
+    pub multivector: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -600,6 +603,10 @@ pub struct VectorSearchRequest {
     /// The query vector; or `text` instead (card #1003).
     #[serde(default)]
     pub vector: Vec<f32>,
+    /// The query vectors of a multivector index (card #1005), in place of
+    /// `vector`.
+    #[serde(default)]
+    pub vectors: Option<Vec<Vec<f32>>>,
     /// A text embedded with the index's provider and model.
     #[serde(default)]
     pub text: Option<String>,
@@ -650,7 +657,8 @@ pub async fn create_vector_index(
 
     let mut config = VectorIndexConfig::new(req.name.clone(), req.field.clone(), req.dimension)
         .with_metric(metric)
-        .with_quantization(quantization);
+        .with_quantization(quantization)
+        .with_multivector(req.multivector);
 
     if let Some(m) = req.m {
         config = config.with_m(m);
@@ -744,7 +752,10 @@ pub async fn vector_search(
             .await
             .map_err(|e| DbError::InternalError(format!("Task join error: {e}")))??
         }
-        None => req.vector.clone(),
+        None => match &req.vectors {
+            Some(vectors) => vectors.concat(),
+            None => req.vector.clone(),
+        },
     };
     let results = collection.vector_search(&index_name, &vector, req.limit, req.ef_search)?;
 

@@ -882,7 +882,7 @@ impl VectorIndex {
                 g.restore(&data.vectors);
             }
             return Ok(Self::loaded(
-                data.config,
+                data.config.into(),
                 data.vectors,
                 data.quantized_vectors,
                 graph,
@@ -897,9 +897,10 @@ impl VectorIndex {
 
         // Try V3 format first (with quantization)
         if let Ok(data) = bincode::deserialize::<VectorIndexDataV3>(bytes) {
-            let graph = legacy(&data.config, &data.vectors, data.hnsw_graph);
+            let config: VectorIndexConfig = data.config.into();
+            let graph = legacy(&config, &data.vectors, data.hnsw_graph);
             return Ok(Self::loaded(
-                data.config,
+                config,
                 data.vectors,
                 data.quantized_vectors,
                 graph,
@@ -908,8 +909,9 @@ impl VectorIndex {
 
         // Try V2 format (with HNSW graph)
         if let Ok(data) = bincode::deserialize::<VectorIndexDataV2>(bytes) {
-            let graph = legacy(&data.config, &data.vectors, data.hnsw_graph);
-            return Ok(Self::loaded(data.config, data.vectors, None, graph));
+            let config: VectorIndexConfig = data.config.into();
+            let graph = legacy(&config, &data.vectors, data.hnsw_graph);
+            return Ok(Self::loaded(config, data.vectors, None, graph));
         }
 
         // Fall back to V1 format (without HNSW graph)
@@ -918,7 +920,7 @@ impl VectorIndex {
 
         let target = data.config.quantization;
         Ok(Self {
-            config: data.config,
+            config: data.config.into(),
             vectors: RwLock::new(data.vectors),
             quantized_vectors: RwLock::new(None),
             hnsw_graph: RwLock::new(None),
@@ -1210,17 +1212,71 @@ pub struct QuantizationStats {
     pub compression_ratio: f32,
 }
 
+/// The config as indexes up to V5 (2.15) saved it. Bincode writes every
+/// field in order, so a field added to [`VectorIndexConfig`] (card #1005,
+/// `multivector`) would misread them: the formats before V6 read this one,
+/// field for field, and V6 saves the current config.
+#[derive(Clone, Serialize, Deserialize)]
+struct LegacyVectorIndexConfig {
+    name: String,
+    field: String,
+    dimension: usize,
+    metric: VectorMetric,
+    m: usize,
+    ef_construction: usize,
+    quantization: VectorQuantization,
+    embedding_source: Option<String>,
+    embedding_provider: Option<String>,
+    embedding_model: Option<String>,
+}
+
+impl From<LegacyVectorIndexConfig> for VectorIndexConfig {
+    fn from(c: LegacyVectorIndexConfig) -> Self {
+        VectorIndexConfig {
+            name: c.name,
+            field: c.field,
+            dimension: c.dimension,
+            metric: c.metric,
+            m: c.m,
+            ef_construction: c.ef_construction,
+            quantization: c.quantization,
+            embedding_source: c.embedding_source,
+            embedding_provider: c.embedding_provider,
+            embedding_model: c.embedding_model,
+            multivector: false,
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<&VectorIndexConfig> for LegacyVectorIndexConfig {
+    fn from(c: &VectorIndexConfig) -> Self {
+        LegacyVectorIndexConfig {
+            name: c.name.clone(),
+            field: c.field.clone(),
+            dimension: c.dimension,
+            metric: c.metric,
+            m: c.m,
+            ef_construction: c.ef_construction,
+            quantization: c.quantization,
+            embedding_source: c.embedding_source.clone(),
+            embedding_provider: c.embedding_provider.clone(),
+            embedding_model: c.embedding_model.clone(),
+        }
+    }
+}
+
 /// Serializable vector index data (V1 format - backward compat)
 #[derive(Serialize, Deserialize)]
 struct VectorIndexData {
-    config: VectorIndexConfig,
+    config: LegacyVectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
 }
 
 /// Serializable vector index data (V2 format - with HNSW)
 #[derive(Serialize, Deserialize)]
 struct VectorIndexDataV2 {
-    config: VectorIndexConfig,
+    config: LegacyVectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
     #[serde(default)]
     hnsw_graph: Option<LegacyGraph>,
@@ -1229,7 +1285,7 @@ struct VectorIndexDataV2 {
 /// Serializable vector index data (V3 format - with quantization)
 #[derive(Serialize, Deserialize)]
 struct VectorIndexDataV3 {
-    config: VectorIndexConfig,
+    config: LegacyVectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
     #[serde(default)]
     quantized_vectors: Option<QuantizedVectors>,
@@ -1243,7 +1299,7 @@ struct VectorIndexDataV3 {
 #[cfg(test)]
 #[derive(Serialize)]
 struct VectorIndexDataV4Ref<'a> {
-    config: &'a VectorIndexConfig,
+    config: &'a LegacyVectorIndexConfig,
     vectors: &'a HashMap<String, Vec<f32>>,
     quantized_vectors: &'a Option<QuantizedVectors>,
     hnsw_graph: &'a Option<Graph>,
@@ -1299,7 +1355,7 @@ struct VectorIndexDataV6 {
 impl From<VectorIndexDataV5> for VectorIndexDataV6 {
     fn from(v5: VectorIndexDataV5) -> Self {
         VectorIndexDataV6 {
-            config: v5.config,
+            config: v5.config.into(),
             vectors: v5.vectors,
             quantized_vectors: v5.quantized_vectors,
             hnsw_graph: v5.hnsw_graph,
@@ -1321,7 +1377,7 @@ impl From<VectorIndexDataV5> for VectorIndexDataV6 {
 
 #[derive(Deserialize)]
 struct VectorIndexDataV5 {
-    config: VectorIndexConfig,
+    config: LegacyVectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
     quantized_vectors: Option<QuantizedVectors>,
     hnsw_graph: Option<Graph>,
@@ -1332,7 +1388,7 @@ struct VectorIndexDataV5 {
 /// `FORMAT_V4`; earlier formats have no marker and are tried in turn.
 #[derive(Deserialize)]
 struct VectorIndexDataV4 {
-    config: VectorIndexConfig,
+    config: LegacyVectorIndexConfig,
     vectors: HashMap<String, Vec<f32>>,
     quantized_vectors: Option<QuantizedVectors>,
     hnsw_graph: Option<Graph>,
@@ -1892,7 +1948,7 @@ mod tests {
     fn a_v5_quantized_index_is_upgraded_on_load() {
         #[derive(Serialize)]
         struct V5Out<'a> {
-            config: &'a VectorIndexConfig,
+            config: &'a LegacyVectorIndexConfig,
             vectors: &'a HashMap<String, Vec<f32>>,
             quantized_vectors: &'a Option<QuantizedVectors>,
             hnsw_graph: &'a Option<Graph>,
@@ -1921,7 +1977,7 @@ mod tests {
         bincode::serialize_into(
             &mut bytes,
             &V5Out {
-                config: &config,
+                config: &(&config).into(),
                 vectors: &HashMap::new(),
                 quantized_vectors: &old_codes,
                 hnsw_graph: &graph,
@@ -2020,7 +2076,7 @@ mod tests {
         vectors.insert("a".to_string(), vec![1.0, 0.0, 0.0]);
         vectors.insert("b".to_string(), vec![0.0, 1.0, 0.0]);
         let old = VectorIndexDataV3 {
-            config,
+            config: (&config).into(),
             vectors,
             quantized_vectors: None,
             hnsw_graph: None,
@@ -2076,7 +2132,7 @@ mod tests {
         bincode::serialize_into(
             &mut v4,
             &VectorIndexDataV4Ref {
-                config: &config,
+                config: &(&config).into(),
                 vectors: &map,
                 quantized_vectors: &None,
                 hnsw_graph: &graph,

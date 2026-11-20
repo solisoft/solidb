@@ -111,6 +111,13 @@ impl Collection {
     /// Create a vector index
     pub fn create_vector_index(&self, config: VectorIndexConfig) -> DbResult<VectorIndexStats> {
         refuse_withdrawn_quantization(config.quantization)?;
+        if config.multivector && config.embedding_source.is_some() {
+            return Err(DbError::BadRequest(
+                "a multivector index reads its vectors from the documents: an embedding \
+                 provider gives one vector a text, not one a token"
+                    .to_string(),
+            ));
+        }
         let name = config.name.clone();
         if self.get_vector_index(&name).is_ok() {
             return Err(DbError::InvalidDocument(format!(
@@ -169,8 +176,9 @@ impl Collection {
                 return Ok(true);
             };
             let key = || String::from_utf8_lossy(key).into_owned();
-            if let Some(v) = self.extract_vector(&doc_value, &config.field, config.dimension) {
-                direct_vectors.push((key(), v));
+            let entries = self.index_entries(&config, &key(), &doc_value);
+            if !entries.is_empty() {
+                direct_vectors.extend(entries);
             } else if let Some(ref source_field) = config.embedding_source {
                 if let Some(text) = extract_field_value(&doc_value, source_field).as_str() {
                     if !text.trim().is_empty() {
@@ -319,6 +327,9 @@ impl Collection {
         let index = self.get_vector_index(name)?;
 
         let ef = ef_search.unwrap_or(100);
+        if index.config().multivector {
+            return self.multivector_search(&index, query, k, ef);
+        }
         // A quantized graph ranks by its codes: a wider set is fetched and
         // re-scored against the exact vectors (card #996).
         if index.graph_is_quantized() {
@@ -418,7 +429,10 @@ impl Collection {
             .collect();
         filtered_fields.sort();
         filtered_fields.dedup();
-        if !filter.is_empty() {
+        // A multivector graph's nodes are not documents: its candidates are
+        // filtered below, document by document.
+        let multivector = self.get_vector_index(name)?.config().multivector;
+        if !filter.is_empty() && !multivector {
             if let Some(found) = self.filtered_walk(
                 name,
                 query,
@@ -719,6 +733,19 @@ impl Collection {
         for config in configs {
             // 1. A concrete vector present in the doc — index it directly.
             if let Some(index) = self.vector_indexes.get(&config.name) {
+                if config.multivector {
+                    // A document's vectors are replaced whole: it may hold
+                    // fewer than before (card #1005).
+                    let removed = Self::remove_doc_nodes(&index, doc_key);
+                    let entries = self.index_entries(&config, doc_key, doc_value);
+                    for (node, vector) in &entries {
+                        let _ = index.insert(node, vector);
+                    }
+                    if removed || !entries.is_empty() {
+                        self.mark_vec_dirty();
+                    }
+                    continue;
+                }
                 if let Some(vector) =
                     self.extract_vector(doc_value, &config.field, config.dimension)
                 {
@@ -761,7 +788,7 @@ impl Collection {
     pub(crate) fn update_vector_indexes_on_delete(&self, doc_key: &str) {
         let mut changed = false;
         for entry in self.vector_indexes.iter() {
-            if let Ok(true) = entry.remove(doc_key) {
+            if Self::remove_doc_nodes(entry.value(), doc_key) {
                 changed = true;
             }
         }
@@ -785,8 +812,8 @@ impl Collection {
     /// so it matches exactly what would otherwise be re-indexed.
     pub(crate) fn vector_index_unchanged(&self, old_value: &Value, new_value: &Value) -> bool {
         for config in self.get_all_vector_index_configs() {
-            let old_vec = self.extract_vector(old_value, &config.field, config.dimension);
-            let new_vec = self.extract_vector(new_value, &config.field, config.dimension);
+            let old_vec = self.index_entries(&config, "", old_value);
+            let new_vec = self.index_entries(&config, "", new_value);
             if old_vec != new_vec {
                 return false;
             }
@@ -810,6 +837,123 @@ impl Collection {
             }
         }
         None
+    }
+
+    /// The vectors of a multivector index's field: a non-empty array of
+    /// arrays of `dim` numbers each (card #1005).
+    pub(crate) fn extract_vectors(
+        &self,
+        doc_value: &Value,
+        field: &str,
+        dim: usize,
+    ) -> Option<Vec<Vec<f32>>> {
+        let rows = extract_field_value(doc_value, field);
+        let rows = rows.as_array().filter(|rows| !rows.is_empty())?;
+        rows.iter()
+            .map(|row| {
+                let row = row.as_array().filter(|row| row.len() == dim)?;
+                row.iter().map(|v| v.as_f64().map(|f| f as f32)).collect()
+            })
+            .collect()
+    }
+
+    /// A document's vectors for index `config`, as `(graph node key,
+    /// vector)`: one of key `doc_key`, or one a vector of a multivector
+    /// field. Empty when the field holds none.
+    fn index_entries(
+        &self,
+        config: &VectorIndexConfig,
+        doc_key: &str,
+        doc_value: &Value,
+    ) -> Vec<(String, Vec<f32>)> {
+        if config.multivector {
+            return self
+                .extract_vectors(doc_value, &config.field, config.dimension)
+                .unwrap_or_default()
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (node_key(doc_key, i), v))
+                .collect();
+        }
+        self.extract_vector(doc_value, &config.field, config.dimension)
+            .map(|v| vec![(doc_key.to_string(), v)])
+            .unwrap_or_default()
+    }
+
+    /// Remove a document's nodes from `index`. Whether any was there.
+    fn remove_doc_nodes(index: &VectorIndex, doc_key: &str) -> bool {
+        if !index.config().multivector {
+            return matches!(index.remove(doc_key), Ok(true));
+        }
+        let mut i = 0;
+        while matches!(index.remove(&node_key(doc_key, i)), Ok(true)) {
+            i += 1;
+        }
+        i > 0
+    }
+
+    /// Late-interaction search (card #1005): `query` holds one or more
+    /// query vectors end to end. Each finds its nearest nodes; the
+    /// documents they belong to are scored exactly by MaxSim, the sum over
+    /// the query vectors of the best score among the document's vectors
+    /// (read from the document), and the best `k` returned.
+    fn multivector_search(
+        &self,
+        index: &VectorIndex,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+    ) -> DbResult<Vec<VectorSearchResult>> {
+        let config = index.config();
+        let dim = config.dimension;
+        if query.is_empty() || !query.len().is_multiple_of(dim) {
+            return Err(DbError::BadRequest(format!(
+                "a multivector search takes query vectors of {dim} dimensions"
+            )));
+        }
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+        // Candidates: what each query vector's nearest nodes belong to. A
+        // document matching on a few tokens is found by those tokens.
+        let fetch = k.saturating_mul(MULTIVECTOR_CANDIDATES).max(32);
+        let mut candidates: Vec<String> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for q in query.chunks_exact(dim) {
+            let walk_ef = ef.max(fetch);
+            for r in index.search(q, fetch, walk_ef)? {
+                let doc = doc_of_node(&r.doc_key);
+                if seen.insert(doc.to_string()) {
+                    candidates.push(doc.to_string());
+                }
+            }
+        }
+        let top = config
+            .field
+            .split('.')
+            .next()
+            .unwrap_or(&config.field)
+            .to_string();
+        let fields = [top];
+        let mut out: Vec<VectorSearchResult> = candidates
+            .into_iter()
+            .filter_map(|doc_key| {
+                // Deleted since it was indexed: dropped.
+                let doc = self.get_value_projected(&doc_key, &fields).ok()?;
+                let vectors = self.extract_vectors(&doc, &config.field, dim)?;
+                let score = query
+                    .chunks_exact(dim)
+                    .map(|q| {
+                        best_score(index, vectors.iter().map(|v| index.exact_score(q, v)))
+                            .unwrap_or(0.0)
+                    })
+                    .sum();
+                Some(VectorSearchResult { doc_key, score })
+            })
+            .collect();
+        out.sort_by(|a, b| index.better(a.score, b.score));
+        out.truncate(k);
+        Ok(out)
     }
 
     // ==================== Auto-embedding pending queue ====================
@@ -1046,6 +1190,28 @@ fn refuse_withdrawn_quantization(quantization: VectorQuantization) -> DbResult<(
     )))
 }
 
+/// Candidates a query vector of a multivector search fetches, per result
+/// asked for (card #1005): enough that a document strong on a few query
+/// tokens is among some token's nearest nodes.
+const MULTIVECTOR_CANDIDATES: usize = 8;
+
+/// A multivector index's graph node for vector `i` of document `doc_key`
+/// (card #1005): `<key>\u{1f}<i>`. A document's nodes are numbered from 0
+/// with no gap, so they are removed by counting until one is missing; the
+/// last separator gives the document back, whatever its key holds.
+fn node_key(doc_key: &str, i: usize) -> String {
+    format!("{doc_key}\u{1f}{i}")
+}
+
+fn doc_of_node(node: &str) -> &str {
+    node.rsplit_once('\u{1f}').map_or(node, |(doc, _)| doc)
+}
+
+/// The best of `scores` for `index` (highest similarity, or nearest).
+fn best_score(index: &VectorIndex, scores: impl Iterator<Item = f32>) -> Option<f32> {
+    scores.min_by(|a, b| index.better(*a, *b))
+}
+
 /// Query texts already embedded (card #1003): (database, provider, model,
 /// dimension, text) -> vector. A search typed again does not pay the
 /// provider again. Bounded: emptied when it reaches its size.
@@ -1068,6 +1234,13 @@ pub fn embed_query_text(
     config: &VectorIndexConfig,
     text: &str,
 ) -> DbResult<Vec<f32>> {
+    if config.multivector {
+        return Err(DbError::BadRequest(format!(
+            "vector index '{}' is multivector: search it with its query vectors \
+             (one a token), as the model that made the documents' gives them",
+            config.name
+        )));
+    }
     if config.embedding_source.is_none() && config.embedding_provider.is_none() {
         return Err(DbError::BadRequest(format!(
             "vector index '{}' has no embedding source: search it with a vector, \

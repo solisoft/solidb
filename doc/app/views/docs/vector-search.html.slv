@@ -536,6 +536,22 @@
               </div>
             </div>
 
+            <!-- Multivector (late interaction) -->
+            <div id="multivector" class="bg-gray-800/30 rounded-xl border border-white/5 overflow-hidden scroll-mt-24">
+              <div class="p-4 bg-white/5 border-b border-white/5">
+                <span class="text-cyan-400 font-bold text-sm">Multivector — ColBERT and ColPali (MaxSim)</span>
+              </div>
+              <div class="p-4">
+                <p class="text-gray-400 text-sm mb-3">A late-interaction model gives a document one vector a token (ColBERT) or a page-image patch (ColPali). Create the index with <code class="text-cyan-300">"multivector": true</code> on a field holding a list of vectors: each one is a node of the graph. Search it with the list of query vectors: each finds its nearest nodes, and the documents they belong to are scored exactly by <strong>MaxSim</strong>, the sum over the query vectors of the best score among the document&rsquo;s vectors. A filter works as with one vector. A multivector index takes no <code>embedding_source</code> and no text query: an embedding provider gives one vector a text.</p>
+                <pre><code class="language-sql text-sm text-gray-300">// POST /_api/database/app/vector/pages
+// {"name": "tokens_idx", "field": "tokens", "dimension": 128, "multivector": true}
+
+FOR r IN VECTOR_SEARCH("pages", "tokens_idx", @query_tokens, 10)
+  RETURN { key: r.doc._key, score: r.score }   // @query_tokens: [[...], [...], ...]</code></pre>
+                <p class="text-gray-400 text-sm mt-3">Over HTTP, <code>POST &hellip;/vector/{collection}/{index}/search</code> takes <code>"vectors": [[&hellip;], &hellip;]</code> in place of <code>"vector"</code>.</p>
+              </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="bg-cyan-900/10 border border-cyan-500/20 rounded-xl p-4">
                 <h4 class="text-cyan-400 font-bold mb-2">Available Functions</h4>

@@ -2400,8 +2400,17 @@ impl<'a> QueryExecutor<'a> {
         crate::storage::collection::vector::embed_query_text(self.storage, db, &config, text)
     }
 
+    /// A query vector; or, for a multivector index (card #1005), a list of
+    /// them, given end to end.
     pub(super) fn extract_vector_arg(value: &Value, context: &str) -> DbResult<Vec<f32>> {
         match value {
+            Value::Array(arr) if arr.first().is_some_and(Value::is_array) => {
+                let mut out = Vec::new();
+                for row in arr {
+                    out.extend(Self::extract_vector_arg(row, context)?);
+                }
+                Ok(out)
+            }
             Value::Array(arr) => arr
                 .iter()
                 .map(|v| {

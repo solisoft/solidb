@@ -189,6 +189,12 @@ pub struct VectorIndexConfig {
     /// Provider-specific defaults are used if not provided.
     #[serde(default)]
     pub embedding_model: Option<String>,
+    /// The field holds a list of vectors (ColBERT, ColPali: one a token or
+    /// a patch), each a node of the graph; a search with a list of query
+    /// vectors scores documents by MaxSim, the sum over the query vectors
+    /// of the best match among the document's (card #1005).
+    #[serde(default)]
+    pub multivector: bool,
 }
 
 fn default_hnsw_m() -> usize {
@@ -213,7 +219,14 @@ impl VectorIndexConfig {
             embedding_source: None,
             embedding_provider: None,
             embedding_model: None,
+            multivector: false,
         }
+    }
+
+    /// A field holding a list of vectors, searched by MaxSim (card #1005).
+    pub fn with_multivector(mut self, multivector: bool) -> Self {
+        self.multivector = multivector;
+        self
     }
 
     /// Set the distance metric
