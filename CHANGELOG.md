@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.16.0](https://github.com/solisoft/solidb/compare/v2.15.0...v2.16.0) (2026-11-23)
+
+Multivector indexes searched by MaxSim (ColBERT, ColPali), vector search by
+text, and scalar quantization that saves memory inside the HNSW graph
+(product and binary quantization withdrawn). Parquet and Arrow import.
+Versioned collections can be restored to an instant, name instants, keep
+their history through a truncate and in their shards, and replicate their
+versioning; `SYSTEM_TIME AS OF` no longer answers with today's documents.
+
 ### Added
 
 - **Restore a versioned collection to an instant.** `POST …/collection/{name}/restore` with `{"as_of": …}` or `{"tag": "v1"}`, and optionally `{"keys": [...]}`: every document that differs from its version then is written again, every one that did not exist then is removed, every one removed since comes back. These are ordinary writes, versioned and replicated, so a restore is undone by restoring to an instant before it. Answers how many documents were restored and removed.
