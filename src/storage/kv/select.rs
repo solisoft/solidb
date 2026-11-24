@@ -66,16 +66,28 @@ fn configured() -> Result<EngineKind, KvError> {
     named(std::env::var("SOLIDB_ENGINE").ok().as_deref())
 }
 
-/// The engine `SOLIDB_ENGINE` asks for, given its value.
+/// The engine `SOLIDB_ENGINE` asks for, given its value. An engine this
+/// binary was built without is refused here, for a new directory: left to
+/// `open_with`, it would be reported as a database the directory holds.
 fn named(variable: Option<&str>) -> Result<EngineKind, KvError> {
-    match variable {
+    let kind = match variable {
         Some(name) if !name.trim().is_empty() => EngineKind::parse(name).ok_or_else(|| {
             KvError::new(format!(
                 "SOLIDB_ENGINE={name}: expected \"solistore\" or \"rocksdb\""
             ))
-        }),
-        _ => Ok(EngineKind::default_for_new()),
+        })?,
+        _ => return Ok(EngineKind::default_for_new()),
+    };
+    let built_in = match kind {
+        EngineKind::Rocksdb => cfg!(feature = "engine-rocksdb"),
+        EngineKind::Solistore => cfg!(feature = "engine-solistore"),
+    };
+    if !built_in {
+        return Err(KvError::new(format!(
+            "SOLIDB_ENGINE={kind}: this binary was built without the engine-{kind} feature"
+        )));
     }
+    Ok(kind)
 }
 
 /// The engine recorded for `path`, if the directory already holds a database.
@@ -316,7 +328,15 @@ mod tests {
         assert_eq!(named(None).unwrap(), EngineKind::Solistore);
         assert_eq!(named(Some("  ")).unwrap(), EngineKind::Solistore);
         assert_eq!(named(Some("solistore")).unwrap(), EngineKind::Solistore);
-        assert_eq!(named(Some("rocksdb")).unwrap(), EngineKind::Rocksdb);
+        if cfg!(feature = "engine-rocksdb") {
+            assert_eq!(named(Some("rocksdb")).unwrap(), EngineKind::Rocksdb);
+        } else {
+            let err = named(Some("rocksdb")).unwrap_err().to_string();
+            assert!(
+                err.contains("built without the engine-rocksdb feature"),
+                "{err}"
+            );
+        }
         assert!(named(Some("leveldb")).is_err());
     }
 

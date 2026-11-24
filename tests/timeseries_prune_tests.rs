@@ -200,8 +200,10 @@ fn scenario(engine_name: &str) {
 
 #[test]
 fn a_prune_by_range_leaves_what_a_prune_in_batches_leaves() {
-    scenario("rocksdb");
-    // The second engine is a Cargo feature.
+    // Each engine is a Cargo feature; RocksDB is off by default from 3.0.
+    if cfg!(feature = "engine-rocksdb") {
+        scenario("rocksdb");
+    }
     if cfg!(feature = "engine-solistore") {
         scenario("solistore");
     }
