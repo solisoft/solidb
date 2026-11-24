@@ -8,6 +8,9 @@
 //! `eval_async`, so async bindings must work there. Audit H6: `solidb.cache`
 //! is namespaced per database.
 
+// Runs Lua: built only with the `lua` feature.
+#![cfg(feature = "lua")]
+
 use serde_json::json;
 use solidb::scripting::engine::LuaPool;
 use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};

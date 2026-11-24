@@ -7,6 +7,9 @@
 //! - Count with filters
 //! - Enhanced collection methods
 
+// Runs Lua: built only with the `lua` feature.
+#![cfg(feature = "lua")]
+
 use serde_json::json;
 use solidb::scripting::{Script, ScriptContext, ScriptEngine, ScriptStats, ScriptUser};
 use solidb::storage::StorageEngine;

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Lua is an optional feature, off by default.** The Lua runtime (custom script endpoints, services, WebSocket scripts, Lua triggers and jobs, the Lua REPL, `solidb scripts test`) is the Cargo feature `lua`; the published binaries and Docker image are built without it. **An instance that runs scripts must be built with `cargo build --release --features lua` before it upgrades.** Without it, scripts are stored, listed and replicated as before, and running one answers 501, as with `--no-lua`. The server binary is 4.7 MB smaller (80.3 against 85.0 MiB). mlua 0.11 → 0.12.
+
 ## [2.16.0](https://github.com/solisoft/solidb/compare/v2.15.0...v2.16.0) (2026-11-23)
 
 Multivector indexes searched by MaxSim (ColBERT, ColPali), vector search by

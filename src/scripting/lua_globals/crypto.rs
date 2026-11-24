@@ -21,7 +21,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // md5(data)
     let md5_fn = lua
-        .create_function(|_, data: mlua::String| {
+        .create_function(|_, data: mlua::LuaString| {
             let digest = md5::compute(data.as_bytes());
             Ok(format!("{:x}", digest))
         })
@@ -32,7 +32,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // sha256(data)
     let sha256_fn = lua
-        .create_function(|_, data: mlua::String| {
+        .create_function(|_, data: mlua::LuaString| {
             let mut hasher = sha2::Sha256::new();
             hasher.update(data.as_bytes());
             Ok(hex::encode(hasher.finalize()))
@@ -44,7 +44,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // sha512(data)
     let sha512_fn = lua
-        .create_function(|_, data: mlua::String| {
+        .create_function(|_, data: mlua::LuaString| {
             let mut hasher = sha2::Sha512::new();
             hasher.update(data.as_bytes());
             Ok(hex::encode(hasher.finalize()))
@@ -56,7 +56,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // hmac_sha256(key, data)
     let hmac_sha256_fn = lua
-        .create_function(|_, (key, data): (mlua::String, mlua::String)| {
+        .create_function(|_, (key, data): (mlua::LuaString, mlua::LuaString)| {
             type HmacSha256 = hmac::Hmac<sha2::Sha256>;
             let mut mac = HmacSha256::new_from_slice(&key.as_bytes())
                 .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
@@ -72,7 +72,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // hmac_sha512(key, data)
     let hmac_sha512_fn = lua
-        .create_function(|_, (key, data): (mlua::String, mlua::String)| {
+        .create_function(|_, (key, data): (mlua::LuaString, mlua::LuaString)| {
             type HmacSha512 = hmac::Hmac<sha2::Sha512>;
             let mut mac = HmacSha512::new_from_slice(&key.as_bytes())
                 .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
@@ -88,7 +88,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // base64_encode(data)
     let base64_encode_fn = lua
-        .create_function(|_, data: mlua::String| {
+        .create_function(|_, data: mlua::LuaString| {
             Ok(base64::engine::general_purpose::STANDARD.encode(data.as_bytes()))
         })
         .map_err(|e| {
@@ -115,7 +115,7 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
 
     // base32_encode(data)
     let base32_encode_fn = lua
-        .create_function(|_, data: mlua::String| {
+        .create_function(|_, data: mlua::LuaString| {
             let encoded = base32::encode(
                 base32::Alphabet::Rfc4648 { padding: true },
                 &data.as_bytes(),
@@ -312,37 +312,39 @@ pub fn setup_crypto_globals(lua: &Lua) -> Result<(), DbError> {
     // If peer_public is empty, returns the public key for the given secret
     // Otherwise, performs ECDH and returns the shared secret
     let curve25519_fn = lua
-        .create_function(|lua, (secret, peer_public): (mlua::String, mlua::String)| {
-            let secret_bytes = secret.as_bytes();
-            if secret_bytes.len() != 32 {
-                return Err(mlua::Error::RuntimeError(
-                    "Secret key must be exactly 32 bytes".to_string(),
-                ));
-            }
-
-            let mut secret_arr = [0u8; 32];
-            secret_arr.copy_from_slice(&secret_bytes);
-            let static_secret = StaticSecret::from(secret_arr);
-
-            let peer_bytes = peer_public.as_bytes();
-            if peer_bytes.is_empty() {
-                // Generate public key from secret
-                let public = PublicKey::from(&static_secret);
-                lua.create_string(public.as_bytes())
-            } else {
-                // Perform key exchange
-                if peer_bytes.len() != 32 {
+        .create_function(
+            |lua, (secret, peer_public): (mlua::LuaString, mlua::LuaString)| {
+                let secret_bytes = secret.as_bytes();
+                if secret_bytes.len() != 32 {
                     return Err(mlua::Error::RuntimeError(
-                        "Peer public key must be exactly 32 bytes".to_string(),
+                        "Secret key must be exactly 32 bytes".to_string(),
                     ));
                 }
-                let mut peer_arr = [0u8; 32];
-                peer_arr.copy_from_slice(&peer_bytes);
-                let peer_public_key = PublicKey::from(peer_arr);
-                let shared = static_secret.diffie_hellman(&peer_public_key);
-                lua.create_string(shared.as_bytes())
-            }
-        })
+
+                let mut secret_arr = [0u8; 32];
+                secret_arr.copy_from_slice(&secret_bytes);
+                let static_secret = StaticSecret::from(secret_arr);
+
+                let peer_bytes = peer_public.as_bytes();
+                if peer_bytes.is_empty() {
+                    // Generate public key from secret
+                    let public = PublicKey::from(&static_secret);
+                    lua.create_string(public.as_bytes())
+                } else {
+                    // Perform key exchange
+                    if peer_bytes.len() != 32 {
+                        return Err(mlua::Error::RuntimeError(
+                            "Peer public key must be exactly 32 bytes".to_string(),
+                        ));
+                    }
+                    let mut peer_arr = [0u8; 32];
+                    peer_arr.copy_from_slice(&peer_bytes);
+                    let peer_public_key = PublicKey::from(peer_arr);
+                    let shared = static_secret.diffie_hellman(&peer_public_key);
+                    lua.create_string(shared.as_bytes())
+                }
+            },
+        )
         .map_err(|e| {
             DbError::InternalError(format!("Failed to create curve25519 function: {}", e))
         })?;

@@ -28,7 +28,9 @@
 pub mod client;
 pub mod config;
 pub mod mapper;
+#[cfg(feature = "lua")]
 pub mod test_http;
+#[cfg(feature = "lua")]
 pub mod test_runner;
 pub mod watcher;
 
@@ -43,6 +45,7 @@ use self::config::Config;
 use self::mapper::{
     api_path_to_file, file_to_api_path, generate_header, has_metadata_header, parse_script_meta,
 };
+#[cfg(feature = "lua")]
 use self::test_runner::{TestRunner, TestRunnerConfig};
 use self::watcher::ScriptWatcher;
 
@@ -753,6 +756,17 @@ fn print_diff(old: &str, new: &str) {
 }
 
 /// Run tests from the tests/ directory
+/// The test files are Lua, run in a VM of this process: a binary built
+/// without the `lua` feature has none.
+#[cfg(not(feature = "lua"))]
+fn cmd_test(_file: Option<PathBuf>, _verbose: bool, _filter: Option<String>) -> anyhow::Result<()> {
+    anyhow::bail!(
+        "`solidb scripts test` runs Lua test files, and this binary was built without Lua \
+         (rebuild with `--features lua`)"
+    )
+}
+
+#[cfg(feature = "lua")]
 fn cmd_test(file: Option<PathBuf>, verbose: bool, filter: Option<String>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
 

@@ -1392,6 +1392,7 @@ async fn write_tiers_cover_import_truncate_and_blobs() {
 /// A script writes as its caller. Deploy a public "proxy insert" script — the
 /// realistic shape of the hole — and check that the caller's role, not the
 /// script author's, decides what it may write.
+#[cfg(feature = "lua")] // runs a script
 #[tokio::test]
 async fn scripts_write_as_their_caller() {
     let app = create_app();
@@ -1472,6 +1473,7 @@ async fn scripts_write_as_their_caller() {
 }
 
 /// The response contract: a script chooses its status, headers and body.
+#[cfg(feature = "lua")] // runs a script
 #[tokio::test]
 async fn scripts_control_status_headers_and_body() {
     let app = create_app();

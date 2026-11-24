@@ -25,6 +25,7 @@ mod common;
 
 struct Fixture {
     _tmp: TempDir,
+    #[cfg_attr(not(feature = "lua"), allow(dead_code))] // read by the script test only
     engine: StorageEngine,
     router: axum::Router,
     /// Global admin.
@@ -314,6 +315,7 @@ async fn a_scoped_admin_gains_only_jobs_through_sdbql() {
 /// its caller: one called by the admin of its database may write that
 /// database's `_jobs`, by `db:collection(...)` and by `db:query(...)`, and
 /// nothing else of the protected tiers.
+#[cfg(feature = "lua")] // runs a script
 #[tokio::test]
 async fn a_scoped_admin_writes_its_jobs_from_a_script() {
     let f = fixture();

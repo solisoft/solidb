@@ -22,6 +22,9 @@ cargo test --profile ci <pattern>             # Tests matching pattern (e.g., ca
 cargo test --profile ci -- --nocapture        # Show test output
 cargo test --profile ci                       # FULL suite — CI's job, not yours. See below.
 
+# Lua is the feature `lua`, off by default: the Lua tests need it
+cargo test --profile ci --features lua --test lua_integration_tests
+
 # The six benchmarks that live in tests/ are behind a feature and #[ignore]d
 cargo test --profile ci --features bench-tests -- --ignored
 
@@ -183,6 +186,16 @@ matching the existing `v0.32.1` style — CI's `release` job triggers on
   largest single source file in the repository.
 - **transaction/** - ACID transactions with configurable isolation levels, WAL support, and row-level locking.
 - **scripting/** - Embedded Lua 5.4 runtime for custom endpoints and database operations.
+  It is the Cargo feature `lua`, **off by default** (the published binaries
+  have no Lua). Without it `scripting::engine` is `engine_off.rs`: the same
+  names (`ScriptEngine`, `LuaPool`, `ScriptCache`, the real `ScriptIndex`)
+  that refuse to run anything with `lua_disabled_error` (501), so the server,
+  the queue and the handlers compile unchanged. A new use of the engine from
+  outside `scripting/` needs its name in `engine_off.rs`; anything that calls
+  `mlua` goes behind `#[cfg(feature = "lua")]`. Tests that run Lua carry
+  `#![cfg(feature = "lua")]` (or the attribute on the test): build and run
+  them with `--features lua`, as the CI `test` jobs do; the clippy job lints
+  both configurations.
 - **queue/** - Internal scheduled work: trigger dispatch (script + signed webhook), embedding generation, and materialized-view refresh. SolidB exposes no client-facing job or cron queue; application background jobs live in the Soli framework.
 - **driver/** - MessagePack-based binary protocol for high-performance clients.
 

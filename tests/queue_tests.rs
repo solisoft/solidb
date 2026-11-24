@@ -8,6 +8,9 @@
 //! - the status advances Pending -> Running -> Completed
 //! - Error handling and retries
 
+// Runs Lua: built only with the `lua` feature.
+#![cfg(feature = "lua")]
+
 use serde_json::json;
 use solidb::queue::{Job, JobStatus, QueueWorker};
 use solidb::scripting::ScriptStats;

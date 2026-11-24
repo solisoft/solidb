@@ -166,7 +166,7 @@ fn install_deadline_hook(lua: &Lua) {
 /// separately by the caller (see [`eval_with_deadline`]).
 pub(crate) fn install_deadline_hook_for(lua: &Lua, limit: std::time::Duration) {
     let deadline = std::time::Instant::now() + limit;
-    let hook = move |_lua: &Lua, _debug: &mlua::Debug| {
+    let hook = move |_lua: &Lua, _debug: &mlua::debug::Debug| {
         if std::time::Instant::now() > deadline {
             Err(mlua::Error::RuntimeError(format!(
                 "script exceeded execution time limit ({}ms)",
@@ -196,7 +196,7 @@ pub(crate) fn remove_deadline_hook(lua: &Lua) {
 /// binding (`time.sleep`, `fetch`, `solidb.timeout`), so the await itself is
 /// bounded too.
 pub(crate) async fn eval_with_deadline(
-    chunk: mlua::Chunk<'_>,
+    chunk: mlua::chunk::Chunk<'_>,
     limit: Option<std::time::Duration>,
 ) -> mlua::Result<LuaValue> {
     match limit {

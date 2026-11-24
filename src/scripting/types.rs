@@ -146,10 +146,12 @@ pub struct ScriptStats {
 /// `solidb.rate_limit`) read it at call time to namespace their
 /// process-global stores per database (audit H6). Not a Lua global, so a
 /// script cannot change which database it claims to be.
+#[cfg(feature = "lua")]
 pub(crate) struct ScriptDbName(pub String);
 
 /// The database of the script running on `lua`, or an error when none was
 /// installed — fail closed rather than fall into a shared namespace.
+#[cfg(feature = "lua")]
 pub(crate) fn script_db_name(lua: &mlua::Lua) -> mlua::Result<String> {
     lua.app_data_ref::<ScriptDbName>()
         .map(|d| d.0.clone())

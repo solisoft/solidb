@@ -5,6 +5,7 @@
 //! - solidb.auth.has_role(role) - Check if user has a role
 //! - solidb.auth.require_role(role) - Guard that requires a role
 
+#[cfg(feature = "lua")]
 use mlua::{Function, Lua, Result as LuaResult, Table};
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +54,7 @@ impl ScriptUser {
     }
 }
 
+#[cfg(feature = "lua")]
 /// Create the solidb.auth table with authentication functions
 pub fn create_auth_table(lua: &Lua, user: &ScriptUser) -> LuaResult<Table> {
     let auth_table = lua.create_table()?;
@@ -116,6 +118,7 @@ pub fn create_auth_table(lua: &Lua, user: &ScriptUser) -> LuaResult<Table> {
     Ok(auth_table)
 }
 
+#[cfg(feature = "lua")]
 /// Create solidb.auth.has_role(role) function
 fn create_has_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Function> {
     let roles = user.roles.clone();
@@ -130,6 +133,7 @@ fn create_has_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Function>
     })
 }
 
+#[cfg(feature = "lua")]
 /// Create solidb.auth.require_role(role) function
 fn create_require_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Function> {
     let roles = user.roles.clone();
@@ -159,6 +163,7 @@ fn create_require_role_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Funct
     })
 }
 
+#[cfg(feature = "lua")]
 /// Create solidb.auth.require_auth() function
 fn create_require_auth_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Function> {
     let authenticated = user.authenticated;
@@ -173,6 +178,7 @@ fn create_require_auth_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Funct
     })
 }
 
+#[cfg(feature = "lua")]
 /// Create solidb.auth.has_database_access(db_name) function
 fn create_has_database_access_function(lua: &Lua, user: &ScriptUser) -> LuaResult<Function> {
     let scoped_databases = user.scoped_databases.clone();
@@ -192,7 +198,7 @@ fn create_has_database_access_function(lua: &Lua, user: &ScriptUser) -> LuaResul
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "lua"))]
 mod tests {
     use super::*;
 

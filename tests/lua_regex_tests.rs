@@ -2,6 +2,9 @@
 //!
 //! Verifies the exposed `string.regex` and `string.regex_replace` functions in Lua.
 
+// Runs Lua: built only with the `lua` feature.
+#![cfg(feature = "lua")]
+
 use solidb::scripting::{ScriptEngine, ScriptStats, ScriptUser};
 use solidb::storage::StorageEngine;
 use std::sync::Arc;

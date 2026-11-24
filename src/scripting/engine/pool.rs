@@ -995,7 +995,12 @@ impl LuaPool {
         // `collectgarbage("stop")` or a tuned/generational collector would
         // otherwise persist into the next tenant's request on this state.
         lua.gc_restart();
-        let _ = lua.gc_inc(DEFAULT_GC_PAUSE, DEFAULT_GC_STEP_MUL, DEFAULT_GC_STEP_SIZE);
+        lua.gc_set_mode(mlua::state::GcMode::Incremental(
+            mlua::state::GcIncParams::default()
+                .pause(DEFAULT_GC_PAUSE)
+                .step_multiplier(DEFAULT_GC_STEP_MUL)
+                .step_size(DEFAULT_GC_STEP_SIZE),
+        ));
     }
 
     /// Get pool statistics (lock-free)

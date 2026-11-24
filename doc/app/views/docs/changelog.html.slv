@@ -9,6 +9,18 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">Lua is an optional feature, off by default</strong> &mdash; the Lua runtime (custom script endpoints, services, WebSocket scripts, Lua triggers and jobs, the Lua REPL, <code>solidb scripts test</code>) is now the Cargo feature <code>lua</code>, and the published binaries and Docker image are built without it: <strong class="text-white">an instance that runs scripts must be built with <code>cargo build --release --features lua</code> before it upgrades.</strong> Without it scripts are stored, listed and replicated as before, and running one answers <code>501</code>, as with <code>--no-lua</code>. The server binary is 4.7&nbsp;MB smaller. mlua is updated to 0.12.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 2.16.0 -->
   <section id="v2-16-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

@@ -81,7 +81,9 @@ jobs:
         # --lib --bins --tests skips examples/ (three more full links, already
         # compile-checked by the clippy job) and the doctest pass, which has
         # nothing to run: every doc fence in src/ is json, lua or text.
-        run: cargo test --profile ci --lib --bins --tests
+        # --features lua: the Lua runtime is off by default and the tests of
+        # scripts, triggers and jobs are built only with it.
+        run: cargo test --profile ci --features lua --lib --bins --tests
 
       # The root command tests the `solidb` package only. The client crate
       # and sdbql-core are workspace members with tests of their own, and the
@@ -126,7 +128,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run tests on RocksDB
-        run: cargo test --profile ci --lib --bins --tests
+        run: cargo test --profile ci --features lua --lib --bins --tests
 
   # A short pass of the fault harness (faults/, card #864): the server is
   # killed with SIGKILL while transactions and single inserts are written,
@@ -266,6 +268,11 @@ jobs:
       # never linted at all.
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # The default build has no Lua (`engine_off.rs` stands in for the
+      # engine, and the Lua tests are compiled out): lint it as shipped.
+      - name: Clippy, default features
+        run: cargo clippy --all-targets -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest

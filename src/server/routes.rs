@@ -243,87 +243,20 @@ pub fn create_router(
     // Audit M2: without this, expired sessions were never dropped.
     sync_session_manager.spawn_cleanup_task();
 
-    let lua_enabled = crate::scripting::lua_runtime_enabled();
-
     // Wrap storage in Arc before building the index
     let storage = Arc::new(storage);
 
-    let (lua_pool, script_cache, script_index, service_cache) = if lua_enabled {
-        let lua_pool = Arc::new(LuaPool::with_default_size());
-        tracing::info!(
-            "Lua VM pool initialized with {} states",
-            lua_pool.stats().size
-        );
-
-        let script_cache = Arc::new(ScriptCache::with_default_size());
-        let script_index = Arc::new(ScriptIndex::new());
-        script_index.rebuild(&storage);
-        let index_stats = script_index.stats();
-        tracing::info!(
-            "Script index built: {} exact paths, {} pattern paths",
-            index_stats.exact_entries,
-            index_stats.pattern_entries
-        );
-
-        let service_cache = Arc::new(crate::server::service_cache::ServiceCache::new(5));
-        {
-            let mut scripts_warmed = 0u32;
-            let mut services_warmed = 0u32;
-            let temp_lua = mlua::Lua::new();
-
-            for db_name in storage.list_databases() {
-                if let Ok(db) = storage.get_database(&db_name) {
-                    if let Ok(collection) = db.get_collection("_scripts") {
-                        for doc in collection.scan(None) {
-                            if let Ok(script) =
-                                serde_json::from_value::<crate::scripting::Script>(doc.to_value())
-                            {
-                                script_cache.get_or_analyze_needs(&script.key, &script.code);
-                                let _ = script_cache.get_or_compile(
-                                    &script.key,
-                                    &script.code,
-                                    |code| {
-                                        let chunk = temp_lua.load(code);
-                                        let func = chunk.into_function()?;
-                                        Ok(func.dump(false))
-                                    },
-                                );
-                                scripts_warmed += 1;
-                            }
-                        }
-                    }
-                    if let Ok(collection) = db.get_collection("_services") {
-                        for doc in collection.scan(None) {
-                            if let Ok(service) =
-                                serde_json::from_value::<crate::scripting::Service>(doc.to_value())
-                            {
-                                let key = service.key.clone();
-                                service_cache.insert(&db_name, &key, service);
-                                services_warmed += 1;
-                            }
-                        }
-                    }
-                }
-            }
-            tracing::info!(
-                "Caches pre-warmed: {} scripts (needs + bytecode), {} services",
-                scripts_warmed,
-                services_warmed
-            );
+    let (lua_pool, script_cache, script_index, service_cache) = match start_lua(&storage) {
+        Some(parts) => parts,
+        None => {
+            tracing::warn!("{}", crate::scripting::lua_disabled_error());
+            (
+                None,
+                Arc::new(ScriptCache::new(0)),
+                Arc::new(ScriptIndex::new()),
+                Arc::new(crate::server::service_cache::ServiceCache::new(0)),
+            )
         }
-
-        (Some(lua_pool), script_cache, script_index, service_cache)
-    } else {
-        tracing::warn!(
-            "Lua is disabled (--no-lua / SOLIDB_NO_LUA). Script execution, \
-             the Lua REPL, and service endpoints are off; the VM pool was not created."
-        );
-        (
-            None,
-            Arc::new(ScriptCache::new(0)),
-            Arc::new(ScriptIndex::new()),
-            Arc::new(crate::server::service_cache::ServiceCache::new(0)),
-        )
     };
 
     let cursor_store = CursorStore::new(Duration::from_secs(300));
@@ -1415,4 +1348,97 @@ pub fn create_router(
             }
             cors
         })
+}
+
+/// What a server with Lua holds for scripts: the VM pool, the bytecode cache
+/// warmed with every stored script, the route index and the service cache.
+/// `None` when Lua is off, at build time (feature `lua`) or at start
+/// (`--no-lua`).
+#[allow(clippy::type_complexity)]
+#[cfg(feature = "lua")]
+fn start_lua(
+    storage: &Arc<StorageEngine>,
+) -> Option<(
+    Option<Arc<LuaPool>>,
+    Arc<ScriptCache>,
+    Arc<ScriptIndex>,
+    Arc<crate::server::service_cache::ServiceCache>,
+)> {
+    if !crate::scripting::lua_runtime_enabled() {
+        return None;
+    }
+    let lua_pool = Arc::new(LuaPool::with_default_size());
+    tracing::info!(
+        "Lua VM pool initialized with {} states",
+        lua_pool.stats().size
+    );
+
+    let script_cache = Arc::new(ScriptCache::with_default_size());
+    let script_index = Arc::new(ScriptIndex::new());
+    script_index.rebuild(storage);
+    let index_stats = script_index.stats();
+    tracing::info!(
+        "Script index built: {} exact paths, {} pattern paths",
+        index_stats.exact_entries,
+        index_stats.pattern_entries
+    );
+
+    let service_cache = Arc::new(crate::server::service_cache::ServiceCache::new(5));
+    {
+        let mut scripts_warmed = 0u32;
+        let mut services_warmed = 0u32;
+        let temp_lua = mlua::Lua::new();
+
+        for db_name in storage.list_databases() {
+            if let Ok(db) = storage.get_database(&db_name) {
+                if let Ok(collection) = db.get_collection("_scripts") {
+                    for doc in collection.scan(None) {
+                        if let Ok(script) =
+                            serde_json::from_value::<crate::scripting::Script>(doc.to_value())
+                        {
+                            script_cache.get_or_analyze_needs(&script.key, &script.code);
+                            let _ =
+                                script_cache.get_or_compile(&script.key, &script.code, |code| {
+                                    let chunk = temp_lua.load(code);
+                                    let func = chunk.into_function()?;
+                                    Ok(func.dump(false))
+                                });
+                            scripts_warmed += 1;
+                        }
+                    }
+                }
+                if let Ok(collection) = db.get_collection("_services") {
+                    for doc in collection.scan(None) {
+                        if let Ok(service) =
+                            serde_json::from_value::<crate::scripting::Service>(doc.to_value())
+                        {
+                            let key = service.key.clone();
+                            service_cache.insert(&db_name, &key, service);
+                            services_warmed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        tracing::info!(
+            "Caches pre-warmed: {} scripts (needs + bytecode), {} services",
+            scripts_warmed,
+            services_warmed
+        );
+    }
+
+    Some((Some(lua_pool), script_cache, script_index, service_cache))
+}
+
+#[allow(clippy::type_complexity)]
+#[cfg(not(feature = "lua"))]
+fn start_lua(
+    _storage: &Arc<StorageEngine>,
+) -> Option<(
+    Option<Arc<LuaPool>>,
+    Arc<ScriptCache>,
+    Arc<ScriptIndex>,
+    Arc<crate::server::service_cache::ServiceCache>,
+)> {
+    None
 }
