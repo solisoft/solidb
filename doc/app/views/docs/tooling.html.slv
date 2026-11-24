@@ -699,7 +699,7 @@ end
               <i class="fas fa-camera text-amber-400 mr-3"></i>
               Physical backup
             </h2>
-            <p class="text-gray-400 mt-2">Point-in-time RocksDB checkpoint of the entire instance.</p>
+            <p class="text-gray-400 mt-2">Point-in-time checkpoint of the entire instance.</p>
           </div>
           <div class="p-6">
             <h3 class="text-lg font-bold text-white mb-3 flex items-center"><span class="bg-amber-500/20 text-amber-300 text-xs px-2 py-1 rounded border border-amber-500/30 mr-2">USAGE</span></h3>
@@ -757,7 +757,7 @@ end
 
             <div class="mt-4 bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex items-start">
                <i class="fas fa-triangle-exclamation text-red-400 mt-1 mr-3"></i>
-               <p class="text-sm text-gray-300"><strong>Copy it off the volume.</strong> RocksDB hard-links SST files, so a fresh checkpoint costs almost no space &mdash; but it shares those files with the live database and lives on the same disk. It protects against a bad write or a dropped collection, <em>not</em> against losing the volume. Move it to separate storage once taken.</p>
+               <p class="text-sm text-gray-300"><strong>Copy it off the volume.</strong> A checkpoint hard-links the engine&rsquo;s table files, so a fresh one costs almost no space &mdash; but it shares those files with the live database and lives on the same disk. It protects against a bad write or a dropped collection, <em>not</em> against losing the volume. Move it to separate storage once taken.</p>
             </div>
           </div>
         </div>

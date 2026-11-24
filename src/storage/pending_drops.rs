@@ -498,7 +498,7 @@ impl PendingCfDrops {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "engine-rocksdb"))]
 mod tests {
     use super::*;
 

@@ -413,7 +413,7 @@ size of its key range (flushed data only; memtable and SST count read 0).
 `solidb_keyspace_drops_total` and `solidb_keyspace_gc_compactions_total`;
 `solidb_cf_ops_total` now counts only legacy column-family drops.
 
-### Storage engines: `storage::kv` (solistore for a new directory, RocksDB for the existing ones)
+### Storage engines: `storage::kv` (solistore; RocksDB only behind `engine-rocksdb` from 3.0)
 
 All storage goes through `storage::kv::Kv` (aliased `RocksDb` for
 history): RocksDB's method names, SoliDB's own types (`KvCf`, `KvBatch`,
@@ -425,7 +425,18 @@ feature `engine-solistore`, on by default; the plan is
 of a new data directory (`EngineKind::default_for_new`; through 2.13.0 that
 was RocksDB). Nothing converts a directory that holds data: a RocksDB one is
 opened as RocksDB until `solidb-migrate-engine` is run on it, server
-stopped. A binary built with `--no-default-features` has RocksDB alone.
+stopped.
+
+From 3.0, RocksDB is the feature `engine-rocksdb`, off by default, and the
+release binaries have none. Every RocksDB item of `storage::kv` carries
+that feature, as every solistore one carries `engine-solistore`; a build
+with neither stops at a `compile_error!`. A binary without RocksDB refuses a
+RocksDB directory with the way to migrate and changes nothing in it
+(`select.rs`). `solidb-migrate-engine`, `keyspace_migration_tests` and the
+RocksDB unit tests need both engines, so the 3.0 archives do not ship the
+tool: a 2.x directory is converted with the 2.16 one. The 1.x
+column-family code (`pending_drops`, `cf_ops`, the keyspace migration) is
+still compiled.
 
 A data directory is opened with the engine recorded in its `ENGINE` file. An
 unmarked directory with RocksDB `OPTIONS-*` files is RocksDB's; anything
@@ -439,8 +450,8 @@ column family written to it.
 | `SOLIDB_DURABILITY_INTERVAL_MS` | 100 | solistore only: the eventual mode's fsync interval, i.e. what a power loss can lose. |
 
 Tests run on solistore, as a server's new directory does. To run them on
-RocksDB set `SOLIDB_ENGINE=rocksdb`, which is what the `test-rocksdb` CI job
-does (rbuild does not forward the environment: build with
+RocksDB build with `--features engine-rocksdb` and set
+`SOLIDB_ENGINE=rocksdb`, which is what the `test-rocksdb` CI job does (rbuild does not forward the environment: build with
 `rbuild cargo db-kv test --no-run`, then run the binaries over ssh). A
 storage change has to hold on both.
 

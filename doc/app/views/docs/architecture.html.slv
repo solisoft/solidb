@@ -72,7 +72,7 @@
             </div>
             <div class="bg-gradient-to-br from-pink-500/20 to-pink-600/10 rounded-xl p-4 border border-pink-500/20 text-center">
               <div class="text-pink-400 font-bold mb-1">Storage Layer</div>
-              <p class="text-xs text-gray-400">RocksDB</p>
+              <p class="text-xs text-gray-400">solistore</p>
             </div>
           </div>
         </div>
@@ -220,7 +220,7 @@
               <div class="text-gray-600 mx-2">→</div>
               <div class="bg-green-500/20 border border-green-500/30 rounded-lg px-4 py-3 text-center">
                 <i class="fas fa-database text-green-400 mb-1"></i>
-                <div class="text-white font-medium text-sm">RocksDB</div>
+                <div class="text-white font-medium text-sm">solistore</div>
                 <div class="text-xs text-gray-500">collection.rs</div>
               </div>
             </div>
@@ -251,7 +251,7 @@
                 </div>
                 <h5 class="text-white font-semibold">storage/</h5>
               </div>
-              <p class="text-sm text-gray-400 mb-3">RocksDB-backed persistence with collections, indexes, and TTL management (125KB collection module).</p>
+              <p class="text-sm text-gray-400 mb-3">solistore-backed persistence with collections, indexes, and TTL management (125KB collection module).</p>
               <div class="text-xs text-gray-500 font-mono">
                 engine.rs · collection.rs · indexes/
               </div>
@@ -316,7 +316,7 @@
                 </div>
                 <h5 class="text-white font-semibold">transaction/</h5>
               </div>
-              <p class="text-sm text-gray-400 mb-3">ACID transactions with configurable isolation levels; durability comes from RocksDB's own WAL.</p>
+              <p class="text-sm text-gray-400 mb-3">ACID transactions with configurable isolation levels; durability comes from the engine&rsquo;s own write-ahead log.</p>
               <div class="text-xs text-gray-500 font-mono">
                 mod.rs · wal.rs · isolation.rs
               </div>
@@ -518,7 +518,7 @@
                 <i class="fas fa-hdd text-green-500 mr-2"></i> Storage Engine
               </h3>
               <ul class="space-y-2 text-sm text-gray-400">
-                <li><strong class="text-gray-300">solistore or RocksDB:</strong> LSM-tree storage with column families, compression, compaction. A new data directory is solistore&rsquo;s; one that holds data keeps its engine (<a href="/docs/storage-engine" class="text-indigo-400 hover:underline">RocksDB &amp; solistore</a>).</li>
+                <li><strong class="text-gray-300">solistore:</strong> pure-Rust LSM-tree storage with column families, compression, compaction. From 3.0 the only engine of the default build; RocksDB remains the build feature <code>engine-rocksdb</code> for 2.x directories (<a href="/docs/storage-engine" class="text-indigo-400 hover:underline">RocksDB &amp; solistore</a>).</li>
                 <li><strong class="text-gray-300">Column Families:</strong> Separate namespaces for collections, indexes, metadata.</li>
                 <li><strong class="text-gray-300">Write Batches:</strong> Atomic multi-key operations for consistency.</li>
               </ul>
@@ -596,7 +596,7 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            The storage layer provides an abstraction over <strong>RocksDB</strong>. Since 2.0 every collection lives in one shared column family, each under its own 8-byte key prefix (database id, then collection id) — so creating or dropping a collection or a whole database never changes RocksDB's column-family set. Within a collection, documents, indexes and metadata are stored under the logical prefixes below.
+            The storage layer provides an abstraction over the engine, <strong>solistore</strong> (RocksDB&rsquo;s method names, SoliDB&rsquo;s own types). Since 2.0 every collection lives in one shared column family, each under its own 8-byte key prefix (database id, then collection id) — so creating or dropping a collection or a whole database never changes the engine&rsquo;s column-family set. Within a collection, documents, indexes and metadata are stored under the logical prefixes below.
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -1163,7 +1163,7 @@
           </div>
 
           <p class="text-gray-300 mb-6 leading-relaxed">
-            SoliDB provides <strong>ACID transactions</strong> across multiple collections. At commit every operation is validated first, then all collections are written in a single RocksDB write batch, so durability comes from RocksDB's own WAL. An update or delete based on a stale <code>_rev</code>, or an insert over an existing key, fails the commit with a transaction conflict. A transaction reads its own uncommitted writes.
+            SoliDB provides <strong>ACID transactions</strong> across multiple collections. At commit every operation is validated first, then all collections are written in a single write batch, so durability comes from the engine&rsquo;s own write-ahead log. An update or delete based on a stale <code>_rev</code>, or an insert over an existing key, fails the commit with a transaction conflict. A transaction reads its own uncommitted writes.
           </p>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1182,7 +1182,7 @@
               <ul class="space-y-1 text-sm text-gray-400">
                 <li>Validate, then write</li>
                 <li>One write batch for all collections</li>
-                <li>Crash safety via RocksDB WAL</li>
+                <li>Crash safety via the engine&rsquo;s write-ahead log</li>
                 <li>Conflict on stale <code>_rev</code></li>
               </ul>
             </div>

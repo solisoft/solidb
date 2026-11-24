@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
-### Changed
+## [3.0.0](https://github.com/solisoft/solidb/compare/v2.16.0...v3.0.0) (2026-11-24)
+
+SoliDB 3.0 runs on solistore alone, and Lua is a build option. The release
+binaries and the Docker image have neither RocksDB nor Lua: 54.8 MB
+instead of 66.3 for RocksDB alone (faithful release build), 4.7 MB less
+again for Lua, and a build without RocksDB's C++.
+
+### ⚠ BREAKING CHANGES
+
+- **RocksDB is no longer built in (card #992).** It is the Cargo feature `engine-rocksdb`, off by default. A 3.0 server refuses a RocksDB data directory and changes nothing in it. **Before upgrading, stop the 2.x server and run `solidb-migrate-engine <data-dir>` from the 2.16 archive**, which converts the directory to solistore in place (see the storage engine page); the 3.0 archives no longer ship the tool, which needs both engines. A directory that cannot be migrated yet can be served by a 3.0 built with `--features engine-rocksdb`. A build with neither engine now stops with a clear error.
 
 - **Lua is an optional feature, off by default.** The Lua runtime (custom script endpoints, services, WebSocket scripts, Lua triggers and jobs, the Lua REPL, `solidb scripts test`) is the Cargo feature `lua`; the published binaries and Docker image are built without it. **An instance that runs scripts must be built with `cargo build --release --features lua` before it upgrades.** Without it, scripts are stored, listed and replicated as before, and running one answers 501, as with `--no-lua`. The server binary is 4.7 MB smaller (80.3 against 85.0 MiB). mlua 0.11 → 0.12.
 

@@ -26,7 +26,7 @@
             Scripts are stored in the database, can be updated at runtime, and are served as custom HTTP or WebSocket endpoints under <code class="text-blue-400">/api/{db}/{service}/{path}</code>.
           </p>
           <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6 text-sm text-amber-100">
-            <strong>Lua is not in the default build.</strong> After 2.16.0, the runtime is the Cargo feature <code class="text-amber-300">lua</code>, and the published binaries and Docker image are built without it. Build the server from source with <code class="text-amber-300">cargo build --release --features lua</code> to run scripts, services, Lua triggers and jobs, the Lua REPL and <code class="text-amber-300">solidb scripts test</code>. Without it scripts are still stored, listed and replicated; running one answers <code class="text-amber-300">501</code>, as on a node started with <code class="text-amber-300">--no-lua</code>.
+            <strong>Lua is not in the default build.</strong> From 3.0, the runtime is the Cargo feature <code class="text-amber-300">lua</code>, and the published binaries and Docker image are built without it. Build the server from source with <code class="text-amber-300">cargo build --release --features lua</code> to run scripts, services, Lua triggers and jobs, the Lua REPL and <code class="text-amber-300">solidb scripts test</code>. Without it scripts are still stored, listed and replicated; running one answers <code class="text-amber-300">501</code>, as on a node started with <code class="text-amber-300">--no-lua</code>.
           </div>
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

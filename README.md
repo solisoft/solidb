@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/aa64e937-39b8-42ca-8ee5-beb7dac90c23
 - 📄 **JSON Document Storage** — Store and query JSON documents with ease
 - 📊 **Columnar Storage** — Column-oriented storage for analytics workloads with LZ4 compression and specialized indexes (Sorted, Hash, Bitmap, Bloom)
 - 🗃️ **Blob Storage** — Native support for storing and retrieving binary files
-- 💾 **Two storage engines** — solistore, a pure-Rust engine, for a new data directory, and RocksDB, which existing directories stay on; persistence with automatic crash recovery; all collections share one keyspace, so creating or dropping a collection costs the same at ten collections or ten thousand
+- 💾 **solistore storage engine** — pure Rust; RocksDB is gone from the default build in 3.0 (a 2.x RocksDB directory is converted with `solidb-migrate-engine` from 2.16 before the upgrade); persistence with automatic crash recovery; all collections share one keyspace, so creating or dropping a collection costs the same at ten collections or ten thousand
 
 ### Query Language
 - 🔍 **SDBQL Query Language** — Familiar query syntax inspired by ArangoDB, plus as-of joins, lambdas, sketches, and time-travel scans
@@ -129,11 +129,10 @@ sudo pacman -S base-devel clang gcc pkg-config zstd
 ```
 
 ### Windows
-Requires the MSVC build tools, CMake, and LLVM (RocksDB's bindgen needs `libclang`):
+Requires the MSVC build tools, CMake, and LLVM (bindgen needs `libclang`):
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools Kitware.CMake LLVM.LLVM
 ```
-Expect a long first build — RocksDB is a large C++ tree.
 
 ## 📚 Learn More
 

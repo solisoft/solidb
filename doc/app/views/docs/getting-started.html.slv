@@ -1028,7 +1028,7 @@ kubectl -n solidb get pods -w</pre>
             <!-- Storage -->
             <div class="bg-green-900/10 border border-green-500/20 rounded-xl p-6">
               <h3 class="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider">
-                Storage (RocksDB)
+                Storage
               </h3>
               <p class="text-gray-400 text-xs mb-3">Each of the first seven also has a command-line flag of the same name (<code class="text-amber-400">--block-cache</code>, <code class="text-amber-400">--memtable-budget</code>, &hellip;); the flag wins. Sizes accept <code class="text-amber-400">512MB</code>, <code class="text-amber-400">2GB</code> or a byte count. Defaults are given as production / <code class="text-amber-400">--dev</code>.</p>
               <div class="overflow-hidden border border-white/5 rounded-lg">

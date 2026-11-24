@@ -94,8 +94,9 @@ jobs:
 
   # The same suite on RocksDB. The `test` job above runs on solistore, the
   # engine a new data directory gets; here every directory a test creates is
-  # opened as RocksDB (SOLIDB_ENGINE), which existing installations still
-  # run on, so a storage change has to hold on both engines. Tests that
+  # opened as RocksDB (SOLIDB_ENGINE). RocksDB is off by default from 3.0
+  # but still a feature (`engine-rocksdb`) for 2.x directories not yet
+  # migrated, so a storage change has to hold on both engines. Tests that
   # build a 1.x RocksDB directory by hand mark it as RocksDB's and run on it
   # in either job.
   test-rocksdb:
@@ -128,7 +129,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run tests on RocksDB
-        run: cargo test --profile ci --features lua --lib --bins --tests
+        run: cargo test --profile ci --features lua,engine-rocksdb --lib --bins --tests
 
   # A short pass of the fault harness (faults/, card #864): the server is
   # killed with SIGKILL while transactions and single inserts are written,
@@ -171,7 +172,7 @@ jobs:
 
       # Both engines in the binary, whatever the default features are.
       - name: Build the server
-        run: cargo build --profile ci --features engine-solistore --bin solidb
+        run: cargo build --profile ci --features engine-solistore,engine-rocksdb --bin solidb
 
       - name: Build the harness
         run: cargo build --release --manifest-path faults/Cargo.toml
@@ -452,16 +453,17 @@ jobs:
         run: echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       # solistore is a default feature, named here so that a change to the
-      # defaults cannot ship a release binary without it: it is the engine of
-      # a new data directory, and RocksDB is compiled in beside it for the
-      # existing ones.
+      # defaults cannot ship a release binary without it. From 3.0 the release
+      # has no RocksDB and no Lua (features `engine-rocksdb`, `lua`), and so
+      # no solidb-migrate-engine: a 2.x RocksDB directory is converted with
+      # the 2.16 tool before the upgrade.
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --features engine-solistore
 
       - name: Package binaries
         if: runner.os != 'Windows'
         run: |
-          tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore solidb-migrate-engine
+          tar -czf ${{ matrix.artifact }}.tar.gz -C target/${{ matrix.target }}/release solidb solidb-dump solidb-restore
 
       # The notification-area icon and the Windows service (tray/, outside
       # the workspace). Built from the repository's root, so they take the
@@ -480,7 +482,7 @@ jobs:
           # "Open admin console" (tray/src/console.rs names its parts).
           $stage = Join-Path $PWD "zip-stage"
           New-Item -ItemType Directory -Force "$stage/admin" | Out-Null
-          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
+          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
           Copy-Item -Recurse "admin/app","admin/config","admin/public" "$stage/admin"
           Copy-Item "admin/soli.toml" "$stage/admin"
           Get-ChildItem "$stage/admin" -Recurse -File -Include "CLAUDE.md","AGENTS.md" | Remove-Item
@@ -506,7 +508,7 @@ jobs:
           $tray = "tray/target/${{ matrix.target }}/release"
           $stage = Join-Path $PWD "installer-bin"
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$rel/solidb-migrate-engine.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
+          Copy-Item "$rel/solidb.exe","$rel/solidb-dump.exe","$rel/solidb-restore.exe","$tray/solidb-tray.exe","$tray/solidb-service.exe" $stage
           $version = "${{ github.ref_name }}".TrimStart("v")
           & $iscc.FullName /Q "/DAppVersion=$version" "/DBin=$stage" "/DOutDir=$PWD" tray/installer/solidb.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

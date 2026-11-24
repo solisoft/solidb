@@ -49,14 +49,17 @@ cat ./data/ENGINE</pre>
         <div class="bg-gray-800/20 backdrop-blur-sm border border-white/5 rounded-2xl p-8">
           <h2 class="text-2xl font-bold text-white mb-6">Getting a build with solistore</h2>
           <p class="text-gray-300 mb-4 leading-relaxed">
-            The release binaries and the Docker image are built with solistore from 2.4.0 on, and the archives include <code class="text-amber-300">solidb-migrate-engine</code>. Building from source, solistore is the Cargo feature <code class="text-amber-300">engine-solistore</code>, which is now on by default; through 2.13.0 it had to be asked for with <code>--features engine-solistore</code>.
+            <strong class="text-white">From 3.0, SoliDB runs on solistore alone.</strong> The release binaries and the Docker image have no RocksDB, and a 3.0 server refuses a RocksDB data directory, changing nothing in it. Convert it first, with <code class="text-amber-300">solidb-migrate-engine</code> from the 2.16 archive (see <a href="#migrate" class="text-cyan-400 hover:underline">below</a>), then upgrade; the 3.0 archives no longer include the tool. Building from source, RocksDB is still the Cargo feature <code class="text-amber-300">engine-rocksdb</code>, off by default, for a directory that cannot be migrated yet.
           </p>
           <div class="bg-gray-950/50 rounded-xl p-4 border border-white/5 font-mono text-sm text-gray-300 overflow-x-auto mb-4">
-<pre><span class="text-gray-500"># both engines</span>
+<pre><span class="text-gray-500"># solistore only (the default, and the release binaries)</span>
 cargo build --release
 
+<span class="text-gray-500"># both engines: opens a 2.x RocksDB directory, builds solidb-migrate-engine</span>
+cargo build --release --features engine-rocksdb
+
 <span class="text-gray-500"># RocksDB only: new directories are RocksDB's</span>
-cargo build --release --no-default-features</pre>
+cargo build --release --no-default-features --features engine-rocksdb</pre>
           </div>
           <p class="text-gray-300 leading-relaxed">
             A binary built without the feature creates its new directories on RocksDB. It still recognises a solistore directory and refuses it by name (<code class="text-gray-400">… uses the solistore engine; this binary was built without the engine-solistore feature</code>). Before 2.4, the same situation surfaced as a misleading RocksDB error, <code class="text-gray-400">Corruption: checksum mismatch … MANIFEST-… may be corrupted</code>. If you see that on a directory whose <code>ENGINE</code> file says <code>solistore</code>, the data is fine; the binary is the wrong one.

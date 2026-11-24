@@ -82,7 +82,6 @@ Name: "path"; Description: "{cm:TaskPath}"
 Source: "{#Bin}\solidb.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-dump.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-restore.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Bin}\solidb-migrate-engine.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-tray.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bin}\solidb-service.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; The parts of the admin application that are its code: the list is the

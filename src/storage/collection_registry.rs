@@ -466,7 +466,7 @@ pub(crate) fn dead_ranges(db: &DB) -> Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "engine-rocksdb"))]
 mod tests {
     use super::*;
     use rust_rocksdb::Options;

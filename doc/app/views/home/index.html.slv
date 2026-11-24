@@ -48,7 +48,7 @@
       </ul>
 
       <p class="hero-lede">
-        All seven, and blobs beside them, live in one RocksDB store behind one
+        All seven, and blobs beside them, live in one solistore store behind one
         query language, SDBQL. The captures on this page come from real servers.
         Each one names the release it shipped in and links to the post that
         shows how it was taken.
@@ -57,7 +57,7 @@
         <a class="btn btn-primary" href="/docs/getting-started">Read the getting-started guide</a>
         <a class="btn-link" href="/docs/changelog">What changed in the latest release</a>
       </div>
-      <p class="hero-meta">O'Saasy License · Rust and RocksDB · HTTP, WebSocket and a MessagePack driver</p>
+      <p class="hero-meta">O'Saasy License · Rust, on solistore · HTTP, WebSocket and a MessagePack driver</p>
     </div>
 
     <%# Slideshow of captured sessions. Every slide is copied from a release
@@ -214,9 +214,8 @@ Full sync complete, final sequence: 5
         <div><dt>A transaction commit</dt><dd>Acknowledged after its fsync, at every isolation level but
           <code>read_uncommitted</code>. A process kill loses nothing, and neither does a power loss.</dd></div>
         <div><dt>A write outside a transaction</dt><dd>By default, acknowledged once handed to the operating
-          system: a process kill loses nothing, a power loss can lose the last 100&nbsp;ms on solistore, or
-          what the kernel had not written back on RocksDB. With <code>SOLIDB_DURABILITY=full</code>
-          (solistore) it waits for its fsync, which concurrent writes share.</dd></div>
+          system: a process kill loses nothing, a power loss can lose the last 100&nbsp;ms. With <code>SOLIDB_DURABILITY=full</code>
+          it waits for its fsync, which concurrent writes share.</dd></div>
         <div><dt>What was tested</dt><dd>120 <code>kill -9</code> under 32 clients on 2.9.4: 15.8 million
           acknowledged transfers, none lost, none half applied. A power loss has not been tested.
           <a class="text-link" href="/blog/durability-and-transactions">Durability and transactions</a>.</dd></div>
@@ -799,8 +798,8 @@ $ curl -u admin:… 10.0.0.3:6745/_api/cluster/status</pre>
     <div>
       <h2>Build it and run it.</h2>
       <p>
-        RocksDB is compiled from source, so the first build needs a C++ toolchain and
-        takes a while. The server listens on port 6745 and prints a random admin
+        The storage engine is pure Rust, but a few dependencies are C (zstd, jemalloc),
+        so the first build needs a C toolchain. The server listens on port 6745 and prints a random admin
         password to its log on first boot.
       </p>
       <p class="small">

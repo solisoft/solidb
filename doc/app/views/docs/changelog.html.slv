@@ -9,13 +9,15 @@
     </p>
   </div>
 
-  <!-- Unreleased -->
-  <section id="unreleased" class="mb-16 scroll-mt-24">
+  <!-- 3.0.0 -->
+  <section id="v3-0-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
-      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+      <h2 class="text-3xl font-bold text-white">v3.0.0</h2>
+      <span class="text-sm font-medium text-gray-400">November 24, 2026</span>
     </div>
     <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
       <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white">RocksDB is no longer built in</strong> &mdash; SoliDB 3.0 runs on solistore alone: RocksDB is the Cargo feature <code>engine-rocksdb</code>, off by default, and the release binaries and Docker image have none. A 3.0 server refuses a RocksDB data directory and changes nothing in it. <strong class="text-white">Before upgrading, stop the 2.x server and run <code>solidb-migrate-engine &lt;data-dir&gt;</code> from the 2.16 archive</strong>, which converts the directory in place (see <a href="/docs/storage-engine#migrate" class="text-cyan-400 hover:underline">moving a directory to solistore</a>); the 3.0 archives no longer ship the tool. A directory that cannot be migrated yet can be served by a 3.0 built with <code>--features engine-rocksdb</code>. The server binary is 54.8&nbsp;MB instead of 66.3, and builds without a C++ toolchain for RocksDB.</li>
         <li><strong class="text-white">Lua is an optional feature, off by default</strong> &mdash; the Lua runtime (custom script endpoints, services, WebSocket scripts, Lua triggers and jobs, the Lua REPL, <code>solidb scripts test</code>) is now the Cargo feature <code>lua</code>, and the published binaries and Docker image are built without it: <strong class="text-white">an instance that runs scripts must be built with <code>cargo build --release --features lua</code> before it upgrades.</strong> Without it scripts are stored, listed and replicated as before, and running one answers <code>501</code>, as with <code>--no-lua</code>. The server binary is 4.7&nbsp;MB smaller. mlua is updated to 0.12.</li>
       </ul>
     </div>
