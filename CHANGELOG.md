@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [3.1.0](https://github.com/solisoft/solidb/compare/v3.0.0...v3.1.0) (2026-11-25)
+
 ### Added
 
 - **`EXPLAIN` is a statement.** `EXPLAIN FOR u IN users FILTER u.email == @e RETURN u` returns one row, the same plan object as `POST /_api/database/{db}/explain` with `analyze: false`: collections, filters, sort, limit, timings, `documents_scanned`, `documents_returned`, `warnings`, and `plan_only: true`. Nothing is read for its values and nothing is written, so a plan of an `INSERT`, `UPDATE`, `REPLACE`, `REMOVE` or `UPSERT` leaves the data alone. `EXPLAIN ANALYZE` of a read runs the query and returns the plan with timings, not the rows (`plan_only` is absent). `EXPLAIN ANALYZE` of a write runs the writes once and returns the plan, not the rows the write would have returned; the cursor's `inserted` / `updated` / `deleted` are the real counts, timings are zero, and `warnings` starts with the reason (measuring the steps would run the writes a second time). The HTTP explain endpoint is unchanged and still does not itself apply mutations. `warnings` also names a `QUALIFY`, a `SAMPLE` or a `ROLLUP` / `CUBE` when the query has one. `EXPLAIN` opens a statement: anywhere else (a subquery, a CTE, a set-operation operand, inside parentheses before `UNION`) it is a parse error, and so is an `EXPLAIN` of `CREATE STREAM` or of a materialized-view statement.
