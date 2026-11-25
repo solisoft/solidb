@@ -121,7 +121,19 @@ impl Parser {
 
     /// Parse a complete query
     pub fn parse(&mut self) -> DbResult<Query> {
-        self.parse_query(true)
+        let leads = self.ident_eq("EXPLAIN");
+        let query = self.parse_query(true)?;
+        // EXPLAIN opens the statement, nowhere else. Inside a set-operation
+        // operand, a CTE or a subquery it ran without the bindings its
+        // block was given, and an ANALYZE there reset the outer query's
+        // caches; `(EXPLAIN FOR …) UNION (…)` explained the whole union and
+        // let a write operand pass as a read.
+        if (query.explain.is_some() && !leads) || explains_inside(&query) {
+            return Err(DbError::ParseError(
+                "EXPLAIN is only valid at the start of a statement".to_string(),
+            ));
+        }
+        Ok(query)
     }
 
     /// Parse a query, optionally checking for trailing tokens (false for subqueries)
@@ -150,6 +162,10 @@ impl Parser {
         check_trailing: bool,
         parse_set_ops: bool,
     ) -> DbResult<Query> {
+        // `EXPLAIN [ANALYZE]` wraps the query that follows, including a
+        // parenthesized block: `EXPLAIN (FOR …) UNION …`.
+        let explain = self.parse_explain_prefix()?;
+
         // A parenthesized leading block: `(FOR ...) UNION (FOR ...)`. The
         // parentheses only group, so the inner block *is* this query and any
         // following set operations hang off it.
@@ -157,7 +173,9 @@ impl Parser {
             && matches!(self.current_token(), Token::LeftParen)
             && starts_query(self.peek_token(1))
         {
-            return self.parse_parenthesized_query(check_trailing);
+            let mut query = self.parse_parenthesized_query(check_trailing)?;
+            self.stamp_explain(&mut query, explain)?;
+            return Ok(query);
         }
 
         // Parse optional CREATE STREAM or CREATE MATERIALIZED VIEW
@@ -208,6 +226,7 @@ impl Parser {
                 // Try to parse as graph traversal first, fallback to regular FOR
                 match self.try_parse_for_or_graph()? {
                     ForOrGraph::For(for_clause) => {
+                        let for_clause = *for_clause;
                         for_clauses.push(for_clause.clone());
                         body_clauses.push(BodyClause::For(for_clause));
                     }
@@ -273,6 +292,21 @@ impl Parser {
                 break;
             }
         }
+
+        // QUALIFY sits after the body and before SORT. A SORT written first
+        // is already consumed below, so `SORT … QUALIFY …` stays a parse error.
+        let qualify = if self.ident_eq("QUALIFY") {
+            self.advance();
+            let expression = self.parse_expression()?;
+            if self.ident_eq("QUALIFY") {
+                return Err(DbError::ParseError(
+                    "A query has one QUALIFY clause".to_string(),
+                ));
+            }
+            Some(expression)
+        } else {
+            None
+        };
 
         // FOR clause is now optional - allow simple RETURN queries
         // e.g., RETURN 1 + 1, RETURN MERGE({a: 1}, {b: 2})
@@ -374,7 +408,7 @@ impl Parser {
                 // Check if there are unexpected tokens
                 if !matches!(self.current_token(), Token::Eof) {
                     return Err(DbError::ParseError(format!(
-                        "Unexpected token: {:?}. Expected FOR, LET, RETURN, INSERT, UPDATE, or REMOVE",
+                        "Unexpected token: {:?}. Expected FOR, LET, FILTER, QUALIFY, RETURN, INSERT, UPDATE, or REMOVE",
                         self.current_token()
                     )));
                 }
@@ -424,9 +458,65 @@ impl Parser {
             post_limit_lets,
             body_clauses,
             set_operations,
+            explain: None,
+            qualify,
         };
+        self.stamp_explain(&mut query, explain)?;
         mark_mutation_bindings(&mut query);
         Ok(query)
+    }
+
+    /// `EXPLAIN` or `EXPLAIN ANALYZE` at the start of a query block.
+    fn parse_explain_prefix(&mut self) -> DbResult<Option<ExplainMode>> {
+        if !self.ident_eq("EXPLAIN") {
+            return Ok(None);
+        }
+        self.advance();
+        if self.ident_eq("ANALYZE") {
+            self.advance();
+            Ok(Some(ExplainMode::Analyze))
+        } else {
+            Ok(Some(ExplainMode::Plan))
+        }
+    }
+
+    fn stamp_explain(&self, query: &mut Query, explain: Option<ExplainMode>) -> DbResult<()> {
+        if explain.is_none() {
+            return Ok(());
+        }
+        if query.explain.is_some() {
+            return Err(DbError::ParseError("EXPLAIN cannot be nested".to_string()));
+        }
+        // A stream or materialized-view statement is run before anything
+        // looks at `explain` (the /cursor handler creates the stream, the
+        // executor runs the view DDL), and a plan-only EXPLAIN counts as a
+        // read: accepting one would let a reader create them.
+        if query.create_stream_clause.is_some()
+            || query.create_materialized_view_clause.is_some()
+            || query.refresh_materialized_view_clause.is_some()
+        {
+            return Err(DbError::ParseError(
+                "EXPLAIN applies to queries, not to CREATE STREAM or materialized-view statements"
+                    .to_string(),
+            ));
+        }
+        query.explain = explain;
+        Ok(())
+    }
+
+    /// `SAMPLE <expr> [PERCENT]`, after a FOR source and before OPTIONS.
+    fn parse_sample(&mut self) -> DbResult<Option<SampleSpec>> {
+        if !self.ident_eq("SAMPLE") {
+            return Ok(None);
+        }
+        self.advance();
+        let expr = self.parse_expression()?;
+        if self.ident_eq("PERCENT") {
+            self.advance();
+            Ok(Some(SampleSpec::Percent(expr)))
+        } else {
+            Ok(Some(SampleSpec::Count(expr)))
+        }
     }
 
     /// Try to parse a set-operation keyword (UNION [ALL] / INTERSECT / EXCEPT)
@@ -557,7 +647,7 @@ fn starts_query(token: &Token) -> bool {
             | Token::With
             | Token::Create
             | Token::Refresh
-    )
+    ) || matches!(token, Token::Identifier(id) if id.eq_ignore_ascii_case("EXPLAIN"))
 }
 
 /// Append one set operation to a chain, honouring SQL precedence.
@@ -584,9 +674,11 @@ fn push_set_operation(ops: &mut Vec<SetOperationClause>, op: SetOperator, operan
     ops.push(clause);
 }
 
-/// Result of parsing a FOR clause - could be regular FOR or graph traversal
+/// Result of parsing a FOR clause - could be regular FOR or graph traversal.
+/// `For` is boxed so the enum stays under clippy's `large_enum_variant` limit
+/// once `ForClause` carries a `SAMPLE` expression.
 pub(crate) enum ForOrGraph {
-    For(ForClause),
+    For(Box<ForClause>),
     GraphTraversal(GraphTraversalClause),
     ShortestPath(ShortestPathClause),
 }
@@ -739,8 +831,9 @@ impl Parser {
 
             let system_time = self.parse_system_time_as_of()?;
             let valid_time = self.parse_valid_time()?;
+            let sample = self.parse_sample()?;
             let options = self.parse_for_options()?;
-            Ok(ForOrGraph::For(ForClause {
+            Ok(ForOrGraph::For(Box::new(ForClause {
                 variable: first_var,
                 collection: n.clone(),
                 source_variable: Some(n),
@@ -748,12 +841,14 @@ impl Parser {
                 system_time,
                 valid_time,
                 options,
-            }))
+                sample,
+            })))
         } else {
             // Parse as expression (e.g., 1..5, [1, 2, 3], etc.)
             let expr = self.parse_expression()?;
+            let sample = self.parse_sample()?;
             let options = self.parse_for_options()?;
-            Ok(ForOrGraph::For(ForClause {
+            Ok(ForOrGraph::For(Box::new(ForClause {
                 variable: first_var,
                 collection: String::new(),
                 source_variable: None,
@@ -761,12 +856,34 @@ impl Parser {
                 system_time: None,
                 valid_time: None,
                 options,
-            }))
+                sample,
+            })))
         }
     }
 }
 
 /// Parse an SDBQL query string into an AST
+/// An `EXPLAIN` in a block nested in `query`: a set-operation operand, a
+/// CTE body or a subquery, at any depth.
+fn explains_inside(query: &Query) -> bool {
+    fn any(query: &Query) -> bool {
+        query.explain.is_some() || explains_inside(query)
+    }
+    query.set_operations.iter().any(|op| any(&op.query))
+        || query
+            .with_clause
+            .as_ref()
+            .is_some_and(|with| with.ctes.iter().any(|cte| any(&cte.query)))
+        || crate::sdbql::ast::query_any_expression(
+            query,
+            &mut |e| matches!(e, Expression::Subquery(q) if any(q)),
+        )
+        || query
+            .create_materialized_view_clause
+            .as_ref()
+            .is_some_and(|c| any(&c.query))
+}
+
 pub fn parse(input: &str) -> DbResult<Query> {
     let mut parser = Parser::new(input)?;
     parser.parse()

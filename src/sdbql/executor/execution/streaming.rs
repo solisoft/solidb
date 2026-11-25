@@ -21,8 +21,8 @@ impl<'a> QueryExecutor<'a> {
         initial_bindings: &Context,
     ) -> DbResult<Option<(Vec<Value>, usize)>> {
         // The bulk path writes straight to the collection; a transaction
-        // stages every write.
-        if self.tx_writer.is_some() {
+        // stages every write. SAMPLE and QUALIFY change which rows are written.
+        if self.tx_writer.is_some() || query.needs_full_pipeline() {
             return Ok(None);
         }
         // Check pattern: exactly 2 body clauses (FOR + INSERT), no sort/limit/filter

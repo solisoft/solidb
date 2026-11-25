@@ -721,6 +721,24 @@ impl Parser {
             }
         }
 
+        // ROLLUP / CUBE follow the group variables and precede INTO,
+        // WITH COUNT, AGGREGATE and OPTIONS. The two are mutually exclusive.
+        let grouping = if self.ident_eq("ROLLUP") {
+            self.advance();
+            Grouping::Rollup
+        } else if self.ident_eq("CUBE") {
+            self.advance();
+            Grouping::Cube
+        } else {
+            Grouping::None
+        };
+        if self.ident_eq("ROLLUP") || self.ident_eq("CUBE") {
+            return Err(DbError::ParseError(
+                "ROLLUP and CUBE each appear once, after the group variables, and not together"
+                    .to_string(),
+            ));
+        }
+
         // The remaining sections may come in AQL order (AGGREGATE before
         // INTO) or SoliDB's historical order (INTO, WITH COUNT, AGGREGATE);
         // each appears at most once, OPTIONS last.
@@ -838,6 +856,7 @@ impl Parser {
             aggregates,
             into_expr,
             method,
+            grouping,
         })
     }
 

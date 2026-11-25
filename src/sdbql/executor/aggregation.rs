@@ -80,6 +80,7 @@ impl<'a> QueryExecutor<'a> {
         // numbers); the row path reads columnar collections too and gets
         // those right.
         if !collect_clause.group_vars.is_empty()
+            || collect_clause.grouping != Grouping::None
             || collect_clause.into_var.is_some()
             || collect_clause.count_var.is_some()
             || for_clause.system_time.is_some()
@@ -273,6 +274,14 @@ impl DistinctValues {
         bucket.push(self.items.len());
         self.items.push(v.into_owned());
         true
+    }
+
+    fn duplicate(&self) -> Self {
+        Self {
+            index: self.index.clone(),
+            items: self.items.clone(),
+            counted: self.counted,
+        }
     }
 }
 
@@ -855,6 +864,42 @@ impl AggregateAccumulator {
         retained
     }
 
+    /// A second accumulator holding the same partial result. `ROLLUP` and
+    /// `CUBE` merge copies of each detail group into every super-group, and
+    /// the detail group itself stays.
+    pub(super) fn duplicate(&self) -> Self {
+        match self {
+            Self::CountRows(n) => Self::CountRows(*n),
+            Self::CountNonNull(n) => Self::CountNonNull(*n),
+            Self::Sum(sum) => Self::Sum(sum.clone()),
+            Self::Avg { sum, count } => Self::Avg {
+                sum: sum.clone(),
+                count: *count,
+            },
+            Self::Min(v) => Self::Min(v.clone()),
+            Self::Max(v) => Self::Max(v.clone()),
+            Self::CountDistinct(values) => Self::CountDistinct(values.duplicate()),
+            Self::Unique { values, sorted } => Self::Unique {
+                values: values.duplicate(),
+                sorted: *sorted,
+            },
+            Self::List(list) => Self::List(list.clone()),
+            Self::Stats { acc, sample, sqrt } => Self::Stats {
+                acc: acc.clone(),
+                sample: *sample,
+                sqrt: *sqrt,
+            },
+            Self::Median(nums) => Self::Median(nums.clone()),
+            Self::Percentile(nums) => Self::Percentile(nums.clone()),
+            Self::ApproxDistinct(sketch) => Self::ApproxDistinct(sketch.clone()),
+            Self::Bits { kind, acc, invalid } => Self::Bits {
+                kind: *kind,
+                acc: *acc,
+                invalid: *invalid,
+            },
+        }
+    }
+
     /// Whether [`Self::merge`] gives exactly what one accumulator would have
     /// computed from all the rows, whichever rows each partial result saw
     /// and in whatever order they are merged. Counts, exact sums and bit
@@ -968,6 +1013,22 @@ impl AggregateAccumulator {
                 }
                 *invalid |= other_invalid;
                 0
+            }
+            // A subtotal's list is its detail groups' lists one after the
+            // other, in the order of the groups, not the order the rows
+            // arrived in: rows A1, B1, A2 give A1, A2, B1.
+            (Self::List(a), Self::List(b)) => {
+                a.extend(b);
+                0
+            }
+            (Self::Unique { values: a, .. }, Self::Unique { values: b, .. }) => {
+                let held = b.items.len();
+                let kept = b
+                    .items
+                    .into_iter()
+                    .filter(|v| a.insert(Cow::Borrowed(v)))
+                    .count();
+                held - kept
             }
             _ => unreachable!("only mergeable accumulators of one kind are merged"),
         }

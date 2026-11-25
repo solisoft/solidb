@@ -5,6 +5,10 @@ SoliDB Query Language (SDBQL) is a powerful, declarative query language designed
 ## Table of Contents
 
 1.  [Basic Syntax & Clauses](#basic-syntax--clauses)
+    *   [EXPLAIN](#explain)
+    *   [QUALIFY](#qualify)
+    *   [SAMPLE](#sample)
+    *   [ROLLUP and CUBE](#rollup-and-cube)
 2.  [Operators](#operators)
 3.  [Functions](#functions)
     *   [String Functions](#string-functions)
@@ -28,13 +32,15 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 
 | Clause | Description | Example |
 | :--- | :--- | :--- |
-| `FOR` | Iterates over a collection or array | `FOR user IN users` |
+| `FOR` | Iterates over a collection, array or range. `SAMPLE n` or `SAMPLE p PERCENT` draws from the source before `FILTER`; see [SAMPLE](#sample) | `FOR d IN events SAMPLE 100 RETURN d` |
 | `RETURN` | Projects the result | `RETURN user.name` |
 | `FILTER` | Filters results based on condition | `FILTER user.age >= 18` |
 | `LET` | Defines a variable | `LET full_name = CONCAT(user.first, " ", user.last)` |
-| `SORT` | Sorts results (stable, index-optimized) | `SORT user.age DESC, user.name ASC` |
+| `SORT` | Sorts results (stable, index-optimized). A `SORT` written before `QUALIFY` is a parse error | `SORT user.age DESC, user.name ASC` |
 | `LIMIT` | Limits the number of results | `LIMIT 10` |
-| `COLLECT` | Groups results (Aggregation) | `COLLECT city = user.city WITH COUNT INTO n` |
+| `COLLECT` | Groups results. `ROLLUP` or `CUBE` after the group variables adds subtotals; see [ROLLUP and CUBE](#rollup-and-cube) | `COLLECT country = o.country, status = o.status ROLLUP AGGREGATE total = SUM(o.amount)` |
+| `QUALIFY` | One predicate after the body and before `SORT`. Windows in `QUALIFY` and `RETURN` are numbered on the pre-filter rows; see [QUALIFY](#qualify) | `FOR e IN emp QUALIFY ROW_NUMBER() OVER (PARTITION BY e.dept ORDER BY e.salary DESC) <= 3 RETURN e` |
+| `EXPLAIN` | Returns one row, the plan. Plan-only does not write. `EXPLAIN ANALYZE` of a write does; see [EXPLAIN](#explain) | `EXPLAIN FOR u IN users FILTER u.email == @e RETURN u` |
 | `WINDOW` | Performs window functions | `WINDOW w AS (PARTITION BY city ORDER BY age)` |
 | `JOIN` / `LEFT` / `RIGHT` / `FULL` | Joins collections | `JOIN orders ON user._key == orders.user_key` |
 | `ASOF JOIN` | Time-aligned join (one right row) | `ASOF JOIN quotes ON t.sym == quotes.sym ASOF t.ts, quotes.ts` |
@@ -43,6 +49,171 @@ SDBQL queries are composed of high-level clauses that can be chained together.
 | `UPDATE` | Updates existing documents | `UPDATE user WITH {active: true} IN users` |
 | `DELETE` | Removes documents | `DELETE user IN users` |
 | `UPSERT` | Updates or Inserts. The search is a `_key` / `_id`, or the fields of a unique index (since 2.10.1) | `UPSERT {_key: "a"} INSERT {_key: "a", val: 0} UPDATE {val: OLD.val + 1} IN counts` |
+
+### EXPLAIN
+
+`EXPLAIN` at the start of a statement returns the plan as one JSON object, the
+same object as `POST /_api/database/{db}/explain`. The cursor's `result` is
+that one object, not the rows the statement would have returned.
+
+- **Plan only** (`EXPLAIN FOR … RETURN …`) does not run the statement.
+  `plan_only` is `true`, timings and document counts are zero, and every
+  access is marked `"estimated": true`. An `INSERT`, `UPDATE`, `REPLACE`,
+  `REMOVE` or `UPSERT` under `EXPLAIN` writes nothing.
+- **`EXPLAIN ANALYZE` of a read** runs the query and returns the plan with
+  timings, `documents_scanned` and `documents_returned`. `plan_only` is
+  absent. The mutation counters stay 0. The rows themselves are not returned.
+- **`EXPLAIN ANALYZE` of a write** runs the writes once and returns the plan,
+  not `RETURN NEW`. Timings are not measured, because measuring them would
+  run the writes a second time, and `warnings` starts with that sentence.
+  The cursor's `inserted`, `updated` and `deleted` are the counts from that
+  one run. `plan_only` is omitted, as it is for a read: the field is written
+  only when it is true.
+- The HTTP explain endpoint is unchanged and still does not itself apply
+  mutations. Send `EXPLAIN ANALYZE INSERT …` to `/cursor` to run a write and
+  see its plan.
+- `EXPLAIN (FOR …) UNION (FOR …)` explains the whole statement. A second
+  `EXPLAIN` around a statement that already has one is a parse error
+  (`EXPLAIN cannot be nested`).
+- A `QUALIFY`, a `SAMPLE`, or a `ROLLUP` / `CUBE` adds a note to `warnings`
+  describing how that clause behaves.
+
+The object carries `collections`, `let_bindings`, `filters`, `sort`, `limit`,
+`timing` (microseconds), `documents_scanned`, `documents_returned` and
+`warnings`. `collections[].access_type` is `index_lookup`, `index_sort`,
+`index_count`, `full_scan`, `limited_scan`, `geo_near` or `geo_index_sort`,
+among others. `filters` lists every filter with the rows it saw and the rows
+it kept.
+
+### QUALIFY
+
+One `QUALIFY` predicate, after the body (`FOR`, `FILTER`, `LET`, `COLLECT`,
+joins) and before `SORT` and `LIMIT`. `SORT` written first is a parse error,
+and so is a second `QUALIFY` (`A query has one QUALIFY clause`).
+
+```sdbql
+FOR e IN emp
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY e.dept ORDER BY e.salary DESC) <= 3
+  RETURN e
+```
+
+keeps the three highest salaries in each department.
+
+When the clause is present the windows run first, on the rows the body
+produced, then the predicate, then `SORT`, then `LIMIT`, then `RETURN`.
+`RETURN DISTINCT` still drops duplicate projected values at the end.
+
+- Window calls in `QUALIFY`, and every window call in `RETURN`, are numbered
+  on that full pre-filter set. The same `OVER` call written again, including
+  in a later `LET`, is computed once, so a number repeated in `RETURN` is the
+  number from before the filter: `QUALIFY ROW_NUMBER() OVER (ORDER BY e.salary
+  DESC) > 1 RETURN ROW_NUMBER() OVER (ORDER BY e.salary DESC)` never returns 1.
+- A window `LET` in the body is computed while the body runs, and `QUALIFY`
+  can read it. `LET rn = ROW_NUMBER() OVER (…) FILTER rn <= 3` still works.
+- A different window call that appears only in a `LET` after `LIMIT` is
+  numbered on the rows that survived `QUALIFY` and `SORT`.
+- A query with no `QUALIFY` is unchanged: `RETURN` windows are numbered after
+  `SORT`. The two orders differ only for a window with no `ORDER BY` of its
+  own, which follows arrival order (the body's, or the sorted rows).
+- An error in the predicate fails the query. It does not drop the row, which
+  is what `FILTER` does for a type error on one row.
+- A `QUALIFY` with no window function is still applied, before `SORT`. The
+  shortcuts that would have skipped it (a raw scan, an index sort, a count
+  from an index) step aside.
+
+`QUALIFY` is recognised only in this position. It is not reserved as a name.
+
+### SAMPLE
+
+Written on the `FOR`, after `SYSTEM_TIME` / `VALID_TIME` and before `OPTIONS`.
+The draw is of the source. `FILTER`, `SORT` and `LIMIT` see only the kept
+rows. A collection, an array and a range all take it, and a nested `FOR`
+samples once per outer row.
+
+```sdbql
+FOR d IN events SAMPLE 100 RETURN d          -- at most 100 rows
+FOR d IN events SAMPLE 1 PERCENT RETURN d    -- each row, probability 1/100
+FOR d IN events SAMPLE @n RETURN d
+FOR x IN [1, 2, 3, 4, 5] SAMPLE 2 RETURN x
+```
+
+- **`SAMPLE n`** is a uniform sample of at most `n` distinct rows. The order
+  is not scan order. `n` greater than or equal to the source returns every
+  row in scan order, with no shuffle. `0` returns nothing. `1.0` is 1. A
+  fraction (`1.5`) or a negative number fails the query: `SAMPLE count must
+  be a non-negative whole number`.
+- **`SAMPLE p PERCENT`** keeps each row with probability `p/100` and preserves
+  scan order. `0 PERCENT` keeps nothing. `100 PERCENT` keeps every row. A
+  percent below 0 or above 100 fails the query: `SAMPLE percent must be a
+  number from 0 to 100`.
+- The whole source is read. The sample does not stop the scan early; it only
+  bounds the later clauses. `FILTER` after `SAMPLE 0` returns nothing.
+- The count and the percent are expressions, so bind variables work.
+- Indexes and the raw whole-collection read step aside, so
+  `FOR d IN events SAMPLE 2 RETURN d` returns two documents.
+- The draw is not seeded. Do not depend on which rows a count sample returns,
+  or on their order, except when it keeps every row or none.
+- This is the clause. A `SAMPLE()` function call is a different name and is
+  unchanged.
+
+### ROLLUP and CUBE
+
+`ROLLUP` or `CUBE` follows the group variables and precedes `INTO`,
+`WITH COUNT INTO`, `AGGREGATE` and `OPTIONS`. The two together, or a second
+copy, is a parse error: `ROLLUP and CUBE each appear once, after the group
+variables, and not together`.
+
+```sdbql
+FOR o IN orders
+  COLLECT country = o.country, status = o.status
+  ROLLUP
+  AGGREGATE total = SUM(o.amount)
+  RETURN { country, status, total, g_country: GROUPING(country), g_status: GROUPING(status) }
+```
+
+On orders `(US, open, 10)`, `(US, paid, 5)`, `(FR, open, 7)` the rows are,
+detail groups first and the grand total last:
+
+| country | status | total | GROUPING(country) | GROUPING(status) |
+| :--- | :--- | :--- | :--- | :--- |
+| FR | open | 7 | 0 | 0 |
+| US | open | 10 | 0 | 0 |
+| US | paid | 5 | 0 | 0 |
+| FR | null | 7 | 0 | 1 |
+| US | null | 15 | 0 | 1 |
+| null | null | 22 | 1 | 1 |
+
+`CUBE` adds the subsets `ROLLUP` skips. Here that is `country` rolled up and
+`status` kept: `(null, open, 17)` with grouping bits 1 and 0, and
+`(null, paid, 5)`. Eight rows, still ordered by mask and then by key. Null
+sorts below every value within a mask.
+
+For variables `(a, b, c)`, bit `i` set means variable `i` was rolled up.
+Detail rows are mask 0. `ROLLUP` then uses mask 4 (only `c`), 6 (`b` and `c`)
+and 7 (the grand total): each step rolls one more variable off the end.
+`CUBE` uses every mask from 1 through `2ⁿ − 1`.
+
+- A rolled-up variable is JSON `null`. `GROUPING(country)` is 1 on that row
+  and 0 when `country` is a real key, which distinguishes a stored null from
+  a subtotal. The argument is the variable name: `GROUPING(country)`, not
+  `GROUPING(o.country)` (`GROUPING() takes a group variable name, not an
+  expression`). An unknown name is `GROUPING(city) is not a group variable of
+  this COLLECT`. Outside a `COLLECT`, `GROUPING() is only valid on the rows
+  of a COLLECT`. On an ordinary `COLLECT` every declared variable returns 0.
+- No group variables is already one group, so `ROLLUP` adds nothing and the
+  row matches the ordinary `COLLECT`. An empty input with group variables
+  yields no rows, grand total included. An empty input with no group
+  variables stays one row (`COUNT()` is 0).
+- At most 31 group variables, even over no rows: `ROLLUP and CUBE accept at
+  most 31 group variables`.
+- Aggregates are merged from the detail groups that share the kept keys,
+  including `COLLECT_LIST`, `UNIQUE` and `SORTED_UNIQUE` (first-seen order;
+  `SORTED_UNIQUE` sorts at the end). Of `1` and `1.0`, the earlier row's
+  value is kept. `INTO` members of a subtotal are the member rows of its
+  detail groups concatenated, in creation order, so a grand total holds every
+  input row again and memory multiplies with the number of levels.
+- Shards send detail groups only. The extra rows are built after the merge.
+  A `ROLLUP` with group variables is not a count read from an index.
 
 ### Where `LET` may go
 

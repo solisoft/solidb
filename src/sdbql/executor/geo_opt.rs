@@ -394,6 +394,9 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         initial_bindings: &Context,
     ) -> Option<(Vec<Document>, String)> {
+        if query.needs_full_pipeline() {
+            return None;
+        }
         let sort = query.sort_clause.as_ref()?;
         let limit = query.limit_clause.as_ref()?;
         if sort.fields.len() != 1 || !sort.fields[0].1 {

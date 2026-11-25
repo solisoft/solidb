@@ -39,7 +39,8 @@ pub(super) struct SortPlan<'q> {
 }
 
 fn sort_plan(query: &Query) -> Option<SortPlan<'_>> {
-    if !query.set_operations.is_empty()
+    if query.needs_full_pipeline()
+        || !query.set_operations.is_empty()
         || !query.join_clauses.is_empty()
         || query.with_clause.is_some()
         || query.window_clause.is_some()

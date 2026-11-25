@@ -55,6 +55,7 @@ fn plan(query: &Query) -> Option<Plan<'_>> {
         || query.window_clause.is_some()
         || !query.post_limit_lets.is_empty()
         || !query.set_operations.is_empty()
+        || query.needs_full_pipeline()
     {
         return None;
     }

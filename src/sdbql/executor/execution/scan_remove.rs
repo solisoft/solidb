@@ -42,7 +42,8 @@ struct Plan<'q> {
 
 /// The plan for `query`, from its shape alone.
 fn plan(query: &Query) -> Option<Plan<'_>> {
-    if query.with_clause.is_some()
+    if query.needs_full_pipeline()
+        || query.with_clause.is_some()
         || !query.join_clauses.is_empty()
         || query.sort_clause.is_some()
         || query.limit_clause.is_some()

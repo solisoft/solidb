@@ -33,6 +33,49 @@ fn counted_in_arrays(name: &str) -> String {
 /// The subqueries under `expr` (not inside another subquery), each with
 /// whether it is the argument of `LENGTH` / `COUNT`, which may count it from
 /// an index without running it.
+/// What EXPLAIN says about QUALIFY, SAMPLE and ROLLUP / CUBE. The plan's
+/// other fields do not have a place for them.
+fn clause_notes(query: &Query) -> Vec<String> {
+    let mut notes = Vec::new();
+    if query.qualify.is_some() {
+        notes.push(
+            "QUALIFY filters the rows the body produced, before SORT and LIMIT. Window functions \
+             in QUALIFY, and the same calls in RETURN, are numbered on that full set, so a number \
+             in RETURN is the number from before the filter. A query with no QUALIFY still \
+             numbers RETURN windows after SORT. A window call that appears only in a LET after \
+             LIMIT is numbered on the rows that survived QUALIFY and SORT."
+                .to_string(),
+        );
+    }
+    if query
+        .body_clauses
+        .iter()
+        .any(|clause| matches!(clause, BodyClause::For(for_clause) if for_clause.sample.is_some()))
+    {
+        notes.push(
+            "SAMPLE reads every row of the FOR source, then keeps a sample. SAMPLE n is a \
+             uniform sample of at most n rows and does not keep scan order; when n is at least \
+             the size of the source every row is returned in scan order. SAMPLE p PERCENT keeps \
+             each row with probability p/100 and preserves scan order. FILTER, SORT and LIMIT \
+             after the FOR see only the kept rows. The scan itself is not cut short."
+                .to_string(),
+        );
+    }
+    if query.body_clauses.iter().any(|clause| {
+        matches!(clause, BodyClause::Collect(collect) if collect.grouping != Grouping::None)
+    }) {
+        notes.push(
+            "ROLLUP adds a row for each prefix of the group variables and a grand total. CUBE \
+             adds a row for every subset. GROUPING(var) is 1 on a row where that variable was \
+             rolled up and 0 where it is a real key. Detail groups are merged from every shard \
+             before the extra rows are built. INTO members of a subtotal are the member rows of \
+             its detail groups concatenated."
+                .to_string(),
+        );
+    }
+    notes
+}
+
 fn direct_subqueries(expr: &Expression, out: &mut Vec<(Query, bool)>) {
     match expr {
         Expression::FunctionCall { name, args }
@@ -51,7 +94,38 @@ fn direct_subqueries(expr: &Expression, out: &mut Vec<(Query, bool)>) {
 
 impl<'a> QueryExecutor<'a> {
     pub fn explain(&self, query: &Query) -> DbResult<QueryExplain> {
+        // The profiler below runs its own copy of the pipeline, which knows
+        // nothing of SAMPLE or QUALIFY: it would report the access, the
+        // counts and the rows of another query. A read that has either is
+        // run as it really runs, and the plan around it is the planner's.
+        // (A write is never run here: the HTTP explain applies no mutation.)
+        let samples = query
+            .body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::For(f) if f.sample.is_some()));
+        if (samples || query.qualify.is_some()) && !query.has_mutations() {
+            return self.explain_by_running(query);
+        }
         self.explain_in(query, &Context::default(), 0)
+    }
+
+    /// `explain` of a read with SAMPLE or QUALIFY: the real run gives the
+    /// rows returned and the total time; the rest is `explain_plan`'s.
+    fn explain_by_running(&self, query: &Query) -> DbResult<QueryExplain> {
+        let start = Instant::now();
+        let returned = self.execute(query)?.len();
+        let total_us = start.elapsed().as_micros() as u64;
+        let mut plan = self.explain_plan(query)?;
+        plan.plan_only = false;
+        plan.documents_returned = returned;
+        plan.timing.total_us = total_us;
+        if let Some(first) = plan.warnings.first_mut() {
+            *first = "ANALYZE ran this query, which has SAMPLE or QUALIFY: documents_returned and \
+                      the total time are measured; each access is the planner's estimate and the \
+                      steps are not timed"
+                .to_string();
+        }
+        Ok(plan)
     }
 
     /// The plan of `query` without running it (`analyze: false`): each loop
@@ -119,6 +193,7 @@ impl<'a> QueryExecutor<'a> {
             let (offset, count) = self.eval_limit(l, &bindings);
             LimitInfo { offset, count }
         });
+        warnings.extend(clause_notes(query));
         Ok(QueryExplain {
             collections,
             let_bindings: query
@@ -1109,6 +1184,7 @@ impl<'a> QueryExecutor<'a> {
         let total_us = total_start.elapsed().as_micros() as u64;
 
         collections_info.extend(subquery_accesses);
+        warnings.extend(clause_notes(query));
         Ok(QueryExplain {
             collections: collections_info,
             let_bindings: let_bindings_info,

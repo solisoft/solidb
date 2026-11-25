@@ -144,6 +144,7 @@ pub(crate) fn is_long_running_query(query: &Query) -> bool {
             .return_clause
             .as_ref()
             .is_some_and(|r| expression_is_heavy(&r.expression))
+        || query.qualify.as_ref().is_some_and(expression_is_heavy)
 }
 
 /// Largest collection a lone `FOR` may scan inline, on the async worker.
@@ -172,6 +173,7 @@ pub(crate) fn is_small_local_scan(query: &Query, storage: &StorageEngine, db_nam
         return false;
     };
     if for_clause.source_expression.is_some()
+        || for_clause.sample.is_some()
         || for_clause.system_time.is_some()
         || for_clause.valid_time.is_some()
         || for_clause
@@ -198,6 +200,7 @@ pub(crate) fn is_small_local_scan(query: &Query, storage: &StorageEngine, db_nam
             .return_clause
             .as_ref()
             .is_none_or(|r| light(&r.expression))
+        || !query.qualify.as_ref().is_none_or(light)
     {
         return false;
     }
@@ -574,6 +577,17 @@ pub async fn execute_query(
                 },
                 &headers,
             ));
+        }
+
+        // The clauses below are run by hand, and know nothing of SAMPLE,
+        // QUALIFY or EXPLAIN ANALYZE: `FOR d IN logs SAMPLE 2 REMOVE d IN
+        // logs` staged every document. The transaction's own query endpoint
+        // runs the executor, which applies them.
+        if query.needs_full_pipeline() {
+            return Err(DbError::BadRequest(format!(
+                "SAMPLE, QUALIFY and EXPLAIN ANALYZE are not supported in a write sent to /cursor with X-Transaction-ID; \
+                 send it to /_api/database/{db_name}/transaction/{tx_id}/query"
+            )));
         }
 
         // For mutation operations, execute transactionally

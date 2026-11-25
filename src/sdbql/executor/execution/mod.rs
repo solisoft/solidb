@@ -35,6 +35,7 @@ mod par_rows;
 mod paths;
 mod raw_scan;
 mod return_moves;
+mod sample;
 mod scan_collect;
 mod scan_remove;
 mod scan_threads;
@@ -48,6 +49,7 @@ mod update_guard;
 // row-building loop shares.
 pub(super) use array_subquery::SharedElements;
 pub(super) use clauses::BUDGET_CHECK_INTERVAL;
+pub(in crate::sdbql::executor) use collect::{GROUPING_MASK, GROUP_VARS};
 pub(super) use entry::has_window_functions;
 pub use raw_scan::SmallRaw;
 pub(super) use scan_collect::has_collect;

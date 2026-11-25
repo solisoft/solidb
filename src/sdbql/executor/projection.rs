@@ -63,6 +63,12 @@ pub(crate) fn scan_projection(query: &Query) -> Option<(&ForClause, Vec<String>)
             _ => return None,
         }
     }
+    // QUALIFY reads the rows the scan produced: a field only it names has
+    // to be decoded too, or its predicate sees null. A window call in it
+    // gives up, as one in RETURN does.
+    if let Some(qualify) = &query.qualify {
+        collect(qualify, var, &mut fields)?;
+    }
     if let Some(sort) = &query.sort_clause {
         for (expr, _) in &sort.fields {
             collect(expr, var, &mut fields)?;
@@ -174,6 +180,10 @@ fn traversal_fields(
             }
             _ => return None,
         }
+    }
+    // As for a scan: QUALIFY reads the vertices and edges before RETURN.
+    if let Some(qualify) = &query.qualify {
+        collect(qualify, var, &mut fields)?;
     }
     if let Some(sort) = &query.sort_clause {
         for (expr, _) in &sort.fields {
@@ -292,6 +302,35 @@ mod tests {
                  RETURN CONCAT(d.c.x, $\"k=${d._key}\")"
             ),
             Some(vec!["_key".into(), "a".into(), "b".into(), "c".into()])
+        );
+    }
+
+    #[test]
+    fn qualify_reads_are_projected() {
+        assert_eq!(
+            fields("FOR e IN emp QUALIFY e.salary >= 80 RETURN e._key"),
+            Some(vec!["_key".into(), "salary".into()])
+        );
+        // A window call gives up, in QUALIFY as in RETURN.
+        assert_eq!(
+            fields(
+                "FOR e IN emp QUALIFY ROW_NUMBER() OVER (ORDER BY e.salary DESC) <= 3 \
+                 RETURN e._key"
+            ),
+            None
+        );
+        let query = parse(
+            "FOR v, e IN 1..1 OUTBOUND \"people/a\" knows QUALIFY v.age > 1 AND e.since > 2 \
+             RETURN v._key",
+        )
+        .unwrap();
+        assert_eq!(
+            traversal_projection(&query).map(|(_, f)| f),
+            Some(vec!["_key".into(), "age".into()])
+        );
+        assert_eq!(
+            traversal_edge_projection(&query).map(|(_, f)| f),
+            Some(vec!["since".into()])
         );
     }
 

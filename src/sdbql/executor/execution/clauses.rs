@@ -261,6 +261,15 @@ impl<'a> QueryExecutor<'a> {
         while i < clauses.len() {
             match &clauses[i] {
                 BodyClause::For(for_clause) => {
+                    // SAMPLE is of the source, before FILTER and before any
+                    // index or scan shortcut. Those shortcuts would return
+                    // the rows the sample was supposed to choose from.
+                    if for_clause.sample.is_some() {
+                        rows = self.for_then_sample(for_clause, &rows)?;
+                        i += 1;
+                        continue;
+                    }
+
                     // Check if next clause is a FILTER that can use an index.
                     // Note: the indexable check is performed per-row inside the
                     // loop below — `extract_indexable_condition` now evaluates the

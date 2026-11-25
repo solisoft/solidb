@@ -730,9 +730,8 @@ impl<'a> QueryExecutor<'a> {
                     return Ok(val.clone());
                 }
                 Err(DbError::ExecutionError(format!(
-                    "Window function {} must be used in RETURN clause. \
-                     Window functions are computed after all rows are collected.",
-                    function
+                    "Window function {function} must be used in RETURN, QUALIFY, or a LET. \
+                     Window functions are computed over the rows of the clause that holds them."
                 )))
             }
 
@@ -1290,5 +1289,9 @@ fn array_position(n: &serde_json::Number, len: usize) -> DbResult<Option<usize>>
 /// Errors that say the query is wrong, whatever the row: the messages of an
 /// unknown function (`evaluate.rs`) and of a missing bind variable (above).
 fn is_query_mistake(message: &str) -> bool {
-    message.starts_with("Unknown function: ") || message.starts_with("Bind variable '@")
+    message.starts_with("Unknown function: ")
+        || message.starts_with("Bind variable '@")
+        // A misused GROUPING() is a mistake of the query, not a row that
+        // fails its FILTER.
+        || message.starts_with("GROUPING(")
 }

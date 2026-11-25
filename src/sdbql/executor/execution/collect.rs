@@ -30,7 +30,17 @@ use super::super::types::Context;
 use super::super::{compare_values, QueryExecutor};
 use super::clauses::BUDGET_CHECK_INTERVAL;
 use crate::error::{DbError, DbResult};
-use crate::sdbql::ast::{AggregateExpr, CollectClause, Expression};
+use crate::sdbql::ast::{AggregateExpr, CollectClause, Expression, Grouping};
+
+/// Hidden binding on every `COLLECT` output row: the bitmask of group
+/// variables that were rolled up on this row. Bit `i` set means group
+/// variable `i` (declaration order) is a subtotal, not a real key.
+pub(in crate::sdbql::executor) const GROUPING_MASK: &str = "\u{0}grouping";
+
+/// Hidden binding: the group variable names, in declaration order, so
+/// `GROUPING(name)` can find its bit. A leading NUL keeps both names out of
+/// any identifier a query can write.
+pub(in crate::sdbql::executor) const GROUP_VARS: &str = "\u{0}group_vars";
 
 /// One group under construction.
 struct Group {
@@ -44,6 +54,9 @@ struct Group {
     /// Projected rows for `INTO`; stays empty without one.
     members: Vec<Value>,
     aggregates: Vec<AggregateAccumulator>,
+    /// Which group variables were rolled up. `0` is a detail group. Shards
+    /// send details only; the coordinator's `finish` fills the other masks.
+    mask: u32,
 }
 
 /// A `COLLECT` in progress: rows go in one at a time with [`Self::push`] (or
@@ -415,6 +428,7 @@ impl<'c> CollectFold<'c> {
                     .into_iter()
                     .map(AggregateAccumulator::from_state)
                     .collect(),
+                mask: 0,
             });
         }
         self.merge(other);
@@ -467,26 +481,34 @@ impl<'c> CollectFold<'c> {
     }
 
     /// One row per group, ordered by key.
+    ///
+    /// `ROLLUP` and `CUBE` are expanded here, after every shard and every
+    /// scan partition has merged its detail groups. Shards therefore send
+    /// the same state they send for an ordinary `COLLECT`.
     pub(super) fn finish(mut self, ex: &QueryExecutor<'_>) -> DbResult<Vec<Context>> {
         let collect = self.collect;
+        self.expand_grouping(ex)?;
         // AQL: with no group variables, COLLECT always yields exactly one
         // row — over empty input `WITH COUNT INTO n` is 0 and the aggregates
-        // are their empty values, not an empty result.
+        // are their empty values, not an empty result. A grouped ROLLUP of
+        // no rows yields nothing: there is no grand total of an empty input.
         if collect.group_vars.is_empty() && self.groups.is_empty() {
             self.groups.push(new_group(collect, Vec::new(), 0)?);
         }
 
-        // Groups come out ordered by key (AQL's default sorted COLLECT), not
-        // in hash order. No two groups compare equal (`compare_values` is
-        // `Equal` exactly when `values_equal` holds, and such keys are one
-        // group), so the order the groups were created in cannot show.
+        // Detail groups (mask 0) first, then each rolled mask, and within a
+        // mask the group key. No two groups of one mask compare equal, so
+        // the order they were created in cannot show. A grand total, every
+        // bit set, sorts last.
         self.groups.sort_by(|a, b| {
-            a.key
-                .iter()
-                .zip(&b.key)
-                .map(|(x, y)| compare_values(x, y))
-                .find(|o| o.is_ne())
-                .unwrap_or(std::cmp::Ordering::Equal)
+            a.mask.cmp(&b.mask).then_with(|| {
+                a.key
+                    .iter()
+                    .zip(&b.key)
+                    .map(|(x, y)| compare_values(x, y))
+                    .find(|o| o.is_ne())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         // What follows an aggregate's argument: read once, with no row in
@@ -505,6 +527,14 @@ impl<'c> CollectFold<'c> {
 
         let shared = std::mem::take(&mut self.shared);
         let mut out = Vec::with_capacity(self.groups.len());
+        // Every row of this COLLECT names the same group variables.
+        let group_vars = Value::Array(
+            collect
+                .group_vars
+                .iter()
+                .map(|(name, _)| Value::String(name.clone()))
+                .collect(),
+        );
         for group in self.groups {
             let Group {
                 key,
@@ -512,6 +542,7 @@ impl<'c> CollectFold<'c> {
                 count,
                 members,
                 aggregates,
+                mask,
             } = group;
             let mut ctx = Context::with_capacity_and_hasher(
                 collect.group_vars.len()
@@ -523,6 +554,14 @@ impl<'c> CollectFold<'c> {
             for ((name, _), val) in collect.group_vars.iter().zip(key) {
                 ctx.insert(name.clone(), val);
             }
+            // `GROUPING(name)` reads these. They are not identifiers, so a
+            // RETURN of the group variables does not show them, and INTO
+            // members were projected from the input rows.
+            ctx.insert(
+                GROUPING_MASK.to_string(),
+                Value::Number(u64::from(mask).into()),
+            );
+            ctx.insert(GROUP_VARS.to_string(), group_vars.clone());
             if let Some(into_var) = &collect.into_var {
                 ctx.insert(into_var.clone(), Value::Array(members));
             }
@@ -555,6 +594,84 @@ impl<'c> CollectFold<'c> {
             out.push(ctx);
         }
         Ok(out)
+    }
+
+    /// Add one super-group per rolled mask. Detail groups stay as they are
+    /// (mask 0). An empty grouped input stays empty. No group variables is
+    /// already one group, so ROLLUP adds nothing.
+    fn expand_grouping(&mut self, ex: &QueryExecutor<'_>) -> DbResult<()> {
+        if self.collect.grouping == Grouping::None {
+            return Ok(());
+        }
+        let n = self.collect.group_vars.len();
+        if n > 31 {
+            return Err(DbError::ExecutionError(
+                "ROLLUP and CUBE accept at most 31 group variables".to_string(),
+            ));
+        }
+        if n == 0 || self.groups.is_empty() {
+            return Ok(());
+        }
+        // Masks are made one at a time: CUBE over 31 variables has 2^31 of
+        // them, which collected up front took 8 GiB before the row ceiling
+        // was ever checked.
+        let masks: Box<dyn Iterator<Item = u32>> = match self.collect.grouping {
+            Grouping::Rollup => Box::new((1..=n as u32).map(move |rolled| {
+                let start = n as u32 - rolled;
+                ((1u32 << rolled) - 1) << start
+            })),
+            Grouping::Cube => Box::new(1..(1u32 << n)),
+            Grouping::None => return Ok(()),
+        };
+        let detail_len = self.groups.len();
+        // Each mask copies every detail group's members and kept values
+        // once, into a super-group: count them as held, or a CUBE with
+        // INTO would hold 2^n - 1 copies of the input past the row ceiling.
+        // (A merge that drops a duplicate value makes this an upper bound.)
+        let (detail_retained, detail_numbers) = (self.retained, self.numbers);
+        for mask in masks {
+            let mut buckets: HashMap<u64, Vec<usize>> = HashMap::new();
+            for di in 0..detail_len {
+                let key = rolled_key(&self.groups[di].key, mask);
+                let hash = value_key_hash(&key);
+                let found = buckets.get(&hash).and_then(|ids| {
+                    ids.iter()
+                        .copied()
+                        .find(|&bi| values_keys_equal(&self.groups[bi].key, &key))
+                });
+                if let Some(bi) = found {
+                    let detail_first = self.groups[di].first;
+                    if detail_first < self.groups[bi].first {
+                        self.groups[bi].key = key;
+                        self.groups[bi].first = detail_first;
+                    }
+                    let count = self.groups[di].count;
+                    let members = self.groups[di].members.clone();
+                    let aggregates: Vec<_> = self.groups[di]
+                        .aggregates
+                        .iter()
+                        .map(AggregateAccumulator::duplicate)
+                        .collect();
+                    let super_group = &mut self.groups[bi];
+                    super_group.count += count;
+                    super_group.members.extend(members);
+                    for (acc, theirs) in super_group.aggregates.iter_mut().zip(aggregates) {
+                        let _dropped = acc.merge(theirs);
+                    }
+                } else {
+                    let mut group = duplicate_group(&self.groups[di]);
+                    group.key = key;
+                    group.mask = mask;
+                    let idx = self.groups.len();
+                    buckets.entry(hash).or_default().push(idx);
+                    self.groups.push(group);
+                }
+            }
+            self.retained = self.retained.saturating_add(detail_retained);
+            self.numbers = self.numbers.saturating_add(detail_numbers);
+            ex.check_budget(self.held())?;
+        }
+        Ok(())
     }
 }
 
@@ -598,7 +715,37 @@ fn new_group(collect: &CollectClause, key: Vec<Value>, first: u64) -> DbResult<G
         count: 0,
         members: Vec::new(),
         aggregates,
+        mask: 0,
     })
+}
+
+fn duplicate_group(group: &Group) -> Group {
+    Group {
+        key: group.key.clone(),
+        first: group.first,
+        count: group.count,
+        members: group.members.clone(),
+        aggregates: group
+            .aggregates
+            .iter()
+            .map(AggregateAccumulator::duplicate)
+            .collect(),
+        mask: group.mask,
+    }
+}
+
+/// `mask` bit `i` replaces group variable `i` with null.
+fn rolled_key(key: &[Value], mask: u32) -> Vec<Value> {
+    key.iter()
+        .enumerate()
+        .map(|(i, value)| {
+            if (mask & (1u32 << i)) != 0 {
+                Value::Null
+            } else {
+                value.clone()
+            }
+        })
+        .collect()
 }
 
 fn keys_equal(a: &[Value], b: &[Datum<'_>]) -> bool {
@@ -618,7 +765,11 @@ fn values_keys_equal(a: &[Value], b: &[Value]) -> bool {
 /// memoised subquery's rows) is never copied.
 fn project_into(keep_vars: &[String], mut ctx: Context) -> Value {
     let obj: serde_json::Map<String, Value> = if keep_vars.is_empty() {
-        ctx.into_iter().collect()
+        // Names that start with NUL are the executor's (`GROUPING_MASK`,
+        // `GROUP_VARS` of an earlier COLLECT), never the query's.
+        ctx.into_iter()
+            .filter(|(name, _)| !name.starts_with('\u{0}'))
+            .collect()
     } else {
         let mut obj = serde_json::Map::with_capacity(keep_vars.len());
         for k in keep_vars {

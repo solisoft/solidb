@@ -202,6 +202,9 @@ impl Folder<'_, '_> {
         if let Some(r) = &mut q.return_clause {
             self.expr(&mut r.expression);
         }
+        if let Some(qualify) = &mut q.qualify {
+            self.expr(qualify);
+        }
         for l in &mut q.post_limit_lets {
             self.expr(&mut l.expression);
         }
@@ -240,6 +243,13 @@ impl Folder<'_, '_> {
                 self.expr(to);
             }
             None => {}
+        }
+        if let Some(sample) = &mut f.sample {
+            match sample {
+                SampleSpec::Count(expr) | SampleSpec::Percent(expr) => {
+                    self.expr(expr);
+                }
+            }
         }
     }
 

@@ -3490,6 +3490,9 @@
   .text-accent-light {
     color: var(--color-accent-light);
   }
+  .text-amber-100 {
+    color: var(--color-amber-100);
+  }
   .text-amber-200 {
     color: var(--color-amber-200);
   }
@@ -4693,6 +4696,13 @@
     &:hover {
       @media (hover: hover) {
         color: var(--color-amber-100);
+      }
+    }
+  }
+  .hover\:text-amber-200 {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-amber-200);
       }
     }
   }

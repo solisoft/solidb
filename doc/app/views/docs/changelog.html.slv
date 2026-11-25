@@ -9,6 +9,21 @@
     </p>
   </div>
 
+  <!-- Unreleased -->
+  <section id="unreleased" class="mb-16 scroll-mt-24">
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">
+      <h2 class="text-3xl font-bold text-white">Unreleased</h2>
+    </div>
+    <div class="rounded-xl bg-white/5 border border-white/10 p-5 mb-10">
+      <ul class="space-y-3 text-gray-400 text-sm leading-relaxed">
+        <li><strong class="text-white"><code>EXPLAIN</code> is a statement</strong> &mdash; <code>EXPLAIN FOR u IN users FILTER u.email == @e RETURN u</code> returns one row, the same plan object as <a href="/docs/api-queries" class="text-cyan-400 hover:underline"><code>POST /_api/database/:db/explain</code></a> with <code>analyze: false</code>: <code>plan_only: true</code>, and nothing is written, so a plan of an <code>INSERT</code> leaves the collection empty. <code>EXPLAIN ANALYZE</code> of a read returns the plan with timings, not the rows. <code>EXPLAIN ANALYZE</code> of a write runs the writes once and returns the plan; the cursor&rsquo;s <code>inserted</code> / <code>updated</code> / <code>deleted</code> are the real counts, timings are not measured (measuring them would write a second time), and <code>warnings</code> says so. The HTTP endpoint is unchanged and still does not itself apply mutations. <code>EXPLAIN</code> of <code>CREATE STREAM</code> or of a materialized-view statement is a parse error. See <a href="/docs/sdbql-syntax#explain" class="text-cyan-400 hover:underline">EXPLAIN</a>.</li>
+        <li><strong class="text-white"><code>QUALIFY</code></strong> &mdash; <code>FOR e IN emp QUALIFY ROW_NUMBER() OVER (PARTITION BY e.dept ORDER BY e.salary DESC) &lt;= 3 RETURN e</code> keeps the three highest salaries of each department. The clause sits after the body and before <code>SORT</code>. Window calls in <code>QUALIFY</code> and in <code>RETURN</code> are numbered on the full set, before the filter, so a number repeated in <code>RETURN</code> is the number from before <code>QUALIFY</code>. A query with no <code>QUALIFY</code> still numbers its <code>RETURN</code> windows after <code>SORT</code>. An error in the predicate fails the query. See <a href="/docs/sdbql-syntax#qualify" class="text-cyan-400 hover:underline">QUALIFY</a>.</li>
+        <li><strong class="text-white"><code>COLLECT … ROLLUP</code> and <code>CUBE</code>, and <code>GROUPING()</code></strong> &mdash; the keyword follows the group variables. <code>ROLLUP</code> adds a subtotal for each prefix and a grand total; <code>CUBE</code> adds a row for every subset. A rolled-up variable is <code>null</code>, and <code>GROUPING(country)</code> is 1 there and 0 on a real key. Detail groups come first, the grand total last. An empty input with group variables yields no rows. More than 31 group variables is an error. <code>INTO</code> members of a subtotal are the member rows of its detail groups concatenated. See <a href="/docs/sdbql-aggregations#rollup-cube" class="text-cyan-400 hover:underline">ROLLUP and CUBE</a>.</li>
+        <li><strong class="text-white"><code>SAMPLE</code> on <code>FOR</code></strong> &mdash; <code>FOR d IN events SAMPLE 100 RETURN d</code> keeps at most 100 rows, chosen uniformly; <code>SAMPLE 1 PERCENT</code> keeps each row with probability 1/100 and preserves scan order. The sample is of the source, before <code>FILTER</code>, and the whole source is read. <code>0</code> and <code>0 PERCENT</code> keep nothing; <code>100 PERCENT</code> keeps every row. A negative count, a fraction or a percent outside 0 to 100 fails the query. A sampled query is never cached. A write with <code>SAMPLE</code> or <code>QUALIFY</code> sent to <code>/cursor</code> with <code>X-Transaction-ID</code> is refused: send it to the transaction&rsquo;s own query endpoint. See <a href="/docs/sdbql-syntax#sample" class="text-cyan-400 hover:underline">SAMPLE</a>.</li>
+      </ul>
+    </div>
+  </section>
+
   <!-- 3.0.0 -->
   <section id="v3-0-0" class="mb-16 scroll-mt-24">
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-4">

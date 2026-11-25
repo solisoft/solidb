@@ -6,6 +6,7 @@
 //! - extract_window_functions: Extract window functions from expression
 
 use crate::sdbql::ast::{Expression, TemplateStringPart, WindowSpec};
+use std::collections::HashSet;
 
 /// Check if an expression contains window functions
 pub fn contains_window_functions(expr: &Expression) -> bool {
@@ -223,8 +224,23 @@ fn float(f: f64) -> Value {
 impl<'a> QueryExecutor<'a> {
     pub(super) fn apply_window_functions(
         &self,
+        rows: Vec<Context>,
+        return_expr: &Expression,
+    ) -> DbResult<Vec<Context>> {
+        self.apply_window_functions_keeping(rows, return_expr, &HashSet::new())
+    }
+
+    /// [`Self::apply_window_functions`], leaving alone the calls whose keys
+    /// are in `kept`: those QUALIFY numbered on the rows before it filtered,
+    /// which RETURN and a later LET must not number again on the survivors.
+    /// Only an explicit set says so: a key found bound in a row may be an
+    /// outer query's (a subquery's rows inherit its bindings) or a body LET's
+    /// numbering of other rows.
+    pub(super) fn apply_window_functions_keeping(
+        &self,
         mut rows: Vec<Context>,
         return_expr: &Expression,
+        kept: &HashSet<String>,
     ) -> DbResult<Vec<Context>> {
         // Extract all window functions with unique IDs
         let window_funcs = extract_window_functions(return_expr);
@@ -233,10 +249,10 @@ impl<'a> QueryExecutor<'a> {
             return Ok(rows);
         }
 
-        let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut done: HashSet<String> = HashSet::new();
         for (var_name, func_name, args, spec) in window_funcs {
             // The same call written twice has one key; compute it once.
-            if !done.insert(var_name.clone()) {
+            if !done.insert(var_name.clone()) || kept.contains(&var_name) {
                 continue;
             }
             let values = self.compute_window_function(&rows, &func_name, &args, &spec)?;

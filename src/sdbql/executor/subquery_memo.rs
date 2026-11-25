@@ -156,8 +156,29 @@ pub(super) fn is_nondeterministic(e: &Expression) -> bool {
                     .any(|f| name.eq_ignore_ascii_case(f)))
         }
         Expression::WindowFunctionCall { .. } => true,
+        // A SAMPLE draws again at each run: two runs of the subquery differ.
+        Expression::Subquery(q) => samples(q),
         _ => false,
     }
+}
+
+/// A `FOR … SAMPLE` anywhere in `query`: its own body, set-operation
+/// operands, CTE bodies and nested subqueries. SAMPLE is a clause, not a
+/// call, so the test on expressions alone does not see it.
+fn samples(query: &Query) -> bool {
+    query
+        .body_clauses
+        .iter()
+        .any(|c| matches!(c, BodyClause::For(f) if f.sample.is_some()))
+        || query.set_operations.iter().any(|op| samples(&op.query))
+        || query
+            .with_clause
+            .as_ref()
+            .is_some_and(|with| with.ctes.iter().any(|cte| samples(&cte.query)))
+        || query_any_expression(
+            query,
+            &mut |e| matches!(e, Expression::Subquery(q) if samples(q)),
+        )
 }
 
 /// A `COLLECT ... INTO g` whose members are the whole scope, anywhere in
@@ -212,6 +233,7 @@ fn rebound_first_for_var(query: &Query) -> Option<&str> {
 /// not be reused at all.
 fn analyse(query: &Query) -> Option<Arc<[String]>> {
     if query.has_mutations()
+        || samples(query)
         || query_any_expression(query, &mut is_nondeterministic)
         || has_bare_into(query)
     {

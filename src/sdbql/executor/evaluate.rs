@@ -28,6 +28,50 @@ const FULLTEXT_DEFAULT_LIMIT: usize = 100;
 const MAX_NGRAM_SIZE: u64 = 16;
 
 impl<'a> QueryExecutor<'a> {
+    /// `GROUPING(var)` is 1 when `COLLECT … ROLLUP` / `CUBE` rolled `var` up
+    /// on this output row, and 0 when `var` is a real group key.
+    fn grouping(&self, args: &[Expression], ctx: &Context) -> DbResult<Value> {
+        if args.len() != 1 {
+            return Err(DbError::ExecutionError(
+                "GROUPING() takes one group variable, as in GROUPING(country)".to_string(),
+            ));
+        }
+        let Expression::Variable(var) = &args[0] else {
+            return Err(DbError::ExecutionError(
+                "GROUPING() takes a group variable name, not an expression. Write GROUPING(country), naming a variable of the COLLECT.".to_string(),
+            ));
+        };
+        let Some(vars) = ctx.get(super::execution::GROUP_VARS) else {
+            return Err(DbError::ExecutionError(
+                "GROUPING() is only valid on the rows of a COLLECT".to_string(),
+            ));
+        };
+        let Value::Array(names) = vars else {
+            return Err(DbError::ExecutionError(
+                "GROUPING() is only valid on the rows of a COLLECT".to_string(),
+            ));
+        };
+        let Some(pos) = names
+            .iter()
+            .position(|name| name.as_str() == Some(var.as_str()))
+        else {
+            return Err(DbError::ExecutionError(format!(
+                "GROUPING({var}) is not a group variable of this COLLECT"
+            )));
+        };
+        // ROLLUP / CUBE take at most 31 variables, so a later one is never
+        // rolled up (an ordinary COLLECT may have more).
+        if pos >= 31 {
+            return Ok(Value::Number(0.into()));
+        }
+        let mask = ctx
+            .get(super::execution::GROUPING_MASK)
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32;
+        let rolled = (mask & (1u32 << pos)) != 0;
+        Ok(Value::Number(u64::from(rolled).into()))
+    }
+
     /// Evaluate a function call
     pub(super) fn evaluate_function(
         &self,
@@ -37,6 +81,11 @@ impl<'a> QueryExecutor<'a> {
     ) -> DbResult<Value> {
         let name_upper = super::builtins::upper_name(name);
         let name: &str = &name_upper;
+        // The argument is a group-variable name. Evaluating it first would
+        // pass the group's value and lose the name.
+        if name == "GROUPING" {
+            return self.grouping(args, ctx);
+        }
         if args.iter().any(|a| matches!(a, Expression::Lambda { .. })) {
             let mut evaluated_args = Vec::with_capacity(args.len());
             for arg in args {

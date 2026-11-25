@@ -34,11 +34,13 @@ fn bare(query: &Query) -> bool {
         && query.post_limit_lets.is_empty()
         && query.sort_clause.is_none()
         && query.limit_clause.is_none()
+        && query.qualify.is_none()
 }
 
 /// `FOR v IN c` over a collection, no options.
 fn plain_loop(for_clause: &ForClause) -> bool {
     for_clause.source_expression.is_none()
+        && for_clause.sample.is_none()
         && for_clause.system_time.is_none()
         && for_clause.valid_time.is_none()
         && for_clause.options.is_none()
@@ -157,9 +159,13 @@ impl QueryExecutor<'_> {
         let Some(count) = self.index_count(for_clause, filter, bindings)? else {
             return Ok(None);
         };
-        // After COLLECT, the row holds the count variable and nothing else.
+        // After COLLECT, the row holds the count variable. The hidden
+        // GROUPING bindings are what an ordinary COLLECT row carries too:
+        // there are no group variables here, so GROUPING(name) reports that.
         let mut ctx = Context::default();
         ctx.insert(count_var.to_string(), Value::Number(count.into()));
+        ctx.insert(super::GROUPING_MASK.to_string(), Value::Number(0.into()));
+        ctx.insert(super::GROUP_VARS.to_string(), Value::Array(Vec::new()));
         let Some(ref ret) = query.return_clause else {
             return Ok(None);
         };

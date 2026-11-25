@@ -4,10 +4,12 @@
 //! - execute: Main query execution
 //! - execute_with_stats: Query execution with mutation statistics
 
+use std::collections::HashSet;
+
 use serde_json::Value;
 
 use super::super::types::{Context, MutationStats, QueryExecutionResult};
-use super::super::window::contains_window_functions;
+use super::super::window::{contains_window_functions, extract_window_functions};
 use super::super::{QueryExecutor, ValueSet};
 use crate::error::{DbError, DbResult};
 use crate::sdbql::ast::*;
@@ -78,6 +80,13 @@ impl<'a> QueryExecutor<'a> {
         query: &Query,
         bindings: Context,
     ) -> DbResult<QueryExecutionResult> {
+        // `EXPLAIN` is the whole result: the plan, not the rows. The flag is
+        // taken off the clone before the plan is built, or explaining would
+        // explain an explain and never stop.
+        if query.explain.is_some() {
+            return self.execute_explain(query);
+        }
+
         // Set operations: this query block is combined with further blocks
         // (`q1 UNION q2`, `q1 INTERSECT q2`, `q1 EXCEPT q2`, ...). Each operand
         // is executed independently, then combined in list order.
@@ -89,6 +98,38 @@ impl<'a> QueryExecutor<'a> {
         self.bind_ctes(query, &mut bindings)?;
         self.bind_pre_for_lets(query, &mut bindings)?;
         self.execute_with_initial_bindings(query, bindings)
+    }
+
+    /// The plan of `query` as its one result row.
+    ///
+    /// Plan-only explains do not run the query. `EXPLAIN ANALYZE` of a read
+    /// is the profiled plan (`explain`). A writing query is run once, so the
+    /// writes happen, and the plan is then the shape: profiling it as well
+    /// would run the writes a second time.
+    fn execute_explain(&self, query: &Query) -> DbResult<QueryExecutionResult> {
+        let mode = query.explain.unwrap_or(ExplainMode::Plan);
+        let mut inner = query.clone();
+        inner.explain = None;
+        let (plan, mutations) = match mode {
+            ExplainMode::Plan => (self.explain_plan(&inner)?, MutationStats::new()),
+            ExplainMode::Analyze if inner.has_mutations() || inner.has_unstageable_writes() => {
+                let ran = self.execute_with_stats(&inner)?;
+                let mut plan = self.explain_plan(&inner)?;
+                plan.plan_only = false;
+                plan.warnings.insert(
+                    0,
+                    "ANALYZE ran this writing query. Timings are not measured, because measuring \
+                     them would run the writes a second time. This result is the plan, not the rows."
+                        .to_string(),
+                );
+                (plan, ran.mutations)
+            }
+            ExplainMode::Analyze => (self.explain(&inner)?, MutationStats::new()),
+        };
+        Ok(QueryExecutionResult {
+            results: vec![serde_json::to_value(&plan)?],
+            mutations,
+        })
     }
 
     /// Evaluate this block's `WITH` clause into `bindings`.
@@ -181,8 +222,15 @@ impl<'a> QueryExecutor<'a> {
             BodyClause::Let(l) => contains_window_functions(&l.expression),
             _ => false,
         });
+        let qualify_has_windows = query
+            .qualify
+            .as_ref()
+            .is_some_and(contains_window_functions);
         // Same test as `has_window_functions`, which EXPLAIN uses.
-        let has_windows = return_has_windows || late_lets_have_windows || body_has_windows;
+        let has_windows =
+            return_has_windows || late_lets_have_windows || body_has_windows || qualify_has_windows;
+        // QUALIFY and SAMPLE change the row set a fast path would return.
+        let full_pipeline = query.needs_full_pipeline();
 
         if let Some((for_clause, fields)) =
             crate::sdbql::executor::projection::scan_projection(query)
@@ -202,7 +250,7 @@ impl<'a> QueryExecutor<'a> {
 
         // `SORT DISTANCE(…) LIMIT n` served from a geo index. Windows need
         // every row, so they rule it out like the other fast paths.
-        if !has_windows {
+        if !has_windows && !full_pipeline {
             if let Some(result) = self.try_geo_sort_limit(query, &initial_bindings)? {
                 return Ok(result);
             }
@@ -215,39 +263,41 @@ impl<'a> QueryExecutor<'a> {
         // Optimization: Streaming bulk INSERT for range-based FOR loops
         // Pattern: FOR i IN start..end INSERT {...} INTO collection [RETURN ...]
         // This avoids materializing millions of row contexts in memory
-        if let Some((results, insert_count)) =
-            self.try_streaming_bulk_insert(query, &initial_bindings)?
-        {
-            return Ok(QueryExecutionResult {
-                results,
-                mutations: MutationStats {
-                    documents_inserted: insert_count,
-                    documents_updated: 0,
-                    documents_removed: 0,
-                },
-            });
-        }
+        if !full_pipeline {
+            if let Some((results, insert_count)) =
+                self.try_streaming_bulk_insert(query, &initial_bindings)?
+            {
+                return Ok(QueryExecutionResult {
+                    results,
+                    mutations: MutationStats {
+                        documents_inserted: insert_count,
+                        documents_updated: 0,
+                        documents_removed: 0,
+                    },
+                });
+            }
 
-        // `FOR x IN c FILTER … REMOVE x IN c`: the FILTERs checked on the
-        // stored bytes, only the keys held, one batch delete.
-        if let Some(removed) = self.try_scan_remove(query, &initial_bindings)? {
-            return Ok(QueryExecutionResult {
-                results: Vec::new(),
-                mutations: MutationStats {
-                    documents_inserted: 0,
-                    documents_updated: 0,
-                    documents_removed: removed,
-                },
-            });
-        }
+            // `FOR x IN c FILTER … REMOVE x IN c`: the FILTERs checked on the
+            // stored bytes, only the keys held, one batch delete.
+            if let Some(removed) = self.try_scan_remove(query, &initial_bindings)? {
+                return Ok(QueryExecutionResult {
+                    results: Vec::new(),
+                    mutations: MutationStats {
+                        documents_inserted: 0,
+                        documents_updated: 0,
+                        documents_removed: removed,
+                    },
+                });
+            }
 
-        // Optimization: Columnar aggregation queries
-        // Pattern: FOR x IN columnar_collection COLLECT AGGREGATE ... RETURN ...
-        if let Some(results) = self.try_columnar_aggregation(query, &initial_bindings)? {
-            return Ok(QueryExecutionResult {
-                results,
-                mutations: MutationStats::new(),
-            });
+            // Optimization: Columnar aggregation queries
+            // Pattern: FOR x IN columnar_collection COLLECT AGGREGATE ... RETURN ...
+            if let Some(results) = self.try_columnar_aggregation(query, &initial_bindings)? {
+                return Ok(QueryExecutionResult {
+                    results,
+                    mutations: MutationStats::new(),
+                });
+            }
         }
 
         // Optimization: Use index for SORT + LIMIT if available
@@ -257,7 +307,11 @@ impl<'a> QueryExecutor<'a> {
         // correlated subquery (e.g. `LET org = (FOR ... FILTER ... RETURN ...)`)
         // runs at most `offset + count` times instead of once per document.
         if let (Some(sort), Some(limit)) = (&query.sort_clause, &query.limit_clause) {
-            if sort.fields.len() == 1 && !has_windows && query.post_limit_lets.is_empty() {
+            if sort.fields.len() == 1
+                && !has_windows
+                && !full_pipeline
+                && query.post_limit_lets.is_empty()
+            {
                 let body = query.body_clauses.as_slice();
                 let head_is_for = matches!(body.first(), Some(BodyClause::For(_)));
                 let tail_is_lets = body.iter().skip(1).all(|c| matches!(c, BodyClause::Let(_)));
@@ -383,7 +437,7 @@ impl<'a> QueryExecutor<'a> {
 
         // `FILTER v.a == x SORT v.b LIMIT n` read in order from an index on
         // `[a, b]`, stopping at the n-th row (see `index_sort`).
-        if !has_windows {
+        if !has_windows && !full_pipeline {
             if let Some(result) = self.try_index_sort_limit(query, &initial_bindings)? {
                 return Ok(result);
             }
@@ -395,6 +449,7 @@ impl<'a> QueryExecutor<'a> {
             if query.limit_clause.is_none()
                 && query.body_clauses.len() == 1
                 && !has_windows
+                && !full_pipeline
                 && query.post_limit_lets.is_empty()
             {
                 if let Some(BodyClause::For(for_clause)) = query.body_clauses.first() {
@@ -462,7 +517,8 @@ impl<'a> QueryExecutor<'a> {
         // Optimization: Direct scan for simple FOR + [LIMIT] + RETURN var
         // Pattern: FOR var IN collection [LIMIT n] RETURN var
         // Skips the entire Context/HashMap machinery
-        if query.body_clauses.len() == 1
+        if !full_pipeline
+            && query.body_clauses.len() == 1
             && query.sort_clause.is_none()
             && query.let_clauses.is_empty()
             && query.post_limit_lets.is_empty()
@@ -565,6 +621,7 @@ impl<'a> QueryExecutor<'a> {
             if for_count == 1
                 && filter_count == 0
                 && !has_windows
+                && !full_pipeline
                 && !super::has_collect(&query.body_clauses)
             {
                 query.limit_clause.as_ref().and_then(|l| {
@@ -589,6 +646,7 @@ impl<'a> QueryExecutor<'a> {
             && matches!(query.body_clauses[0], BodyClause::For(_))
             && matches!(query.body_clauses[1], BodyClause::Filter(_))
             && !has_windows
+            && !full_pipeline
         {
             query.limit_clause.as_ref().and_then(|l| {
                 let (offset, count) = self.eval_limit(l, &initial_bindings);
@@ -607,7 +665,13 @@ impl<'a> QueryExecutor<'a> {
             (Some(sort), Some(limit))
                 if !return_has_windows
                     && !late_lets_have_windows
-                    && matches!(query.body_clauses.last(), Some(BodyClause::Collect(_))) =>
+                    && query.qualify.is_none()
+                    // ROLLUP / CUBE builds its subtotals from every detail
+                    // group: a fold cut to the top k would total those alone.
+                    && matches!(
+                        query.body_clauses.last(),
+                        Some(BodyClause::Collect(c)) if c.grouping == Grouping::None
+                    ) =>
             {
                 let (offset, count) = self.eval_limit(limit, &initial_bindings);
                 match (
@@ -644,6 +708,21 @@ impl<'a> QueryExecutor<'a> {
 
         let mut rows = rows;
 
+        // QUALIFY sees the rows the body produced, before SORT and LIMIT.
+        // Window calls in the predicate, and the same calls in RETURN, are
+        // numbered on that full set. A query with no QUALIFY still numbers
+        // RETURN windows after SORT, below.
+        let mut qualified = HashSet::new();
+        if let Some(qualify) = &query.qualify {
+            let late: Vec<&str> = query
+                .post_limit_lets
+                .iter()
+                .map(|l| l.variable.as_str())
+                .collect();
+            (rows, qualified) =
+                self.apply_qualify(rows, qualify, query.return_clause.as_ref(), &late)?;
+        }
+
         // Apply SORT
         if let Some(sort) = &query.sort_clause {
             // When a LIMIT follows and no window functions need the full
@@ -673,7 +752,11 @@ impl<'a> QueryExecutor<'a> {
         if lets_before_limit {
             for let_clause in &query.post_limit_lets {
                 if contains_window_functions(&let_clause.expression) {
-                    rows = self.apply_window_functions(rows, &let_clause.expression)?;
+                    rows = self.apply_window_functions_keeping(
+                        rows,
+                        &let_clause.expression,
+                        &qualified,
+                    )?;
                 }
                 for ctx in &mut rows {
                     self.bind_let(let_clause, ctx)?;
@@ -684,7 +767,11 @@ impl<'a> QueryExecutor<'a> {
         // Apply window functions if RETURN clause contains any
         if let Some(ref return_clause) = query.return_clause {
             if return_has_windows {
-                rows = self.apply_window_functions(rows, &return_clause.expression)?;
+                rows = self.apply_window_functions_keeping(
+                    rows,
+                    &return_clause.expression,
+                    &qualified,
+                )?;
             }
         }
 
@@ -909,6 +996,63 @@ pub(in crate::sdbql::executor) fn has_window_functions(query: &Query) -> bool {
             BodyClause::Let(l) => contains_window_functions(&l.expression),
             _ => false,
         })
+        || query
+            .qualify
+            .as_ref()
+            .is_some_and(contains_window_functions)
+}
+
+impl<'a> QueryExecutor<'a> {
+    /// Keep the rows `QUALIFY` accepts.
+    ///
+    /// Windows named by the predicate, and windows in `RETURN`, are computed
+    /// first, on every row the body produced. Their keys are returned: the
+    /// later RETURN pass, and a LET after LIMIT, leave those values alone and
+    /// do not number the survivors again.
+    fn apply_qualify(
+        &self,
+        mut rows: Vec<Context>,
+        qualify: &Expression,
+        ret: Option<&ReturnClause>,
+        late: &[&str],
+    ) -> DbResult<(Vec<Context>, HashSet<String>)> {
+        let mut computed: HashSet<String> = extract_window_functions(qualify)
+            .into_iter()
+            .map(|(key, ..)| key)
+            .collect();
+        rows = self.apply_window_functions(rows, qualify)?;
+        if let Some(ret) = ret {
+            if contains_window_functions(&ret.expression) {
+                // A RETURN window that reads a LET written after LIMIT cannot
+                // be numbered here, where that LET is not bound yet: it is
+                // left to the RETURN pass, after SORT, as without QUALIFY.
+                let mut skip = computed.clone();
+                let mut early = Vec::new();
+                for (key, _, args, spec) in extract_window_functions(&ret.expression) {
+                    let reads_late = late.iter().any(|name| {
+                        args.iter()
+                            .chain(&spec.partition_by)
+                            .chain(spec.order_by.iter().map(|(e, _)| e))
+                            .any(|e| expression_references_variable(e, name))
+                    });
+                    if reads_late {
+                        skip.insert(key);
+                    } else {
+                        early.push(key);
+                    }
+                }
+                rows = self.apply_window_functions_keeping(rows, &ret.expression, &skip)?;
+                computed.extend(early);
+            }
+        }
+        let mut kept = Vec::with_capacity(rows.len());
+        for ctx in rows {
+            if self.evaluate_filter_with_context(qualify, &ctx)? {
+                kept.push(ctx);
+            }
+        }
+        Ok((kept, computed))
+    }
 }
 
 impl QueryExecutor<'_> {
@@ -934,6 +1078,7 @@ impl QueryExecutor<'_> {
         let sort = query.sort_clause.as_ref()?;
         if sort.fields.len() != 1
             || has_window_functions(query)
+            || query.needs_full_pipeline()
             || !query.post_limit_lets.is_empty()
         {
             return None;

@@ -24,7 +24,8 @@ use crate::storage::raw_rows::RawShape;
 
 /// The loop, its FILTER and the row shape of a query this path can answer.
 fn raw_plan(query: &Query) -> Option<(&ForClause, Option<&Expression>, RawShape)> {
-    if !query.set_operations.is_empty()
+    if query.needs_full_pipeline()
+        || !query.set_operations.is_empty()
         || !query.join_clauses.is_empty()
         || query.with_clause.is_some()
         || query.window_clause.is_some()
@@ -75,7 +76,8 @@ fn raw_plan(query: &Query) -> Option<(&ForClause, Option<&Expression>, RawShape)
 /// order. The rest of the shape (one sort field, a LIMIT count, a plain
 /// collection loop) is that function's to check.
 fn raw_sorted_shape(query: &Query) -> Option<RawShape> {
-    if !query.let_clauses.is_empty()
+    if query.needs_full_pipeline()
+        || !query.let_clauses.is_empty()
         || !query.post_limit_lets.is_empty()
         || query.sort_clause.is_none()
     {

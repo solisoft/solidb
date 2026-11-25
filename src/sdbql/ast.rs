@@ -91,6 +91,25 @@ pub struct Query {
     /// is parsed as `q1` with `set_operations = [UNION q2, INTERSECT q3]`.
     #[serde(default)]
     pub set_operations: Vec<SetOperationClause>,
+
+    /// `EXPLAIN [ANALYZE] <query>`. `None` is an ordinary query. Plan-only
+    /// explains do not run, and do not count as writes.
+    #[serde(default)]
+    pub explain: Option<ExplainMode>,
+
+    /// `QUALIFY` predicate, applied after the body and before `SORT`.
+    #[serde(default)]
+    pub qualify: Option<Expression>,
+}
+
+/// `EXPLAIN` (plan only) or `EXPLAIN ANALYZE` (run the query, return the plan).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ExplainMode {
+    /// Build the plan and touch nothing.
+    #[default]
+    Plan,
+    /// Run the query. The result is the plan, not the rows.
+    Analyze,
 }
 
 impl Query {
@@ -98,6 +117,12 @@ impl Query {
     /// clauses, stream or materialized-view DDL). Used to decide whether a
     /// principal needs Write rather than Read permission.
     pub fn has_mutations(&self) -> bool {
+        // A plan-only EXPLAIN reads nothing and writes nothing, so a reader
+        // may ask for the plan of a write. ANALYZE keeps the inner query's
+        // classification: it really does run.
+        if self.explain == Some(ExplainMode::Plan) {
+            return false;
+        }
         if self.body_clauses.iter().any(|clause| {
             matches!(
                 clause,
@@ -143,6 +168,9 @@ impl Query {
     /// write directly whatever executor runs them, so a rollback could not
     /// undo them.
     pub fn has_unstageable_writes(&self) -> bool {
+        if self.explain == Some(ExplainMode::Plan) {
+            return false;
+        }
         self.create_stream_clause.is_some()
             || self.create_materialized_view_clause.is_some()
             || self.refresh_materialized_view_clause.is_some()
@@ -173,10 +201,13 @@ impl Query {
             .iter()
             .chain(self.post_limit_lets.iter())
             .map(|l| &l.expression);
-        let for_exprs = self
-            .for_clauses
-            .iter()
-            .flat_map(|f| f.source_expression.iter().chain(f.system_time.iter()));
+        let for_exprs = self.for_clauses.iter().flat_map(|f| {
+            f.source_expression
+                .iter()
+                .chain(f.system_time.iter())
+                .chain(sample_expression(&f.sample))
+        });
+        let qualify = self.qualify.iter();
         let valid_time = self
             .for_clauses
             .iter()
@@ -201,8 +232,30 @@ impl Query {
             .chain(sort_exprs)
             .chain(limit_exprs)
             .chain(return_expr)
+            .chain(qualify)
             .chain(join_exprs)
             .chain(body_exprs)
+    }
+
+    /// `QUALIFY`, `SAMPLE` or `EXPLAIN` is present. Fast paths that return
+    /// a final result, or that stop a scan before every source row is seen,
+    /// answer a different query when one of them is present, so they step
+    /// aside. For `EXPLAIN` that matters on the driver, which tries its raw
+    /// and index-ordered reads before `execute` and would return the rows
+    /// instead of the plan.
+    pub fn needs_full_pipeline(&self) -> bool {
+        self.explain.is_some()
+            || self.qualify.is_some()
+            || self.body_clauses.iter().any(|clause| {
+                matches!(clause, BodyClause::For(for_clause) if for_clause.sample.is_some())
+            })
+    }
+}
+
+fn sample_expression(sample: &Option<SampleSpec>) -> Option<&Expression> {
+    match sample {
+        Some(SampleSpec::Count(expr) | SampleSpec::Percent(expr)) => Some(expr),
+        None => None,
     }
 }
 
@@ -285,6 +338,7 @@ fn body_clause_expressions(clause: &BodyClause) -> Vec<&Expression> {
             .source_expression
             .iter()
             .chain(f.system_time.iter())
+            .chain(sample_expression(&f.sample))
             .chain(
                 f.valid_time
                     .iter()
@@ -699,6 +753,20 @@ pub struct ForClause {
     /// `FOR ... OPTIONS { indexHint, forceIndexHint }`, for the optimizer.
     #[serde(default)]
     pub options: Option<ForOptions>,
+    /// `SAMPLE n` or `SAMPLE p PERCENT`, applied to this loop's source
+    /// before the clauses that follow it.
+    #[serde(default)]
+    pub sample: Option<SampleSpec>,
+}
+
+/// How many rows of a `FOR` source to keep.
+///
+/// `Count` is a uniform sample of at most that many distinct rows.
+/// `Percent` keeps each row independently with that probability.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SampleSpec {
+    Count(Expression),
+    Percent(Expression),
 }
 
 /// `FOR doc IN coll OPTIONS { indexHint: "idx" | ["a", "b"], forceIndexHint: bool }`.
@@ -914,6 +982,21 @@ pub struct CollectClause {
     /// `OPTIONS { method: "hash" | "sorted" }`. `None` behaves as `Sorted`.
     #[serde(default)]
     pub method: Option<CollectMethod>,
+    /// `ROLLUP` or `CUBE`, written after the group variables.
+    #[serde(default)]
+    pub grouping: Grouping,
+}
+
+/// Extra groupings a `COLLECT` emits beyond one row per distinct key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Grouping {
+    /// One row per distinct group key.
+    #[default]
+    None,
+    /// One row per prefix of the group variables, then a grand total.
+    Rollup,
+    /// One row per subset of the group variables.
+    Cube,
 }
 
 /// COLLECT grouping method (`OPTIONS { method: ... }`).
@@ -1382,6 +1465,7 @@ mod tests {
             system_time: None,
             valid_time: None,
             options: None,
+            sample: None,
         };
 
         assert_eq!(clause.variable, "doc");
@@ -1498,6 +1582,8 @@ mod tests {
             post_limit_lets: vec![],
             body_clauses: vec![],
             set_operations: vec![],
+            explain: None,
+            qualify: None,
         };
 
         assert!(query.for_clauses.is_empty());
@@ -1520,6 +1606,7 @@ mod tests {
             aggregates: vec![],
             into_expr: None,
             method: None,
+            grouping: Grouping::None,
         };
 
         assert_eq!(clause.group_vars.len(), 1);

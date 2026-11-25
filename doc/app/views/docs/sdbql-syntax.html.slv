@@ -18,7 +18,7 @@
             Syntax & Basics
           </h1>
           <p class="text-xl text-gray-300 max-w-3xl leading-relaxed">
-            Learn the fundamental SDBQL syntax including query structure, pipeline operator, null coalescing, optional chaining, CASE expressions, template strings, and window functions.
+            Learn the fundamental SDBQL syntax including query structure, pipeline operator, null coalescing, optional chaining, CASE expressions, template strings, window functions, QUALIFY, SAMPLE and EXPLAIN.
           </p>
         </div>
       </div>
@@ -40,9 +40,12 @@
             </p>
 
             <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
-              <pre><code class="language-sql text-sm">LET variable = expression
-FOR variable IN collection [OPTIONS { indexHint: "idx", forceIndexHint: true }]
+              <pre><code class="language-sql text-sm">[EXPLAIN [ANALYZE]]
+LET variable = expression
+FOR variable IN collection [SAMPLE n | p PERCENT] [OPTIONS { indexHint: "idx", forceIndexHint: true }]
   FILTER expression
+  COLLECT ... [ROLLUP | CUBE] [AGGREGATE ...]
+  QUALIFY expression
   SORT field [ASC|DESC]
   LIMIT [offset,] count | OFFSET n [LIMIT m]
   RETURN [DISTINCT] expression</code></pre>
@@ -920,6 +923,10 @@ FOR o IN orders
   FILTER rn <= 3
   RETURN o</code></pre>
 
+            <p class="text-sm text-gray-400 mt-4">
+              To keep rows by a window value, write <a href="#qualify" class="text-amber-300 hover:text-amber-200">QUALIFY</a> after the body. It numbers its windows, and the windows in <code class="text-amber-300">RETURN</code>, on the full set and then filters. The <code>LET</code> plus <code>FILTER</code> above still works: that <code>LET</code> is computed while the body runs, so the numbers are of the rows present at that point, and a later <code>SORT</code> does not renumber them.
+            </p>
+
             <p class="text-xs text-gray-500 mt-4">
               <span class="text-amber-400 font-bold">Supported Functions:</span>
               ROW_NUMBER, RANK, DENSE_RANK, NTILE, PERCENT_RANK, CUME_DIST, LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE, SUM, AVG, COUNT, MIN, MAX
@@ -1141,6 +1148,172 @@ UPSERT { email: "user@example.com" }
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- EXPLAIN -->
+      <section id="explain" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <span class="bg-indigo-500/20 text-indigo-300 text-xs font-mono px-2 py-1 rounded mr-3">EXPLAIN</span>
+              Plans
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              <code class="text-indigo-300">EXPLAIN</code> in front of a statement returns the plan instead of the rows. The result is one JSON object, the same object <a href="/docs/api-queries" class="text-indigo-400 hover:text-indigo-300"><code>POST /_api/database/:db/explain</code></a> returns. <code class="text-indigo-300">EXPLAIN ANALYZE</code> runs a read and fills in the timings. A plan by itself writes nothing.
+            </p>
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <pre><code class="language-sql text-sm">EXPLAIN
+FOR u IN users
+  FILTER u.email == @e
+  RETURN u
+
+EXPLAIN ANALYZE
+FOR u IN users
+  FILTER u.email == @e
+  RETURN u
+
+-- A plan of a write does not write.
+EXPLAIN INSERT { _key: "a", n: 1 } INTO counters</code></pre>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              The object has <code class="text-indigo-300">collections</code> (one entry per loop: <code>name</code>, <code>variable</code>, <code>access_type</code>, <code>index_used</code>, and <code>estimated_rows</code> when the planner compared indexes), <code>let_bindings</code>, <code>filters</code> (each filter, how many rows it saw and how many it kept), <code>sort</code>, <code>limit</code>, <code>timing</code> (microseconds per step), <code>documents_scanned</code>, <code>documents_returned</code> and <code>warnings</code>. A plan that was not run has <code class="text-indigo-300">"plan_only": true</code>, zero timings and zero counts, and every access marked <code>"estimated": true</code>. <code>ANALYZE</code> of a read omits <code>plan_only</code> and fills the timings. The cursor still reports one result row: the plan, not the documents.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-300 font-bold mb-2">Plan only</h3>
+                <p class="text-sm text-gray-400">
+                  The default. The statement is not executed. An <code>INSERT</code>, <code>UPDATE</code>, <code>REPLACE</code>, <code>REMOVE</code> or <code>UPSERT</code> under <code>EXPLAIN</code> changes nothing, and a following read of the collection does not see the planned rows. Use this on a large or slow query. The data can still change what a later run does: the plan describes the indexes and the shape, not a snapshot of the rows.
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-300 font-bold mb-2">ANALYZE of a read</h3>
+                <p class="text-sm text-gray-400">
+                  The query runs once, the way the HTTP endpoint does with <code>analyze: true</code>. The result is the plan with timings, <code>documents_scanned</code> and <code>documents_returned</code>. It is not the rows. The cursor&rsquo;s <code>inserted</code>, <code>updated</code> and <code>deleted</code> stay 0.
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-300 font-bold mb-2">ANALYZE of a write</h3>
+                <p class="text-sm text-gray-400">
+                  The writes run once. The result is still the plan, not the documents <code>RETURN NEW</code> would have produced. Timings stay zero, because measuring each step would run the writes a second time, and <code>warnings</code> starts with: <span class="text-gray-300">ANALYZE ran this writing query. Timings are not measured, because measuring them would run the writes a second time. This result is the plan, not the rows.</span> The cursor&rsquo;s mutation counters are the real counts from that one run. <code>plan_only</code> is omitted, as it is for a read: the field is written only when it is true.
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-indigo-300 font-bold mb-2">The HTTP endpoint</h3>
+                <p class="text-sm text-gray-400">
+                  <code>POST /_api/database/:db/explain</code> is unchanged. <code>analyze: false</code> is the plan-only statement; <code>analyze: true</code> (the default) times a read. That endpoint does not itself apply mutations: an <code>INSERT</code> sent there is described and not stored. To run a write and see its plan, send <code>EXPLAIN ANALYZE INSERT …</code> to <code>/cursor</code>.
+                </p>
+              </div>
+            </div>
+            <p class="text-sm text-gray-400">
+              <code>EXPLAIN</code> covers the statement it opens, including a parenthesized block and the set operations that follow it: <code class="text-indigo-300">EXPLAIN (FOR a IN one RETURN a) UNION (FOR b IN two RETURN b)</code>. <code>EXPLAIN</code> only opens a statement: in a subquery, a CTE or a set-operation operand it is a parse error (<code>EXPLAIN is only valid at the start of a statement</code>), as is a second one (<code>EXPLAIN cannot be nested</code>), and so is an <code>EXPLAIN</code> of <code>CREATE STREAM</code> or of a materialized-view statement. The words are not reserved elsewhere, so a field or a variable may still be named <code>explain</code>.
+            </p>
+            <p class="text-sm text-gray-400">
+              When the statement has a <a href="#qualify" class="text-indigo-400 hover:text-indigo-300">QUALIFY</a>, a <a href="#sample" class="text-indigo-400 hover:text-indigo-300">SAMPLE</a>, or a <a href="/docs/sdbql-aggregations#rollup-cube" class="text-indigo-400 hover:text-indigo-300">ROLLUP or CUBE</a>, <code>warnings</code> says how that clause behaves: windows numbered on the full set, the sample read from the whole source, and subtotals built after the detail groups with <code>INTO</code> members concatenated.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- QUALIFY -->
+      <section id="qualify" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <span class="bg-amber-500/20 text-amber-300 text-xs font-mono px-2 py-1 rounded mr-3">QUALIFY</span>
+              Filter on a window
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              <code class="text-amber-300">QUALIFY</code> keeps the rows of the body whose predicate is true, and its window functions are numbered on that full set. It is written once, after <code>FOR</code> / <code>FILTER</code> / <code>LET</code> / <code>COLLECT</code> and before <code>SORT</code> and <code>LIMIT</code>. <code>SORT</code> then <code>QUALIFY</code> is a parse error, and so is a second <code>QUALIFY</code> (<code>A query has one QUALIFY clause</code>).
+            </p>
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <pre><code class="language-sql text-sm">-- The three highest salaries in each department.
+FOR e IN emp
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY e.dept ORDER BY e.salary DESC) &lt;= 3
+  RETURN e
+
+-- The number in RETURN is the number from before the filter,
+-- so every returned n is at least 2.
+FOR e IN emp
+  QUALIFY ROW_NUMBER() OVER (ORDER BY e.salary DESC) &gt; 1
+  RETURN ROW_NUMBER() OVER (ORDER BY e.salary DESC)</code></pre>
+            </div>
+            <p class="text-gray-300 leading-relaxed">
+              The order, when a <code>QUALIFY</code> is present, is the body, then the windows, then the predicate, then <code>SORT</code>, then <code>LIMIT</code>, then <code>RETURN</code>. <code>RETURN DISTINCT</code> still drops duplicate projected values at the end, as it does for any other query.
+            </p>
+            <ul class="space-y-3 text-sm text-gray-400 leading-relaxed list-disc pl-5">
+              <li>Window calls written in the <code>QUALIFY</code> expression are computed on the rows the body produced, before the predicate drops any and before <code>SORT</code>. The partition&rsquo;s <code>ORDER BY</code> is the window&rsquo;s own; the query&rsquo;s <code>SORT</code> does not change those numbers.</li>
+              <li>Every window call in <code>RETURN</code> is numbered on that same pre-filter set. Repeating <code>ROW_NUMBER() OVER (ORDER BY e.salary DESC)</code> in <code>RETURN</code> gives the number the filter saw, not a number recomputed on the survivors. The same call written in a later <code>LET</code> is reused too: one <code>OVER</code> specification is computed once.</li>
+              <li>A window <code>LET</code> in the body is computed while the body runs, on the rows present there, and <code>QUALIFY</code> can read the variable. That is the older way to write the top-three query (<code>LET rn = ROW_NUMBER() OVER (…) FILTER rn &lt;= 3</code>), and it still works.</li>
+              <li>A different window call that appears only in a <code>LET</code> after <code>LIMIT</code> is numbered on the rows that survived <code>QUALIFY</code> and <code>SORT</code>, before the limit drops any. It does not see the rows the predicate rejected.</li>
+              <li>A query with no <code>QUALIFY</code> is unchanged: its <code>RETURN</code> windows are numbered after <code>SORT</code> and before <code>LIMIT</code>. The two orders differ only for a window with no <code>ORDER BY</code> of its own, which numbers rows in arrival order. With <code>QUALIFY</code>, that arrival order is the body&rsquo;s; without it, it is the order after <code>SORT</code>. A window that has an <code>ORDER BY</code> numbers the same rows either way.</li>
+              <li>An error in the predicate fails the query (an unknown function, a missing bind variable, a value the function cannot take). It does not drop the row and continue, which is what <code>FILTER</code> does for a type error on one row.</li>
+              <li>A predicate with no window function is a filter of the body&rsquo;s rows, applied before <code>SORT</code>. It is not optional: the shortcuts that return a whole collection, an index range or a count read from an index step aside, so the predicate runs.</li>
+            </ul>
+            <p class="text-sm text-gray-400">
+              <code>QUALIFY</code> is recognised only in this position. It is not a reserved word, and the window functions themselves are unchanged: they are still not callable without <code>OVER</code>. See <a href="#window-functions" class="text-amber-300 hover:text-amber-200">window functions</a> for the functions a window can call.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SAMPLE -->
+      <section id="sample" class="scroll-mt-24">
+        <div class="bg-gray-900/40 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="p-8 border-b border-white/5 bg-white/5">
+            <h2 class="text-2xl font-bold text-white flex items-center">
+              <span class="bg-emerald-500/20 text-emerald-300 text-xs font-mono px-2 py-1 rounded mr-3">SAMPLE</span>
+              A sample of a FOR
+            </h2>
+          </div>
+          <div class="p-8 space-y-6">
+            <p class="text-gray-300 leading-relaxed">
+              <code class="text-emerald-300">SAMPLE</code> is written on the <code>FOR</code> source, after a <code>SYSTEM_TIME</code> or <code>VALID_TIME</code> clause and before <code>OPTIONS</code>. It draws from that source. <code>FILTER</code>, <code>SORT</code>, <code>LIMIT</code> and everything else in the body then see only the rows that were kept. It applies to a collection, an array and a range.
+            </p>
+            <div class="bg-gray-950/50 rounded-xl border border-white/5 p-6">
+              <pre><code class="language-sql text-sm">-- At most 100 distinct documents. The order is not the scan order.
+FOR d IN events
+  SAMPLE 100
+  RETURN d
+
+-- Each document kept with probability 1/100. Scan order is preserved.
+FOR d IN events
+  SAMPLE 1 PERCENT
+  RETURN d
+
+FOR d IN events SAMPLE @n RETURN d
+FOR x IN [1, 2, 3, 4, 5] SAMPLE 2 RETURN x
+FOR n IN 1..1000 SAMPLE 5 PERCENT RETURN n</code></pre>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-emerald-300 font-bold mb-2">SAMPLE n</h3>
+                <p class="text-sm text-gray-400">
+                  A uniform sample of at most <code>n</code> distinct rows. <code>n</code> is a non-negative whole number: <code>0</code> returns nothing, <code>1.0</code> is 1, and a fraction such as <code>1.5</code> or a negative number fails the query (<code>SAMPLE count must be a non-negative whole number</code>). When <code>n</code> is at least the number of source rows, every row is returned in scan order and nothing is shuffled. Otherwise the kept rows are not in scan order, and two runs need not return the same rows or the same order.
+                </p>
+              </div>
+              <div class="bg-gray-800/30 rounded-xl p-5 border border-white/5">
+                <h3 class="text-emerald-300 font-bold mb-2">SAMPLE p PERCENT</h3>
+                <p class="text-sm text-gray-400">
+                  Each source row is kept on its own with probability <code>p / 100</code>, and the rows that remain stay in scan order. <code>p</code> is a number from 0 to 100. <code>0 PERCENT</code> returns nothing. <code>100 PERCENT</code> returns every row in scan order. A value below 0 or above 100 fails the query (<code>SAMPLE percent must be a number from 0 to 100</code>). The count of a percent sample is random: one percent of 20 rows is often empty and occasionally several rows.
+                </p>
+              </div>
+            </div>
+            <ul class="space-y-3 text-sm text-gray-400 leading-relaxed list-disc pl-5">
+              <li>The whole source is read, then the sample is taken. There is no early stop: <code>SAMPLE 10</code> on a million documents still reads the million, and only the clauses after the <code>FOR</code> are bounded. <code>FILTER</code> after <code>SAMPLE 0</code> returns nothing, because it never sees the source rows.</li>
+              <li>The count and the percent are expressions, so <code>SAMPLE @n</code> and <code>SAMPLE @p PERCENT</code> take bind variables. Anything that is not a number fails with the messages above.</li>
+              <li>A nested <code>FOR</code> samples once per outer row. <code>SAMPLE</code> belongs to the <code>FOR</code> it follows, and it is not valid after <code>FILTER</code>. <code>FOR u IN users FOR o IN orders SAMPLE 3 FILTER o.user == u._key RETURN o</code> draws 3 orders from the whole collection for each user and then keeps that user&rsquo;s. To sample 3 of one user&rsquo;s orders, filter in the source the <code>FOR</code> samples: <code>FOR o IN (FOR x IN orders FILTER x.user == u._key RETURN x) SAMPLE 3 RETURN o</code>.</li>
+              <li>Indexes, the raw document scan and the other shortcuts that would return the source unchanged step aside. <code>FOR d IN events SAMPLE 2 RETURN d</code> returns two documents, not the collection.</li>
+              <li><code>SAMPLE</code> here is the clause. The <code>SAMPLE()</code> function, where a search uses it, is a different name in a call and is unchanged.</li>
+            </ul>
+            <p class="text-sm text-gray-400">
+              The draw uses the process&rsquo;s random generator. It is not seeded, and a query cannot ask for a seed. Do not assert on which rows <code>SAMPLE n</code> returns, or on their order, except for the cases above that keep every row or none.
+            </p>
           </div>
         </div>
       </section>

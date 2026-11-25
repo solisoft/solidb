@@ -2246,7 +2246,9 @@ impl QueryExecutor<'_> {
 
         let tail = columnar.tail_rows()?;
         let mut fold = CollectFold::new(found.collect);
-        let alone = left.is_empty() && tail.is_empty();
+        let alone = left.is_empty()
+            && tail.is_empty()
+            && found.collect.grouping == crate::sdbql::ast::Grouping::None;
         self.push_groups(&mut fold, col_plan, &mut table.groups, None, alone)?;
         let var = found.for_clause.variable.as_str();
         let fields: &[String] = found.fields.as_deref().unwrap_or(known);
@@ -2873,7 +2875,12 @@ impl QueryExecutor<'_> {
         // Each group goes into the fold the ordinary path fills, with the
         // state of its sums.
         let mut fold = CollectFold::new(found.collect);
-        let alone = left.is_empty() && set.tail.is_empty();
+        // ROLLUP / CUBE merges the groups' distinct values into its
+        // subtotals: a count alone cannot be merged (it would add two
+        // groups' counts of the same value).
+        let alone = left.is_empty()
+            && set.tail.is_empty()
+            && found.collect.grouping == crate::sdbql::ast::Grouping::None;
         self.push_groups(
             &mut fold,
             col_plan,

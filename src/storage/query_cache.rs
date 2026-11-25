@@ -651,6 +651,23 @@ impl CollectionWalk {
         if let Some(r) = &q.return_clause {
             self.expr(&r.expression);
         }
+        // QUALIFY may read a collection nothing else names (a subquery).
+        if let Some(qualify) = &q.qualify {
+            self.expr(qualify);
+        }
+        // An EXPLAIN ANALYZE runs the query to measure it, and a plan is
+        // not worth a cache entry.
+        if q.explain.is_some() {
+            self.unknown = true;
+        }
+        // A SAMPLE draws again at each run: its rows are not the query's
+        // answer to keep.
+        if q.body_clauses
+            .iter()
+            .any(|c| matches!(c, BodyClause::For(f) if f.sample.is_some()))
+        {
+            self.unknown = true;
+        }
         for clause in &q.body_clauses {
             match clause {
                 BodyClause::For(f) => self.for_clause(f),
@@ -1045,6 +1062,15 @@ mod tests {
 
     fn required(q: &str) -> Vec<String> {
         refs(q).expect("cacheable").required
+    }
+
+    #[test]
+    fn qualify_is_walked_and_sample_is_never_cached() {
+        let mut found = required("FOR d IN ca QUALIFY d.x IN (FOR y IN cb RETURN y.x) RETURN d");
+        found.sort();
+        assert_eq!(found, vec!["ca".to_string(), "cb".to_string()]);
+        assert!(refs("FOR d IN ca SAMPLE 2 RETURN d").is_none());
+        assert!(refs("RETURN (FOR d IN ca SAMPLE 2 RETURN d)").is_none());
     }
 
     #[test]

@@ -137,6 +137,13 @@ fn queries() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         // Counted, not returned.
         ("FOR r IN $c FILTER r.host == 'h2' AND r.v >= 10000 COLLECT WITH COUNT INTO n RETURN n", vec![]),
         ("RETURN LENGTH(FOR r IN $c FILTER r.v < 100 RETURN 1)", vec![]),
+        // ROLLUP's subtotals and grand total are of every group, not only
+        // of those a SORT on an aggregate with a LIMIT returns.
+        ("FOR r IN $c COLLECT h = r.host ROLLUP AGGREGATE s = SUM(r.v) SORT s DESC LIMIT 2 RETURN [h, s]", vec![]),
+        ("FOR r IN $c COLLECT h = r.host, ok = r.ok CUBE AGGREGATE n = COUNT() SORT n DESC LIMIT 3 RETURN [h, ok, n]", vec![]),
+        // A distinct count of a subtotal is of the union of the groups'
+        // values, not the sum of their counts.
+        ("FOR r IN $c FILTER r.v < 4000 COLLECT h = r.host ROLLUP AGGREGATE d = COUNT_DISTINCT(r.ok) SORT h RETURN [h, d]", vec![]),
     ]
 }
 
@@ -315,6 +322,8 @@ fn a_row_policy_on_a_columnar_collection_is_applied() {
         "FOR r IN c COLLECT AGGREGATE s = SUM(r.v), hi = MAX(r.v), d = COUNT_DISTINCT(r.host) RETURN [s, hi, d]",
         "FOR r IN c FILTER r.host == 'h1' COLLECT WITH COUNT INTO n RETURN n",
         "FOR r IN c COLLECT AGGREGATE m = MEDIAN(r.v), p = PERCENTILE(r.v, 90) RETURN [m, p]",
+        // SAMPLE reads the source: the policy applies to what it reads.
+        "FOR r IN c SAMPLE 100 PERCENT FILTER r.v < 40 SORT r.v RETURN [r.host, r.v]",
     ];
     let both = |who: &QueryPrincipal| -> Vec<Vec<Value>> {
         queries

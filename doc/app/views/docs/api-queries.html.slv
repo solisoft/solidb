@@ -91,7 +91,7 @@
                  <span class="px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded">POST</span>
                  <code class="text-gray-300">/_api/database/:db/explain</code>
                </div>
-               <p class="text-sm text-gray-400 mb-4">Explain query execution plan, with the time each step took.</p>
+               <p class="text-sm text-gray-400 mb-4">Explain query execution plan, with the time each step took. The same plan is one row of <code>EXPLAIN &lt;query&gt;</code> (plan only, nothing written) and of <code>EXPLAIN ANALYZE &lt;query&gt;</code> (a read is timed; a write runs once and the plan has no timings). See <a href="/docs/sdbql-syntax#explain" class="text-indigo-400 hover:text-indigo-300">EXPLAIN</a>.</p>
                <p class="text-sm text-gray-400 mb-4">
                  Each entry of <code>collections</code> is one loop. <code>access_type</code> is
                  <code>index_lookup</code> (the FILTER read from <code>index_used</code>),
